@@ -50,7 +50,20 @@ function newState(config) {
 
 // Vendors whose CLIs this run depends on: the seats', the panel's, the spec reviewers' and the auditors'.
 function externalVendors(S) {
-  return [...new Set([...S.lineup, ...S.panel, ...S.specReviewers, ...S.auditors].filter(external).map(s => s.vendor))]
+  return [...new Set([...S.lineup, ...S.panel, ...S.specReviewers, ...S.auditors,
+    ...(S.host === 'codex' ? Object.values(S.roles).map(s => hostSeat(S.host, s)) : [])].filter(external).map(s => s.vendor))]
+}
+
+// The runner owns a unique prefix. A separate suffix per tier keeps even immediate escalations
+// in new worktrees, without relying on the helper's second-resolution timestamp default.
+function setupRunId(S) {
+  if (S.host !== 'codex' || S.raw.hostRunId === undefined || S.raw.hostRunId === null) return null
+  const prefix = S.raw.hostRunId
+  const id = `${prefix}-${S.tier || S.workflowName}`
+  if (typeof prefix !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(prefix) || !/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(id)) {
+    throw new Error('factory: hostRunId must contain only letters, digits, dots, underscores and hyphens, starting with a letter or digit.')
+  }
+  return id
 }
 
 function auditor(S, id) {

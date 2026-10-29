@@ -115,7 +115,7 @@ function ingestQuestions(S, L, round, qs) {
 }
 
 function keepNotes(S, s, round, res) {
-  if (s.vendor === 'claude' && res && res.notes) S.seatNotes[s.L] = { round, text: clip(String(res.notes).trim(), NOTES_CHARS) }
+  if (!external(s) && res && res.notes) S.seatNotes[s.L] = { round, text: clip(String(res.notes).trim(), NOTES_CHARS) }
 }
 
 function keepDeclined(S, round, res) {

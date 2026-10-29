@@ -1,12 +1,13 @@
 # dark-factory
 
-A Claude Code workflow in which several models from up to three vendors (by default Claude Opus,
-Claude Sonnet, Codex Astra and Gemini Flash) solve one task independently, debate it on an
-evidence ledger, and converge on one result. Claude Code is the only interface.
+A workflow engine for Claude Code and Codex in which models solve one task independently,
+debate it on an evidence ledger, and converge on one result. The Claude entry point defaults to
+Claude Opus, Claude Sonnet, Codex Astra and Gemini Flash. The Codex entry point defaults to
+OpenAI models and also supports explicit Claude and Gemini seats.
 
     /dark-factory:council Fix the cancellation in Special::confluentHypergeometric at large negative z
 
-## Install
+## Install in Claude Code
 
 The repo is a Claude Code plugin marketplace with one plugin, `dark-factory`:
 
@@ -22,6 +23,75 @@ this to `~/.claude/settings.json` yourself (see the permission note under Instal
 Codex and Gemini seats need the `codex` and `agy` CLIs; the requirements are listed under
 Install and test.
 
+## Install in Codex
+
+From a checkout of this repository, install the skill in the project where you want to use it:
+
+```sh
+./install-codex.sh --repo /path/to/project
+```
+
+With no arguments, the installer uses the current Git repository. `./install-codex.sh --user`
+installs in `~/.agents/skills` for use across projects. It creates a symlink to the shipped skill,
+so keep this checkout in place. It does not replace an existing skill from another location or
+change account settings. Codex discovers the skill automatically; start a new session if it
+doesn't appear.
+
+Then, in Codex:
+
+```text
+$dark-factory Add a debug log line with the retry count in Fetcher::retry
+$dark-factory --tier fix Find why the sync drops the last page
+```
+
+The skill runs the same factory/council JavaScript through a local Node runner. Tier routing,
+escalation, verification, scoring, and readiness stay in that shared engine. Model turns are
+separate CLI sessions; the runner starts them directly and bounds their concurrency. It does
+not need Claude relay agents. All four factory tiers and the council are available; the separate
+`ensemble` workflow remains a Claude Code entry point.
+
+You need Node, Python 3, Git, and an authenticated `codex` CLI. The default Codex profile needs
+no Claude or Gemini account. Explicit mixed-vendor selections additionally need the relevant
+authenticated `claude` or `agy` CLI. Each CLI keeps its normal permission controls; a required
+permission that cannot be obtained headlessly is reported as a failure.
+
+Simple uses Sol to implement and Astra to review. Fix and Feature use Astra and Sol seats;
+Architecture adds Luna. Orchestration roles can be changed through `roles`, for example
+`{"intake": "sol", "checker": {"model": "astra", "effort": "high"}}`.
+
+You can also invoke the runner without installing a skill:
+
+```sh
+node plugins/dark-factory/bin/dark-factory-codex --cwd /path/to/project -- "Fix the missing final page"
+node plugins/dark-factory/bin/dark-factory-codex --workflow council --seats astra,sol,opus --cwd /path/to/project -- "Investigate the intermittent timeout"
+```
+
+Use `--args-file task.json` for the full factory options, including uncommitted reference
+documents and model overrides. Paths in `plan` should be absolute:
+
+```json
+{
+  "task": "Implement the retry policy in the design",
+  "plan": ["/path/to/project/RETRY_DESIGN.md"],
+  "tier": "feature",
+  "seats": ["astra", "sol"],
+  "audit": {"correctness": "astra", "design": "sol", "tests": "luna"}
+}
+```
+
+`--concurrency N` bounds simultaneous model turns, `--timeout-min N` sets turn deadlines,
+and `--output result.json` saves an additional copy of the final JSON. Progress is written to
+stderr and the final result to stdout. Every run retains its arguments, events, and result in
+`hostRunDir` under the target repository's `.council/`; `runDir` identifies the factory's
+worktrees and evidence. Exit 0 means a completed ready result, 2 means a decision or unresolved
+readiness, and 1 means execution failure. Always inspect `final.readiness`, not just `status`.
+
+The skill handles `needs-plan`, `needs-tier`, `needs-split`, and `needs-user` using the same
+factory decisions described below. Reruns use updated arguments and start a new host run;
+there is no workflow checkpoint resume. Seat sessions persist across their turns within a run.
+The reviewed change stays in its worktree until delivered to the main checkout. Architecture
+returns reviewed milestones and does not automatically build them.
+
 ## Layout
 
     .claude-plugin/marketplace.json   the marketplace: lists the plugins in this repo
@@ -29,6 +99,9 @@ Install and test.
       .claude-plugin/plugin.json
       workflows/                      factory.js, council.js (built from src/), ensemble.js
       bin/dark-factory                the helper CLI the agents call
+      bin/dark-factory-codex          the Codex host runner
+      skills/dark-factory/            the Codex skill and its relative launcher
+    install-codex.sh                  link the skill into a project or user skill directory
     src/ tools/ test/                 development: sources, build, tests
 
 A new workflow goes in `plugins/dark-factory/workflows/` and runs as `/dark-factory:<meta.name>`.
@@ -49,6 +122,10 @@ wasn't enough.
 | `fix` | the council with two seats, Opus and Astra: blind attempts, debate, audit | 15–25 |
 | `feature` | Opus and Astra plan it blind and debate the plans; the chosen plan's author builds it in checked increments; a three-lens audit | 25–40 |
 | `architecture` | Opus, Astra and Sonnet design it blind and debate the designs; the chosen design's author writes a milestone plan; a three-lens review and one revision; nothing is built | 35–50 |
+
+The model names below describe the Claude profile. Codex uses its own OpenAI defaults while
+keeping the same stages and rules; explicit `seats`, `simple`, `panel`, `spec`, `audit`, and
+`roles` options override the Codex defaults.
 
 - **Intake.** An Opus agent reads the task, any document it names and the code, without
   running anything, and returns a tier, a mode, its reasons and the signals it went on
@@ -398,6 +475,10 @@ accepts:
 
 ## Pieces
 
+- `plugins/dark-factory/bin/dark-factory-codex`: the local Codex host for the generated factory
+  and council workflows. Its runtime adapter launches the helper directly, writes exact prompt
+  files, validates structured results, and records progress. The skill's launcher resolves the
+  runner relative to its real installed path, so prompts do not depend on an installation path.
 - `plugins/dark-factory/workflows/council.js` and `factory.js`: the moderators. `factory.js` is the same
   engine with intake, the Simple tier (`src/simple.js`), the Feature tier (`src/feature.js`), the
   Architecture tier (`src/architecture.js`) and `src/main-factory.js` (routing, and `escalate()`)
@@ -538,7 +619,8 @@ any note: no seat would have diagnosed the relay indentation bug.
 
     ./install.sh                 # once: builds from src/, installs this checkout as the plugin, removes pre-plugin copies
     make build                   # after editing src/; then /reload-plugins or a new session (the plugin is read live)
-    make check                   # everything below, plus syntax and "the installed plugin is this checkout"; a few seconds, no models
+    make check                   # all code, host, and installer gates; no models or installed Claude plugin required
+    make installed               # separately check that the local Claude plugin is this checkout
     make hooks                   # run `make check` before every commit (there is no remote for CI)
 
 The pieces of `make check`:
@@ -546,6 +628,7 @@ The pieces of `make check`:
     node test/sim.mjs            # the real script against stub agents, and bin/dark-factory against a stub agy and real git; 27 scenarios
     SIM_ONLY=scenarioBallot,scenarioMeasure node test/sim.mjs   # just those
     node --test test/logic.mjs   # the decision logic called directly: consensus, tallies, narrowing, ranking, readiness, rulings, ingestion, config
+    node --test test/host-logic.mjs test/codex-runner.mjs test/codex-install.mjs # Codex routing, runner, and installation with stub CLIs
     python3 -B -m unittest discover -s test -p 'test_*.py'      # bin/dark-factory's pure functions
     node test/static.mjs         # scripts parse, `meta` is a plain literal, src/lib stays pure
     node test/hash-parity.mjs    # the JS and Python prompt hashes agree
@@ -611,8 +694,9 @@ repository has a Gemini seat.
 - Seats are told to run tests and gates themselves, with output going to a log, and that a
   CLAUDE.md rule to delegate gate runs to a subagent is meant for the main session. Seats have
   no subagents, and `claude -p` can't log in from a Codex or agy sandbox.
-- A question answered mid-run counts only from the round after it was escalated, so the resumed
-  run replays the earlier rounds from cache instead of re-running them.
+- In the Claude host, a question answered mid-run counts only from the round after it was
+  escalated, so the resumed run replays earlier rounds from cache. The Codex host starts a new
+  run: append each full question and answer to `context`, since question IDs can change.
 - `codex exec` waits forever on an open stdin pipe. `bin/dark-factory` always feeds it a file.
 - Ignored dependency directories (`vendor/`, `node_modules/`) are copied into each worktree
   with APFS clones (`cp -c`), not symlinked. A symlinked `vendor/` makes Composer autoload the

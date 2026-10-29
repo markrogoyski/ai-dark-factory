@@ -12,7 +12,9 @@
 const TIERS = ['simple', 'fix', 'feature', 'architecture']
 // Design is where a third seat has paid off: the one design run's finalists were Sonnet's and Astra's.
 const TIER_SEATS = { fix: ['opus', 'astra'], feature: ['opus', 'astra'], architecture: ['opus', 'astra', 'sonnet'] }
+const CODEX_TIER_SEATS = { fix: ['astra', 'sol'], feature: ['astra', 'sol'], architecture: ['astra', 'sol', 'luna'] }
 const SIMPLE = { implementer: 'sonnet', reviewer: 'astra', maxLines: 200, maxFiles: 8 }
+const CODEX_SIMPLE = { ...SIMPLE, implementer: 'sol' }
 const SMALL_DIFF = 50          // changed lines: below this, a clean fix or feature run hints the tier was too high
 
 // What the factory reads from its args, on top of what the council reads.
@@ -20,11 +22,12 @@ function parseFactory(raw) {
   const tier = raw.tier === undefined || raw.tier === null || raw.tier === '' ? null : String(raw.tier).toLowerCase()
   if (tier && !TIERS.includes(tier)) throw new Error(`factory: unknown tier '${raw.tier}'. Known: ${TIERS.join(', ')}.`)
   const s = raw.simple && typeof raw.simple === 'object' ? raw.simple : {}
+  const defaults = raw.host === 'codex' ? CODEX_SIMPLE : SIMPLE
   const n = (v, d) => Number.isInteger(Number(v)) && Number(v) > 0 ? Number(v) : d
   return {
     tier, tierConfirmed: raw.tierConfirmed === true, noSplit: raw.noSplit === true,
     simple: {
-      implementer: String(s.implementer || SIMPLE.implementer), reviewer: String(s.reviewer || SIMPLE.reviewer),
+      implementer: String(s.implementer || defaults.implementer), reviewer: String(s.reviewer || defaults.reviewer),
       maxLines: n(s.maxLines, SIMPLE.maxLines), maxFiles: n(s.maxFiles, SIMPLE.maxFiles),
     },
   }
@@ -35,10 +38,14 @@ function parseFactory(raw) {
 function tierArgs(raw, tier, intake) {
   const a = { ...raw }
   delete a.tier; delete a.tierConfirmed; delete a.noSplit; delete a.simple
+  // Preserve the Codex caller's Simple limits and models when intake rebuilds its state.
+  // Other tiers still get their own defaults, including after an escalation.
+  if (raw.host === 'codex' && tier === 'simple' && raw.simple) a.simple = raw.simple
   if (!a.mode && intake && MODES.includes(intake.mode)) a.mode = intake.mode
   if (tier === 'architecture') a.mode = 'design'
   if (tier === 'simple' || tier === 'feature') a.mode = 'implement'
-  if (TIER_SEATS[tier] && !seatList(a.seats).length) a.seats = TIER_SEATS[tier]
+  const defaults = raw.host === 'codex' ? CODEX_TIER_SEATS : TIER_SEATS
+  if (defaults[tier] && !seatList(a.seats).length) a.seats = defaults[tier]
   return a
 }
 
@@ -182,7 +189,8 @@ function runFacts(S, o) {
     escalation: f.escalation ? escalationFacts(f.escalation) : null,
     split: f.split || null,
     mode: S.mode, readiness: o.ready ? o.ready.state : null,
-    turns: { claude: claude.length, byRole: count(claude, t => t.role), external: S.turnLog.filter(t => t.vendor !== 'claude').length },
+    turns: { claude: claude.length, byRole: count(S.host === 'codex' ? S.turnLog : claude, t => t.role), external: S.turnLog.filter(t => t.vendor !== 'claude').length,
+      ...(S.host === 'codex' ? { byVendor: count(S.turnLog, t => t.vendor) } : {}) },
     reviewFindings: count(findings, c => c.severity),
     fabricated: S.ledger.filter(c => c.status === 'fabricated').length,
     relayFailures: S.relayFailures.length,
@@ -251,7 +259,7 @@ function simpleReport(S, o) {
   ].filter(Boolean)
   return {
     markdown: (assumed.length ? `### Assumptions to check\n\n${assumed.map(q => `- ${sentence(oneLine(q.question, 300))}${q.assumption ? ` Assumed: ${sentence(oneLine(q.assumption, 300))}` : ''}`).join('\n')}\n\n` : '') +
-      `### Simple change, by ${W.name}\n\nThe factory routed this as a simple change: one implementer, the neutral check, and one reviewer from another vendor.\n\n${lines.join('\n')}` +
+      `### Simple change, by ${W.name}\n\nThe factory routed this as a simple change: one implementer, the neutral check, and ${S.host === 'codex' ? 'one independent reviewer' : 'one reviewer from another vendor'}.\n\n${lines.join('\n')}` +
       auditSection(S, W, audit) + problemsSection(S),
   }
 }
@@ -264,8 +272,10 @@ function needsTier(S, push, intake) {
     forTheOrchestrator:
       `The factory stopped before creating anything: the user asked for the ${push.asked} tier, and intake recommends ${push.recommended} (${oneLine(intake.reasons, 400) || 'no reason given'}). ` +
       `Ask the user in one short message whether to keep ${push.asked} or switch to ${push.recommended}, with intake's reason. ` +
-      `To keep it: Workflow({name: "factory", resumeFromRunId: <this run's id>, args: <exactly the args you launched with, as an object>, plus tierConfirmed: true}). ` +
-      `To switch: the same call with tier: "${push.recommended}" instead. Intake replays from cache either way. ` +
+      (S.host === 'codex'
+        ? `Rerun the runner with the original args file and tierConfirmed: true to keep it, or tier: "${push.recommended}" to switch. This starts a new run. `
+        : `To keep it: Workflow({name: "factory", resumeFromRunId: <this run's id>, args: <exactly the args you launched with, as an object>, plus tierConfirmed: true}). ` +
+          `To switch: the same call with tier: "${push.recommended}" instead. Intake replays from cache either way. `) +
       'A kept tier is only where the run starts: if the evidence shows it is too low, the run still hands the work up.',
   }
 }
@@ -281,15 +291,22 @@ function needsSplit(S, items, intake) {
       `The factory stopped before creating anything: intake found ${items.length} separate pieces of work in this task (${oneLine(intake.reasons, 400) || 'no reason given'}). ` +
       'One run would debate and review them all together, at the cost of the hardest piece. ' +
       `Show the user the pieces (items[]: title, estimated tier, and the earlier pieces each builds on) and ask in one short message: run them one at a time (recommended), or the whole task as one ${pinned || tier} run. ` +
-      'One at a time: for each piece in order, Workflow({name: "factory", args: <the args you launched with>, with task replaced by the piece\'s task}), so plan, context and the rest carry over. ' +
+      (S.host === 'codex'
+        ? 'One at a time: rerun the runner for each piece in order, preserving the original args and replacing task with that piece\'s task, so plan, context and the rest carry over. '
+        : 'One at a time: for each piece in order, Workflow({name: "factory", args: <the args you launched with>, with task replaced by the piece\'s task}), so plan, context and the rest carry over. ') +
       'Each run starts from HEAD and stops on a dirty tree, so present each result as usual and wait for the user to commit it before the next piece starts. ' +
       `Don't pin the estimated tiers: each run's intake picks its own${pinned ? `. The user pinned ${pinned} for the whole task; ask whether it applies to each piece` : ''}. ` +
-      'As one: Workflow({name: "factory", resumeFromRunId: <this run\'s id>, args: <exactly the args you launched with, as an object>, plus noSplit: true}). Intake replays from cache.',
+      (S.host === 'codex'
+        ? 'As one: rerun the runner with the original args and noSplit: true. This starts a new run.'
+        : 'As one: Workflow({name: "factory", resumeFromRunId: <this run\'s id>, args: <exactly the args you launched with, as an object>, plus noSplit: true}). Intake replays from cache.'),
   }
 }
 
 // On a run that needs no model retro, a small agent saves the facts: workflow scripts have no shell.
 function recordPrompt(S, payload, hash) {
+  if (S.host === 'codex') return `Save this run's facts. Run this with the shell tool, exactly as written:
+${S.cli} retro --facts-only --run-dir ${shq(S.run.runDir)} --payload-file ${shq(`${S.run.runDir}/retro-data.md`)} --expect ${hash}
+The runtime wrote the exact payload to that file. Do not rewrite it. The last line printed is JSON. For status "ok", set saved to its "path" and error to ""; otherwise set saved to "" and error to what it printed. Do nothing else.`
   return `Save this run's facts. Run this with the Bash tool, exactly as written:
 ${S.cli} retro --facts-only --run-dir ${shq(S.run.runDir)} --expect ${hash}
 The last line it prints is JSON. "ok": set saved to its "path". "sandboxed": run the same command again with the sandbox disabled (dangerouslyDisableSandbox: true). "error", or "sandboxed" again: set saved to "" and error to what it printed. Do nothing else.
@@ -511,7 +528,11 @@ function milestoneArgs(S, m, design, findings) {
       (m.working ? ` Once it lands: ${sentence(m.working)}` : '')]
   if (m.criteria.length) lines.push('', 'Draft acceptance criteria from the plan, to check against the code as it now is:', ...m.criteria.map(c => `- ${c}`))
   if (findings.length) lines.push('', 'Findings from the review of the plan that still stand against this milestone:', ...findings.map(c => `- ${oneLine(c.statement, 400)}`))
-  return { task: lines.join('\n'), plan: [design, ...S.plan], tier: m.tier, tierConfirmed: true, noSplit: true }
+  const original = S.factory && S.factory.args || S.raw
+  const options = S.host === 'codex'
+    ? Object.fromEntries(['host', 'roles', 'repo', 'cli', 'context', 'effort', 'seats', 'panel', 'spec', 'audit', 'simple', 'checkModel', 'verify', 'timeoutMin', 'rounds', 'narrow', 'retro', 'ballot', 'approval', 'allowDirty']
+      .filter(k => original[k] !== undefined).map(k => [k, original[k]])) : {}
+  return { ...options, task: lines.join('\n'), plan: [design, ...S.plan], tier: m.tier, tierConfirmed: true, noSplit: true }
 }
 
 // The request asked for the change itself, and got a plan: intake judged it too big for one
@@ -626,7 +647,8 @@ function architectureResult(S, o) {
       '(4) what your spot-check found, including anything you disagree with; ' +
       `(5) the milestones (milestones[]) as a short numbered list: each one's title, tier, the milestones it builds on, and what works once it lands${retro && retro.markdown ? '; (6) last, retro.markdown as it is: notes on the workflow, not the user\'s project, so don\'t act on them unless the user asks' : ''}. ` +
       'Then offer to build the milestones one at a time, in order. Don\'t start one unasked, and don\'t chain them: the user decides after each. ' +
-      'For each: Workflow({name: "factory", args: milestones[i].args}). Those args hold the milestone\'s task with its draft criteria and any review findings still open against it, the final design as its plan document, and the tier the plan gave it, confirmed. ' +
+      (S.host === 'codex' ? 'For each, write milestones[i].args to an args file and launch the runner. ' : 'For each: Workflow({name: "factory", args: milestones[i].args}). ') +
+      'Those args hold the milestone\'s task with its draft criteria and any review findings still open against it, the final design as its plan document, and the tier the plan gave it, confirmed. ' +
       'If the user settles an open finding or question first, put the answer in the task. ' +
       'Each run starts from HEAD and stops on a dirty tree, so present each result as usual and wait for the user to commit it before the next milestone starts. ' +
       `Keep this run's directory until the milestones are done, since each milestone run reads the design from ${design}: \`${S.cli} cleanup --run-dir ${S.run.runDir}\` (without --all) removes the worktrees and keeps the room. ` +

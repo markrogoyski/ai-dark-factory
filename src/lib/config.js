@@ -33,11 +33,37 @@ const CATALOG = {
 }
 
 const DEFAULT_SEATS = ['opus', 'sonnet', 'astra', 'gemini']
+const CODEX_SEATS = ['astra', 'sol']
 const VENDOR_NAME = { claude: 'Claude', codex: 'Codex', gemini: 'Gemini' }
-const VENDOR_CLI = { codex: 'Codex CLI', gemini: 'Antigravity CLI (agy)' }
+const VENDOR_CLI = { claude: 'Claude CLI', codex: 'Codex CLI', gemini: 'Antigravity CLI (agy)' }
 
 // Codex and Gemini seats run outside Claude Code, through a relay, and keep their own thread.
-const external = s => s.vendor !== 'claude'
+const external = s => s.external === true || s.vendor !== 'claude'
+
+// In the Codex host every model runs through a CLI adapter, including Claude. The marker also
+// selects the shorter continuation prompts for seats whose CLI session survives between turns.
+const hostSeat = (host, s) => host === 'codex' ? { ...s, external: true } : s
+const CODEX_ROLES = {
+  intake: 'astra', setup: 'sol', checker: 'sol', questions: 'luna',
+  spec: 'astra', retro: 'sol', record: 'luna',
+}
+const ROLE_EFFORT = { intake: 'medium', setup: 'medium', checker: 'medium', questions: 'low', spec: 'medium', retro: 'medium', record: 'low' }
+
+function parseRoles(raw) {
+  if (raw.host !== 'codex') return {}
+  const overrides = raw.roles && typeof raw.roles === 'object' ? raw.roles : {}
+  for (const role of Object.keys(overrides)) if (!(role in CODEX_ROLES)) throw new Error(`factory: unknown role '${role}'. Known: ${Object.keys(CODEX_ROLES).join(', ')}.`)
+  return Object.fromEntries(Object.entries(CODEX_ROLES).map(([role, fallback]) => {
+    const value = overrides[role]
+    const option = value && typeof value === 'object' ? value : { model: value }
+    const model = option.model || (role === 'checker' && raw.checkModel) || fallback
+    return [role, parseSeat(model, option.effort || ROLE_EFFORT[role])]
+  }))
+}
+
+function roleAgent(S, role, opts) {
+  return S.roles && S.roles[role] ? S.roles[role] : { vendor: 'claude', model: opts.model, name: opts.model, effort: opts.effort }
+}
 
 const CLAUDE_EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max']
 const CODEX_EFFORTS = [...CLAUDE_EFFORTS, 'ultra']
@@ -80,6 +106,9 @@ const SIMPLE_LENS = { review: { model: 'astra', id: 'XR' } }
 // code (grounding), whether its order works (sequencing), and what could sink it (risk, with the
 // designs the council didn't choose). The risk lens is the run's only model that wrote no design.
 const ARCH_LENSES = { grounding: { model: 'astra', id: 'XG' }, sequencing: { model: 'opus', id: 'XS' }, risk: { model: 'gemini', id: 'XK' } }
+const CODEX_AUDIT_LENSES = { correctness: { model: 'astra', id: 'XC' }, design: { model: 'sol', id: 'XD' } }
+const CODEX_FEATURE_LENS = { tests: { model: 'luna', id: 'XT' } }
+const CODEX_ARCH_LENSES = { grounding: { model: 'astra', id: 'XG' }, sequencing: { model: 'sol', id: 'XS' }, risk: { model: 'luna', id: 'XK' } }
 const MAX_MILESTONES = 8          // the Architecture tier's milestone plan lists at most this many
 
 function parseAudit(v, lenses = AUDIT_LENSES) {
@@ -94,11 +123,11 @@ function parseAudit(v, lenses = AUDIT_LENSES) {
 // an object swaps a lens's model, e.g. {coverage: 'sol', intent: 'sonnet', ask: true}.
 const SPEC_LENSES = { coverage: 'astra', intent: 'opus' }
 
-function parseSpec(v) {
+function parseSpec(v, lenses = SPEC_LENSES) {
   if (v === false) return { reviewers: [], ask: false }
   const pick = v && typeof v === 'object' ? v : {}
   return {
-    reviewers: Object.entries(SPEC_LENSES).map(([lens, model]) => ({ lens, ...parseSeat(pick[lens] || model, pick.effort || 'high') })),
+    reviewers: Object.entries(lenses).map(([lens, model]) => ({ lens, ...parseSeat(pick[lens] || model, pick.effort || 'high') })),
     ask: v === 'ask' || pick.ask === true,
   }
 }
@@ -110,6 +139,8 @@ function parseSpec(v) {
 // with 'architecture', the plan's three reviewers instead of the auditors.
 function parseConfig(args, opts = {}) {
   const raw = parseArgs(args)
+  const host = raw.host === 'codex' ? 'codex' : 'claude'
+  const roles = parseRoles(raw)
   const task = String(raw.task || raw.prompt || raw.question || '').trim()
   if (!task) {
     throw new Error('council: no task given. Pass args as a string, or {task, mode?, seats?, rounds?, ...}.')
@@ -121,11 +152,15 @@ function parseConfig(args, opts = {}) {
   const mode = simple ? 'implement' : modeGiven
     ? raw.mode
     : (IMPLEMENT_RE.test(task) ? 'implement' : DESIGN_RE.test(task) ? 'design' : 'investigate')
-  const lineup = simple ? [parseSeat(simple.implementer, raw.effort)]
-    : (seatList(raw.seats).length ? seatList(raw.seats) : DEFAULT_SEATS).map(s => parseSeat(s, raw.effort))
+  const lineup = (simple ? [parseSeat(simple.implementer, raw.effort)]
+    : (seatList(raw.seats).length ? seatList(raw.seats) : host === 'codex' ? CODEX_SEATS : DEFAULT_SEATS).map(s => parseSeat(s, raw.effort))).map(s => hostSeat(host, s))
   if (!simple && (lineup.length < 2 || lineup.length > 6)) throw new Error('council: use between 2 and 6 seats.')
+  const auditLenses = host === 'codex' ? CODEX_AUDIT_LENSES : AUDIT_LENSES
+  const featureLens = host === 'codex' ? CODEX_FEATURE_LENS : FEATURE_LENS
+  const archLenses = host === 'codex' ? CODEX_ARCH_LENSES : ARCH_LENSES
+  const spec = simple ? { reviewers: [], ask: false } : parseSpec(raw.spec, host === 'codex' ? { coverage: 'astra', intent: 'sol' } : SPEC_LENSES)
   return {
-    raw, task, modeGiven, mode,
+    raw, host, roles, task, modeGiven, mode,
     rounds: Math.max(1, Math.min(3, Number(raw.rounds) || 2)),
     context: String(raw.context || '').trim(),
     plan: (Array.isArray(raw.plan) ? raw.plan : raw.plan ? [raw.plan] : []).map(p => String(p).trim()).filter(Boolean),
@@ -141,16 +176,16 @@ function parseConfig(args, opts = {}) {
       .filter(c => c && c.id && c.answer)
       .map(c => ({ id: String(c.id), answer: String(c.answer), afterRound: Number.isInteger(c.afterRound) ? c.afterRound : -1 })),
     lineup,
-    panel: (seatList(raw.panel).length ? seatList(raw.panel) : ['opus', 'astra']).map(s => parseSeat(s, 'high')),
+    panel: (seatList(raw.panel).length ? seatList(raw.panel) : host === 'codex' ? ['astra', 'sol'] : ['opus', 'astra']).map(s => hostSeat(host, parseSeat(s, 'high'))),
     auditors: simple ? [{ lens: 'review', id: SIMPLE_LENS.review.id, ...parseSeat(simple.reviewer, 'high') }]
-      : parseAudit(raw.audit, opts.tier === 'feature' ? { ...AUDIT_LENSES, ...FEATURE_LENS } : opts.tier === 'architecture' ? ARCH_LENSES : AUDIT_LENSES),
-    specReviewers: simple ? [] : parseSpec(raw.spec).reviewers,
-    specAsk: simple ? false : parseSpec(raw.spec).ask,
+      .map(s => hostSeat(host, s)) : parseAudit(raw.audit, opts.tier === 'feature' ? { ...auditLenses, ...featureLens } : opts.tier === 'architecture' ? archLenses : auditLenses).map(s => hostSeat(host, s)),
+    specReviewers: simple ? [] : spec.reviewers.map(s => hostSeat(host, s)),
+    specAsk: simple ? false : spec.ask,
     workflowName: opts.workflow || 'council',
     tier: opts.tier || null,
     simple,
     escalation: opts.escalation || null,
-    checkModel: ['sonnet', 'opus', 'haiku', 'fable'].includes(raw.checkModel) ? raw.checkModel : 'sonnet',
+    checkModel: host === 'codex' ? roles.checker.key : ['sonnet', 'opus', 'haiku', 'fable'].includes(raw.checkModel) ? raw.checkModel : 'sonnet',
     letters: 'ABCDEF'.slice(0, lineup.length).split(''),
   }
 }

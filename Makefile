@@ -5,9 +5,9 @@
 NODE   ?= node
 PYTHON ?= python3
 
-.PHONY: check test logic build build-check static parity unit syntax installed hooks
+.PHONY: check test logic host-test build build-check static parity unit syntax installed hooks
 
-check: syntax build-check static parity unit logic test installed
+check: syntax build-check static parity unit logic test host-test
 	@echo "check: all passed"
 
 build:
@@ -22,6 +22,9 @@ logic:
 test:
 	$(NODE) test/sim.mjs
 
+host-test:
+	$(NODE) --test test/host-logic.mjs test/codex-runner.mjs test/codex-install.mjs
+
 static:
 	$(NODE) test/static.mjs
 
@@ -32,7 +35,8 @@ unit:
 	$(PYTHON) -B -m unittest discover -s test -p 'test_*.py'
 
 syntax:
-	@for f in test/*.mjs tools/*.mjs; do $(NODE) --check $$f || exit 1; done
+	@for f in test/*.mjs test/fixtures/*.cjs tools/*.mjs plugins/dark-factory/lib/*.mjs plugins/dark-factory/skills/dark-factory/scripts/*.mjs plugins/dark-factory/bin/dark-factory-codex; do $(NODE) --check $$f || exit 1; done
+	@bash -n install-codex.sh
 	@$(PYTHON) -B -c "import sys; [compile(open(f).read(), f, 'exec') for f in sys.argv[1:]]" plugins/dark-factory/bin/dark-factory $(wildcard test/*.py)
 	@echo "syntax: ok"
 

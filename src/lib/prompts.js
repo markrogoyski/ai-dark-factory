@@ -43,7 +43,7 @@ function protocol(S, L) {
   const n = active(S).length
   return `# How the council works
 
-You are seat ${L}, one of ${n} AI models from different vendors working on the same task. Seats are anonymous letters (${active(S).map(s => s.L).join(', ')}). Don't reveal or speculate about which model you or anyone else is.
+You are seat ${L}, one of ${n} ${S.host === 'codex' ? 'independent AI agents' : 'AI models from different vendors'} working on the same task. Seats are anonymous letters (${active(S).map(s => s.L).join(', ')}). Don't reveal or speculate about which model you or anyone else is.
 ${S.mode === 'plan' ? `
 This council plans before it builds. The positions are plans: nothing is built until one is chosen. Its author then writes the final plan, folding in the amendments and the best of the other plans, and builds it in increments, each checked by a neutral verifier. Auditors who never saw this debate review the finished change.
 ` : S.tier === 'architecture' ? `
@@ -256,12 +256,12 @@ function digest(S, forL, upto) {
 }
 
 function notesAsk(s, round) {
-  if (s.vendor !== 'claude') return ''
+  if (external(s)) return ''
   return `\nFinally, fill \`notes\`: private notes for your next turn, under about 400 words. You start every turn with no memory except your post and these notes, and nobody else sees them. Record what you would otherwise have to rediscover: the key file:line locations, what you verified and how${round === 0 || buildStep(round) ? '' : ', your read on each other position'}, and what to check next.`
 }
 
 function notesBlock(S, s) {
-  const n = s.vendor === 'claude' && S.seatNotes[s.L]
+  const n = !external(s) && S.seatNotes[s.L]
   if (!n) return ''
   return `\n# Your private notes from ${typeof n.round === 'number' ? `round ${n.round}` : 'your last turn'}\n\nYou wrote these at the end of your last turn. Nobody else sees them.\n\n${n.text}\n`
 }
@@ -1164,9 +1164,9 @@ ${S.task}
 ${S.context ? `\n# Context from the user\n\n${S.context}\n` : ''}${S.escalation ? `\n# An earlier attempt\n\nThis task was first ${S.escalation.from === 'feature' ? 'planned as one feature' : 'tried as a simple change'} and handed up because ${S.escalation.why}. Its acceptance criteria were:\n${S.escalation.criteria.map(c => `- ${c}`).join('\n') || '- (none)'}\n${S.escalation.from === 'feature' ? 'Start from them: they describe the whole of the work, which this run designs and breaks into milestones.' : 'Start from them, and widen them where the reason above shows they fell short.'}\n` : ''}
 ${S.modeGiven ? `Mode: ${S.mode}. Return it as \`mode\`.\n` : ''}${vendors.length ? `
 ## Step 0 — can the other vendors' CLIs run?
-Some seats run through the ${vendors.map(v => VENDOR_CLI[v]).join(' and the ')}. Check that they can start from here before anything is created. Make one Bash call with the sandbox disabled (dangerouslyDisableSandbox: true), exactly as written:
+${S.host === 'codex' ? `The host runtime already checked the required CLIs (${vendors.join(',')}) before starting this setup turn. Use the attached preflight JSON; do not run preflight again from inside your sandbox. Copy its vendors entries into \`preflight\` (vendor, ok, error). If status is not "ok", return status "preflight" with those entries and empty values elsewhere, and do not create anything. Otherwise continue to step 1.` : `Some seats run through the ${vendors.map(v => VENDOR_CLI[v]).join(' and the ')}. Check that they can start from here before anything is created. Make one Bash call with the sandbox disabled (dangerouslyDisableSandbox: true), exactly as written:
 ${S.cli} preflight --vendors ${vendors.join(',')}
-It prints JSON with a "status" and, under "vendors", an entry per vendor with "ok" and "error". Copy each entry into \`preflight\` (vendor, ok, error). If status is "ok", go on to step 1. Otherwise stop here: return status "preflight" with the entries, and empty values elsewhere. Don't try to fix it, and don't run anything else.
+It prints JSON with a "status" and, under "vendors", an entry per vendor with "ok" and "error". Copy each entry into \`preflight\` (vendor, ok, error). If status is "ok", go on to step 1. Otherwise stop here: return status "preflight" with the entries, and empty values elsewhere. Don't try to fix it, and don't run anything else.`}
 ` : ''}
 ## Step 1 — the documents the work follows
 The seats work in git worktrees checked out from HEAD, so they can't see uncommitted files. If the task follows a plan, a checklist, a spec or notes that aren't committed, the seats would never see them.
@@ -1181,7 +1181,7 @@ Read the task together with the part of those documents it points to, and decide
 When the work would end with a change someone commits, choose implement.
 `}
 ## Step 2 — create the run
-Run: ${S.cli} init --repo ${S.raw.repo ? shq(S.raw.repo) : '"$PWD"'} --seats ${letters}${S.plan.map(p => ` --ref ${shq(p)}`).join('')} followed by --ref <path> for each other document from step 1
+Run: ${S.cli} init --repo ${S.raw.repo ? shq(S.raw.repo) : '"$PWD"'} --seats ${letters}${setupRunId(S) ? ` --run-id ${shq(setupRunId(S))}` : ''}${S.plan.map(p => ` --ref ${shq(p)}`).join('')} followed by --ref <path> for each other document from step 1
 It prints JSON with runId, runDir, repoRoot, refs (the snapshots it made of those documents) and dirty (tracked files with uncommitted changes).
 - If it fails, return status "error" with its message, and empty values elsewhere.
 ${S.allowDirty || (S.modeGiven && S.mode !== 'implement') ? '' : `- If ${S.modeGiven ? '' : 'the mode is implement and '}dirty is non-empty, stop and return status "dirty" with that list. The worktrees branch from HEAD, so uncommitted changes would be invisible to every seat.\n`}

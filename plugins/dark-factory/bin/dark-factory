@@ -6,7 +6,7 @@ deterministic — worktrees, snapshots, test runs, and driving the Codex and Gem
 workflow's agents call it. Every subcommand prints one JSON object on its last line.
 
     council init        --repo DIR --seats A,B,C,D [--run-id ID] [--ref FILE]...
-    council seat-run    --run-dir D [--vendor codex|gemini] --seat KEY --job KEY --model M --effort E --cwd DIR
+    council seat-run    --run-dir D [--vendor codex|gemini|claude] --seat KEY --job KEY --model M --effort E --cwd DIR
                         --prompt-file F --expect HASH [--sandbox MODE] [--writable DIR]... [--fresh]
                         [--checkout L-LABEL]   (first creates --cwd as a checkout of that snapshot)
                         (reads the payload from the relay's saved transcript when F is missing)
@@ -14,10 +14,10 @@ workflow's agents call it. Every subcommand prints one JSON object on its last l
     council wait        --run-dir D --job KEY
     council materialize --run-dir D --seat L --label rN [--name DIR]
     council usage       --run-dir D [--no-claude]
-    council preflight   --vendors codex,gemini
+    council preflight   --vendors codex,gemini,claude
     council jobs        --run-dir D
     council cleanup     --run-dir D [--all]
-    council retro       --run-dir D [--expect HASH] [--out-dir DIR]
+    council retro       --run-dir D [--expect HASH] [--payload-file FILE] [--out-dir DIR]
                         (saves <run>/retro.md, plus the run's process notes read from the retro
                         agent's saved transcript, where they outlive the run)
     council hash        --file F
@@ -178,22 +178,43 @@ def clone_deps(src_root, dst_root):
 
 
 def run_shell(cmd, cwd, timeout, log_path):
-    """Run a shell command in its own process group; kill the whole group on timeout."""
+    """Run a command in its own process group; expose its PID until it exits.
+
+    A host runner cancelling a measurement can signal <log_path>.pid as well as the detached
+    measurement job. Removing this sidecar on every exit avoids signalling an unrelated process
+    after the operating system reuses its PID.
+    """
     os.makedirs(os.path.dirname(log_path), exist_ok=True)
     started = time.time()
-    with open(log_path, 'w', encoding='utf-8', errors='replace') as log:
-        p = subprocess.Popen(['/bin/bash', '-c', cmd], cwd=cwd, stdin=subprocess.DEVNULL,
-                             stdout=log, stderr=subprocess.STDOUT, start_new_session=True)
-        timed_out = False
-        try:
-            code = p.wait(timeout=timeout)
-        except subprocess.TimeoutExpired:
-            timed_out = True
+    pid_path, p = log_path + '.pid', None
+    timed_out = False
+    try:
+        with open(log_path, 'w', encoding='utf-8', errors='replace') as log:
+            p = subprocess.Popen(['/bin/bash', '-c', cmd], cwd=cwd, stdin=subprocess.DEVNULL,
+                                 stdout=log, stderr=subprocess.STDOUT, start_new_session=True)
+            write(pid_path, str(p.pid))
             try:
-                os.killpg(p.pid, signal.SIGKILL)
-            except ProcessLookupError:
+                code = p.wait(timeout=timeout)
+            except subprocess.TimeoutExpired:
+                timed_out = True
+                try:
+                    os.killpg(p.pid, signal.SIGKILL)
+                except ProcessLookupError:
+                    pass
+                code = p.wait()
+    finally:
+        try:
+            if p is not None and p.poll() is None:
+                try:
+                    os.killpg(p.pid, signal.SIGKILL)
+                except ProcessLookupError:
+                    pass
+                p.wait()
+        finally:
+            try:
+                os.remove(pid_path)
+            except FileNotFoundError:
                 pass
-            code = p.wait()
     output = read(log_path) if os.path.exists(log_path) else ''
     return {'exitCode': code, 'timedOut': timed_out, 'seconds': round(time.time() - started, 1),
             'tail': tail(output), 'log': log_path}
@@ -528,6 +549,14 @@ def codex_blocked():
     return home_blocked(os.environ.get('CODEX_HOME') or os.path.expanduser('~/.codex'), 'Codex', create=True)
 
 
+def claude_blocked():
+    return home_blocked(os.environ.get('CLAUDE_CONFIG_DIR') or os.path.expanduser('~/.claude'), 'Claude', create=True)
+
+
+def vendor_blocked(vendor):
+    return {'codex': codex_blocked, 'gemini': gemini_blocked, 'claude': claude_blocked}[vendor]()
+
+
 def agy_home():
     return os.path.expanduser('~/.gemini/antigravity-cli')
 
@@ -557,7 +586,7 @@ def ensure_agy_grant(grant_dir):
 
 
 def cmd_seat_run(a):
-    blocked = codex_blocked() if a.vendor == 'codex' else gemini_blocked()   # first: inside the sandbox, the transcripts may be unreadable too
+    blocked = vendor_blocked(a.vendor)   # first: inside the sandbox, the transcripts may be unreadable too
     if blocked:
         emit({'status': 'sandboxed', 'error': blocked})
         return
@@ -571,7 +600,7 @@ def cmd_seat_run(a):
     text = read(a.prompt_file) if os.path.exists(a.prompt_file) else None
     got = prompt_hash(text) if text is not None else None
     if a.expect and got != a.expect:
-        found = payload_from_transcripts(a.expect, a.transcript_wait)
+        found = None if getattr(a, 'no_transcript', False) else payload_from_transcripts(a.expect, a.transcript_wait)
         if found is not None:
             write(a.prompt_file, found)
             text, got = found, a.expect
@@ -780,6 +809,108 @@ def fits_schema(schema, result):
             and (schema.get('additionalProperties', True) is not False or set(result) <= set(props))
             and all(result.get(k) in p['enum'] for k, p in props.items()
                     if isinstance(p, dict) and 'enum' in p and k in result))
+
+
+def claude_command(jd, spec, session):
+    """One headless Claude turn, with explicit workspace access and no permission bypass.
+
+    Read-only reviewers have no shell or edit tools. Implementers can edit their working
+    directories and run commands in Claude's Bash sandbox; an action requiring a new approval
+    is denied and surfaced by run_claude_job. Existing managed/user deny rules still apply.
+    """
+    effort = 'max' if spec['effort'] == 'ultra' else spec['effort']
+    if effort not in ('low', 'medium', 'high', 'xhigh', 'max'):
+        raise CouncilError(f'unsupported Claude effort: {spec["effort"]}')
+    readonly = spec['sandbox'] == 'read-only'
+    cmd = ['claude', '--print', '--output-format', 'json', '--model', spec['model'], '--effort', effort,
+           '--permission-mode', 'plan' if readonly else 'acceptEdits', '--permission-prompts', 'none',
+           '--tools', 'Read,Glob,Grep' if readonly else 'Bash,Read,Glob,Grep,Edit,Write']
+    if not readonly:
+        roots = list(dict.fromkeys(spec['writable'] + seat_git_dirs(spec)))
+        for root in roots:
+            cmd += ['--add-dir', root]
+        cmd += ['--settings', json.dumps({'sandbox': {
+            'enabled': True, 'failIfUnavailable': True,
+            'autoAllowBashIfSandboxed': True, 'allowUnsandboxedCommands': False,
+            'filesystem': {'disabled': False, 'allowWrite': roots},
+        }})]
+    if spec['schema']:
+        cmd += ['--json-schema', read(os.path.join(jd, 'schema.json'))]
+    if session:
+        cmd += ['--resume', session]
+    return cmd, spec['cwd']
+
+
+def claude_usage_total(seat_dir, session, usage):
+    """Claude's result usage is per invocation. Keep a separate accumulated session total."""
+    path = os.path.join(seat_dir, 'claude-usage-total.json')
+    previous = {}
+    if os.path.exists(path):
+        rec = json.loads(read(path))
+        if rec.get('session') == session:
+            previous = rec.get('usage', {})
+    total = dict(previous)
+    for key, value in usage.items():
+        total[key] = total.get(key, 0) + value
+    if session:
+        write_json(path, {'session': session, 'usage': total})
+    return total
+
+
+def run_claude_job(jd, spec):
+    """Drive Claude directly from prompt.md; its JSON envelope is never the model's result."""
+    started = time.time()
+    seat_dir = os.path.join(spec['runDir'], 'seats', spec['seat'])
+    session_file = os.path.join(seat_dir, 'claude-session')
+    session = None if spec['fresh'] or not os.path.exists(session_file) else read(session_file).strip()
+    cmd, cwd = claude_command(jd, spec, session)
+    out_path, err_path = os.path.join(jd, 'out.json'), os.path.join(jd, 'stderr.txt')
+    with open(os.path.join(jd, 'prompt.md'), 'rb') as stdin, open(out_path, 'w') as so, open(err_path, 'w') as se:
+        p = subprocess.Popen(cmd, cwd=cwd, stdin=stdin, stdout=so, stderr=se, start_new_session=True)
+        write(os.path.join(jd, 'claude.pid'), str(p.pid))
+        try:
+            code = p.wait(timeout=spec['timeout'])
+        except subprocess.TimeoutExpired:
+            try:
+                os.killpg(p.pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+            p.wait()
+            return {'status': 'error', 'error': f'claude timed out after {spec["timeout"] // 60} min'}
+    stderr = read(err_path)
+    try:
+        out = json.loads(read(out_path))
+    except (ValueError, OSError):
+        return {'status': 'error', 'error': (tail(stderr, 15) or f'claude exited {code} with no valid JSON')[:2000]}
+    if not isinstance(out, dict):
+        return {'status': 'error', 'error': 'claude returned an invalid result envelope'}
+    new_session = out.get('session_id') if isinstance(out.get('session_id'), str) else None
+    if session and new_session and session != new_session:
+        return {'status': 'error', 'error': f'claude did not resume session {session} (it started {new_session}): the seat lost its memory'}
+    if new_session and not session:
+        write(session_file, new_session)
+    session = session or new_session
+    reported = out.get('usage') if isinstance(out.get('usage'), dict) else {}
+    usage = {k: v for k, v in reported.items() if isinstance(v, (int, float)) and not isinstance(v, bool)}
+    total = claude_usage_total(seat_dir, session, usage)
+    record_usage(spec['runDir'], spec, usage, total, started)
+    if code != 0 or out.get('is_error') or out.get('subtype') not in (None, 'success'):
+        errors = out.get('errors') or out.get('result') or stderr or f'claude exited {code}'
+        return {'status': 'error', 'error': oneline(errors, 2000)}
+    if out.get('permission_denials'):
+        denied = ', '.join(str(d.get('tool_name', '?')) for d in out['permission_denials'] if isinstance(d, dict))
+        return {'status': 'error', 'error': f'claude permission denied: {denied or "a tool call"}; configure the required permission before retrying'}
+    if not session:
+        return {'status': 'error', 'error': 'claude returned no session_id; the seat cannot retain its memory'}
+    result = out.get('structured_output') if spec['schema'] else out.get('result')
+    if spec['schema']:
+        schema = json.loads(read(os.path.join(jd, 'schema.json')))
+        if not fits_schema(schema, result):
+            return {'status': 'error', 'error': 'claude returned structured output that does not match this turn\'s schema'}
+    elif result is None or result == '':
+        return {'status': 'error', 'error': 'claude returned no result'}
+    return {'status': 'done', 'job': spec['job'], 'seat': spec['seat'], 'thread': session,
+            'elapsedSec': round(time.time() - started, 1), 'usage': usage, 'result': result}
 
 
 def run_gemini_job(jd, spec):
@@ -1277,7 +1408,7 @@ def claude_usage(run):
 
 # ---------------------------------------------------------------- preflight
 
-VENDOR_EXE = {'codex': 'codex', 'gemini': 'agy'}
+VENDOR_EXE = {'codex': 'codex', 'gemini': 'agy', 'claude': 'claude'}
 
 
 def cmd_preflight(a):
@@ -1297,7 +1428,7 @@ def cmd_preflight(a):
             c['error'] = f'{exe} is not on PATH'
             continue
         try:
-            blocked = codex_blocked() if v == 'codex' else gemini_blocked()
+            blocked = vendor_blocked(v)
         except CouncilError as e:
             c['error'] = str(e)
             continue
@@ -1393,7 +1524,13 @@ def cmd_retro(a):
     path = os.path.join(run['runDir'], 'retro.md')
     if not a.facts_only and not os.path.isfile(path):
         raise CouncilError(f'write the retro to {path} first')
-    data = payload_from_transcripts(a.expect, a.transcript_wait) if a.expect else None
+    payload_file = getattr(a, 'payload_file', None)
+    if payload_file:
+        data = read(payload_file)
+        if a.expect and prompt_hash(data) != a.expect:
+            raise CouncilError('retro payload file does not match --expect')
+    else:
+        data = payload_from_transcripts(a.expect, a.transcript_wait) if a.expect else None
     if data is not None:
         write(os.path.join(run['runDir'], 'retro-data.md'), data + '\n')
     facts = facts_of(data)
@@ -1496,8 +1633,8 @@ def transient(result):
 def cmd_job(jd):
     spec = json.loads(read(os.path.join(jd, 'spec.json')))
     try:
-        if spec['kind'] in ('codex', 'gemini'):
-            run = run_codex_job if spec['kind'] == 'codex' else run_gemini_job
+        if spec['kind'] in ('codex', 'gemini', 'claude'):
+            run = {'codex': run_codex_job, 'gemini': run_gemini_job, 'claude': run_claude_job}[spec['kind']]
             result = run(jd, spec)
             if transient(result):
                 first = result['error']
@@ -1533,8 +1670,8 @@ def main():
 
     p = sub.add_parser('seat-run')
     p.add_argument('--run-dir', required=True)
-    p.add_argument('--vendor', default='codex', choices=['codex', 'gemini'])
-    p.add_argument('--seat', required=True, help='thread key; the Codex thread or agy conversation is resumed per key')
+    p.add_argument('--vendor', default='codex', choices=['codex', 'gemini', 'claude'])
+    p.add_argument('--seat', required=True, help='thread key; the vendor session is resumed per key')
     p.add_argument('--job', required=True)
     p.add_argument('--model', required=True)
     p.add_argument('--effort', default='high')
@@ -1543,6 +1680,7 @@ def main():
     p.add_argument('--writable', action='append')
     p.add_argument('--prompt-file', required=True)
     p.add_argument('--expect')
+    p.add_argument('--no-transcript', action='store_true', help='read only --prompt-file; never recover a payload from Claude transcripts')
     p.add_argument('--transcript-wait', type=float, default=TRANSCRIPT_WAIT_SEC,
                    help='seconds to wait for the relay transcript to appear')
     p.add_argument('--fresh', action='store_true')
@@ -1581,7 +1719,7 @@ def main():
     p.add_argument('--run-dir', required=True)
 
     p = sub.add_parser('preflight')
-    p.add_argument('--vendors', required=True, help='comma-separated: codex, gemini')
+    p.add_argument('--vendors', required=True, help='comma-separated: codex, gemini, claude')
 
     p = sub.add_parser('cleanup')
     p.add_argument('--run-dir', required=True)
@@ -1592,6 +1730,7 @@ def main():
     p.add_argument('--facts-only', action='store_true', help='save only the factory run facts from the payload (no retro.md)')
     p.add_argument('--summary', action='store_true', help='tally the saved factory facts by tier')
     p.add_argument('--expect', help='hash of the process notes and run facts in the retro agent\'s prompt')
+    p.add_argument('--payload-file', help='read the process notes and facts from this file instead of Claude transcripts')
     p.add_argument('--out-dir', help=f'where retros are kept (default $COUNCIL_RETRO_DIR or {RETRO_DIR})')
     p.add_argument('--transcript-wait', type=float, default=TRANSCRIPT_WAIT_SEC,
                    help='seconds to wait for the retro agent\'s transcript to appear')

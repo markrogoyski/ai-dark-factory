@@ -1,0 +1,258 @@
+"""Claude provider and file-based payload integration, using a fake CLI (no models)."""
+
+import argparse
+import concurrent.futures
+import importlib.machinery
+import importlib.util
+import json
+import os
+import shlex
+import subprocess
+import sys
+import tempfile
+import time
+import unittest
+from unittest import mock
+
+
+CLI = os.path.join(os.path.dirname(__file__), '..', 'plugins', 'dark-factory', 'bin', 'dark-factory')
+loader = importlib.machinery.SourceFileLoader('provider_cli', CLI)
+module_spec = importlib.util.spec_from_loader('provider_cli', loader)
+council = importlib.util.module_from_spec(module_spec)
+loader.exec_module(council)
+
+
+class ClaudeProvider(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.root = os.path.realpath(self.tmp.name)
+        self.bin = os.path.join(self.root, 'bin')
+        self.cwd = os.path.join(self.root, 'repo')
+        os.makedirs(self.bin)
+        os.makedirs(self.cwd)
+        self.log = os.path.join(self.root, 'calls.jsonl')
+        fake = os.path.join(self.bin, 'claude')
+        council.write(fake, f'#!{sys.executable}\n' + '''import json, os, sys, time
+if '--version' in sys.argv:
+    print('Claude fake-test')
+    sys.exit(0)
+with open(os.environ['CLAUDE_TEST_LOG'], 'a') as f:
+    f.write(json.dumps({'args': sys.argv[1:], 'cwd': os.getcwd(), 'prompt': sys.stdin.read()}) + '\\n')
+time.sleep(float(os.environ.get('CLAUDE_TEST_SLEEP', '0')))
+print(os.environ['CLAUDE_TEST_RESULT'])
+sys.exit(int(os.environ.get('CLAUDE_TEST_EXIT', '0')))
+''')
+        os.chmod(fake, 0o755)
+        env = mock.patch.dict(os.environ, {'PATH': self.bin + os.pathsep + os.environ.get('PATH', ''),
+                                         'CLAUDE_CONFIG_DIR': os.path.join(self.root, 'claude-home'),
+                                         'CLAUDE_TEST_LOG': self.log})
+        env.start()
+        self.addCleanup(env.stop)
+        self.schema = {'type': 'object', 'properties': {'answer': {'type': 'string'}, 'turn': {'enum': ['r0-A']}},
+                       'required': ['answer', 'turn'], 'additionalProperties': False}
+
+    def spec(self, job='r0-A', **extra):
+        return dict({'kind': 'claude', 'runDir': self.root, 'seat': 'A', 'job': job, 'model': 'sonnet',
+                     'effort': 'high', 'sandbox': 'workspace-write', 'cwd': self.cwd,
+                     'writable': [os.path.join(self.root, 'room')], 'fresh': False, 'timeout': 5, 'schema': True}, **extra)
+
+    def run_turn(self, out=None, job='r0-A', **extra):
+        if out is None:
+            out = {'type': 'result', 'subtype': 'success', 'session_id': 'session-1',
+                   'structured_output': {'answer': 'done', 'turn': 'r0-A'}, 'usage': {'input_tokens': 10}}
+        os.environ['CLAUDE_TEST_RESULT'] = json.dumps(out)
+        jd = os.path.join(self.root, 'jobs', job)
+        council.write(os.path.join(jd, 'prompt.md'), 'Exact prompt\nwith a second line.\n')
+        council.write_json(os.path.join(jd, 'schema.json'), self.schema)
+        return council.run_claude_job(jd, self.spec(job, **extra))
+
+    def calls(self):
+        return [json.loads(line) for line in council.read(self.log).splitlines()]
+
+    def test_structured_result_prompt_and_workspace(self):
+        result = self.run_turn()
+        self.assertEqual(result['status'], 'done')
+        self.assertEqual(result['result'], {'answer': 'done', 'turn': 'r0-A'})
+        call = self.calls()[0]
+        self.assertEqual(call['cwd'], self.cwd)
+        self.assertEqual(call['prompt'], 'Exact prompt\nwith a second line.\n')
+        args = call['args']
+        self.assertEqual(args[args.index('--add-dir') + 1], os.path.join(self.root, 'room'))
+        settings = json.loads(args[args.index('--settings') + 1])
+        self.assertTrue(settings['sandbox']['enabled'])
+        self.assertFalse(settings['sandbox']['allowUnsandboxedCommands'])
+        self.assertEqual(args[args.index('--permission-prompts') + 1], 'none')
+        self.assertFalse(any('bypass' in x.lower() or 'skip-permissions' in x for x in args))
+        self.assertEqual(json.loads(args[args.index('--json-schema') + 1]), self.schema)
+
+    def test_read_only_has_no_shell_or_edit_tools(self):
+        self.assertEqual(self.run_turn(sandbox='read-only')['status'], 'done')
+        args = self.calls()[0]['args']
+        self.assertEqual(args[args.index('--tools') + 1], 'Read,Glob,Grep')
+        self.assertEqual(args[args.index('--permission-mode') + 1], 'plan')
+        self.assertNotIn('--add-dir', args)
+
+    def test_resume_and_fresh_contexts(self):
+        self.run_turn()
+        self.run_turn(job='r1-A')
+        self.run_turn(job='audit-A', fresh=True)
+        calls = self.calls()
+        self.assertNotIn('--resume', calls[0]['args'])
+        self.assertEqual(calls[1]['args'][-2:], ['--resume', 'session-1'])
+        self.assertNotIn('--resume', calls[2]['args'])
+
+    def test_session_change_is_an_error(self):
+        self.run_turn()
+        out = {'subtype': 'success', 'session_id': 'different', 'structured_output': {'answer': 'done', 'turn': 'r0-A'}}
+        self.assertIn('did not resume', self.run_turn(out, job='r1-A')['error'])
+        self.assertEqual(council.read(os.path.join(self.root, 'seats', 'A', 'claude-session')), 'session-1')
+
+    def test_per_turn_usage_is_not_subtracted(self):
+        self.run_turn()
+        out = {'subtype': 'success', 'session_id': 'session-1', 'structured_output': {'answer': 'done', 'turn': 'r0-A'},
+               'usage': {'input_tokens': 7, 'output_tokens': 2}}
+        result = self.run_turn(out, job='r1-A')
+        self.assertEqual(result['usage'], {'input_tokens': 7, 'output_tokens': 2})
+        records = [json.loads(line) for line in council.read(os.path.join(self.root, 'usage.jsonl')).splitlines()]
+        self.assertEqual(records[-1]['threadTotal'], {'input_tokens': 17, 'output_tokens': 2})
+
+    def test_denied_tools_and_invalid_outputs_are_errors(self):
+        good = {'subtype': 'success', 'session_id': 'session-1', 'structured_output': {'answer': 'done', 'turn': 'r0-A'}}
+        cases = [
+            (dict(good, permission_denials=[{'tool_name': 'Bash'}]), 'permission denied'),
+            (dict(good, structured_output={'answer': 'old', 'turn': 'stale'}), 'schema'),
+            (dict(good, structured_output=None, result='plain text'), 'schema'),
+            (dict(good, is_error=True, errors=['Not logged in']), 'Not logged in'),
+            ({'result': 'missing envelope'}, 'session_id'),
+            ([], 'invalid result envelope'),
+        ]
+        for index, (out, expected) in enumerate(cases):
+            with self.subTest(expected=expected):
+                result = self.run_turn(out, job=f'bad-{index}', fresh=True)
+                self.assertEqual(result['status'], 'error')
+                self.assertIn(expected, result['error'])
+
+    def test_timeout_stops_child(self):
+        with mock.patch.dict(os.environ, {'CLAUDE_TEST_SLEEP': '10'}):
+            self.assertIn('timed out', self.run_turn(timeout=0.05)['error'])
+
+    def test_effort_and_plain_text_output(self):
+        result = self.run_turn({'subtype': 'success', 'session_id': 'session-1', 'result': 'plain result'},
+                               schema=False, effort='ultra')
+        self.assertEqual(result['result'], 'plain result')
+        args = self.calls()[0]['args']
+        self.assertEqual(args[args.index('--effort') + 1], 'max')
+        self.assertNotIn('--json-schema', args)
+
+    def test_claude_preflight_uses_its_own_home(self):
+        with mock.patch.object(council, 'emit') as emit:
+            council.cmd_preflight(argparse.Namespace(vendors='claude'))
+        self.assertEqual(emit.call_args.args[0]['status'], 'ok')
+        self.assertEqual(emit.call_args.args[0]['vendors']['claude']['exe'], 'claude')
+
+    def test_job_dispatch_retries_transient_failure_once(self):
+        jd = os.path.join(self.root, 'jobs', 'retry')
+        council.write_json(os.path.join(jd, 'spec.json'), self.spec('retry'))
+        with mock.patch.object(council, 'run_claude_job', side_effect=[
+            {'status': 'error', 'error': 'temporarily unavailable'}, {'status': 'done', 'result': {'answer': 'done'}},
+        ]) as run, mock.patch.dict(os.environ, {'COUNCIL_RETRY_WAIT': '0'}):
+            council.cmd_job(jd)
+        self.assertEqual(run.call_count, 2)
+        self.assertEqual(json.loads(council.read(os.path.join(jd, 'status.json')))['status'], 'done')
+
+    def test_prompt_file_hash_mismatch_does_not_read_transcripts(self):
+        prompt = os.path.join(self.root, 'direct.md')
+        council.write(prompt, 'changed')
+        args = argparse.Namespace(vendor='claude', checkout=None, prompt_file=prompt, expect=council.prompt_hash('original'),
+                                  no_transcript=True, transcript_wait=10)
+        with mock.patch.object(council, 'payload_from_transcripts', side_effect=AssertionError('transcript access')), \
+                mock.patch.object(council, 'emit') as emit:
+            council.cmd_seat_run(args)
+        self.assertEqual(emit.call_args.args[0]['status'], 'hash-mismatch')
+
+    def test_retro_file_is_checked_and_saved_without_transcripts(self):
+        council.write_json(os.path.join(self.root, 'run.json'), {'runDir': self.root, 'runId': 'run-1', 'repoRoot': self.cwd})
+        payload = '## Run facts (data)\n\n```json\n' + json.dumps({'tier': 'simple'}) + '\n```'
+        payload_file = os.path.join(self.root, 'payload.md')
+        council.write(payload_file, payload)
+        args = argparse.Namespace(summary=False, run_dir=self.root, facts_only=True, payload_file=payload_file,
+                                  expect=council.prompt_hash(payload), transcript_wait=10, out_dir=os.path.join(self.root, 'retros'))
+        with mock.patch.object(council, 'payload_from_transcripts', side_effect=AssertionError('transcript access')), \
+                mock.patch.object(council, 'emit') as emit:
+            council.cmd_retro(args)
+        self.assertTrue(emit.call_args.args[0]['facts'])
+        args.expect = 'wrong'
+        with self.assertRaisesRegex(council.CouncilError, 'does not match'):
+            council.cmd_retro(args)
+
+    def test_seat_run_cli_completes_and_reuses_the_same_job(self):
+        out = {'type': 'result', 'subtype': 'success', 'session_id': 'session-cli',
+               'structured_output': {'answer': 'done', 'turn': 'r0-A'}}
+        payload = 'Do the task.\n<<<OUTPUT_SCHEMA\n' + json.dumps(self.schema) + '\nOUTPUT_SCHEMA>>>\n'
+        prompt = os.path.join(self.root, 'cli-prompt.md')
+        council.write(prompt, payload)
+        cmd = [sys.executable, CLI, 'seat-run', '--vendor', 'claude', '--run-dir', self.root,
+               '--seat', 'A', '--job', 'cli-job', '--model', 'sonnet', '--cwd', self.cwd,
+               '--prompt-file', prompt, '--expect', council.prompt_hash(payload), '--no-transcript', '--max-wait', '10']
+        with mock.patch.dict(os.environ, {'CLAUDE_TEST_RESULT': json.dumps(out), 'COUNCIL_JOB_POLL': '0.01'}):
+            for _ in range(2):
+                process = subprocess.run(cmd, text=True, capture_output=True, timeout=15)
+                self.assertEqual(process.returncode, 0, process.stderr)
+                result = json.loads(process.stdout)
+                self.assertEqual(result['status'], 'done', result)
+                self.assertEqual(result['result']['turn'], 'r0-A')
+        self.assertEqual(len(self.calls()), 1)
+
+
+class MeasurementProcesses(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.log = os.path.join(self.tmp.name, 'logs', 'suite-A-r0.log')
+        self.pid_path = self.log + '.pid'
+
+    def command(self, code):
+        return shlex.quote(sys.executable) + ' -c ' + shlex.quote(code)
+
+    def test_pid_is_available_while_running_and_removed_after_completion(self):
+        release = os.path.join(self.tmp.name, 'release')
+        command = self.command(f'import os, time\nwhile not os.path.exists({release!r}): time.sleep(0.01)\nprint("verified")')
+        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+            result = executor.submit(council.run_shell, command, self.tmp.name, 5, self.log)
+            try:
+                deadline = time.monotonic() + 3
+                while not os.path.exists(self.pid_path) and time.monotonic() < deadline:
+                    time.sleep(0.01)
+                self.assertTrue(os.path.isfile(self.pid_path))
+                pid = int(council.read(self.pid_path))
+                self.assertTrue(council.pid_alive(pid))
+                self.assertFalse(result.done())
+            finally:
+                council.write(release, 'continue')
+            completed = result.result(timeout=5)
+        self.assertEqual(completed['exitCode'], 0)
+        self.assertEqual(completed['tail'], 'verified')
+        self.assertFalse(os.path.exists(self.pid_path))
+
+    def test_timeout_removes_pid_and_stops_process_group(self):
+        command = self.command('import time; time.sleep(10)')
+        result = council.run_shell(command, self.tmp.name, 0.05, self.log)
+        self.assertTrue(result['timedOut'])
+        self.assertNotEqual(result['exitCode'], 0)
+        self.assertFalse(os.path.exists(self.pid_path))
+
+    def test_wait_error_still_stops_child_and_removes_pid(self):
+        child = mock.Mock(pid=123456789)
+        child.wait.side_effect = [RuntimeError('wait failed'), 0]
+        child.poll.return_value = None
+        with mock.patch.object(council.subprocess, 'Popen', return_value=child), \
+                mock.patch.object(council.os, 'killpg') as kill:
+            with self.assertRaisesRegex(RuntimeError, 'wait failed'):
+                council.run_shell('ignored', self.tmp.name, 1, self.log)
+        kill.assert_called_once_with(child.pid, council.signal.SIGKILL)
+        self.assertFalse(os.path.exists(self.pid_path))
+
+
+if __name__ == '__main__':
+    unittest.main()

@@ -10,10 +10,27 @@ function keepProcess(turn, role, who, res) {
 
 // Every agent call goes through here except the retro's own, so each can leave a process note.
 async function ask(prompt, opts, role, who) {
-  const res = await agent(prompt, { ...opts, schema: withProcess(opts.schema) })
-  S.turnLog.push({ turn: opts.label, role, vendor: 'claude', ok: !!res })
-  keepProcess(opts.label, role, who || opts.model, res)
+  const selected = roleAgent(S, role, opts)
+  const res = hostRuntime
+    ? await hostAgent(prompt, { ...opts, schema: withProcess(opts.schema) }, role, who)
+    : await agent(prompt, { ...opts, schema: withProcess(opts.schema) })
+  S.turnLog.push({ turn: opts.label, role, vendor: hostRuntime ? selected.vendor : 'claude', ok: !!res })
+  keepProcess(opts.label, role, who || (hostRuntime ? selected.name : opts.model), res)
   return res
+}
+
+// Orchestration turns are fresh, including neutral checks. Seat and auditor continuations use
+// externalTurn below, which carries their separate thread keys and worktree permissions.
+async function hostAgent(prompt, opts, role, who, extra = {}) {
+  const selected = roleAgent(S, role, opts)
+  try {
+    return await hostRuntime.agent({ ...opts, prompt, vendor: selected.vendor, model: selected.model,
+      effort: selected.effort, role, who: who || selected.name, run: S.run, fresh: true,
+      timeoutMin: timeoutFor(role), ...(role === 'setup' ? { preflightVendors: externalVendors(S), setupRunId: setupRunId(S) } : {}), ...extra })
+  } catch (e) {
+    S.notes.push(`${role} turn ${opts.label} failed: ${oneLine(e && e.message || e, 300)}`)
+    return null
+  }
 }
 
 // Per-phase deadline for a Codex or Gemini turn, in minutes: `timeoutMin` is one number, or
@@ -37,6 +54,27 @@ async function externalTurn(o, prompt, schema, label, ph) {
     S.notes.push(`${V} turn ${o.key} failed${why ? `: ${why}` : '.'}`)
     S.turnLog.push({ turn: label, role: o.role, vendor: o.vendor, ok: false })
     return null
+  }
+  if (hostRuntime) {
+    let r
+    try {
+      r = await hostRuntime.turn({ ...o, prompt: payload, schema: full, label, phase: ph,
+        run: S.run, expect: hash, timeoutMin: minutes })
+    } catch (e) {
+      return fail(oneLine(e && e.message || e, 300))
+    }
+    if (r && r.status === 'done' && r.result && r.result.turn === tag) {
+      const { turn, ...result } = r.result
+      S.turnLog.push({ turn: label, role: o.role, vendor: o.vendor, ok: true })
+      const seconds = Number(r.seconds ?? r.elapsedSec)
+      if (seconds > 0) S.vendorTimes.push({ turn: o.key, vendor: o.vendor, seconds })
+      keepProcess(label, o.role, o.who, result)
+      return result
+    }
+    if (r && r.status === 'sandboxed') S.blocked[o.vendor] = true
+    return fail(r && r.status === 'done'
+      ? `the result's turn tag ${r.result ? JSON.stringify(r.result.turn) : '(no result)'} is not ${tag}: an answer to an earlier turn`
+      : r ? `${oneLine(r.error || r.status, 300)}${r.errorClass ? ` [${r.errorClass}]` : ''}` : 'the runtime returned no result')
   }
   for (const relayModel of ['haiku', 'sonnet']) {
     const file = `${S.run.runDir}/jobs/${o.key}.${relayModel}.prompt.md`
@@ -91,7 +129,7 @@ function auditTurn(a, W, round) {
   const prompt = auditPrompt(S, a, W, round)
   const label = `${roundTag(round)} ${a.lens}: ${a.key}`
   const schema = S.tier === 'architecture' ? PLAN_REVIEW_SCHEMA : AUDIT_SCHEMA
-  if (a.vendor === 'claude') return ask(prompt, { label, phase: 'Audit', schema, model: a.model, effort: a.effort }, 'auditor', a.name)
+  if (a.vendor === 'claude' && !hostRuntime) return ask(prompt, { label, phase: 'Audit', schema, model: a.model, effort: a.effort }, 'auditor', a.name)
   if (S.tier === 'architecture') {
     return externalTurn({
       key: `${roundTag(round)}-${a.lens}`, threadKey: `audit-${a.lens}`, fresh: round === 'H', vendor: a.vendor, model: a.model, effort: a.effort,
@@ -110,7 +148,7 @@ function seatTurn(s, round, prompt, schema) {
   const tag = roundTag(round)
   const label = `${tag}:${s.L} ${s.key}`
   const ph = phaseOf(round)
-  if (s.vendor === 'claude') {
+  if (s.vendor === 'claude' && !hostRuntime) {
     return ask(prompt, { label, phase: ph, schema: NOTE_SCHEMAS.get(schema) || schema, model: s.model, effort: s.effort }, 'seat', s.name)
   }
   return externalTurn({
@@ -122,7 +160,7 @@ function seatTurn(s, round, prompt, schema) {
 function panelRun(k, ids) {
   const prompt = panelPrompt(S, k, ids.map(id => S.byId[id]))
   const tag = roundTag(k)
-  return parallel(S.panel.map(m => () => m.vendor === 'claude'
+  return parallel(S.panel.map(m => () => m.vendor === 'claude' && !hostRuntime
     ? ask(prompt, { label: `panel ${tag}: ${m.key}`, phase: phaseOf(k), schema: PANEL_SCHEMA, model: m.model, effort: m.effort }, 'panel', m.name)
     : externalTurn({
         key: `panel-${m.key}-${tag}`, threadKey: `panel-${m.key}-${tag}`, fresh: true, vendor: m.vendor, model: m.model, effort: m.effort, role: 'panel', who: m.name,
@@ -219,7 +257,7 @@ async function clusterQuestions(k) {
 function specTurn(r) {
   const prompt = specReviewPrompt(S, r)
   const label = `spec ${r.lens}: ${r.key}`
-  if (r.vendor === 'claude') return ask(prompt, { label, phase: 'Spec', schema: SPEC_SCHEMA, model: r.model, effort: r.effort }, 'spec', r.name)
+  if (r.vendor === 'claude' && !hostRuntime) return ask(prompt, { label, phase: 'Spec', schema: SPEC_SCHEMA, model: r.model, effort: r.effort }, 'spec', r.name)
   return externalTurn({
     key: `spec-${r.lens}`, threadKey: `spec-${r.lens}`, fresh: true, vendor: r.vendor, model: r.model, effort: r.effort, role: 'spec', who: r.name,
     sandbox: 'read-only', cwd: S.run.repoRoot, writable: [], timeoutKind: 'spec',
@@ -239,7 +277,7 @@ async function runSpecReview() {
   if (!S.spec.findings.length) return null
 
   const prompt = specPanelPrompt(S, S.spec.findings)
-  applySpecPanel(S, await parallel(S.panel.map(m => () => m.vendor === 'claude'
+  applySpecPanel(S, await parallel(S.panel.map(m => () => m.vendor === 'claude' && !hostRuntime
     ? ask(prompt, { label: `panel spec: ${m.key}`, phase: 'Spec', schema: SPEC_PANEL_SCHEMA, model: m.model, effort: m.effort }, 'panel', m.name)
     : externalTurn({
         key: `panel-${m.key}-spec`, threadKey: `panel-${m.key}-spec`, fresh: true, vendor: m.vendor, model: m.model, effort: m.effort, role: 'panel', who: m.name,
@@ -360,10 +398,13 @@ async function runRetro(o) {
   const hash = promptHash(payload)
   let r = null
   try {
-    r = await agent(retroPrompt(S, o.reportMd, payload, hash), { label: 'retro', phase: 'Retro', schema: RETRO_SCHEMA, model: 'sonnet', effort: 'medium' })
+    const prompt = retroPrompt(S, o.reportMd, payload, hash)
+    const opts = { label: 'retro', phase: 'Retro', schema: RETRO_SCHEMA, model: 'sonnet', effort: 'medium' }
+    r = hostRuntime ? await hostAgent(prompt, opts, 'retro', null, { payload, payloadFile: `${S.run.runDir}/retro-data.md` }) : await agent(prompt, opts)
   } catch (e) {
     r = null
   }
+  if (hostRuntime) S.turnLog.push({ turn: 'retro', role: 'retro', vendor: S.roles.retro.vendor, ok: !!r })
   if (!r) {
     return { worked: [], changes: [], saved: '', error: 'the retro agent failed', notes: S.processNotes,
       markdown: `### Process retro\n\nThe retro agent failed. ${plural(S.processNotes.length, 'process note')} from the run ${S.processNotes.length === 1 ? 'is' : 'are'} in retro.notes.` }
@@ -375,10 +416,12 @@ async function recordFacts(payload) {
   const hash = promptHash(payload)
   let r = null
   try {
-    r = await agent(recordPrompt(S, payload, hash), { label: 'record', phase: 'Record', schema: RECORD_SCHEMA, model: 'haiku', effort: 'low' })
+    const prompt = recordPrompt(S, payload, hash)
+    const opts = { label: 'record', phase: 'Record', schema: RECORD_SCHEMA, model: 'haiku', effort: 'low' }
+    r = hostRuntime ? await hostAgent(prompt, opts, 'record', null, { payload, payloadFile: `${S.run.runDir}/retro-data.md` }) : await agent(prompt, opts)
   } catch (e) {
     r = null
   }
-  S.turnLog.push({ turn: 'record', role: 'record', vendor: 'claude', ok: !!r })
+  S.turnLog.push({ turn: 'record', role: 'record', vendor: hostRuntime ? S.roles.record.vendor : 'claude', ok: !!r })
   return { recorded: true, saved: (r && r.saved) || '', error: r ? r.error || '' : 'the record agent failed', notes: S.processNotes, markdown: '' }
 }

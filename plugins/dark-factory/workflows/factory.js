@@ -154,11 +154,37 @@ const CATALOG = {
 }
 
 const DEFAULT_SEATS = ['opus', 'sonnet', 'astra', 'gemini']
+const CODEX_SEATS = ['astra', 'sol']
 const VENDOR_NAME = { claude: 'Claude', codex: 'Codex', gemini: 'Gemini' }
-const VENDOR_CLI = { codex: 'Codex CLI', gemini: 'Antigravity CLI (agy)' }
+const VENDOR_CLI = { claude: 'Claude CLI', codex: 'Codex CLI', gemini: 'Antigravity CLI (agy)' }
 
 // Codex and Gemini seats run outside Claude Code, through a relay, and keep their own thread.
-const external = s => s.vendor !== 'claude'
+const external = s => s.external === true || s.vendor !== 'claude'
+
+// In the Codex host every model runs through a CLI adapter, including Claude. The marker also
+// selects the shorter continuation prompts for seats whose CLI session survives between turns.
+const hostSeat = (host, s) => host === 'codex' ? { ...s, external: true } : s
+const CODEX_ROLES = {
+  intake: 'astra', setup: 'sol', checker: 'sol', questions: 'luna',
+  spec: 'astra', retro: 'sol', record: 'luna',
+}
+const ROLE_EFFORT = { intake: 'medium', setup: 'medium', checker: 'medium', questions: 'low', spec: 'medium', retro: 'medium', record: 'low' }
+
+function parseRoles(raw) {
+  if (raw.host !== 'codex') return {}
+  const overrides = raw.roles && typeof raw.roles === 'object' ? raw.roles : {}
+  for (const role of Object.keys(overrides)) if (!(role in CODEX_ROLES)) throw new Error(`factory: unknown role '${role}'. Known: ${Object.keys(CODEX_ROLES).join(', ')}.`)
+  return Object.fromEntries(Object.entries(CODEX_ROLES).map(([role, fallback]) => {
+    const value = overrides[role]
+    const option = value && typeof value === 'object' ? value : { model: value }
+    const model = option.model || (role === 'checker' && raw.checkModel) || fallback
+    return [role, parseSeat(model, option.effort || ROLE_EFFORT[role])]
+  }))
+}
+
+function roleAgent(S, role, opts) {
+  return S.roles && S.roles[role] ? S.roles[role] : { vendor: 'claude', model: opts.model, name: opts.model, effort: opts.effort }
+}
 
 const CLAUDE_EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max']
 const CODEX_EFFORTS = [...CLAUDE_EFFORTS, 'ultra']
@@ -201,6 +227,9 @@ const SIMPLE_LENS = { review: { model: 'astra', id: 'XR' } }
 // code (grounding), whether its order works (sequencing), and what could sink it (risk, with the
 // designs the council didn't choose). The risk lens is the run's only model that wrote no design.
 const ARCH_LENSES = { grounding: { model: 'astra', id: 'XG' }, sequencing: { model: 'opus', id: 'XS' }, risk: { model: 'gemini', id: 'XK' } }
+const CODEX_AUDIT_LENSES = { correctness: { model: 'astra', id: 'XC' }, design: { model: 'sol', id: 'XD' } }
+const CODEX_FEATURE_LENS = { tests: { model: 'luna', id: 'XT' } }
+const CODEX_ARCH_LENSES = { grounding: { model: 'astra', id: 'XG' }, sequencing: { model: 'sol', id: 'XS' }, risk: { model: 'luna', id: 'XK' } }
 const MAX_MILESTONES = 8          // the Architecture tier's milestone plan lists at most this many
 
 function parseAudit(v, lenses = AUDIT_LENSES) {
@@ -215,11 +244,11 @@ function parseAudit(v, lenses = AUDIT_LENSES) {
 // an object swaps a lens's model, e.g. {coverage: 'sol', intent: 'sonnet', ask: true}.
 const SPEC_LENSES = { coverage: 'astra', intent: 'opus' }
 
-function parseSpec(v) {
+function parseSpec(v, lenses = SPEC_LENSES) {
   if (v === false) return { reviewers: [], ask: false }
   const pick = v && typeof v === 'object' ? v : {}
   return {
-    reviewers: Object.entries(SPEC_LENSES).map(([lens, model]) => ({ lens, ...parseSeat(pick[lens] || model, pick.effort || 'high') })),
+    reviewers: Object.entries(lenses).map(([lens, model]) => ({ lens, ...parseSeat(pick[lens] || model, pick.effort || 'high') })),
     ask: v === 'ask' || pick.ask === true,
   }
 }
@@ -231,6 +260,8 @@ function parseSpec(v) {
 // with 'architecture', the plan's three reviewers instead of the auditors.
 function parseConfig(args, opts = {}) {
   const raw = parseArgs(args)
+  const host = raw.host === 'codex' ? 'codex' : 'claude'
+  const roles = parseRoles(raw)
   const task = String(raw.task || raw.prompt || raw.question || '').trim()
   if (!task) {
     throw new Error('council: no task given. Pass args as a string, or {task, mode?, seats?, rounds?, ...}.')
@@ -242,11 +273,15 @@ function parseConfig(args, opts = {}) {
   const mode = simple ? 'implement' : modeGiven
     ? raw.mode
     : (IMPLEMENT_RE.test(task) ? 'implement' : DESIGN_RE.test(task) ? 'design' : 'investigate')
-  const lineup = simple ? [parseSeat(simple.implementer, raw.effort)]
-    : (seatList(raw.seats).length ? seatList(raw.seats) : DEFAULT_SEATS).map(s => parseSeat(s, raw.effort))
+  const lineup = (simple ? [parseSeat(simple.implementer, raw.effort)]
+    : (seatList(raw.seats).length ? seatList(raw.seats) : host === 'codex' ? CODEX_SEATS : DEFAULT_SEATS).map(s => parseSeat(s, raw.effort))).map(s => hostSeat(host, s))
   if (!simple && (lineup.length < 2 || lineup.length > 6)) throw new Error('council: use between 2 and 6 seats.')
+  const auditLenses = host === 'codex' ? CODEX_AUDIT_LENSES : AUDIT_LENSES
+  const featureLens = host === 'codex' ? CODEX_FEATURE_LENS : FEATURE_LENS
+  const archLenses = host === 'codex' ? CODEX_ARCH_LENSES : ARCH_LENSES
+  const spec = simple ? { reviewers: [], ask: false } : parseSpec(raw.spec, host === 'codex' ? { coverage: 'astra', intent: 'sol' } : SPEC_LENSES)
   return {
-    raw, task, modeGiven, mode,
+    raw, host, roles, task, modeGiven, mode,
     rounds: Math.max(1, Math.min(3, Number(raw.rounds) || 2)),
     context: String(raw.context || '').trim(),
     plan: (Array.isArray(raw.plan) ? raw.plan : raw.plan ? [raw.plan] : []).map(p => String(p).trim()).filter(Boolean),
@@ -262,16 +297,16 @@ function parseConfig(args, opts = {}) {
       .filter(c => c && c.id && c.answer)
       .map(c => ({ id: String(c.id), answer: String(c.answer), afterRound: Number.isInteger(c.afterRound) ? c.afterRound : -1 })),
     lineup,
-    panel: (seatList(raw.panel).length ? seatList(raw.panel) : ['opus', 'astra']).map(s => parseSeat(s, 'high')),
+    panel: (seatList(raw.panel).length ? seatList(raw.panel) : host === 'codex' ? ['astra', 'sol'] : ['opus', 'astra']).map(s => hostSeat(host, parseSeat(s, 'high'))),
     auditors: simple ? [{ lens: 'review', id: SIMPLE_LENS.review.id, ...parseSeat(simple.reviewer, 'high') }]
-      : parseAudit(raw.audit, opts.tier === 'feature' ? { ...AUDIT_LENSES, ...FEATURE_LENS } : opts.tier === 'architecture' ? ARCH_LENSES : AUDIT_LENSES),
-    specReviewers: simple ? [] : parseSpec(raw.spec).reviewers,
-    specAsk: simple ? false : parseSpec(raw.spec).ask,
+      .map(s => hostSeat(host, s)) : parseAudit(raw.audit, opts.tier === 'feature' ? { ...auditLenses, ...featureLens } : opts.tier === 'architecture' ? archLenses : auditLenses).map(s => hostSeat(host, s)),
+    specReviewers: simple ? [] : spec.reviewers.map(s => hostSeat(host, s)),
+    specAsk: simple ? false : spec.ask,
     workflowName: opts.workflow || 'council',
     tier: opts.tier || null,
     simple,
     escalation: opts.escalation || null,
-    checkModel: ['sonnet', 'opus', 'haiku', 'fable'].includes(raw.checkModel) ? raw.checkModel : 'sonnet',
+    checkModel: host === 'codex' ? roles.checker.key : ['sonnet', 'opus', 'haiku', 'fable'].includes(raw.checkModel) ? raw.checkModel : 'sonnet',
     letters: 'ABCDEF'.slice(0, lineup.length).split(''),
   }
 }
@@ -328,7 +363,20 @@ function newState(config) {
 
 // Vendors whose CLIs this run depends on: the seats', the panel's, the spec reviewers' and the auditors'.
 function externalVendors(S) {
-  return [...new Set([...S.lineup, ...S.panel, ...S.specReviewers, ...S.auditors].filter(external).map(s => s.vendor))]
+  return [...new Set([...S.lineup, ...S.panel, ...S.specReviewers, ...S.auditors,
+    ...(S.host === 'codex' ? Object.values(S.roles).map(s => hostSeat(S.host, s)) : [])].filter(external).map(s => s.vendor))]
+}
+
+// The runner owns a unique prefix. A separate suffix per tier keeps even immediate escalations
+// in new worktrees, without relying on the helper's second-resolution timestamp default.
+function setupRunId(S) {
+  if (S.host !== 'codex' || S.raw.hostRunId === undefined || S.raw.hostRunId === null) return null
+  const prefix = S.raw.hostRunId
+  const id = `${prefix}-${S.tier || S.workflowName}`
+  if (typeof prefix !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(prefix) || !/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(id)) {
+    throw new Error('factory: hostRunId must contain only letters, digits, dots, underscores and hyphens, starting with a letter or digit.')
+  }
+  return id
 }
 
 function auditor(S, id) {
@@ -517,7 +565,7 @@ function protocol(S, L) {
   const n = active(S).length
   return `# How the council works
 
-You are seat ${L}, one of ${n} AI models from different vendors working on the same task. Seats are anonymous letters (${active(S).map(s => s.L).join(', ')}). Don't reveal or speculate about which model you or anyone else is.
+You are seat ${L}, one of ${n} ${S.host === 'codex' ? 'independent AI agents' : 'AI models from different vendors'} working on the same task. Seats are anonymous letters (${active(S).map(s => s.L).join(', ')}). Don't reveal or speculate about which model you or anyone else is.
 ${S.mode === 'plan' ? `
 This council plans before it builds. The positions are plans: nothing is built until one is chosen. Its author then writes the final plan, folding in the amendments and the best of the other plans, and builds it in increments, each checked by a neutral verifier. Auditors who never saw this debate review the finished change.
 ` : S.tier === 'architecture' ? `
@@ -730,12 +778,12 @@ function digest(S, forL, upto) {
 }
 
 function notesAsk(s, round) {
-  if (s.vendor !== 'claude') return ''
+  if (external(s)) return ''
   return `\nFinally, fill \`notes\`: private notes for your next turn, under about 400 words. You start every turn with no memory except your post and these notes, and nobody else sees them. Record what you would otherwise have to rediscover: the key file:line locations, what you verified and how${round === 0 || buildStep(round) ? '' : ', your read on each other position'}, and what to check next.`
 }
 
 function notesBlock(S, s) {
-  const n = s.vendor === 'claude' && S.seatNotes[s.L]
+  const n = !external(s) && S.seatNotes[s.L]
   if (!n) return ''
   return `\n# Your private notes from ${typeof n.round === 'number' ? `round ${n.round}` : 'your last turn'}\n\nYou wrote these at the end of your last turn. Nobody else sees them.\n\n${n.text}\n`
 }
@@ -1638,9 +1686,9 @@ ${S.task}
 ${S.context ? `\n# Context from the user\n\n${S.context}\n` : ''}${S.escalation ? `\n# An earlier attempt\n\nThis task was first ${S.escalation.from === 'feature' ? 'planned as one feature' : 'tried as a simple change'} and handed up because ${S.escalation.why}. Its acceptance criteria were:\n${S.escalation.criteria.map(c => `- ${c}`).join('\n') || '- (none)'}\n${S.escalation.from === 'feature' ? 'Start from them: they describe the whole of the work, which this run designs and breaks into milestones.' : 'Start from them, and widen them where the reason above shows they fell short.'}\n` : ''}
 ${S.modeGiven ? `Mode: ${S.mode}. Return it as \`mode\`.\n` : ''}${vendors.length ? `
 ## Step 0 — can the other vendors' CLIs run?
-Some seats run through the ${vendors.map(v => VENDOR_CLI[v]).join(' and the ')}. Check that they can start from here before anything is created. Make one Bash call with the sandbox disabled (dangerouslyDisableSandbox: true), exactly as written:
+${S.host === 'codex' ? `The host runtime already checked the required CLIs (${vendors.join(',')}) before starting this setup turn. Use the attached preflight JSON; do not run preflight again from inside your sandbox. Copy its vendors entries into \`preflight\` (vendor, ok, error). If status is not "ok", return status "preflight" with those entries and empty values elsewhere, and do not create anything. Otherwise continue to step 1.` : `Some seats run through the ${vendors.map(v => VENDOR_CLI[v]).join(' and the ')}. Check that they can start from here before anything is created. Make one Bash call with the sandbox disabled (dangerouslyDisableSandbox: true), exactly as written:
 ${S.cli} preflight --vendors ${vendors.join(',')}
-It prints JSON with a "status" and, under "vendors", an entry per vendor with "ok" and "error". Copy each entry into \`preflight\` (vendor, ok, error). If status is "ok", go on to step 1. Otherwise stop here: return status "preflight" with the entries, and empty values elsewhere. Don't try to fix it, and don't run anything else.
+It prints JSON with a "status" and, under "vendors", an entry per vendor with "ok" and "error". Copy each entry into \`preflight\` (vendor, ok, error). If status is "ok", go on to step 1. Otherwise stop here: return status "preflight" with the entries, and empty values elsewhere. Don't try to fix it, and don't run anything else.`}
 ` : ''}
 ## Step 1 — the documents the work follows
 The seats work in git worktrees checked out from HEAD, so they can't see uncommitted files. If the task follows a plan, a checklist, a spec or notes that aren't committed, the seats would never see them.
@@ -1655,7 +1703,7 @@ Read the task together with the part of those documents it points to, and decide
 When the work would end with a change someone commits, choose implement.
 `}
 ## Step 2 — create the run
-Run: ${S.cli} init --repo ${S.raw.repo ? shq(S.raw.repo) : '"$PWD"'} --seats ${letters}${S.plan.map(p => ` --ref ${shq(p)}`).join('')} followed by --ref <path> for each other document from step 1
+Run: ${S.cli} init --repo ${S.raw.repo ? shq(S.raw.repo) : '"$PWD"'} --seats ${letters}${setupRunId(S) ? ` --run-id ${shq(setupRunId(S))}` : ''}${S.plan.map(p => ` --ref ${shq(p)}`).join('')} followed by --ref <path> for each other document from step 1
 It prints JSON with runId, runDir, repoRoot, refs (the snapshots it made of those documents) and dirty (tracked files with uncommitted changes).
 - If it fails, return status "error" with its message, and empty values elsewhere.
 ${S.allowDirty || (S.modeGiven && S.mode !== 'implement') ? '' : `- If ${S.modeGiven ? '' : 'the mode is implement and '}dirty is non-empty, stop and return status "dirty" with that list. The worktrees branch from HEAD, so uncommitted changes would be invisible to every seat.\n`}
@@ -1866,7 +1914,7 @@ function ingestQuestions(S, L, round, qs) {
 }
 
 function keepNotes(S, s, round, res) {
-  if (s.vendor === 'claude' && res && res.notes) S.seatNotes[s.L] = { round, text: clip(String(res.notes).trim(), NOTES_CHARS) }
+  if (!external(s) && res && res.notes) S.seatNotes[s.L] = { round, text: clip(String(res.notes).trim(), NOTES_CHARS) }
 }
 
 function keepDeclined(S, round, res) {
@@ -2448,11 +2496,11 @@ function debates(S, chosen) {
   return rows.sort((a, b) => (b.weight - a.weight) || (a.i - b.i))
 }
 
-function rulingText(c) {
+function rulingText(c, panelName = 'the two-vendor panel') {
   if (c.withdrawn) return 'withdrawn by its author'
   if (c.status === 'judgment') return 'a judgment call: argued, not adjudicated'
   const panel = c.ruledBy.startsWith('panel')
-  const by = panel ? 'the two-vendor panel' : 'the neutral checker'
+  const by = panel ? panelName : 'the neutral checker'
   const note = c.note ? `: ${oneLine(c.note, 240)}` : ''
   switch (c.status) {
     case 'verified':   return `${c.kind === 'finding' ? 'upheld' : 'verified'} by ${by}${note}`
@@ -2475,7 +2523,7 @@ function debateEntry(S, d, W) {
       `${c.kind === 'test' ? 'test' : `${c.kind} claim`}, round ${d.disputes[0].round}.** ${oneLine(c.statement, 220)}`)
     for (const x of d.disputes) out.push(`  - ${who(S, x.by)}: ${oneLine(x.reason, 220) || '(no reason given)'}`)
   }
-  out.push(`  - Ruling: ${rulingText(c)}`)
+  out.push(`  - Ruling: ${rulingText(c, S.host === 'codex' ? 'the independent panel' : undefined)}`)
   const after = []
   if (c.conceded) after.push(`${c.target} conceded it${c.concededIn !== undefined ? ` ${atRound(c.concededIn)}` : ''}`)
   if (c.fixed) after.push(`fixed${c.fixedIn !== undefined ? ` ${atRound(c.fixedIn)}` : ''}`)
@@ -2570,7 +2618,7 @@ function auditOutcome(S, c, W, audit) {
   const bits = []
   if (c.kind === 'test') {
     const before = audit.testsAtAudit[c.id], now = (S.testResults[c.id] || {})[W]
-    bits.push(c.status === 'open' ? 'not ruled on' : c.status === 'verified' ? 'a valid test' : rulingText(c))
+    bits.push(c.status === 'open' ? 'not ruled on' : c.status === 'verified' ? 'a valid test' : rulingText(c, S.host === 'codex' ? 'the independent panel' : undefined))
     if (before) bits.push(`${before} on the audited version${audit.fixPass && now ? `, ${now} after the fix` : ''}`)
   } else if (c.judgment) {
     bits.push(c.ruledBy.startsWith('panel') ? `the panel split, so it stays a judgment call: ${oneLine(c.note, 200)}` : 'a suggestion to the author, not adjudicated')
@@ -2578,7 +2626,7 @@ function auditOutcome(S, c, W, audit) {
   } else if (c.status === 'open') {
     bits.push(c.round === 'J' ? 'not adjudicated (minor, raised after the last fix)' : 'not ruled on')
   } else {
-    bits.push(rulingText(c))
+    bits.push(rulingText(c, S.host === 'codex' ? 'the independent panel' : undefined))
     if (c.fixed) bits.push(S.tier === 'architecture' ? 'fixed in the revision' : 'fixed in the audit fix pass')
     else if (isStanding(S, c)) bits.push('still stands against the final version')
   }
@@ -2590,7 +2638,7 @@ function auditOutcome(S, c, W, audit) {
 function auditSection(S, W, audit) {
   if (!audit || !audit.ran) return ''
   const simple = S.tier === 'simple', arch = S.tier === 'architecture'
-  const lines = [simple ? `A reviewer from another vendor, ${S.auditors.map(a => a.name).join(', ')}, read the change without seeing how it was made.`
+  const lines = [simple ? `${S.host === 'codex' ? 'An independent reviewer' : 'A reviewer from another vendor'}, ${S.auditors.map(a => a.name).join(', ')}, read the change without seeing how it was made.`
     : arch ? `Reviewers who never saw the debate reviewed the milestone plan, each through one lens: ${listText(S.auditors.map(a => `${a.lens} (${a.name})`))}.`
     : `Auditors who never saw the debate reviewed the final ${S.build ? 'change' : 'version'}, each through one lens: ${listText(S.auditors.map(a => `${a.lens} (${a.name})`))}.`, '']
   for (const a of S.auditors) {
@@ -2671,7 +2719,9 @@ function specQuestions(S, qs) {
     status: 'needs-user', mode: S.mode, task: S.task, round: 'spec', runDir: S.run.runDir, room: S.run.room,
     questions: qs.map(f => ({ id: f.id, question: f.statement, readings: f.readings, raisedBy: `the ${f.lens} reviewer`, evidence: f.evidence, adjudicators: f.note })),
     criteria: S.criteria, notes: S.notes,
-    forTheOrchestrator:
+    forTheOrchestrator: S.host === 'codex'
+      ? `Before any seat started, the specification review found questions only the user can settle. Show questions[] with their readings and ask for the answers. Preserve the original args, append each question and answer to context, and rerun the runner with that args file. This starts a new run; keep the old run directory for inspection.`
+      :
       `Before any seat started, the spec review found ${qs.length === 1 ? 'a question' : 'questions'} about the request that the code and the task don't settle, ` +
       'and this run was told to ask rather than assume (spec: "ask"). Ask the user (AskUserQuestion works well: offer each question\'s readings as options; the first is the most conservative). ' +
       `Then resume the same run: Workflow({name: "${S.workflowName}", resumeFromRunId: <this run's id>, args: <exactly the args you launched with, as an object; ` +
@@ -2760,7 +2810,7 @@ function finalReport(S, o) {
     }).join('; ')}` : '') + '.')
   for (const c of o.objections) {
     fin.push(`  - Objection [${c.id}] from ${who(S, c.author)}, ${c.judgment ? 'judgment' : c.severity}: ${oneLine(c.statement, 200)} → ` +
-      `${c.judgment ? 'recorded as dissent' : c.fixed ? 'upheld and fixed in the fix pass' : c.status === 'open' ? 'not adjudicated (minor)' : rulingText(c)}`)
+      `${c.judgment ? 'recorded as dissent' : c.fixed ? 'upheld and fixed in the fix pass' : c.status === 'open' ? 'not adjudicated (minor)' : rulingText(c, S.host === 'codex' ? 'the independent panel' : undefined)}`)
   }
   const open = []
   for (const c of o.remaining) open.push(`standing finding [${c.id}] from ${who(S, c.author)} (${c.severity}, ${c.status}): ${oneLine(c.statement, 200)}`)
@@ -2896,8 +2946,8 @@ Return up to 3 things that worked and should be kept, and 3 to 5 changes, the mo
 1. **<change>** <why>. Evidence: <evidence>. Where: <where>.
 \`\`\`
 Don't copy the process notes or run facts into it; the next command attaches them exactly.
-2. Run this with the Bash tool, exactly as written: ${S.cli} retro --run-dir ${shq(S.run.runDir)} --expect ${hash}
-   The last line it prints is JSON. "ok": set saved to its "path". "sandboxed": run the same command again with the sandbox disabled (dangerouslyDisableSandbox: true). "error", or "sandboxed" again: set saved to "" and error to what it printed.
+2. Run this with the ${S.host === 'codex' ? 'shell' : 'Bash'} tool, exactly as written: ${S.cli} retro --run-dir ${shq(S.run.runDir)}${S.host === 'codex' ? ` --payload-file ${shq(`${S.run.runDir}/retro-data.md`)}` : ''} --expect ${hash}
+   ${S.host === 'codex' ? 'The runtime wrote the exact process notes and facts to that file; do not rewrite it. The last line printed is JSON. For status "ok", set saved to its "path"; otherwise set saved to "" and error to what it printed.' : 'The last line it prints is JSON. "ok": set saved to its "path". "sandboxed": run the same command again with the sandbox disabled (dangerouslyDisableSandbox: true). "error", or "sandboxed" again: set saved to "" and error to what it printed.'}
 
 # The report
 
@@ -2934,7 +2984,7 @@ function deliveryNote(S, label, W, what) {
     `Run \`git log --oneline HEAD..${ref}\` from the repo root. If it lists only one commit, named "council …", the change is uncommitted: after the user approves, ` +
     'apply the diff with `git apply` from the repo root. Otherwise the author committed it as the task asked: after the user approves, `git cherry-pick` those commits, ' +
     'and if the top commit is named "council … uncommitted changes", show the user what it holds (often working files such as notes) rather than applying it unasked. ' +
-    'Then run the project\'s gates through a fresh Sonnet subagent. '
+    (S.host === 'codex' ? 'Then run the project\'s gates through a fresh verifier. ' : 'Then run the project\'s gates through a fresh Sonnet subagent. ')
 }
 
 // Setup (or the factory's intake) found that the task depends on a document it can't see.
@@ -2945,8 +2995,10 @@ function needsPlan(S, missing, runDir) {
     forTheOrchestrator:
       `The council stopped before any seat started: the task depends on a plan or document it couldn't find (${oneLine(missing, 300) || 'unspecified'}). ` +
       'Seats work in worktrees checked out from HEAD and can\'t see uncommitted files, so the document has to be passed in. Find it yourself: ' +
-      'a plan made in this conversation is under ~/.claude/plans/; otherwise look in the repository for the file the user named. ' +
-      `Then rerun with object args and its absolute path: Workflow({name: "${S.workflowName}", args: {task: <the task, saying which part to do>, plan: ["/abs/path"], …the other args}}). ` +
+      (S.host === 'codex'
+        ? 'look in the repository and the documents named in this conversation. Then rerun the runner with the original args and the document\'s absolute path in plan. '
+        : 'a plan made in this conversation is under ~/.claude/plans/; otherwise look in the repository for the file the user named. ' +
+          `Then rerun with object args and its absolute path: Workflow({name: "${S.workflowName}", args: {task: <the task, saying which part to do>, plan: ["/abs/path"], …the other args}}). `) +
       'Don\'t paste the document into the task. If you can\'t tell which document is meant, ask the user.' +
       (runDir ? ` Remove the partial run with \`${S.cli} cleanup --run-dir ${runDir} --all\`.` : ''),
   }
@@ -2974,7 +3026,9 @@ function preflightStop(S, bad) {
   return {
     status: 'blocked', reason: `a vendor CLI can't run from this session (${lines.join('; ')})`, mode: S.mode, task: S.task, runDir: null,
     preflight: bad, notes: S.notes,
-    forTheOrchestrator:
+    forTheOrchestrator: S.host === 'codex'
+      ? `The factory stopped before creating worktrees because the CLI preflight failed: ${lines.join('; ')}. Report the exact error. Fix the named CLI's installation, authentication or permissions, or explicitly replace every use of that vendor in seats, panel, spec, audit, simple and roles before rerunning. Do not change the lineup silently.`
+      :
       `The council stopped before creating anything: the preflight check found that ${lines.join('; ')}. Tell the user plainly, and offer the fix that fits: ` +
       `if the error says the command ran inside a sandbox, the user adds "Bash(${S.cli}:*)" to permissions.allow in ~/.claude/settings.json (or approves running it outside the sandbox when asked); ` +
       'if a CLI is missing or its settings are wrong, they install or fix it as the error says. ' +
@@ -2990,7 +3044,9 @@ function needsUser(S, k, qs) {
     positionsSoFar: active(S).map(s => ({ seat: s.L, summary: S.pos[s.L].summary, post: S.pos[s.L].post })),
     report: interimReport(S, k),
     seats: reveal(S), notes: S.notes,
-    forTheOrchestrator:
+    forTheOrchestrator: S.host === 'codex'
+      ? `Questions reached the escalation threshold after ${roundTag(k)}. Show report.markdown and questions[] with each seat's assumptions, then ask the user for answers. Preserve the original args, append each question and answer to context, and rerun the runner with that args file. This starts a new run; keep the old run directory for inspection.`
+      :
       `${qs.length === 1 ? 'A question' : 'Questions'} reached the escalation threshold (${escalateAt(S)} seats) after ${roundTag(k)}: ` +
       'the council believes the request itself is ambiguous. First show the user report.markdown, the debate so far, with the seat-to-model reveal, so they can see what prompted the question. ' +
       'Then ask (AskUserQuestion works well; show each seat\'s assumption as an option). ' +
@@ -3014,7 +3070,9 @@ function needsUser(S, k, qs) {
 const TIERS = ['simple', 'fix', 'feature', 'architecture']
 // Design is where a third seat has paid off: the one design run's finalists were Sonnet's and Astra's.
 const TIER_SEATS = { fix: ['opus', 'astra'], feature: ['opus', 'astra'], architecture: ['opus', 'astra', 'sonnet'] }
+const CODEX_TIER_SEATS = { fix: ['astra', 'sol'], feature: ['astra', 'sol'], architecture: ['astra', 'sol', 'luna'] }
 const SIMPLE = { implementer: 'sonnet', reviewer: 'astra', maxLines: 200, maxFiles: 8 }
+const CODEX_SIMPLE = { ...SIMPLE, implementer: 'sol' }
 const SMALL_DIFF = 50          // changed lines: below this, a clean fix or feature run hints the tier was too high
 
 // What the factory reads from its args, on top of what the council reads.
@@ -3022,11 +3080,12 @@ function parseFactory(raw) {
   const tier = raw.tier === undefined || raw.tier === null || raw.tier === '' ? null : String(raw.tier).toLowerCase()
   if (tier && !TIERS.includes(tier)) throw new Error(`factory: unknown tier '${raw.tier}'. Known: ${TIERS.join(', ')}.`)
   const s = raw.simple && typeof raw.simple === 'object' ? raw.simple : {}
+  const defaults = raw.host === 'codex' ? CODEX_SIMPLE : SIMPLE
   const n = (v, d) => Number.isInteger(Number(v)) && Number(v) > 0 ? Number(v) : d
   return {
     tier, tierConfirmed: raw.tierConfirmed === true, noSplit: raw.noSplit === true,
     simple: {
-      implementer: String(s.implementer || SIMPLE.implementer), reviewer: String(s.reviewer || SIMPLE.reviewer),
+      implementer: String(s.implementer || defaults.implementer), reviewer: String(s.reviewer || defaults.reviewer),
       maxLines: n(s.maxLines, SIMPLE.maxLines), maxFiles: n(s.maxFiles, SIMPLE.maxFiles),
     },
   }
@@ -3037,10 +3096,14 @@ function parseFactory(raw) {
 function tierArgs(raw, tier, intake) {
   const a = { ...raw }
   delete a.tier; delete a.tierConfirmed; delete a.noSplit; delete a.simple
+  // Preserve the Codex caller's Simple limits and models when intake rebuilds its state.
+  // Other tiers still get their own defaults, including after an escalation.
+  if (raw.host === 'codex' && tier === 'simple' && raw.simple) a.simple = raw.simple
   if (!a.mode && intake && MODES.includes(intake.mode)) a.mode = intake.mode
   if (tier === 'architecture') a.mode = 'design'
   if (tier === 'simple' || tier === 'feature') a.mode = 'implement'
-  if (TIER_SEATS[tier] && !seatList(a.seats).length) a.seats = TIER_SEATS[tier]
+  const defaults = raw.host === 'codex' ? CODEX_TIER_SEATS : TIER_SEATS
+  if (defaults[tier] && !seatList(a.seats).length) a.seats = defaults[tier]
   return a
 }
 
@@ -3184,7 +3247,8 @@ function runFacts(S, o) {
     escalation: f.escalation ? escalationFacts(f.escalation) : null,
     split: f.split || null,
     mode: S.mode, readiness: o.ready ? o.ready.state : null,
-    turns: { claude: claude.length, byRole: count(claude, t => t.role), external: S.turnLog.filter(t => t.vendor !== 'claude').length },
+    turns: { claude: claude.length, byRole: count(S.host === 'codex' ? S.turnLog : claude, t => t.role), external: S.turnLog.filter(t => t.vendor !== 'claude').length,
+      ...(S.host === 'codex' ? { byVendor: count(S.turnLog, t => t.vendor) } : {}) },
     reviewFindings: count(findings, c => c.severity),
     fabricated: S.ledger.filter(c => c.status === 'fabricated').length,
     relayFailures: S.relayFailures.length,
@@ -3253,7 +3317,7 @@ function simpleReport(S, o) {
   ].filter(Boolean)
   return {
     markdown: (assumed.length ? `### Assumptions to check\n\n${assumed.map(q => `- ${sentence(oneLine(q.question, 300))}${q.assumption ? ` Assumed: ${sentence(oneLine(q.assumption, 300))}` : ''}`).join('\n')}\n\n` : '') +
-      `### Simple change, by ${W.name}\n\nThe factory routed this as a simple change: one implementer, the neutral check, and one reviewer from another vendor.\n\n${lines.join('\n')}` +
+      `### Simple change, by ${W.name}\n\nThe factory routed this as a simple change: one implementer, the neutral check, and ${S.host === 'codex' ? 'one independent reviewer' : 'one reviewer from another vendor'}.\n\n${lines.join('\n')}` +
       auditSection(S, W, audit) + problemsSection(S),
   }
 }
@@ -3266,8 +3330,10 @@ function needsTier(S, push, intake) {
     forTheOrchestrator:
       `The factory stopped before creating anything: the user asked for the ${push.asked} tier, and intake recommends ${push.recommended} (${oneLine(intake.reasons, 400) || 'no reason given'}). ` +
       `Ask the user in one short message whether to keep ${push.asked} or switch to ${push.recommended}, with intake's reason. ` +
-      `To keep it: Workflow({name: "factory", resumeFromRunId: <this run's id>, args: <exactly the args you launched with, as an object>, plus tierConfirmed: true}). ` +
-      `To switch: the same call with tier: "${push.recommended}" instead. Intake replays from cache either way. ` +
+      (S.host === 'codex'
+        ? `Rerun the runner with the original args file and tierConfirmed: true to keep it, or tier: "${push.recommended}" to switch. This starts a new run. `
+        : `To keep it: Workflow({name: "factory", resumeFromRunId: <this run's id>, args: <exactly the args you launched with, as an object>, plus tierConfirmed: true}). ` +
+          `To switch: the same call with tier: "${push.recommended}" instead. Intake replays from cache either way. `) +
       'A kept tier is only where the run starts: if the evidence shows it is too low, the run still hands the work up.',
   }
 }
@@ -3283,15 +3349,22 @@ function needsSplit(S, items, intake) {
       `The factory stopped before creating anything: intake found ${items.length} separate pieces of work in this task (${oneLine(intake.reasons, 400) || 'no reason given'}). ` +
       'One run would debate and review them all together, at the cost of the hardest piece. ' +
       `Show the user the pieces (items[]: title, estimated tier, and the earlier pieces each builds on) and ask in one short message: run them one at a time (recommended), or the whole task as one ${pinned || tier} run. ` +
-      'One at a time: for each piece in order, Workflow({name: "factory", args: <the args you launched with>, with task replaced by the piece\'s task}), so plan, context and the rest carry over. ' +
+      (S.host === 'codex'
+        ? 'One at a time: rerun the runner for each piece in order, preserving the original args and replacing task with that piece\'s task, so plan, context and the rest carry over. '
+        : 'One at a time: for each piece in order, Workflow({name: "factory", args: <the args you launched with>, with task replaced by the piece\'s task}), so plan, context and the rest carry over. ') +
       'Each run starts from HEAD and stops on a dirty tree, so present each result as usual and wait for the user to commit it before the next piece starts. ' +
       `Don't pin the estimated tiers: each run's intake picks its own${pinned ? `. The user pinned ${pinned} for the whole task; ask whether it applies to each piece` : ''}. ` +
-      'As one: Workflow({name: "factory", resumeFromRunId: <this run\'s id>, args: <exactly the args you launched with, as an object>, plus noSplit: true}). Intake replays from cache.',
+      (S.host === 'codex'
+        ? 'As one: rerun the runner with the original args and noSplit: true. This starts a new run.'
+        : 'As one: Workflow({name: "factory", resumeFromRunId: <this run\'s id>, args: <exactly the args you launched with, as an object>, plus noSplit: true}). Intake replays from cache.'),
   }
 }
 
 // On a run that needs no model retro, a small agent saves the facts: workflow scripts have no shell.
 function recordPrompt(S, payload, hash) {
+  if (S.host === 'codex') return `Save this run's facts. Run this with the shell tool, exactly as written:
+${S.cli} retro --facts-only --run-dir ${shq(S.run.runDir)} --payload-file ${shq(`${S.run.runDir}/retro-data.md`)} --expect ${hash}
+The runtime wrote the exact payload to that file. Do not rewrite it. The last line printed is JSON. For status "ok", set saved to its "path" and error to ""; otherwise set saved to "" and error to what it printed. Do nothing else.`
   return `Save this run's facts. Run this with the Bash tool, exactly as written:
 ${S.cli} retro --facts-only --run-dir ${shq(S.run.runDir)} --expect ${hash}
 The last line it prints is JSON. "ok": set saved to its "path". "sandboxed": run the same command again with the sandbox disabled (dangerouslyDisableSandbox: true). "error", or "sandboxed" again: set saved to "" and error to what it printed. Do nothing else.
@@ -3513,7 +3586,11 @@ function milestoneArgs(S, m, design, findings) {
       (m.working ? ` Once it lands: ${sentence(m.working)}` : '')]
   if (m.criteria.length) lines.push('', 'Draft acceptance criteria from the plan, to check against the code as it now is:', ...m.criteria.map(c => `- ${c}`))
   if (findings.length) lines.push('', 'Findings from the review of the plan that still stand against this milestone:', ...findings.map(c => `- ${oneLine(c.statement, 400)}`))
-  return { task: lines.join('\n'), plan: [design, ...S.plan], tier: m.tier, tierConfirmed: true, noSplit: true }
+  const original = S.factory && S.factory.args || S.raw
+  const options = S.host === 'codex'
+    ? Object.fromEntries(['host', 'roles', 'repo', 'cli', 'context', 'effort', 'seats', 'panel', 'spec', 'audit', 'simple', 'checkModel', 'verify', 'timeoutMin', 'rounds', 'narrow', 'retro', 'ballot', 'approval', 'allowDirty']
+      .filter(k => original[k] !== undefined).map(k => [k, original[k]])) : {}
+  return { ...options, task: lines.join('\n'), plan: [design, ...S.plan], tier: m.tier, tierConfirmed: true, noSplit: true }
 }
 
 // The request asked for the change itself, and got a plan: intake judged it too big for one
@@ -3628,7 +3705,8 @@ function architectureResult(S, o) {
       '(4) what your spot-check found, including anything you disagree with; ' +
       `(5) the milestones (milestones[]) as a short numbered list: each one's title, tier, the milestones it builds on, and what works once it lands${retro && retro.markdown ? '; (6) last, retro.markdown as it is: notes on the workflow, not the user\'s project, so don\'t act on them unless the user asks' : ''}. ` +
       'Then offer to build the milestones one at a time, in order. Don\'t start one unasked, and don\'t chain them: the user decides after each. ' +
-      'For each: Workflow({name: "factory", args: milestones[i].args}). Those args hold the milestone\'s task with its draft criteria and any review findings still open against it, the final design as its plan document, and the tier the plan gave it, confirmed. ' +
+      (S.host === 'codex' ? 'For each, write milestones[i].args to an args file and launch the runner. ' : 'For each: Workflow({name: "factory", args: milestones[i].args}). ') +
+      'Those args hold the milestone\'s task with its draft criteria and any review findings still open against it, the final design as its plan document, and the tier the plan gave it, confirmed. ' +
       'If the user settles an open finding or question first, put the answer in the task. ' +
       'Each run starts from HEAD and stops on a dirty tree, so present each result as usual and wait for the user to commit it before the next milestone starts. ' +
       `Keep this run's directory until the milestones are done, since each milestone run reads the design from ${design}: \`${S.cli} cleanup --run-dir ${S.run.runDir}\` (without --all) removes the worktrees and keeps the room. ` +
@@ -3641,6 +3719,9 @@ function architectureResult(S, o) {
 // argument, and the code below it (schemas, turns, the flows) uses it directly. `let`, because the
 // factory rebuilds it once it knows the tier.
 let S = newState(parseConfig(args))
+// Claude supplies agent()/parallel(); the standalone runner supplies this optional adapter.
+// Keep the feature check here so the same generated workflow runs in both hosts.
+const hostRuntime = typeof factoryRuntime === 'undefined' ? null : factoryRuntime
 
 // Output schemas for every agent turn. Built from the config, so they sit after boot.
 
@@ -3990,10 +4071,27 @@ function keepProcess(turn, role, who, res) {
 
 // Every agent call goes through here except the retro's own, so each can leave a process note.
 async function ask(prompt, opts, role, who) {
-  const res = await agent(prompt, { ...opts, schema: withProcess(opts.schema) })
-  S.turnLog.push({ turn: opts.label, role, vendor: 'claude', ok: !!res })
-  keepProcess(opts.label, role, who || opts.model, res)
+  const selected = roleAgent(S, role, opts)
+  const res = hostRuntime
+    ? await hostAgent(prompt, { ...opts, schema: withProcess(opts.schema) }, role, who)
+    : await agent(prompt, { ...opts, schema: withProcess(opts.schema) })
+  S.turnLog.push({ turn: opts.label, role, vendor: hostRuntime ? selected.vendor : 'claude', ok: !!res })
+  keepProcess(opts.label, role, who || (hostRuntime ? selected.name : opts.model), res)
   return res
+}
+
+// Orchestration turns are fresh, including neutral checks. Seat and auditor continuations use
+// externalTurn below, which carries their separate thread keys and worktree permissions.
+async function hostAgent(prompt, opts, role, who, extra = {}) {
+  const selected = roleAgent(S, role, opts)
+  try {
+    return await hostRuntime.agent({ ...opts, prompt, vendor: selected.vendor, model: selected.model,
+      effort: selected.effort, role, who: who || selected.name, run: S.run, fresh: true,
+      timeoutMin: timeoutFor(role), ...(role === 'setup' ? { preflightVendors: externalVendors(S), setupRunId: setupRunId(S) } : {}), ...extra })
+  } catch (e) {
+    S.notes.push(`${role} turn ${opts.label} failed: ${oneLine(e && e.message || e, 300)}`)
+    return null
+  }
 }
 
 // Per-phase deadline for a Codex or Gemini turn, in minutes: `timeoutMin` is one number, or
@@ -4017,6 +4115,27 @@ async function externalTurn(o, prompt, schema, label, ph) {
     S.notes.push(`${V} turn ${o.key} failed${why ? `: ${why}` : '.'}`)
     S.turnLog.push({ turn: label, role: o.role, vendor: o.vendor, ok: false })
     return null
+  }
+  if (hostRuntime) {
+    let r
+    try {
+      r = await hostRuntime.turn({ ...o, prompt: payload, schema: full, label, phase: ph,
+        run: S.run, expect: hash, timeoutMin: minutes })
+    } catch (e) {
+      return fail(oneLine(e && e.message || e, 300))
+    }
+    if (r && r.status === 'done' && r.result && r.result.turn === tag) {
+      const { turn, ...result } = r.result
+      S.turnLog.push({ turn: label, role: o.role, vendor: o.vendor, ok: true })
+      const seconds = Number(r.seconds ?? r.elapsedSec)
+      if (seconds > 0) S.vendorTimes.push({ turn: o.key, vendor: o.vendor, seconds })
+      keepProcess(label, o.role, o.who, result)
+      return result
+    }
+    if (r && r.status === 'sandboxed') S.blocked[o.vendor] = true
+    return fail(r && r.status === 'done'
+      ? `the result's turn tag ${r.result ? JSON.stringify(r.result.turn) : '(no result)'} is not ${tag}: an answer to an earlier turn`
+      : r ? `${oneLine(r.error || r.status, 300)}${r.errorClass ? ` [${r.errorClass}]` : ''}` : 'the runtime returned no result')
   }
   for (const relayModel of ['haiku', 'sonnet']) {
     const file = `${S.run.runDir}/jobs/${o.key}.${relayModel}.prompt.md`
@@ -4071,7 +4190,7 @@ function auditTurn(a, W, round) {
   const prompt = auditPrompt(S, a, W, round)
   const label = `${roundTag(round)} ${a.lens}: ${a.key}`
   const schema = S.tier === 'architecture' ? PLAN_REVIEW_SCHEMA : AUDIT_SCHEMA
-  if (a.vendor === 'claude') return ask(prompt, { label, phase: 'Audit', schema, model: a.model, effort: a.effort }, 'auditor', a.name)
+  if (a.vendor === 'claude' && !hostRuntime) return ask(prompt, { label, phase: 'Audit', schema, model: a.model, effort: a.effort }, 'auditor', a.name)
   if (S.tier === 'architecture') {
     return externalTurn({
       key: `${roundTag(round)}-${a.lens}`, threadKey: `audit-${a.lens}`, fresh: round === 'H', vendor: a.vendor, model: a.model, effort: a.effort,
@@ -4090,7 +4209,7 @@ function seatTurn(s, round, prompt, schema) {
   const tag = roundTag(round)
   const label = `${tag}:${s.L} ${s.key}`
   const ph = phaseOf(round)
-  if (s.vendor === 'claude') {
+  if (s.vendor === 'claude' && !hostRuntime) {
     return ask(prompt, { label, phase: ph, schema: NOTE_SCHEMAS.get(schema) || schema, model: s.model, effort: s.effort }, 'seat', s.name)
   }
   return externalTurn({
@@ -4102,7 +4221,7 @@ function seatTurn(s, round, prompt, schema) {
 function panelRun(k, ids) {
   const prompt = panelPrompt(S, k, ids.map(id => S.byId[id]))
   const tag = roundTag(k)
-  return parallel(S.panel.map(m => () => m.vendor === 'claude'
+  return parallel(S.panel.map(m => () => m.vendor === 'claude' && !hostRuntime
     ? ask(prompt, { label: `panel ${tag}: ${m.key}`, phase: phaseOf(k), schema: PANEL_SCHEMA, model: m.model, effort: m.effort }, 'panel', m.name)
     : externalTurn({
         key: `panel-${m.key}-${tag}`, threadKey: `panel-${m.key}-${tag}`, fresh: true, vendor: m.vendor, model: m.model, effort: m.effort, role: 'panel', who: m.name,
@@ -4199,7 +4318,7 @@ async function clusterQuestions(k) {
 function specTurn(r) {
   const prompt = specReviewPrompt(S, r)
   const label = `spec ${r.lens}: ${r.key}`
-  if (r.vendor === 'claude') return ask(prompt, { label, phase: 'Spec', schema: SPEC_SCHEMA, model: r.model, effort: r.effort }, 'spec', r.name)
+  if (r.vendor === 'claude' && !hostRuntime) return ask(prompt, { label, phase: 'Spec', schema: SPEC_SCHEMA, model: r.model, effort: r.effort }, 'spec', r.name)
   return externalTurn({
     key: `spec-${r.lens}`, threadKey: `spec-${r.lens}`, fresh: true, vendor: r.vendor, model: r.model, effort: r.effort, role: 'spec', who: r.name,
     sandbox: 'read-only', cwd: S.run.repoRoot, writable: [], timeoutKind: 'spec',
@@ -4219,7 +4338,7 @@ async function runSpecReview() {
   if (!S.spec.findings.length) return null
 
   const prompt = specPanelPrompt(S, S.spec.findings)
-  applySpecPanel(S, await parallel(S.panel.map(m => () => m.vendor === 'claude'
+  applySpecPanel(S, await parallel(S.panel.map(m => () => m.vendor === 'claude' && !hostRuntime
     ? ask(prompt, { label: `panel spec: ${m.key}`, phase: 'Spec', schema: SPEC_PANEL_SCHEMA, model: m.model, effort: m.effort }, 'panel', m.name)
     : externalTurn({
         key: `panel-${m.key}-spec`, threadKey: `panel-${m.key}-spec`, fresh: true, vendor: m.vendor, model: m.model, effort: m.effort, role: 'panel', who: m.name,
@@ -4340,10 +4459,13 @@ async function runRetro(o) {
   const hash = promptHash(payload)
   let r = null
   try {
-    r = await agent(retroPrompt(S, o.reportMd, payload, hash), { label: 'retro', phase: 'Retro', schema: RETRO_SCHEMA, model: 'sonnet', effort: 'medium' })
+    const prompt = retroPrompt(S, o.reportMd, payload, hash)
+    const opts = { label: 'retro', phase: 'Retro', schema: RETRO_SCHEMA, model: 'sonnet', effort: 'medium' }
+    r = hostRuntime ? await hostAgent(prompt, opts, 'retro', null, { payload, payloadFile: `${S.run.runDir}/retro-data.md` }) : await agent(prompt, opts)
   } catch (e) {
     r = null
   }
+  if (hostRuntime) S.turnLog.push({ turn: 'retro', role: 'retro', vendor: S.roles.retro.vendor, ok: !!r })
   if (!r) {
     return { worked: [], changes: [], saved: '', error: 'the retro agent failed', notes: S.processNotes,
       markdown: `### Process retro\n\nThe retro agent failed. ${plural(S.processNotes.length, 'process note')} from the run ${S.processNotes.length === 1 ? 'is' : 'are'} in retro.notes.` }
@@ -4355,11 +4477,13 @@ async function recordFacts(payload) {
   const hash = promptHash(payload)
   let r = null
   try {
-    r = await agent(recordPrompt(S, payload, hash), { label: 'record', phase: 'Record', schema: RECORD_SCHEMA, model: 'haiku', effort: 'low' })
+    const prompt = recordPrompt(S, payload, hash)
+    const opts = { label: 'record', phase: 'Record', schema: RECORD_SCHEMA, model: 'haiku', effort: 'low' }
+    r = hostRuntime ? await hostAgent(prompt, opts, 'record', null, { payload, payloadFile: `${S.run.runDir}/retro-data.md` }) : await agent(prompt, opts)
   } catch (e) {
     r = null
   }
-  S.turnLog.push({ turn: 'record', role: 'record', vendor: 'claude', ok: !!r })
+  S.turnLog.push({ turn: 'record', role: 'record', vendor: hostRuntime ? S.roles.record.vendor : 'claude', ok: !!r })
   return { recorded: true, saved: (r && r.saved) || '', error: r ? r.error || '' : 'the record agent failed', notes: S.processNotes, markdown: '' }
 }
 

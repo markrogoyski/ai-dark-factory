@@ -27,11 +27,11 @@ function debates(S, chosen) {
   return rows.sort((a, b) => (b.weight - a.weight) || (a.i - b.i))
 }
 
-function rulingText(c) {
+function rulingText(c, panelName = 'the two-vendor panel') {
   if (c.withdrawn) return 'withdrawn by its author'
   if (c.status === 'judgment') return 'a judgment call: argued, not adjudicated'
   const panel = c.ruledBy.startsWith('panel')
-  const by = panel ? 'the two-vendor panel' : 'the neutral checker'
+  const by = panel ? panelName : 'the neutral checker'
   const note = c.note ? `: ${oneLine(c.note, 240)}` : ''
   switch (c.status) {
     case 'verified':   return `${c.kind === 'finding' ? 'upheld' : 'verified'} by ${by}${note}`
@@ -54,7 +54,7 @@ function debateEntry(S, d, W) {
       `${c.kind === 'test' ? 'test' : `${c.kind} claim`}, round ${d.disputes[0].round}.** ${oneLine(c.statement, 220)}`)
     for (const x of d.disputes) out.push(`  - ${who(S, x.by)}: ${oneLine(x.reason, 220) || '(no reason given)'}`)
   }
-  out.push(`  - Ruling: ${rulingText(c)}`)
+  out.push(`  - Ruling: ${rulingText(c, S.host === 'codex' ? 'the independent panel' : undefined)}`)
   const after = []
   if (c.conceded) after.push(`${c.target} conceded it${c.concededIn !== undefined ? ` ${atRound(c.concededIn)}` : ''}`)
   if (c.fixed) after.push(`fixed${c.fixedIn !== undefined ? ` ${atRound(c.fixedIn)}` : ''}`)
@@ -149,7 +149,7 @@ function auditOutcome(S, c, W, audit) {
   const bits = []
   if (c.kind === 'test') {
     const before = audit.testsAtAudit[c.id], now = (S.testResults[c.id] || {})[W]
-    bits.push(c.status === 'open' ? 'not ruled on' : c.status === 'verified' ? 'a valid test' : rulingText(c))
+    bits.push(c.status === 'open' ? 'not ruled on' : c.status === 'verified' ? 'a valid test' : rulingText(c, S.host === 'codex' ? 'the independent panel' : undefined))
     if (before) bits.push(`${before} on the audited version${audit.fixPass && now ? `, ${now} after the fix` : ''}`)
   } else if (c.judgment) {
     bits.push(c.ruledBy.startsWith('panel') ? `the panel split, so it stays a judgment call: ${oneLine(c.note, 200)}` : 'a suggestion to the author, not adjudicated')
@@ -157,7 +157,7 @@ function auditOutcome(S, c, W, audit) {
   } else if (c.status === 'open') {
     bits.push(c.round === 'J' ? 'not adjudicated (minor, raised after the last fix)' : 'not ruled on')
   } else {
-    bits.push(rulingText(c))
+    bits.push(rulingText(c, S.host === 'codex' ? 'the independent panel' : undefined))
     if (c.fixed) bits.push(S.tier === 'architecture' ? 'fixed in the revision' : 'fixed in the audit fix pass')
     else if (isStanding(S, c)) bits.push('still stands against the final version')
   }
@@ -169,7 +169,7 @@ function auditOutcome(S, c, W, audit) {
 function auditSection(S, W, audit) {
   if (!audit || !audit.ran) return ''
   const simple = S.tier === 'simple', arch = S.tier === 'architecture'
-  const lines = [simple ? `A reviewer from another vendor, ${S.auditors.map(a => a.name).join(', ')}, read the change without seeing how it was made.`
+  const lines = [simple ? `${S.host === 'codex' ? 'An independent reviewer' : 'A reviewer from another vendor'}, ${S.auditors.map(a => a.name).join(', ')}, read the change without seeing how it was made.`
     : arch ? `Reviewers who never saw the debate reviewed the milestone plan, each through one lens: ${listText(S.auditors.map(a => `${a.lens} (${a.name})`))}.`
     : `Auditors who never saw the debate reviewed the final ${S.build ? 'change' : 'version'}, each through one lens: ${listText(S.auditors.map(a => `${a.lens} (${a.name})`))}.`, '']
   for (const a of S.auditors) {
@@ -250,7 +250,9 @@ function specQuestions(S, qs) {
     status: 'needs-user', mode: S.mode, task: S.task, round: 'spec', runDir: S.run.runDir, room: S.run.room,
     questions: qs.map(f => ({ id: f.id, question: f.statement, readings: f.readings, raisedBy: `the ${f.lens} reviewer`, evidence: f.evidence, adjudicators: f.note })),
     criteria: S.criteria, notes: S.notes,
-    forTheOrchestrator:
+    forTheOrchestrator: S.host === 'codex'
+      ? `Before any seat started, the specification review found questions only the user can settle. Show questions[] with their readings and ask for the answers. Preserve the original args, append each question and answer to context, and rerun the runner with that args file. This starts a new run; keep the old run directory for inspection.`
+      :
       `Before any seat started, the spec review found ${qs.length === 1 ? 'a question' : 'questions'} about the request that the code and the task don't settle, ` +
       'and this run was told to ask rather than assume (spec: "ask"). Ask the user (AskUserQuestion works well: offer each question\'s readings as options; the first is the most conservative). ' +
       `Then resume the same run: Workflow({name: "${S.workflowName}", resumeFromRunId: <this run's id>, args: <exactly the args you launched with, as an object; ` +
@@ -339,7 +341,7 @@ function finalReport(S, o) {
     }).join('; ')}` : '') + '.')
   for (const c of o.objections) {
     fin.push(`  - Objection [${c.id}] from ${who(S, c.author)}, ${c.judgment ? 'judgment' : c.severity}: ${oneLine(c.statement, 200)} → ` +
-      `${c.judgment ? 'recorded as dissent' : c.fixed ? 'upheld and fixed in the fix pass' : c.status === 'open' ? 'not adjudicated (minor)' : rulingText(c)}`)
+      `${c.judgment ? 'recorded as dissent' : c.fixed ? 'upheld and fixed in the fix pass' : c.status === 'open' ? 'not adjudicated (minor)' : rulingText(c, S.host === 'codex' ? 'the independent panel' : undefined)}`)
   }
   const open = []
   for (const c of o.remaining) open.push(`standing finding [${c.id}] from ${who(S, c.author)} (${c.severity}, ${c.status}): ${oneLine(c.statement, 200)}`)
@@ -475,8 +477,8 @@ Return up to 3 things that worked and should be kept, and 3 to 5 changes, the mo
 1. **<change>** <why>. Evidence: <evidence>. Where: <where>.
 \`\`\`
 Don't copy the process notes or run facts into it; the next command attaches them exactly.
-2. Run this with the Bash tool, exactly as written: ${S.cli} retro --run-dir ${shq(S.run.runDir)} --expect ${hash}
-   The last line it prints is JSON. "ok": set saved to its "path". "sandboxed": run the same command again with the sandbox disabled (dangerouslyDisableSandbox: true). "error", or "sandboxed" again: set saved to "" and error to what it printed.
+2. Run this with the ${S.host === 'codex' ? 'shell' : 'Bash'} tool, exactly as written: ${S.cli} retro --run-dir ${shq(S.run.runDir)}${S.host === 'codex' ? ` --payload-file ${shq(`${S.run.runDir}/retro-data.md`)}` : ''} --expect ${hash}
+   ${S.host === 'codex' ? 'The runtime wrote the exact process notes and facts to that file; do not rewrite it. The last line printed is JSON. For status "ok", set saved to its "path"; otherwise set saved to "" and error to what it printed.' : 'The last line it prints is JSON. "ok": set saved to its "path". "sandboxed": run the same command again with the sandbox disabled (dangerouslyDisableSandbox: true). "error", or "sandboxed" again: set saved to "" and error to what it printed.'}
 
 # The report
 
@@ -513,7 +515,7 @@ function deliveryNote(S, label, W, what) {
     `Run \`git log --oneline HEAD..${ref}\` from the repo root. If it lists only one commit, named "council …", the change is uncommitted: after the user approves, ` +
     'apply the diff with `git apply` from the repo root. Otherwise the author committed it as the task asked: after the user approves, `git cherry-pick` those commits, ' +
     'and if the top commit is named "council … uncommitted changes", show the user what it holds (often working files such as notes) rather than applying it unasked. ' +
-    'Then run the project\'s gates through a fresh Sonnet subagent. '
+    (S.host === 'codex' ? 'Then run the project\'s gates through a fresh verifier. ' : 'Then run the project\'s gates through a fresh Sonnet subagent. ')
 }
 
 // Setup (or the factory's intake) found that the task depends on a document it can't see.
@@ -524,8 +526,10 @@ function needsPlan(S, missing, runDir) {
     forTheOrchestrator:
       `The council stopped before any seat started: the task depends on a plan or document it couldn't find (${oneLine(missing, 300) || 'unspecified'}). ` +
       'Seats work in worktrees checked out from HEAD and can\'t see uncommitted files, so the document has to be passed in. Find it yourself: ' +
-      'a plan made in this conversation is under ~/.claude/plans/; otherwise look in the repository for the file the user named. ' +
-      `Then rerun with object args and its absolute path: Workflow({name: "${S.workflowName}", args: {task: <the task, saying which part to do>, plan: ["/abs/path"], …the other args}}). ` +
+      (S.host === 'codex'
+        ? 'look in the repository and the documents named in this conversation. Then rerun the runner with the original args and the document\'s absolute path in plan. '
+        : 'a plan made in this conversation is under ~/.claude/plans/; otherwise look in the repository for the file the user named. ' +
+          `Then rerun with object args and its absolute path: Workflow({name: "${S.workflowName}", args: {task: <the task, saying which part to do>, plan: ["/abs/path"], …the other args}}). `) +
       'Don\'t paste the document into the task. If you can\'t tell which document is meant, ask the user.' +
       (runDir ? ` Remove the partial run with \`${S.cli} cleanup --run-dir ${runDir} --all\`.` : ''),
   }
@@ -553,7 +557,9 @@ function preflightStop(S, bad) {
   return {
     status: 'blocked', reason: `a vendor CLI can't run from this session (${lines.join('; ')})`, mode: S.mode, task: S.task, runDir: null,
     preflight: bad, notes: S.notes,
-    forTheOrchestrator:
+    forTheOrchestrator: S.host === 'codex'
+      ? `The factory stopped before creating worktrees because the CLI preflight failed: ${lines.join('; ')}. Report the exact error. Fix the named CLI's installation, authentication or permissions, or explicitly replace every use of that vendor in seats, panel, spec, audit, simple and roles before rerunning. Do not change the lineup silently.`
+      :
       `The council stopped before creating anything: the preflight check found that ${lines.join('; ')}. Tell the user plainly, and offer the fix that fits: ` +
       `if the error says the command ran inside a sandbox, the user adds "Bash(${S.cli}:*)" to permissions.allow in ~/.claude/settings.json (or approves running it outside the sandbox when asked); ` +
       'if a CLI is missing or its settings are wrong, they install or fix it as the error says. ' +
@@ -569,7 +575,9 @@ function needsUser(S, k, qs) {
     positionsSoFar: active(S).map(s => ({ seat: s.L, summary: S.pos[s.L].summary, post: S.pos[s.L].post })),
     report: interimReport(S, k),
     seats: reveal(S), notes: S.notes,
-    forTheOrchestrator:
+    forTheOrchestrator: S.host === 'codex'
+      ? `Questions reached the escalation threshold after ${roundTag(k)}. Show report.markdown and questions[] with each seat's assumptions, then ask the user for answers. Preserve the original args, append each question and answer to context, and rerun the runner with that args file. This starts a new run; keep the old run directory for inspection.`
+      :
       `${qs.length === 1 ? 'A question' : 'Questions'} reached the escalation threshold (${escalateAt(S)} seats) after ${roundTag(k)}: ` +
       'the council believes the request itself is ambiguous. First show the user report.markdown, the debate so far, with the seat-to-model reveal, so they can see what prompted the question. ' +
       'Then ask (AskUserQuestion works well; show each seat\'s assumption as an option). ' +

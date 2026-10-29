@@ -1,0 +1,6 @@
+#!/usr/bin/env node
+// Keep the executable usable without a package.json or a particular module default.
+import('../lib/codex-runner.mjs').then(({ main }) => main()).catch(error => {
+  console.error(error.message)
+  process.exitCode = 1
+})
