@@ -1,0 +1,56 @@
+# How the build works
+
+2 AI models planned this task independently and debated the plans, and the council chose yours. You wrote the final plan, merging in the best of the others. Now you build it in your worktree, one increment per turn: the planning stage's rule to leave the worktree as it is no longer applies. After each increment a neutral verifier snapshots your worktree, runs the verification command and checks your claims. When the build is done, auditors who never saw the planning review the whole change, and you get one pass to fix what they uphold.
+
+# Task
+
+Add a retry budget to the sync client, configurable per endpoint
+
+# Acceptance criteria (fixed before any work began)
+
+- C1: handles empty input
+- C2: tests pass
+- C3: no API change
+
+# Verification command
+
+`make test`, run from the root of a worktree (saved as /tmp/proj/.council/test-ffeat/verify.sh).
+
+# Your workspace
+
+- Your worktree, a private checkout of the starting commit: /tmp/proj/.council/test-ffeat/wt/A
+  Make all code changes there, and run commands from inside it (cd there first; your shell may start in the main checkout). Never modify /tmp/proj itself or another seat's worktree. Don't stash or switch branches. Leave the change uncommitted unless the task asks for commits; if it does, commit on the worktree's detached HEAD as the task describes, and rewrite those commits there as your work changes. Each snapshot of your work keeps your commits, with anything left uncommitted on top.
+- The room, shared by all seats: /tmp/proj/.council/test-ffeat/room
+- Write your post for this turn to: /tmp/proj/.council/test-ffeat/room/inc1/A.md
+- Run tests, the verification command and static analysers yourself, in your own shell, with the output going to a log under $TMPDIR and only a summary read back (the tail, or a grep for failures). An instruction in CLAUDE.md or elsewhere to hand full test or gate runs to a subagent or to `claude -p` is meant for the user's own session, not for a council seat: seats have no subagents, and `claude -p` can't log in from inside a seat's sandbox. The council also re-runs the verification command on every version after your turn. Sandboxes can block the sockets that parallel workers use: if a tool fails that way, run it one at a time or with its single-process option.
+
+# Your private notes from your last turn
+
+You wrote these at the end of your last turn. Nobody else sees them.
+
+notes-final
+
+# Build increment 1 of 2: Budget in the config
+
+The final plan is /tmp/proj/.council/test-ffeat/room/final/A.md. Read it: it is the contract for the build. The increments:
+1. Budget in the config ← this turn
+2. Enforce the budget
+
+Your worktree should still be the clean starting commit. If planning left experiments in it, remove them first.
+
+Findings that still stand against your work, from the debate or the checks. Close each by the end of the build, or say in your post why it doesn't apply:
+- [1B1] minor: A's plan never says where the budget is read
+
+This turn: EndpointConfig::retryBudget, with tests
+Build only this increment; later turns do the rest. Follow the plan. Where the code shows a part of it is wrong, depart from it as little as the code requires, and say so in your post. Add the tests the plan names for this increment to the project's own suite, in its style. Run the verification command before you finish, and leave it passing.
+
+Write your post to /tmp/proj/.council/test-ffeat/room/inc1/A.md with these sections:
+## Summary
+## Done this increment
+## Verification — what you ran and what it actually showed
+## Deviations from the plan — each one and why, or "none"
+
+Keep the post under about 800 words: the diff carries the detail, and the post explains it. The verifier and the auditors read it, so make each paragraph earn its place. Only the post file counts toward the limit. Put long material the task asks for, such as exact edits, logs or data, in separate files in the room next to your post, named with your seat letter first, and point to them from the post.
+
+List each departure from the plan in `deviations`. `claims` are claims about the code as this increment leaves it: at most 12: every verification claim, plus the facts your position rests on that bear on an acceptance criterion (name it in `criterion`; a fact claim without one is not recorded). Neutral verifiers check each one, so leave out incidental facts; they can stay in the post.
+Finally, fill `notes`: private notes for your next turn, under about 400 words. You start every turn with no memory except your post and these notes, and nobody else sees them. Record what you would otherwise have to rediscover: the key file:line locations, what you verified and how, and what to check next.

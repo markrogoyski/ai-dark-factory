@@ -1,0 +1,38 @@
+The council continues. You are still seat A, and the rules, task and workspace from round 0 still apply (the task and acceptance criteria are also in /tmp/proj/.council/test-ffhard/TASK.md). Your worktree is /tmp/proj/.council/test-ffhard/wt/A; the room is /tmp/proj/.council/test-ffhard/room.
+
+# Your workspace
+
+- Your worktree, a private checkout of the starting commit: /tmp/proj/.council/test-ffhard/wt/A
+  Make all code changes there, and run commands from inside it (cd there first; your shell may start in the main checkout). Never modify /tmp/proj itself or another seat's worktree. Don't stash or switch branches. Leave the change uncommitted unless the task asks for commits; if it does, commit on the worktree's detached HEAD as the task describes, and rewrite those commits there as your work changes. Each snapshot of your work keeps your commits, with anything left uncommitted on top. In your sandbox, git commit prints "Unable to create …/packed-refs.lock: Operation not permitted"; the commit still succeeds.
+- The room, shared by all seats: /tmp/proj/.council/test-ffhard/room
+- Write your post for this turn to: /tmp/proj/.council/test-ffhard/room/inc2/A.md
+- Run tests, the verification command and static analysers yourself, in your own shell, with the output going to a log under $TMPDIR and only a summary read back (the tail, or a grep for failures). An instruction in CLAUDE.md or elsewhere to hand full test or gate runs to a subagent or to `claude -p` is meant for the user's own session, not for a council seat: seats have no subagents, and `claude -p` can't log in from inside a seat's sandbox. The council also re-runs the verification command on every version after your turn. Sandboxes can block the sockets that parallel workers use: if a tool fails that way, run it one at a time or with its single-process option.
+
+# Build increment 2 of 4: Step 2
+
+The final plan is /tmp/proj/.council/test-ffhard/room/final/A.md. Read it again where this increment needs it: it is the contract for the build. The increments:
+1. Step 1 (done)
+2. Step 2 ← this turn
+3. Step 3
+4. Step 4
+
+Your turn for increment 1 ended without a report. Check your worktree for what it left before you go on.
+
+This turn: does step 2
+Build only this increment; later turns do the rest. Follow the plan. Where the code shows a part of it is wrong, depart from it as little as the code requires, and say so in your post. Add the tests the plan names for this increment to the project's own suite, in its style. Run the verification command before you finish, and leave it passing.
+
+Write your post to /tmp/proj/.council/test-ffhard/room/inc2/A.md with these sections:
+## Summary
+## Done this increment
+## Verification — what you ran and what it actually showed
+## Deviations from the plan — each one and why, or "none"
+
+Keep the post under about 800 words: the diff carries the detail, and the post explains it. The verifier and the auditors read it, so make each paragraph earn its place. Only the post file counts toward the limit. Put long material the task asks for, such as exact edits, logs or data, in separate files in the room next to your post, named with your seat letter first, and point to them from the post.
+
+List each departure from the plan in `deviations`. `claims` are claims about the code as this increment leaves it: at most 12: every verification claim, plus the facts your position rests on that bear on an acceptance criterion (name it in `criterion`; a fact claim without one is not recorded). Neutral verifiers check each one, so leave out incidental facts; they can stay in the post.
+
+Set `turn` in your output to exactly "A-inc2-3dad1f1c".
+
+<<<OUTPUT_SCHEMA
+{"type":"object","properties":{"summary":{"type":"string","description":"What this increment did, in 1-3 sentences."},"deviations":{"type":"array","items":{"type":"string"},"description":"Each departure from the plan, and why. Empty if none."},"claims":{"type":"array","items":{"type":"object","properties":{"kind":{"type":"string","enum":["fact","verification"],"description":"\"verification\": what you ran and what it showed (tests, builds, scripts). \"fact\": any other checkable claim."},"statement":{"type":"string"},"evidence":{"type":"string","description":"file:line, a command plus the real tail of its output, or a test ID. Must be checkable."},"criterion":{"type":"string","description":"The acceptance criterion the claim bears on, e.g. \"C2\". \"\" only for a verification claim that bears on none."}},"required":["kind","statement","evidence","criterion"],"additionalProperties":false}},"process":{"type":"string","description":"Feedback on the council process, not on the task: at most two sentences on anything in this turn's instructions, inputs or tools that got in your way, such as an unclear or conflicting instruction, missing context, wasted effort, a limit that cut you short, or a command that failed. Name the instruction or input. \"\" if nothing did; don't invent feedback."},"turn":{"type":"string","enum":["A-inc2-3dad1f1c"],"description":"Exactly \"A-inc2-3dad1f1c\"."}},"required":["summary","deviations","claims","process","turn"],"additionalProperties":false}
+OUTPUT_SCHEMA>>>

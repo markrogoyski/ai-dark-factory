@@ -1,0 +1,43 @@
+You are amending the specification of a task before anyone starts on it. Reviewers found problems in its acceptance criteria and verification command, and independent adjudicators ruled on them. Make the amendments below, and nothing else. Don't attempt the task.
+
+# Task
+
+Make the HTTP client retry transient failures
+
+# The acceptance criteria now
+
+- C1: handles empty input
+- C2: tests pass
+- C3: no API change
+
+# The verification command now
+
+`make test` (/tmp/proj/.council/test-spec/verify.sh)
+
+The repository is at /tmp/proj. Read it to get each amendment right; don't modify it.
+
+# Accepted: amend the criteria for each
+
+- [S1] major, about C1: C1 says nothing about a null body, which the caller in src/Api.php:30 passes
+  Evidence: src/Api.php:30
+  Proposed change: C1: handles empty and null input, returning []
+  Adjudicators: adjudicator 1: accept, opus on S1 | adjudicator 2: accept, astra on S1
+
+# Decisions: questions about what the user wants
+
+- [S3] major, about C2: Should 5xx responses be retried, or only timeouts?
+  Evidence: the task says "transient failures"
+  Readings: (1) only timeouts (2) timeouts and 5xx
+  Adjudicators: adjudicator 1: decision, opus on S3 | adjudicator 2: accept, astra on S3
+
+Where the user answered, write the criteria to the answer. Otherwise choose the most conservative reading: the one that keeps existing behaviour, is easiest to undo, and closes off the fewest options. Never the one that builds more. Write the criteria to it, and record it in `assumptions`: the question, the reading you chose, the main alternative, and what would be built differently under it. The user reads these first, so make each one a sentence they can answer yes or no to.
+
+# Rules
+
+- Keep each criterion's ID. Reword a criterion in place; number a new one after the highest ID; remove one only when an accepted finding says it is out of scope or can't be checked.
+- Every criterion must stay checkable from inside a worktree, by reading files and running commands, with no network, logins or subagents. Name the evidence where it isn't obvious.
+- Keep it short: 3 to 9 criteria. Merge rather than pile on.
+- If an amendment changes the verification command, write the new command to /tmp/proj/.council/test-spec/verify.sh, just the command, with no shebang line, and measure the baseline again: dark-factory measure --run-dir /tmp/proj/.council/test-spec --seat A --label base2 --no-snapshot (if it prints status "running", poll with dark-factory wait --run-dir /tmp/proj/.council/test-spec --job measure-A-base2). Set baselinePasses to suite.passed, and baselineNote to the reason and the failing tail if it fails. If the command doesn't change, return it as it is, with baselinePasses true and baselineNote "".
+- Update the criteria in /tmp/proj/.council/test-spec/TASK.md to match, and add the assumptions there under their own heading.
+
+Return every criterion, changed or not, in `criteria`, and one entry in `applied` per finding above, by its ID, saying what you changed.

@@ -1,0 +1,14 @@
+{
+  "name": "ai-dark-factory",
+  "description": "Multi-model workflows for Claude Code that build software autonomously with independent review.",
+  "owner": {
+    "name": "Mark Rogoyski"
+  },
+  "plugins": [
+    {
+      "name": "dark-factory",
+      "source": "./plugins/dark-factory",
+      "description": "Multi-model workflows that build software with independent review: factory, council, ensemble."
+    }
+  ]
+}

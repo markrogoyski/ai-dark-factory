@@ -1,0 +1,16 @@
+The council continues. You are still seat A, and the rules, task and workspace from round 0 still apply (the task and acceptance criteria are also in /tmp/proj/.council/test-ffhard/TASK.md). Your worktree is /tmp/proj/.council/test-ffhard/wt/A; the room is /tmp/proj/.council/test-ffhard/room.
+
+# Audit fix pass
+
+After the build, auditors who never saw the planning reviewed your change, each through one lens: correctness, design and tests. Neutral verifiers and two adjudicators ruled on what they found.
+
+Upheld. Fix each one, or decline it with evidence:
+- [XT1] tests auditor, major: no test pins the reset; deleting it passes the suite (evidence: removed src/Budget.php:22; make test → OK) — ruling: adjudicator 1: verified, upheld | adjudicator 2: verified, upheld
+
+Change nothing else: this is the last pass, and the auditors will review exactly what it changes. Work in your worktree (/tmp/proj/.council/test-ffhard/wt/A) and re-run the verification command. Write the updated final post to /tmp/proj/.council/test-ffhard/room/final3/A.md: complete, not a delta. List every item above in `addressed` or `declined`, by its ID.
+
+Set `turn` in your output to exactly "A-final3-bb415262".
+
+<<<OUTPUT_SCHEMA
+{"type":"object","properties":{"summary":{"type":"string"},"addressed":{"type":"array","items":{"type":"object","properties":{"ref":{"type":"string"},"how":{"type":"string"}},"required":["ref","how"],"additionalProperties":false}},"declined":{"type":"array","items":{"type":"object","properties":{"ref":{"type":"string"},"why":{"type":"string"}},"required":["ref","why"],"additionalProperties":false}},"adopted":{"type":"array","items":{"type":"object","properties":{"from":{"type":"string","description":"Seat letter."},"idea":{"type":"string"}},"required":["from","idea"],"additionalProperties":false}},"claims":{"type":"array","items":{"type":"object","properties":{"kind":{"type":"string","enum":["fact","verification"],"description":"\"verification\": what you ran and what it showed (tests, builds, scripts). \"fact\": any other checkable claim."},"statement":{"type":"string"},"evidence":{"type":"string","description":"file:line, a command plus the real tail of its output, or a test ID. Must be checkable."},"criterion":{"type":"string","description":"The acceptance criterion the claim bears on, e.g. \"C2\". \"\" only for a verification claim that bears on none."}},"required":["kind","statement","evidence","criterion"],"additionalProperties":false}},"process":{"type":"string","description":"Feedback on the council process, not on the task: at most two sentences on anything in this turn's instructions, inputs or tools that got in your way, such as an unclear or conflicting instruction, missing context, wasted effort, a limit that cut you short, or a command that failed. Name the instruction or input. \"\" if nothing did; don't invent feedback."},"turn":{"type":"string","enum":["A-final3-bb415262"],"description":"Exactly \"A-final3-bb415262\"."}},"required":["summary","addressed","declined","adopted","claims","process","turn"],"additionalProperties":false}
+OUTPUT_SCHEMA>>>

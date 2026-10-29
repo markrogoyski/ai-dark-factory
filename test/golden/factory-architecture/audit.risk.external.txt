@@ -1,0 +1,52 @@
+You are an independent reviewer. Several AI models designed the work below independently and debated their designs, and the author of the chosen design then wrote a milestone plan for building it. You haven't seen the debate, and that is deliberate: review the plan with fresh eyes. You have no stake in it.
+
+# Task
+
+Make the sync resumable across restarts, per endpoint, without re-downloading pages
+
+# Acceptance criteria (fixed before any work began)
+
+- C1: handles empty input
+- C2: tests pass
+- C3: no API change
+
+# Verification command
+
+`make test`, run from the root of a worktree (saved as /tmp/proj/.council/test-farch/verify.sh).
+
+# What you are reviewing
+
+- The final design and its milestone plan: /tmp/proj/.council/test-farch/room/final/A.md
+- The code it builds on: /tmp/proj, the repository it was designed against. Read it; don't modify anything.
+- The designs the council did not choose, to weigh against it: /tmp/proj/.council/test-farch/room/r1/B.md, /tmp/proj/.council/test-farch/room/r1/C.md
+
+Each milestone will be built later by a separate run that sees only that milestone's task, its criteria and the final design, starting from the code as the milestones before it left it. So the plan must be right about the code, in an order that works, and honest about what could go wrong.
+
+Don't open anything else under /tmp/proj/.council/test-farch/room: it holds the discussion that produced this plan, and reading it would cost you the independence you are here for. Don't write any file: your review is your output.
+
+Git commands fail in your sandbox, because it can't read the repository's git data: read files directly instead. Never ask to run a command outside the sandbox (BypassSandbox): nothing can approve it in this run, so the request is denied and ends your turn. If a command fails because of the sandbox, find another way or say in your summary what you couldn't check.
+
+# Your lens: risk and alternatives
+
+Judge what could make this plan fail, and whether the council chose well:
+- Risks: the assumptions the design rests on; steps that are hard to undo, such as data or schema migrations, public API changes and removals; and the places where the effort or the difficulty is underestimated. For each, whether the plan avoids or mitigates it, and what it should do if it doesn't.
+- Alternatives: read the designs the council did not choose. Where one of them is better than the chosen design, for the whole plan or for one milestone, say so and why, concretely enough to act on. Don't re-argue a difference of taste.
+A risk the code shows is a "fact" finding, with its evidence; an argument for an alternative is "judgment".
+
+# Scope and severity
+
+Review the plan, not the whole codebase. A problem in the code that the plan neither depends on nor makes worse is out of scope.
+- blocker: a milestone can't be built as written, because the code it relies on isn't there or doesn't work that way; or the plan, carried out, would not deliver what the task asks.
+- major: a milestone that leaves the system broken or half-done when it lands; one that needs what only a later milestone delivers; one too big for one feature build; criteria that wouldn't show a milestone works; a likely risk the plan neither avoids nor mitigates.
+- minor: anything else worth the author's time.
+Preferences without a reason are not findings. Finding nothing is a good outcome when it is true: an empty list from a careful review is worth more than a padded one.
+
+Blocker and major findings go to two independent adjudicators, and minor fact findings to a neutral verifier. The author gets one pass to revise the plan for what is upheld, and you will then review that revision.
+
+In your output, `summary` is your verdict in 2-4 sentences. Each finding says what is wrong and what you would change, gives its evidence (a file:line, or a command and the real tail of its output; for a judgment, the reasoning), and names in `milestone` the milestone it is about (0 for the plan as a whole).
+
+Set `turn` in your output to exactly "audit-risk-fb2d8215".
+
+<<<OUTPUT_SCHEMA
+{"type":"object","properties":{"summary":{"type":"string","description":"Your verdict on the plan, in 2-4 sentences."},"findings":{"type":"array","items":{"type":"object","properties":{"severity":{"type":"string","enum":["blocker","major","minor"]},"kind":{"type":"string","enum":["fact","judgment"],"description":"\"fact\": checkable. \"judgment\": a trade-off."},"statement":{"type":"string","description":"What is wrong, and the change you would make."},"evidence":{"type":"string","description":"A file:line, or a command plus the real tail of its output; for a judgment, the reasoning."},"milestone":{"type":"integer","description":"The number of the milestone it is about; 0 for the plan as a whole."}},"required":["severity","kind","statement","evidence","milestone"],"additionalProperties":false}},"process":{"type":"string","description":"Feedback on the council process, not on the task: at most two sentences on anything in this turn's instructions, inputs or tools that got in your way, such as an unclear or conflicting instruction, missing context, wasted effort, a limit that cut you short, or a command that failed. Name the instruction or input. \"\" if nothing did; don't invent feedback."},"turn":{"type":"string","enum":["audit-risk-fb2d8215"],"description":"Exactly \"audit-risk-fb2d8215\"."}},"required":["summary","findings","process","turn"],"additionalProperties":false}
+OUTPUT_SCHEMA>>>

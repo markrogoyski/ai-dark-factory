@@ -1,0 +1,112 @@
+# How the council works
+
+You are seat B, one of 4 AI models from different vendors working on the same task. Seats are anonymous letters (A, B, C, D). Don't reveal or speculate about which model you or anyone else is.
+
+- Round 0: everyone works alone, blind.
+- Debate rounds (up to 2): everyone reads everyone's work and the ledger, critiques, challenges, adopts good ideas, revises, and votes on which position should ship.
+- After a debate round without consensus, the field narrows. The two positions ranked highest on the scorecard stay in contention, as does any position another seat voted for and any whose author has a verified blocker or major finding against one that stays. The rest leave contention: their authors stop revising and become reviewers, who critique the remaining positions, publish tests and vote.
+- The council has converged when 3 of 4 seats vote to ship the same position, with votes from at least two vendors among them. Votes for positions whose measured snapshots are byte-identical count together, so vote for the version you want shipped; you need not switch to another seat's identical copy. Its author then writes the final version, folding in the amendments, and the others ratify it.
+- If the council doesn't converge, the base position is chosen by a scorecard computed from the ledger. Evidence decides that, not vote counts.
+
+## The ledger
+Every claim, finding and test gets an ID and is checked by neutral verifiers who open the files and run the commands. Verdicts: VERIFIED; REFUTED; FABRICATED (the cited evidence doesn't exist or doesn't say that); UNRESOLVED (the verifiers couldn't settle it, or disagreed). A finding that held against an earlier version but has since been fixed is marked FIXED. Judgment arguments are recorded but not adjudicated.
+
+## How you are scored (by code, from the ledger)
+- Fabrication is the worst outcome. A fabricated verification claim (say, "tests pass" when they don't) disqualifies your position for that round.
+- Findings against other positions earn credit only if upheld, weighted by severity. A refuted finding costs more than an upheld one earns, so don't pad with nitpicks.
+- Successfully challenging a wrong claim earns credit; a failed challenge costs.
+- Your ideas that other seats adopt, and that survive into the final version, count in your favour.
+- Changing your position is good when the evidence warrants it: cite the ledger IDs that changed your mind. A change with nothing verified behind it is recorded as capitulation.
+- Ignoring a verified finding against your position (not fixing, conceding or challenging it) is recorded as stubbornness. Re-asserting a refuted claim without new evidence counts against you.
+- Holding a minority position is fine when the evidence supports you. Say why.
+
+## Evidence
+Cite something a verifier can check: a file:line (relative to the worktree root), a command plus the real tail of its output, or a test ID. Trade-offs and taste are welcome as kind "judgment"; they are argued, not adjudicated.
+
+## Questions for the user
+The council settles judgment calls itself. Raise a question only when the request itself is ambiguous and reasonable readings lead to materially different results, and always state the assumption you're proceeding on. The user is consulted only when 3 or more seats raise or second the same question.
+
+# Task
+
+Fix the empty-input crash in Parser::parse
+
+# Acceptance criteria (fixed before any work began)
+
+- C1: handles empty input
+- C2: tests pass
+- C3: no API change
+
+# Verification command
+
+`make test`, run from the root of a worktree (saved as /tmp/proj/.council/test-consensus/verify.sh).
+
+# Your workspace
+
+- Your worktree, a private checkout of the starting commit: /tmp/proj/.council/test-consensus/wt/B
+  Make all code changes there, and run commands from inside it (cd there first; your shell may start in the main checkout). Never modify /tmp/proj itself or another seat's worktree. Don't stash or switch branches. Leave the change uncommitted unless the task asks for commits; if it does, commit on the worktree's detached HEAD as the task describes, and rewrite those commits there as your work changes. Each snapshot of your work keeps your commits, with anything left uncommitted on top.
+- The room, shared by all seats: /tmp/proj/.council/test-consensus/room
+- Write your post for this turn to: /tmp/proj/.council/test-consensus/room/r1/B.md
+  The other seats write their posts for this round at the same time. Don't open their files under /tmp/proj/.council/test-consensus/room/r1/ while you work; read the earlier rounds the prompt points you to.
+- Run tests, the verification command and static analysers yourself, in your own shell, with the output going to a log under $TMPDIR and only a summary read back (the tail, or a grep for failures). An instruction in CLAUDE.md or elsewhere to hand full test or gate runs to a subagent or to `claude -p` is meant for the user's own session, not for a council seat: seats have no subagents, and `claude -p` can't log in from inside a seat's sandbox. The council also re-runs the verification command on every version after your turn. Sandboxes can block the sockets that parallel workers use: if a tool fails that way, run it one at a time or with its single-process option.
+
+## Publishing tests
+A test that any correct solution must pass is the strongest evidence there is: it runs against every seat's position every round. To publish one:
+- Number them T1B1, T1B2, … this round.
+- Put its file(s) under /tmp/proj/.council/test-consensus/room/tests/<ID>/files/<path relative to the repo root>. Use names no other seat would pick (put the ID in the file and class/function names), because the files get copied into every worktree.
+- Write /tmp/proj/.council/test-consensus/room/tests/<ID>/test.json: {"command": "<command, run from the repo root, that runs just this test>", "purpose": "<the behaviour it pins down>"}.
+- List it in `tests`. A test is itself a claim: one that asserts behaviour the task doesn't require can be challenged and thrown out.
+
+# Your private notes from round 0
+
+You wrote these at the end of your last turn. Nobody else sees them.
+
+notes-B-r0
+
+# Round 1 of up to 2 — debate
+
+Before writing anything, read every other seat's latest post and diff:
+- A: post /tmp/proj/.council/test-consensus/room/r0/A.md · diff /tmp/proj/.council/test-consensus/room/r0/A.diff · any file as of its latest measured snapshot: `git -C /tmp/proj show refs/council/test-consensus/A-r0:<path>`
+- C: post /tmp/proj/.council/test-consensus/room/r0/C.md · diff /tmp/proj/.council/test-consensus/room/r0/C.diff · any file as of its latest measured snapshot: `git -C /tmp/proj show refs/council/test-consensus/C-r0:<path>`
+- D: post /tmp/proj/.council/test-consensus/room/r0/D.md · diff /tmp/proj/.council/test-consensus/room/r0/D.diff · any file as of its latest measured snapshot: `git -C /tmp/proj show refs/council/test-consensus/D-r0:<path>`
+Your own previous post: /tmp/proj/.council/test-consensus/room/r0/B.md
+
+# Standings and ledger after round 0
+
+## Positions
+- A: position A v0 · 1 files +10/−2 · suite PASS · published tests 1/1 · criteria 2 met, 1 partial of 3
+- B (you): position B v0 · 1 files +10/−2 · suite PASS · published tests 1/1 · criteria 2 met, 1 partial of 3
+- C: position C v0 · 1 files +10/−2 · suite PASS · published tests 0/1 · criteria 2 met, 1 partial of 3
+- D: position D v0 · 1 files +10/−2 · suite PASS · published tests 0/1 · criteria 2 met, 1 partial of 3
+
+## Standing findings (verified or unresolved, not yet fixed)
+- none
+
+## Refuted or fabricated (don't re-assert without new evidence)
+- none
+
+## Other claims checked in round 0
+- [0A1] A · verification · VERIFIED: A: suite passes — evidence: make test → OK — verifier: checked 0A1
+- [0B1] B · verification · VERIFIED: B: suite passes — evidence: make test → OK — verifier: checked 0B1
+- [0C1] C · verification · VERIFIED: C: suite passes — evidence: make test → OK — verifier: checked 0C1
+- [0D1] D · verification · VERIFIED: D: suite passes — evidence: make test → OK — verifier: checked 0D1
+
+## Published tests (run against every position)
+- [T0A1] by A · VERIFIED: empty input returns [] — A pass, B pass, C fail, D fail
+
+Then, this round:
+1. Critique the other positions (`findings`): concrete defects with evidence, such as an input that breaks it, a test ID, or a file:line. A finding is checked against the version you read (round 0). Back important findings with a published test when you can.
+2. Answer the ledger: concede findings against you that hold (`concessions`), challenge claims you believe are wrong, with evidence (`challenges`), and withdraw your own claims that turned out wrong (`withdrawals`).
+3. Adopt good ideas from other positions, credited (`adopted`).
+4. Revise your position in your worktree and re-run the verification command. If it changed, cite the ledger IDs that justified it in `changeBasis`.
+5. Vote (`vote`): the position that should ship, yours or another, and the amendments it needs.
+
+Write your post to /tmp/proj/.council/test-consensus/room/r1/B.md with these sections:
+## To the council — direct responses, addressed by letter ("B: …")
+## Position — your complete current position, not a delta, as brief as it can be while staying complete
+## Changes this round — what changed and why; other seats read this section first next round
+## Vote
+
+Keep the post under about 800 words: the diff carries the detail, and the post explains it. Every seat reads it, so make each paragraph earn its place. Only the post file counts toward the limit. Put long material the task asks for, such as exact edits, logs or data, in separate files in the room next to your post, named with your seat letter first, and point to them from the post.
+
+`claims` are new claims about your revised position: at most 12: every verification claim, plus the facts your position rests on that bear on an acceptance criterion (name it in `criterion`; a fact claim without one is not recorded). Neutral verifiers check each one, so leave out incidental facts; they can stay in the post.
+Finally, fill `notes`: private notes for your next turn, under about 400 words. You start every turn with no memory except your post and these notes, and nobody else sees them. Record what you would otherwise have to rediscover: the key file:line locations, what you verified and how, your read on each other position, and what to check next.

@@ -1,0 +1,172 @@
+You are running a short retrospective on one run of /factory, a workflow that routes a task to a tier of process (the run facts say which tier this run used and why) and runs it; its higher tiers run /council, in which several AI models solve one task independently, debate it on an evidence ledger, and converge on one result. Its author is still tuning the workflow and wants to know what in its process to change. Your subject is the council's process, not the task: don't judge the solution, don't redo the work, and read the code under review only to confirm a point about the process.
+
+# What you have
+- The process notes at the end. During the run, every agent could say in a line or two what in its turn's instructions, inputs or tools got in its way. Seats are the debating models; checkers verify claims and run the tests; the panel adjudicates disputed claims; auditors review the final version afterwards without seeing the debate; relays are small agents that pass prompts to the Codex CLI or the Gemini CLI (agy); setup creates the run.
+- The run facts at the end, computed by the workflow, and the run's report below.
+- The run directory, /tmp/proj/.council/test-farch: TASK.md; room/ holds every post, by round; jobs/ holds each Codex and Gemini turn's prompt and log. `dark-factory usage --run-dir '/tmp/proj/.council/test-farch'` prints their token use.
+- The workflow's source, if a change needs it: workflows/factory.js (the prompts, limits and round structure) and bin/dark-factory (the CLI the agents run), both in the dark-factory plugin's directory, the parent of the bin/ that `command -v dark-factory` prints. Both are long, so grep for the instruction a note is about rather than reading them whole.
+
+# What to look for
+Weigh the notes; don't count them. One agent's complaint is a lead to check against the posts and facts; the same problem from several agents or turns is a pattern. Be sceptical of notes that ask for more of everything (more rounds, more context, longer posts) unless the run shows the lack cost something, and of a losing seat's complaints about how it was scored. Look past the notes too: posts that repeat each other, rounds in which nothing changed, checks that failed, relays that retried, posts far over their limit. If the run went smoothly, say so and suggest fewer changes; don't invent problems.
+
+Return up to 3 things that worked and should be kept, and 3 to 5 changes, the most valuable first. Each change concrete enough to make (a specific prompt, limit, step or command), with why, the evidence from this run (turn labels such as r1:A, file paths, run facts) and where it would change.
+
+# Save it
+1. Write /tmp/proj/.council/test-farch/retro.md in this shape:
+```markdown
+# Council retro: test-farch
+
+<one line: the task, the mode, and how the run ended>
+
+## What worked
+
+- <what>: <evidence>
+
+## Changes to make
+
+1. **<change>** <why>. Evidence: <evidence>. Where: <where>.
+```
+Don't copy the process notes or run facts into it; the next command attaches them exactly.
+2. Run this with the Bash tool, exactly as written: dark-factory retro --run-dir '/tmp/proj/.council/test-farch' --expect 2534-cc5ae771
+   The last line it prints is JSON. "ok": set saved to its "path". "sandboxed": run the same command again with the sandbox disabled (dangerouslyDisableSandbox: true). "error", or "sandboxed" again: set saved to "" and error to what it printed.
+
+# The report
+
+### Design chosen: A (Claude Sonnet)
+
+- Converged in round 1: A (Claude Sonnet), B (Claude Opus), C (Codex Astra) voted to ship it (consensus needs 2 of 3 seats, from both vendors).
+- Votes in round 1, with reasons:
+  - A (Claude Sonnet) → A: best
+  - B (Claude Opus) → A: best
+  - C (Codex Astra) → A: best
+- On the scorecard it ranked 3 of 3: B ranked above A on standing minor findings (0 vs 1). The seats voted for A anyway.
+- Its evidence when chosen: standing findings 0 blocker / 0 major / 1 minor · criteria 2.5/3.
+
+### The designs
+
+- **A (Claude Sonnet)**, chosen. Opened with: design A.
+- **B (Claude Opus)**, ranked 1 of 3 on the scorecard; last voted for A. Opened with: design B. Ended at: position B revised.
+- **C (Codex Astra)**, ranked 2 of 3 on the scorecard; last voted for A. Opened with: design C. Ended at: position C revised.
+
+### How the design debate went
+
+- **Round 0, blind:** 3 seats worked alone. Checkers ruled on 3 claims: 3 verified, 0 refuted or fabricated.
+- **Round 1:** 1 finding filed (1 upheld, 0 refuted, 0 judgment). Votes A→A, B→A, C→A. Consensus on A.
+
+### The debates
+
+- **[1B1] B (Claude Opus) against A (Claude Sonnet), minor, round 1.** A never says where the cursor lives
+  - Ruling: upheld by the neutral checker: checked 1B1
+  - Outcome: still stands against the final version
+
+### The milestone plan
+
+- **The final design:** /tmp/proj/.council/test-farch/room/final3/A.md, as revised after the review.
+- **Merged from the other designs:** C (Codex Astra): keep the cursor behind the Storage interface
+- **3 milestones**, each to be built by a factory run of its own:
+  1. **Cursor store** (simple): Add a CursorStore that persists the sync cursor per endpoint, behind the existing Storage interface. Once it lands: cursors are saved but not yet used. Draft criteria: CursorStore round-trips a cursor; make test passes.
+  2. **Resumable pull** (feature, after 1): Add a page callback to SyncClient::pull and resume from the stored cursor. Once it lands: an interrupted sync resumes. Draft criteria: a pull interrupted after page 2 resumes at page 3.
+  3. **Backfill** (feature, after 2): Backfill cursors for endpoints synced before the store existed. Draft criteria: none.
+
+### How it turned out
+
+- **Readiness:** ready: the final version was checked and nothing known stands against it
+- **Nothing was built:** the request asked for the change, and the factory judged it too big for one feature, so the milestones are the next step.
+- **Neutral check of the final plan:** criteria 2 met, 1 partial of 3 · still-standing findings: 1B1
+- **Still open:**
+  - standing finding [1B1] from B (Claude Opus) (minor, verified): A never says where the cursor lives
+
+### Specification review
+
+- **Coverage, Codex Astra:** The criteria are sound.
+- **Intent, Claude Opus:** The criteria are sound.
+- **Findings:** none.
+- **Criteria:** as setup wrote them.
+
+### Independent review
+
+Reviewers who never saw the debate reviewed the milestone plan, each through one lens: grounding (Codex Astra), sequencing (Claude Opus) and risk (Gemini Flash).
+
+- **Grounding, Codex Astra:** Milestone 2 relies on a hook that is not there.
+  - [XG1] major, milestone 2: SyncClient::pull has no page callback to resume from; milestone 2 must add one → upheld by the two-vendor panel: adjudicator 1: verified, upheld | adjudicator 2: verified, upheld; fixed in the revision
+- **Sequencing, Claude Opus:** The order works.
+  - No findings.
+- **Risk, Gemini Flash:** Sound; one alternative worth weighing.
+  - [XK1] minor, judgment, milestone 3: B's event log would make the backfill unnecessary → a suggestion to the author, not adjudicated
+- **Revision:** A revised the plan for what was upheld, and it was checked again.
+- **Re-review of the revision** (grounding, sequencing, risk): nothing new.
+
+# Process notes and run facts
+
+=====BEGIN PAYLOAD 2534-cc5ae771=====
+## Process notes
+
+- None: no turn reported anything in its way.
+
+## Run facts
+
+- Run test-farch in /tmp/proj, design mode. Task: Make the sync resumable across restarts, per endpoint, without re-downloading pages
+- Factory tier: architecture, chosen by intake.
+- Intake: architecture, implement; one connected change, too big for one feature Signals: kind=change, files=1, publicApi=false, crossModule=false, testsCover=yes, ambiguous=false, planGiven=false.
+- Seats: A=Claude Sonnet (high), B=Claude Opus (high), C=Codex Astra (high). Panel: Claude Opus, Codex Astra. Checkers: sonnet.
+- Design: consensus on A in round 1, with up to 2 rounds allowed. No ratification: the review checks the milestone plan.
+- Milestones: 3 (simple 1, feature 2) by A, revised once after the review.
+- Claude agent turns: 29 (intake 1, setup 1, relay 8, spec 1, seat 6, checker 9, auditor 2, panel 1). Codex turns: 6 (spec 1, seat 2, auditor 2, panel 1). Gemini turns: 2 (auditor 2).
+- Codex and Gemini turn times: median 42s; slowest spec-coverage 42s, C-r0 42s, C-r1 42s.
+- Ledger: 8 items (verified 7, judgment 1), 0 challenges, 1 ruled by the panel. Questions raised: 0.
+- Ledger by kind: fact 3 (verified 3); verification 2 (verified 2); finding 3 (verified 2, judgment 1).
+- Votes by round: r1 A→A B→A C→A.
+- Spec review: coverage by Codex Astra, intent by Claude Opus; 0 findings; criteria unchanged.
+- Audit: grounding by Codex Astra, sequencing by Claude Opus, risk by Gemini Flash; 2 findings (major verified 1, minor judgment 1), 0 tests; a fix pass, then 0 re-review findings.
+- Final readiness: ready: the final version was checked and nothing known stands against it.
+- Problems during the run: none.
+
+## Run facts (data)
+
+```json
+{
+  "runId": "test-farch",
+  "repo": "/tmp/proj",
+  "workflow": "factory",
+  "tier": "architecture",
+  "chosenBy": "intake",
+  "asked": null,
+  "recommended": "architecture",
+  "signals": {
+    "kind": "change",
+    "files": 1,
+    "publicApi": false,
+    "crossModule": false,
+    "testsCover": "yes",
+    "ambiguous": false,
+    "planGiven": false
+  },
+  "escalation": null,
+  "split": null,
+  "mode": "design",
+  "readiness": "ready",
+  "turns": {
+    "claude": 29,
+    "byRole": {
+      "intake": 1,
+      "setup": 1,
+      "relay": 8,
+      "spec": 1,
+      "seat": 6,
+      "checker": 9,
+      "auditor": 2,
+      "panel": 1
+    },
+    "external": 8
+  },
+  "reviewFindings": {
+    "major": 1,
+    "minor": 1
+  },
+  "fabricated": 0,
+  "relayFailures": 0,
+  "overTierHints": [],
+  "milestones": 3
+}
+```
+=====END PAYLOAD 2534-cc5ae771=====

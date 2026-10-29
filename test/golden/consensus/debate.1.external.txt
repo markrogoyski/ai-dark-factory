@@ -1,0 +1,62 @@
+The council continues. You are still seat A, and the rules, task and workspace from round 0 still apply (the task and acceptance criteria are also in /tmp/proj/.council/test-consensus/TASK.md). Your worktree is /tmp/proj/.council/test-consensus/wt/A; the room is /tmp/proj/.council/test-consensus/room. The other seats write their posts for this round at the same time. Don't open their files under /tmp/proj/.council/test-consensus/room/r1/ while you work; read the earlier rounds the prompt points you to.
+
+## Publishing tests
+A test that any correct solution must pass is the strongest evidence there is: it runs against every seat's position every round. To publish one:
+- Number them T1A1, T1A2, … this round.
+- Put its file(s) under /tmp/proj/.council/test-consensus/room/tests/<ID>/files/<path relative to the repo root>. Use names no other seat would pick (put the ID in the file and class/function names), because the files get copied into every worktree.
+- Write /tmp/proj/.council/test-consensus/room/tests/<ID>/test.json: {"command": "<command, run from the repo root, that runs just this test>", "purpose": "<the behaviour it pins down>"}.
+- List it in `tests`. A test is itself a claim: one that asserts behaviour the task doesn't require can be challenged and thrown out.
+
+# Round 1 of up to 2 — debate
+
+Before writing anything, read every other seat's latest post and diff:
+- B: post /tmp/proj/.council/test-consensus/room/r0/B.md · diff /tmp/proj/.council/test-consensus/room/r0/B.diff · any file as of its latest measured snapshot: `git -C /tmp/proj show refs/council/test-consensus/B-r0:<path>`
+- C: post /tmp/proj/.council/test-consensus/room/r0/C.md · diff /tmp/proj/.council/test-consensus/room/r0/C.diff · any file as of its latest measured snapshot: `git -C /tmp/proj show refs/council/test-consensus/C-r0:<path>`
+- D: post /tmp/proj/.council/test-consensus/room/r0/D.md · diff /tmp/proj/.council/test-consensus/room/r0/D.diff · any file as of its latest measured snapshot: `git -C /tmp/proj show refs/council/test-consensus/D-r0:<path>`
+Your own previous post: /tmp/proj/.council/test-consensus/room/r0/A.md
+
+# Standings and ledger after round 0
+
+## Positions
+- A (you): position A v0 · 1 files +10/−2 · suite PASS · published tests 1/1 · criteria 2 met, 1 partial of 3
+- B: position B v0 · 1 files +10/−2 · suite PASS · published tests 1/1 · criteria 2 met, 1 partial of 3
+- C: position C v0 · 1 files +10/−2 · suite PASS · published tests 0/1 · criteria 2 met, 1 partial of 3
+- D: position D v0 · 1 files +10/−2 · suite PASS · published tests 0/1 · criteria 2 met, 1 partial of 3
+
+## Standing findings (verified or unresolved, not yet fixed)
+- none
+
+## Refuted or fabricated (don't re-assert without new evidence)
+- none
+
+## Other claims checked in round 0
+- [0A1] A · verification · VERIFIED: A: suite passes — evidence: make test → OK — verifier: checked 0A1
+- [0B1] B · verification · VERIFIED: B: suite passes — evidence: make test → OK — verifier: checked 0B1
+- [0C1] C · verification · VERIFIED: C: suite passes — evidence: make test → OK — verifier: checked 0C1
+- [0D1] D · verification · VERIFIED: D: suite passes — evidence: make test → OK — verifier: checked 0D1
+
+## Published tests (run against every position)
+- [T0A1] by A · VERIFIED: empty input returns [] — A pass, B pass, C fail, D fail
+
+Then, this round:
+1. Critique the other positions (`findings`): concrete defects with evidence, such as an input that breaks it, a test ID, or a file:line. A finding is checked against the version you read (round 0). Back important findings with a published test when you can.
+2. Answer the ledger: concede findings against you that hold (`concessions`), challenge claims you believe are wrong, with evidence (`challenges`), and withdraw your own claims that turned out wrong (`withdrawals`).
+3. Adopt good ideas from other positions, credited (`adopted`).
+4. Revise your position in your worktree and re-run the verification command. If it changed, cite the ledger IDs that justified it in `changeBasis`.
+5. Vote (`vote`): the position that should ship, yours or another, and the amendments it needs.
+
+Write your post to /tmp/proj/.council/test-consensus/room/r1/A.md with these sections:
+## To the council — direct responses, addressed by letter ("B: …")
+## Position — your complete current position, not a delta, as brief as it can be while staying complete
+## Changes this round — what changed and why; other seats read this section first next round
+## Vote
+
+Keep the post under about 800 words: the diff carries the detail, and the post explains it. Every seat reads it, so make each paragraph earn its place. Only the post file counts toward the limit. Put long material the task asks for, such as exact edits, logs or data, in separate files in the room next to your post, named with your seat letter first, and point to them from the post.
+
+`claims` are new claims about your revised position: at most 12: every verification claim, plus the facts your position rests on that bear on an acceptance criterion (name it in `criterion`; a fact claim without one is not recorded). Neutral verifiers check each one, so leave out incidental facts; they can stay in the post.
+
+Set `turn` in your output to exactly "A-r1-7601d2b4".
+
+<<<OUTPUT_SCHEMA
+{"type":"object","properties":{"summary":{"type":"string","description":"Your current position after this round, 2-4 sentences."},"changed":{"type":"boolean","description":"Did your position change materially this round?"},"changeBasis":{"type":"array","items":{"type":"string"},"description":"Ledger IDs that justified the change. Empty if unchanged."},"changeNote":{"type":"string","description":"What changed and why, or \"\" if nothing did."},"findings":{"type":"array","items":{"type":"object","properties":{"target":{"type":"string","description":"Seat letter whose position this is about."},"severity":{"type":"string","enum":["blocker","major","minor"]},"kind":{"type":"string","enum":["fact","judgment"],"description":"\"fact\": a checkable defect. \"judgment\": a trade-off or taste argument; argued, not adjudicated."},"statement":{"type":"string"},"evidence":{"type":"string"}},"required":["target","severity","kind","statement","evidence"],"additionalProperties":false}},"challenges":{"type":"array","items":{"type":"object","properties":{"claim":{"type":"string","description":"The ledger ID you dispute."},"reason":{"type":"string"},"evidence":{"type":"string"}},"required":["claim","reason","evidence"],"additionalProperties":false}},"concessions":{"type":"array","items":{"type":"string"},"description":"IDs of findings against you that you accept."},"withdrawals":{"type":"array","items":{"type":"string"},"description":"IDs of your own earlier claims or tests that you retract."},"adopted":{"type":"array","items":{"type":"object","properties":{"from":{"type":"string","description":"Seat letter."},"idea":{"type":"string"}},"required":["from","idea"],"additionalProperties":false}},"claims":{"type":"array","items":{"type":"object","properties":{"kind":{"type":"string","enum":["fact","verification"],"description":"\"verification\": what you ran and what it showed (tests, builds, scripts). \"fact\": any other checkable claim."},"statement":{"type":"string"},"evidence":{"type":"string","description":"file:line, a command plus the real tail of its output, or a test ID. Must be checkable."},"criterion":{"type":"string","description":"The acceptance criterion the claim bears on, e.g. \"C2\". \"\" only for a verification claim that bears on none."}},"required":["kind","statement","evidence","criterion"],"additionalProperties":false},"description":"At most 12 new claims about your revised position: verification claims, and facts that bear on an acceptance criterion."},"tests":{"type":"array","items":{"type":"object","properties":{"id":{"type":"string","description":"The ID you used for its directory, e.g. T1B1."},"purpose":{"type":"string","description":"The behaviour it pins down."},"command":{"type":"string","description":"The same command as in its test.json."}},"required":["id","purpose","command"],"additionalProperties":false}},"vote":{"type":"object","properties":{"ship":{"type":"string","description":"Seat letter of the position that should ship: yours or another."},"amendments":{"type":"array","items":{"type":"string"},"description":"Changes it needs before shipping; may cite ledger IDs."},"reason":{"type":"string"}},"required":["ship","amendments","reason"],"additionalProperties":false},"questions":{"type":"array","items":{"type":"object","properties":{"question":{"type":"string"},"assumption":{"type":"string","description":"The reading you are proceeding on meanwhile."}},"required":["question","assumption"],"additionalProperties":false}},"seconds":{"type":"array","items":{"type":"string"},"description":"IDs of open user questions (Q1, Q2, …) that you agree genuinely block the work."},"process":{"type":"string","description":"Feedback on the council process, not on the task: at most two sentences on anything in this turn's instructions, inputs or tools that got in your way, such as an unclear or conflicting instruction, missing context, wasted effort, a limit that cut you short, or a command that failed. Name the instruction or input. \"\" if nothing did; don't invent feedback."},"turn":{"type":"string","enum":["A-r1-7601d2b4"],"description":"Exactly \"A-r1-7601d2b4\"."}},"required":["summary","changed","changeBasis","changeNote","findings","challenges","concessions","withdrawals","adopted","claims","tests","vote","questions","seconds","process","turn"],"additionalProperties":false}
+OUTPUT_SCHEMA>>>

@@ -1,0 +1,33 @@
+You are an adjudicator for a council of AI models. You wrote none of this work and have no stake in it. Each item below is a claim that a council member has disputed. Decide whether the claim is true. Investigate yourself: read the code, the diffs, the tests, the posts. Don't defer to either side's confidence.
+
+# Task
+
+Add a debug log line with the retry count in Fetcher::retry
+
+# Acceptance criteria (fixed before any work began)
+
+- C1: handles empty input
+- C2: tests pass
+- C3: no API change
+
+# Verification command
+
+`make test`, run from the root of a worktree (saved as /tmp/proj/.council/test-ffind/verify.sh).
+
+# Where things are
+- The room: /tmp/proj/.council/test-ffind/room. Posts are r<N>/<seat>.md, diffs r<N>/<seat>.diff (final/<seat>.diff for the final version), published tests tests/<ID>/.
+- A seat's version of any file: `git -C /tmp/proj show refs/council/test-ffind/<seat>-r<N>:<path>` (use <seat>-final for the final version).
+- Seats' live worktrees: /tmp/proj/.council/test-ffind/wt/<seat>/. Read only: don't modify anything.
+
+Verdicts: verified (true as stated; for a finding, the defect exists in the version it criticised), refuted (false, or the evidence doesn't support it), fabricated (the cited evidence itself is invented), unverifiable (you genuinely couldn't settle it; say why).
+
+# Disputed claims
+
+## [XR1] audit finding by the review auditor against A's final version, severity major
+Claim: logs the attempt index from 0, not the count
+Evidence cited: TXR1 fails
+Judge it against: A's final version (diff /tmp/proj/.council/test-ffind/room/r0/A.diff; any file: `git -C /tmp/proj show refs/council/test-ffind/A-r0:<path>`)
+Earlier ruling: open
+Raised by an independent auditor of the final version; nobody has ruled on it yet.
+
+Return one ruling per claim ID.

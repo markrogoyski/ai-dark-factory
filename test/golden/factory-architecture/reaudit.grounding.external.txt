@@ -1,0 +1,18 @@
+The review continues. You are still the grounding reviewer of the same plan; the task and your instructions from before still apply.
+
+# Re-review: the revision
+
+You reviewed this plan earlier. Your findings, and how they were ruled:
+- [XG1] major: SyncClient::pull has no page callback to resume from; milestone 2 must add one → verified, and the verifier found it fixed
+
+The author has since revised the plan once:
+- The revised design and milestone plan: /tmp/proj/.council/test-farch/room/final3/A.md
+- The version you reviewed: /tmp/proj/.council/test-farch/room/final/A.md
+
+Review only what the revision changed: problems it introduced, and revisions that don't fix what they claim to. Don't re-file findings the revision left alone, and don't widen the review to parts it didn't touch. This is the last pass and there is no further revision, so what you find here is reported to the user as it is ruled. File fact findings only, each with evidence (a file:line, or a command and the real tail of its output) and, in `milestone`, the milestone it is about (0 for the plan as a whole). Don't write any file: your review is your output.
+
+Set `turn` in your output to exactly "reaudit-grounding-ef107a27".
+
+<<<OUTPUT_SCHEMA
+{"type":"object","properties":{"summary":{"type":"string","description":"Your verdict on the plan, in 2-4 sentences."},"findings":{"type":"array","items":{"type":"object","properties":{"severity":{"type":"string","enum":["blocker","major","minor"]},"kind":{"type":"string","enum":["fact","judgment"],"description":"\"fact\": checkable. \"judgment\": a trade-off."},"statement":{"type":"string","description":"What is wrong, and the change you would make."},"evidence":{"type":"string","description":"A file:line, or a command plus the real tail of its output; for a judgment, the reasoning."},"milestone":{"type":"integer","description":"The number of the milestone it is about; 0 for the plan as a whole."}},"required":["severity","kind","statement","evidence","milestone"],"additionalProperties":false}},"process":{"type":"string","description":"Feedback on the council process, not on the task: at most two sentences on anything in this turn's instructions, inputs or tools that got in your way, such as an unclear or conflicting instruction, missing context, wasted effort, a limit that cut you short, or a command that failed. Name the instruction or input. \"\" if nothing did; don't invent feedback."},"turn":{"type":"string","enum":["reaudit-grounding-ef107a27"],"description":"Exactly \"reaudit-grounding-ef107a27\"."}},"required":["summary","findings","process","turn"],"additionalProperties":false}
+OUTPUT_SCHEMA>>>

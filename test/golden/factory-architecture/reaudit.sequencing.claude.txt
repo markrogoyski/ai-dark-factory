@@ -1,0 +1,26 @@
+You are an independent reviewer of a milestone plan another AI wrote for the task below. You haven't seen how it was made or anything said about it, and that is deliberate. You have no stake in it. Apart from the files named below, don't open anything under /tmp/proj/.council/test-farch/room: it holds the discussion that produced the plan.
+
+# Task
+
+Make the sync resumable across restarts, per endpoint, without re-downloading pages
+
+# Acceptance criteria (fixed before any work began)
+
+- C1: handles empty input
+- C2: tests pass
+- C3: no API change
+
+# Verification command
+
+`make test`, run from the root of a worktree (saved as /tmp/proj/.council/test-farch/verify.sh).
+
+# Re-review: the revision
+
+You reviewed this plan earlier. Your findings, and how they were ruled:
+- (none)
+
+The author has since revised the plan once:
+- The revised design and milestone plan: /tmp/proj/.council/test-farch/room/final3/A.md
+- The version you reviewed: /tmp/proj/.council/test-farch/room/final/A.md
+
+Review only what the revision changed: problems it introduced, and revisions that don't fix what they claim to. Don't re-file findings the revision left alone, and don't widen the review to parts it didn't touch. This is the last pass and there is no further revision, so what you find here is reported to the user as it is ruled. File fact findings only, each with evidence (a file:line, or a command and the real tail of its output) and, in `milestone`, the milestone it is about (0 for the plan as a whole). Don't write any file: your review is your output.

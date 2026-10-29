@@ -1,0 +1,50 @@
+You are an independent reviewer. Several AI models designed the work below independently and debated their designs, and the author of the chosen design then wrote a milestone plan for building it. You haven't seen the debate, and that is deliberate: review the plan with fresh eyes. You have no stake in it.
+
+# Task
+
+Make the sync resumable across restarts, per endpoint, without re-downloading pages
+
+# Acceptance criteria (fixed before any work began)
+
+- C1: handles empty input
+- C2: tests pass
+- C3: no API change
+
+# Verification command
+
+`make test`, run from the root of a worktree (saved as /tmp/proj/.council/test-farch/verify.sh).
+
+# What you are reviewing
+
+- The final design and its milestone plan: /tmp/proj/.council/test-farch/room/final/A.md
+- The code it builds on: /tmp/proj, the repository it was designed against. Read it; don't modify anything.
+
+Each milestone will be built later by a separate run that sees only that milestone's task, its criteria and the final design, starting from the code as the milestones before it left it. So the plan must be right about the code, in an order that works, and honest about what could go wrong.
+
+Don't open anything else under /tmp/proj/.council/test-farch/room: it holds the discussion that produced this plan, and reading it would cost you the independence you are here for. Don't write any file: your review is your output.
+
+# Your lens: grounding
+
+Check that the plan matches the code as it is:
+- Every file, function, interface and behaviour the design or a milestone relies on: open it. Code that isn't there, or doesn't work the way the plan says, is a finding, with the file:line that shows it.
+- The callers and tests of what the plan changes: behaviour they depend on that the plan would break and no milestone accounts for.
+- The size of each milestone, from the code it touches: one much bigger than its task suggests, or marked "simple" when it isn't.
+- The criteria: each one checkable from a worktree of the code as the earlier milestones leave it.
+
+# Scope and severity
+
+Review the plan, not the whole codebase. A problem in the code that the plan neither depends on nor makes worse is out of scope.
+- blocker: a milestone can't be built as written, because the code it relies on isn't there or doesn't work that way; or the plan, carried out, would not deliver what the task asks.
+- major: a milestone that leaves the system broken or half-done when it lands; one that needs what only a later milestone delivers; one too big for one feature build; criteria that wouldn't show a milestone works; a likely risk the plan neither avoids nor mitigates.
+- minor: anything else worth the author's time.
+Preferences without a reason are not findings. Finding nothing is a good outcome when it is true: an empty list from a careful review is worth more than a padded one.
+
+Blocker and major findings go to two independent adjudicators, and minor fact findings to a neutral verifier. The author gets one pass to revise the plan for what is upheld, and you will then review that revision.
+
+In your output, `summary` is your verdict in 2-4 sentences. Each finding says what is wrong and what you would change, gives its evidence (a file:line, or a command and the real tail of its output; for a judgment, the reasoning), and names in `milestone` the milestone it is about (0 for the plan as a whole).
+
+Set `turn` in your output to exactly "audit-grounding-28fdd7e3".
+
+<<<OUTPUT_SCHEMA
+{"type":"object","properties":{"summary":{"type":"string","description":"Your verdict on the plan, in 2-4 sentences."},"findings":{"type":"array","items":{"type":"object","properties":{"severity":{"type":"string","enum":["blocker","major","minor"]},"kind":{"type":"string","enum":["fact","judgment"],"description":"\"fact\": checkable. \"judgment\": a trade-off."},"statement":{"type":"string","description":"What is wrong, and the change you would make."},"evidence":{"type":"string","description":"A file:line, or a command plus the real tail of its output; for a judgment, the reasoning."},"milestone":{"type":"integer","description":"The number of the milestone it is about; 0 for the plan as a whole."}},"required":["severity","kind","statement","evidence","milestone"],"additionalProperties":false}},"process":{"type":"string","description":"Feedback on the council process, not on the task: at most two sentences on anything in this turn's instructions, inputs or tools that got in your way, such as an unclear or conflicting instruction, missing context, wasted effort, a limit that cut you short, or a command that failed. Name the instruction or input. \"\" if nothing did; don't invent feedback."},"turn":{"type":"string","enum":["audit-grounding-28fdd7e3"],"description":"Exactly \"audit-grounding-28fdd7e3\"."}},"required":["summary","findings","process","turn"],"additionalProperties":false}
+OUTPUT_SCHEMA>>>

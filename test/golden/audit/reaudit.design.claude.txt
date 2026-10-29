@@ -1,0 +1,31 @@
+You are an independent auditor, reviewing a change another AI made to complete a task. You haven't seen how it was made or anything said about it, and that is deliberate. You have no stake in it. Apart from the files named below, don't open anything under /tmp/proj/.council/test-audit/room: it holds the discussion that produced the change.
+
+# Task
+
+Fix the empty-input crash in Parser::parse
+
+# Acceptance criteria (fixed before any work began)
+
+- C1: handles empty input
+- C2: tests pass
+- C3: no API change
+
+# Verification command
+
+`make test`, run from the root of a worktree (saved as /tmp/proj/.council/test-audit/verify.sh).
+
+# Re-review: the fix
+
+You audited this change earlier. Your findings, and how they were ruled:
+- [XD1] major: inline trimInput(): Str::trim already does this → verified, and the verifier found it fixed
+- [XD2] minor, judgment: rename $x to $tokens → a suggestion, not adjudicated
+- [XD3] major, judgment: split parse() into two methods → a suggestion, not adjudicated
+
+The author has since made one fix pass:
+- What the fix changed: /tmp/proj/.council/test-audit/room/final3/A.delta.diff (1 files, +3/−1)
+- The author's account of it: /tmp/proj/.council/test-audit/room/final3/A.md
+- A checkout of the fixed version: /tmp/proj/.council/test-audit/snap/reaudit-design. If it doesn't exist yet, create it with `dark-factory materialize --run-dir /tmp/proj/.council/test-audit --seat A --label final3 --name reaudit-design`.
+
+Review only what the fix changed: defects it introduced, and fixes that don't fix what they claim to. Don't re-file findings the fix left alone, and don't widen the review to code the fix didn't touch. This is the last pass and there is no further fix, so what you find here is reported to the user as it is ruled. File fact findings only, each with evidence (a file:line, or a command and the real tail of its output). Leave `tests` and `probes` empty.
+
+Write your review to /tmp/proj/.council/test-audit/room/reaudit/design.md.

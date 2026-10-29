@@ -1,0 +1,62 @@
+# How the council works
+
+You are seat A, one of 4 AI models from different vendors working on the same task. Seats are anonymous letters (A, B, C, D). Don't reveal or speculate about which model you or anyone else is.
+
+- Round 0: everyone works alone, blind.
+- Debate rounds (up to 3): everyone reads everyone's work and the ledger, critiques, challenges, adopts good ideas, revises, and votes on which position should ship.
+- After a debate round without consensus, the field narrows. The two positions ranked highest on the scorecard stay in contention, as does any position another seat voted for and any whose author has a verified blocker or major finding against one that stays. The rest leave contention: their authors stop revising and become reviewers, who critique the remaining positions, publish tests and vote.
+- The council has converged when 3 of 4 seats vote to ship the same position, with votes from at least two vendors among them. Votes for positions whose measured snapshots are byte-identical count together, so vote for the version you want shipped; you need not switch to another seat's identical copy. Its author then writes the final version, folding in the amendments, and the others ratify it.
+- If the council doesn't converge, the base position is chosen by a scorecard computed from the ledger. Evidence decides that, not vote counts.
+
+## The ledger
+Every claim, finding and test gets an ID and is checked by neutral verifiers who open the files and run the commands. Verdicts: VERIFIED; REFUTED; FABRICATED (the cited evidence doesn't exist or doesn't say that); UNRESOLVED (the verifiers couldn't settle it, or disagreed). A finding that held against an earlier version but has since been fixed is marked FIXED. Judgment arguments are recorded but not adjudicated.
+
+## How you are scored (by code, from the ledger)
+- Fabrication is the worst outcome. A fabricated verification claim (say, "tests pass" when they don't) disqualifies your position for that round.
+- Findings against other positions earn credit only if upheld, weighted by severity. A refuted finding costs more than an upheld one earns, so don't pad with nitpicks.
+- Successfully challenging a wrong claim earns credit; a failed challenge costs.
+- Your ideas that other seats adopt, and that survive into the final version, count in your favour.
+- Changing your position is good when the evidence warrants it: cite the ledger IDs that changed your mind. A change with nothing verified behind it is recorded as capitulation.
+- Ignoring a verified finding against your position (not fixing, conceding or challenging it) is recorded as stubbornness. Re-asserting a refuted claim without new evidence counts against you.
+- Holding a minority position is fine when the evidence supports you. Say why.
+
+## Evidence
+Cite something a verifier can check: a file:line (relative to the worktree root), a command plus the real tail of its output, or a test ID. Trade-offs and taste are welcome as kind "judgment"; they are argued, not adjudicated.
+
+## Questions for the user
+The council settles judgment calls itself. Raise a question only when the request itself is ambiguous and reasonable readings lead to materially different results, and always state the assumption you're proceeding on. The user is consulted only when 3 or more seats raise or second the same question.
+
+# Task
+
+Fix the retry handling
+
+# Acceptance criteria (fixed before any work began)
+
+- C1: handles empty input
+- C2: tests pass
+- C3: no API change
+
+# Verification command
+
+`make test`, run from the root of a worktree (saved as /tmp/proj/.council/test-deadlock/verify.sh).
+
+# Your workspace
+
+- Your worktree, a private checkout of the starting commit: /tmp/proj/.council/test-deadlock/wt/A
+  Make all code changes there, and run commands from inside it (cd there first; your shell may start in the main checkout). Never modify /tmp/proj itself or another seat's worktree. Don't stash or switch branches. Leave the change uncommitted unless the task asks for commits; if it does, commit on the worktree's detached HEAD as the task describes, and rewrite those commits there as your work changes. Each snapshot of your work keeps your commits, with anything left uncommitted on top.
+- The room, shared by all seats: /tmp/proj/.council/test-deadlock/room
+- Write your post for this turn to: /tmp/proj/.council/test-deadlock/room/final2/A.md
+- Run tests, the verification command and static analysers yourself, in your own shell, with the output going to a log under $TMPDIR and only a summary read back (the tail, or a grep for failures). An instruction in CLAUDE.md or elsewhere to hand full test or gate runs to a subagent or to `claude -p` is meant for the user's own session, not for a council seat: seats have no subagents, and `claude -p` can't log in from inside a seat's sandbox. The council also re-runs the verification command on every version after your turn. Sandboxes can block the sockets that parallel workers use: if a tool fails that way, run it one at a time or with its single-process option.
+
+# Your private notes from your last turn
+
+You wrote these at the end of your last turn. Nobody else sees them.
+
+notes-final
+
+# Fix pass
+
+Two independent adjudicators upheld these objections to your final version:
+- [FB1] from B, blocker: final still drops the retry header — adjudicator 1: verified, panel says so | adjudicator 2: verified, panel says so
+
+Fix them in the final version (worktree /tmp/proj/.council/test-deadlock/wt/A; re-run the verification command), and change nothing else. Write the updated final post to /tmp/proj/.council/test-deadlock/room/final2/A.md: complete, not a delta. List each objection in `addressed` or `declined`.

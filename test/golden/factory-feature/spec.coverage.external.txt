@@ -1,0 +1,49 @@
+You are reviewing the specification of a task before anyone starts on it. Several AI models will each do the task independently, and every result will be judged against the acceptance criteria and the verification command below. If they are wrong, a wrong result passes and a right one fails, and nothing later in the process catches it. Your job is to find what is wrong with them. Don't attempt the task.
+
+# Task
+
+Add a retry budget to the sync client, configurable per endpoint
+
+Mode: implement. The result is a change to the repository.
+
+# The acceptance criteria (written by the setup from the task and the code)
+
+- C1: handles empty input
+- C2: tests pass
+- C3: no API change
+
+# The verification command
+
+`make test`, run from the root of a worktree. At the starting commit it passes.
+
+The repository is at /tmp/proj, at the commit every model will start from. Read it; don't modify anything.
+
+# Your lens: coverage
+
+Find what a wrong result could get past, or a right one fail:
+- Cases the criteria miss: empty, zero, negative, boundary, very large and malformed inputs, error paths, and whatever edges are particular to this code. Ask of each criterion how a solution could meet it and still be wrong.
+- Regressions the criteria would allow: read the callers of the code the task will touch, and the tests that cover it. Behaviour they depend on that the task doesn't ask to change should be protected by a criterion.
+- Criteria that are wrong about the code: they contradict how it actually works, or assume something it doesn't have.
+- The verification command: whether it would catch a solution that breaks what the criteria require, and whether it runs at all from a worktree.
+
+# Facts and decisions
+
+Each finding is one of two kinds, and the difference decides what happens to it:
+- "fact": the code, its tests, its callers, the reference documents or the task's own words settle it. Cite where: a file:line, a quote, or a command and the real tail of its output. Facts are fixed in the criteria without asking anyone.
+- "decision": a real question about what the user wants that nothing in the repository or the task settles, where reasonable readings lead to materially different results. List the readings in `readings`, the most conservative first: the one that keeps existing behaviour, is easiest to undo, and closes off the fewest options.
+Don't file a decision you could settle by reading more of the code: read it.
+
+# Severity
+
+- blocker: a wrong result on the task's main path would meet the criteria, or a correct one would fail them.
+- major: the same on a plausible case, or a reading that would change what gets built.
+- minor: wording that could mislead but probably won't.
+Only what changes what gets built or how it is judged is a finding. A spec without findings is a good outcome when it is true: an empty list from a careful review is worth more than a padded one.
+
+Independent adjudicators rule on each finding, and the criteria are amended to what they uphold. In each finding, `criterion` is the ID it is about ("" when no criterion covers it), and `change` is the amendment you would make: the new or reworded criterion, or the change to the verification command. In your output, `summary` is your verdict on the specification in 1-3 sentences.
+
+Set `turn` in your output to exactly "spec-coverage-64f02114".
+
+<<<OUTPUT_SCHEMA
+{"type":"object","properties":{"summary":{"type":"string","description":"Your verdict on the specification, in 1-3 sentences."},"findings":{"type":"array","items":{"type":"object","properties":{"severity":{"type":"string","enum":["blocker","major","minor"]},"kind":{"type":"string","enum":["fact","decision"],"description":"\"fact\": the code, documents or task settle it. \"decision\": only the user can."},"criterion":{"type":"string","description":"The criterion ID it is about, e.g. C2; \"\" if no criterion covers it."},"statement":{"type":"string","description":"What is wrong with the criteria, or for a decision, the question."},"evidence":{"type":"string","description":"A file:line, a quote from the task or a document, or a command plus the real tail of its output."},"change":{"type":"string","description":"The amendment you would make: the new or reworded criterion, or the change to the verification command."},"readings":{"type":"array","items":{"type":"string"},"description":"For a decision, the reasonable readings, the most conservative first. Empty for a fact."}},"required":["severity","kind","criterion","statement","evidence","change","readings"],"additionalProperties":false}},"process":{"type":"string","description":"Feedback on the council process, not on the task: at most two sentences on anything in this turn's instructions, inputs or tools that got in your way, such as an unclear or conflicting instruction, missing context, wasted effort, a limit that cut you short, or a command that failed. Name the instruction or input. \"\" if nothing did; don't invent feedback."},"turn":{"type":"string","enum":["spec-coverage-64f02114"],"description":"Exactly \"spec-coverage-64f02114\"."}},"required":["summary","findings","process","turn"],"additionalProperties":false}
+OUTPUT_SCHEMA>>>

@@ -1,0 +1,58 @@
+You are an independent auditor. Another AI wrote the change below to complete a task. You haven't seen how it was made or anything said about it, and that is deliberate: review it with fresh eyes. You have no stake in it.
+
+# Task
+
+Fix the empty-input crash in Parser::parse
+
+# Acceptance criteria (fixed before any work began)
+
+- C1: handles empty input
+- C2: tests pass
+- C3: no API change
+
+# Verification command
+
+`make test`, run from the root of a worktree (saved as /tmp/proj/.council/test-audit/verify.sh).
+
+# What you are auditing
+
+- The change, as a diff against the starting commit: /tmp/proj/.council/test-audit/room/final/A.diff
+- Your own checkout of the changed code: /tmp/proj/.council/test-audit/snap/audit-correctness. If it doesn't exist yet, create it with `dark-factory materialize --run-dir /tmp/proj/.council/test-audit --seat A --label final --name audit-correctness`, which prints its path. Run tests and experiments there; nobody else uses it.
+- The user's own checkout of the repository: /tmp/proj. Read only. The code before the change is the diff's base; `git log` in your checkout gives the history.
+
+Don't open anything else under /tmp/proj/.council/test-audit/room: it holds the discussion that produced this change, and reading it would cost you the independence you are here for. Write only to your checkout, to /tmp/proj/.council/test-audit/room/tests/ and to your review.
+
+# Your lens: correctness
+
+Find what is wrong with this change, or satisfy yourself that nothing is:
+- Wrong results at the edges: empty, zero, negative, boundary, very large and malformed inputs, and whatever edges are particular to this code.
+- Regressions: behaviour that worked before the change and doesn't now. Read the callers of everything the change touched, and check every signature, default and contract it altered.
+- Error paths: what happens when something it relies on fails.
+- The tests: whether they pin down the behaviour the change introduced. Would they fail if the change were reverted, or broken in the obvious ways? Changed behaviour that no test would catch is a finding.
+
+Back every bug with a failing test: one that fails on this version and would pass on a correct one. Publish it (below) and cite its ID in the finding's evidence. Where a test can't show it, give a command and the real tail of its output. A bug claim with neither is unlikely to be upheld.
+
+# Scope and severity
+
+Review the change, not the whole codebase. A problem the change neither introduced nor touched is out of scope, unless the task required fixing it or the change makes it worse.
+- blocker: wrong results, lost data, a crash or a security hole on inputs the code will really see, or a regression in behaviour that worked before.
+- major: a real defect on a plausible input; changed behaviour that no test would catch; a design problem that makes a likely next change materially harder.
+- minor: anything else worth the author's time.
+Style the codebase itself doesn't follow, and preferences without a reason, are not findings. Finding nothing is a good outcome when it is true: an empty list from a careful review is worth more than a padded one.
+
+Blocker and major findings go to two independent adjudicators, and minor fact findings to a neutral verifier. The author gets one pass to fix what is upheld, and you will then review that fix.
+
+# Publishing a test
+- Number your tests TXC1, TXC2, ….
+- Put its files under /tmp/proj/.council/test-audit/room/tests/<ID>/files/<path relative to the repo root>, as new files. Never use the path of a file the repository already has: the test is copied into a checkout of the change and run there. Put the ID in the file and class or function names.
+- Write /tmp/proj/.council/test-audit/room/tests/<ID>/test.json: {"command": "<command, run from the repo root, that runs just this test>", "purpose": "<the behaviour it pins down>"}.
+- Run it in your checkout first and confirm it fails for the reason you give.
+- List it in `tests`. A neutral verifier rules on whether it asserts behaviour that the task, or the code as it was before the change, requires.
+
+Write your review to /tmp/proj/.council/test-audit/room/audit/correctness.md: your verdict, then each finding with its evidence. In your output, `summary` is the verdict in 2-4 sentences, each finding says what is wrong and what you would change, and `probes` is empty.
+
+Set `turn` in your output to exactly "audit-correctness-c22ff5b0".
+
+<<<OUTPUT_SCHEMA
+{"type":"object","properties":{"summary":{"type":"string","description":"Your verdict on the change, in 2-4 sentences."},"findings":{"type":"array","items":{"type":"object","properties":{"severity":{"type":"string","enum":["blocker","major","minor"]},"kind":{"type":"string","enum":["fact","judgment"],"description":"\"fact\": checkable. \"judgment\": a trade-off."},"statement":{"type":"string","description":"What is wrong, and the change you would make."},"evidence":{"type":"string","description":"A published test ID, a file:line, or a command plus the real tail of its output."}},"required":["severity","kind","statement","evidence"],"additionalProperties":false}},"tests":{"type":"array","items":{"type":"object","properties":{"id":{"type":"string","description":"The ID you used for its directory, e.g. T1B1."},"purpose":{"type":"string","description":"The behaviour it pins down."},"command":{"type":"string","description":"The same command as in its test.json."}},"required":["id","purpose","command"],"additionalProperties":false},"description":"Tests you published, IDs as instructed. Empty if none."},"probes":{"type":"array","description":"Design lens: the next changes you traced. Empty otherwise.","items":{"type":"object","properties":{"change":{"type":"string","description":"A plausible next change to this code."},"touches":{"type":"string","description":"The files and functions it would have to touch in this version."},"verdict":{"type":"string","enum":["easy","awkward","hard"]}},"required":["change","touches","verdict"],"additionalProperties":false}},"process":{"type":"string","description":"Feedback on the council process, not on the task: at most two sentences on anything in this turn's instructions, inputs or tools that got in your way, such as an unclear or conflicting instruction, missing context, wasted effort, a limit that cut you short, or a command that failed. Name the instruction or input. \"\" if nothing did; don't invent feedback."},"turn":{"type":"string","enum":["audit-correctness-c22ff5b0"],"description":"Exactly \"audit-correctness-c22ff5b0\"."}},"required":["summary","findings","tests","probes","process","turn"],"additionalProperties":false}
+OUTPUT_SCHEMA>>>

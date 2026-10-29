@@ -1,0 +1,65 @@
+The council continues. You are still seat C, and the rules, task and workspace from round 0 still apply (the task and acceptance criteria are also in /tmp/proj/.council/test-focus/TASK.md). Your worktree is /tmp/proj/.council/test-focus/wt/C; the room is /tmp/proj/.council/test-focus/room. The other seats write their posts for this round at the same time. Don't open their files under /tmp/proj/.council/test-focus/room/r2/ while you work; read the earlier rounds the prompt points you to.
+
+## Publishing tests
+A test that any correct solution must pass is the strongest evidence there is: it runs against every seat's position every round. To publish one:
+- Number them T2C1, T2C2, … this round.
+- Put its file(s) under /tmp/proj/.council/test-focus/room/tests/<ID>/files/<path relative to the repo root>. Use names no other seat would pick (put the ID in the file and class/function names), because the files get copied into every worktree.
+- Write /tmp/proj/.council/test-focus/room/tests/<ID>/test.json: {"command": "<command, run from the repo root, that runs just this test>", "purpose": "<the behaviour it pins down>"}.
+- List it in `tests`. A test is itself a claim: one that asserts behaviour the task doesn't require can be challenged and thrown out.
+
+# Round 2 of up to 3 — debate
+
+You reviewed these positions last round. Start from what changed since then, and open the full post or diff only where a change touches something you need to re-check, or where you no longer have what you need:
+- A: post /tmp/proj/.council/test-focus/room/r1/A.md, starting with its "Changes this round" section · code changes since round 0: /tmp/proj/.council/test-focus/room/r1/A.delta.diff (1 files, +3/−1) · full diff /tmp/proj/.council/test-focus/room/r1/A.diff · any file as of its latest measured snapshot: `git -C /tmp/proj show refs/council/test-focus/A-r1:<path>`
+- B: post /tmp/proj/.council/test-focus/room/r1/B.md, starting with its "Changes this round" section · code changes since round 0: /tmp/proj/.council/test-focus/room/r1/B.delta.diff (1 files, +3/−1) · full diff /tmp/proj/.council/test-focus/room/r1/B.diff · any file as of its latest measured snapshot: `git -C /tmp/proj show refs/council/test-focus/B-r1:<path>`
+- D: post /tmp/proj/.council/test-focus/room/r1/D.md, starting with its "Changes this round" section · code changes since round 0: /tmp/proj/.council/test-focus/room/r1/D.delta.diff (1 files, +3/−1) · full diff /tmp/proj/.council/test-focus/room/r1/D.diff, large (9 files, +480/−40): start with the per-file summary /tmp/proj/.council/test-focus/room/r1/D.stat and read the hunks that matter · any file as of its latest measured snapshot: `git -C /tmp/proj show refs/council/test-focus/D-r1:<path>`
+Your own previous post: /tmp/proj/.council/test-focus/room/r1/C.md
+Out of contention, now reviewing: E. Skim the "To the council" section of their round-1 posts for points addressed to you: /tmp/proj/.council/test-focus/room/r1/E.md.
+
+# Standings and ledger after round 1
+
+## Positions
+- A: position A revised · 1 files +10/−2 · suite PASS · criteria 2 met, 1 partial of 3
+- B: position B revised · 1 files +10/−2 · suite PASS · criteria 2 met, 1 partial of 3 · post 1200 words, over the 800-word limit
+- C (you): position C revised · 1 files +10/−2 · suite PASS · criteria 1 met, 1 partial of 3
+- D: position D revised · 9 files +480/−40 · suite PASS · criteria 2 met, 1 partial of 3
+- E: out of contention after round 1, now reviewing. Last position: position E revised
+
+## Votes in round 1
+- A → A
+- B → A
+- C → C
+- D → D
+- E → E
+
+## Standing findings (verified or unresolved, not yet fixed) against positions in contention
+- [1C1] C → A · major · VERIFIED: A drops the retry header — evidence: src/Retry.php:40 — verifier: checked 1C1
+
+## Refuted or fabricated (don't re-assert without new evidence)
+- none
+
+## Published tests (run against every position)
+- none yet
+
+Then, this round:
+1. Critique the other contending positions (`findings`): concrete defects with evidence, such as an input that breaks it, a test ID, or a file:line. A finding is checked against the version you read (round 1). Back important findings with a published test when you can. Positions out of contention can no longer ship, so don't file findings against them.
+2. Answer the ledger: concede findings against you that hold (`concessions`), challenge claims you believe are wrong, with evidence (`challenges`), and withdraw your own claims that turned out wrong (`withdrawals`).
+3. Adopt good ideas from other positions, credited (`adopted`).
+4. Revise your position in your worktree and re-run the verification command. If it changed, cite the ledger IDs that justified it in `changeBasis`.
+5. Vote (`vote`): the position that should ship, one of A, B, C, D, and the amendments it needs.
+
+Write your post to /tmp/proj/.council/test-focus/room/r2/C.md with these sections:
+## To the council — direct responses, addressed by letter ("B: …")
+## Position — your complete current position, not a delta, as brief as it can be while staying complete
+## Changes this round — what changed and why; other seats read this section first next round
+## Vote
+
+Keep the post under about 800 words: the diff carries the detail, and the post explains it. Every seat reads it, so make each paragraph earn its place. Only the post file counts toward the limit. Put long material the task asks for, such as exact edits, logs or data, in separate files in the room next to your post, named with your seat letter first, and point to them from the post.
+
+`claims` are new claims about your revised position: at most 12: every verification claim, plus the facts your position rests on that bear on an acceptance criterion (name it in `criterion`; a fact claim without one is not recorded). Neutral verifiers check each one, so leave out incidental facts; they can stay in the post.
+
+Set `turn` in your output to exactly "C-r2-def1de1c".
+
+<<<OUTPUT_SCHEMA
+{"type":"object","properties":{"summary":{"type":"string","description":"Your current position after this round, 2-4 sentences."},"changed":{"type":"boolean","description":"Did your position change materially this round?"},"changeBasis":{"type":"array","items":{"type":"string"},"description":"Ledger IDs that justified the change. Empty if unchanged."},"changeNote":{"type":"string","description":"What changed and why, or \"\" if nothing did."},"findings":{"type":"array","items":{"type":"object","properties":{"target":{"type":"string","description":"Seat letter whose position this is about."},"severity":{"type":"string","enum":["blocker","major","minor"]},"kind":{"type":"string","enum":["fact","judgment"],"description":"\"fact\": a checkable defect. \"judgment\": a trade-off or taste argument; argued, not adjudicated."},"statement":{"type":"string"},"evidence":{"type":"string"}},"required":["target","severity","kind","statement","evidence"],"additionalProperties":false}},"challenges":{"type":"array","items":{"type":"object","properties":{"claim":{"type":"string","description":"The ledger ID you dispute."},"reason":{"type":"string"},"evidence":{"type":"string"}},"required":["claim","reason","evidence"],"additionalProperties":false}},"concessions":{"type":"array","items":{"type":"string"},"description":"IDs of findings against you that you accept."},"withdrawals":{"type":"array","items":{"type":"string"},"description":"IDs of your own earlier claims or tests that you retract."},"adopted":{"type":"array","items":{"type":"object","properties":{"from":{"type":"string","description":"Seat letter."},"idea":{"type":"string"}},"required":["from","idea"],"additionalProperties":false}},"claims":{"type":"array","items":{"type":"object","properties":{"kind":{"type":"string","enum":["fact","verification"],"description":"\"verification\": what you ran and what it showed (tests, builds, scripts). \"fact\": any other checkable claim."},"statement":{"type":"string"},"evidence":{"type":"string","description":"file:line, a command plus the real tail of its output, or a test ID. Must be checkable."},"criterion":{"type":"string","description":"The acceptance criterion the claim bears on, e.g. \"C2\". \"\" only for a verification claim that bears on none."}},"required":["kind","statement","evidence","criterion"],"additionalProperties":false},"description":"At most 12 new claims about your revised position: verification claims, and facts that bear on an acceptance criterion."},"tests":{"type":"array","items":{"type":"object","properties":{"id":{"type":"string","description":"The ID you used for its directory, e.g. T1B1."},"purpose":{"type":"string","description":"The behaviour it pins down."},"command":{"type":"string","description":"The same command as in its test.json."}},"required":["id","purpose","command"],"additionalProperties":false}},"vote":{"type":"object","properties":{"ship":{"type":"string","description":"Seat letter of the position that should ship: yours or another."},"amendments":{"type":"array","items":{"type":"string"},"description":"Changes it needs before shipping; may cite ledger IDs."},"reason":{"type":"string"}},"required":["ship","amendments","reason"],"additionalProperties":false},"questions":{"type":"array","items":{"type":"object","properties":{"question":{"type":"string"},"assumption":{"type":"string","description":"The reading you are proceeding on meanwhile."}},"required":["question","assumption"],"additionalProperties":false}},"seconds":{"type":"array","items":{"type":"string"},"description":"IDs of open user questions (Q1, Q2, …) that you agree genuinely block the work."},"process":{"type":"string","description":"Feedback on the council process, not on the task: at most two sentences on anything in this turn's instructions, inputs or tools that got in your way, such as an unclear or conflicting instruction, missing context, wasted effort, a limit that cut you short, or a command that failed. Name the instruction or input. \"\" if nothing did; don't invent feedback."},"turn":{"type":"string","enum":["C-r2-def1de1c"],"description":"Exactly \"C-r2-def1de1c\"."}},"required":["summary","changed","changeBasis","changeNote","findings","challenges","concessions","withdrawals","adopted","claims","tests","vote","questions","seconds","process","turn"],"additionalProperties":false}
+OUTPUT_SCHEMA>>>

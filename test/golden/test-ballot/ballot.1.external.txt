@@ -1,0 +1,38 @@
+The council continues. You are still seat A, and the rules, task and workspace from round 0 still apply (the task and acceptance criteria are also in /tmp/proj/.council/test-ballot/TASK.md). Your worktree is /tmp/proj/.council/test-ballot/wt/A; the room is /tmp/proj/.council/test-ballot/room.
+
+# Ballot after round 1
+
+The round-1 posts have been checked, and no position had the votes to ship, though one came within a vote. Votes were cast before these rulings existed, so every seat now votes again with them in view. This is only a vote: don't revise your position, don't write a post, and don't change any file.
+
+# Standings and ledger after round 1
+
+## Positions
+- A (you): position A revised · 1 files +10/−2 · suite PASS · criteria 2 met, 1 partial of 3
+- B: position B revised · 1 files +10/−2 · suite PASS · criteria 2 met, 1 partial of 3
+- C: position C revised · 1 files +10/−2 · suite PASS · criteria 2 met, 1 partial of 3
+- D: position D revised · 1 files +10/−2 · suite PASS · criteria 2 met, 1 partial of 3
+
+## Votes in round 1
+- A → A
+- B → A
+- C → C
+- D → D
+
+## Standing findings (verified or unresolved, not yet fixed)
+- none
+
+## Refuted or fabricated (don't re-assert without new evidence)
+- none
+
+## Published tests (run against every position)
+- none yet
+
+Your round-1 vote: A.
+
+Vote (`vote`) for one of A, B, C, D: the position that should ship now, with the amendments it needs. Keep your vote unless a ruling above gives you reason to change it, and if you change it, name that ruling's ID in `reason`.
+
+Set `turn` in your output to exactly "A-b1-ac77b871".
+
+<<<OUTPUT_SCHEMA
+{"type":"object","properties":{"vote":{"type":"object","properties":{"ship":{"type":"string","description":"Seat letter of the position that should ship: yours or another."},"amendments":{"type":"array","items":{"type":"string"},"description":"Changes it needs before shipping; may cite ledger IDs."},"reason":{"type":"string"}},"required":["ship","amendments","reason"],"additionalProperties":false},"process":{"type":"string","description":"Feedback on the council process, not on the task: at most two sentences on anything in this turn's instructions, inputs or tools that got in your way, such as an unclear or conflicting instruction, missing context, wasted effort, a limit that cut you short, or a command that failed. Name the instruction or input. \"\" if nothing did; don't invent feedback."},"turn":{"type":"string","enum":["A-b1-ac77b871"],"description":"Exactly \"A-b1-ac77b871\"."}},"required":["vote","process","turn"],"additionalProperties":false}
+OUTPUT_SCHEMA>>>

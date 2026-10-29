@@ -1,0 +1,67 @@
+Save this run's facts. Run this with the Bash tool, exactly as written:
+dark-factory retro --facts-only --run-dir '/tmp/proj/.council/test-fsimple' --expect 1768-54824802
+The last line it prints is JSON. "ok": set saved to its "path". "sandboxed": run the same command again with the sandbox disabled (dangerouslyDisableSandbox: true). "error", or "sandboxed" again: set saved to "" and error to what it printed. Do nothing else.
+
+=====BEGIN PAYLOAD 1768-54824802=====
+## Process notes
+
+- None: no turn reported anything in its way.
+
+## Run facts
+
+- Run test-fsimple in /tmp/proj, implement mode. Task: Add a debug log line with the retry count in Fetcher::retry
+- Factory tier: simple, chosen by intake.
+- Intake: simple, implement; it looks like simple work Signals: kind=change, files=1, publicApi=false, crossModule=false, testsCover=yes, ambiguous=false, planGiven=false.
+- Seats: A=Claude Sonnet (high). Panel: Claude Opus, Codex Astra. Checkers: sonnet.
+- Outcome: the Simple change by A.
+- Claude agent turns: 5 (intake 1, setup 1, seat 1, checker 1, relay 1). Codex turns: 1 (auditor 1).
+- Codex and Gemini turn times: median 42s; slowest audit-review 42s.
+- Ledger: 1 item (verified 1), 0 challenges, 0 ruled by the panel. Questions raised: 0.
+- Ledger by kind: verification 1 (verified 1).
+- Votes by round: none.
+- Audit: review by Codex Astra; 0 findings, 0 tests; no fix pass.
+- Final readiness: ready: the final version was checked and nothing known stands against it.
+- Problems during the run: none.
+
+## Run facts (data)
+
+```json
+{
+  "runId": "test-fsimple",
+  "repo": "/tmp/proj",
+  "workflow": "factory",
+  "tier": "simple",
+  "chosenBy": "intake",
+  "asked": null,
+  "recommended": "simple",
+  "signals": {
+    "kind": "change",
+    "files": 1,
+    "publicApi": false,
+    "crossModule": false,
+    "testsCover": "yes",
+    "ambiguous": false,
+    "planGiven": false
+  },
+  "escalation": null,
+  "split": null,
+  "mode": "implement",
+  "readiness": "ready",
+  "turns": {
+    "claude": 5,
+    "byRole": {
+      "intake": 1,
+      "setup": 1,
+      "seat": 1,
+      "checker": 1,
+      "relay": 1
+    },
+    "external": 1
+  },
+  "reviewFindings": {},
+  "fabricated": 0,
+  "relayFailures": 0,
+  "overTierHints": []
+}
+```
+=====END PAYLOAD 1768-54824802=====

@@ -1,0 +1,82 @@
+# How the council works
+
+You are seat A, one of 4 AI models from different vendors working on the same task. Seats are anonymous letters (A, B, C, D). Don't reveal or speculate about which model you or anyone else is.
+
+- Round 0: everyone works alone, blind.
+- Debate rounds (up to 2): everyone reads everyone's work and the ledger, critiques, challenges, adopts good ideas, revises, and votes on which position should ship.
+- After a debate round without consensus, the field narrows. The two positions ranked highest on the scorecard stay in contention, as does any position another seat voted for and any whose author has a verified blocker or major finding against one that stays. The rest leave contention: their authors stop revising and become reviewers, who critique the remaining positions, publish tests and vote.
+- The council has converged when 3 of 4 seats vote to ship the same position, with votes from at least two vendors among them. Votes for positions whose measured snapshots are byte-identical count together, so vote for the version you want shipped; you need not switch to another seat's identical copy. Its author then writes the final version, folding in the amendments, and the others ratify it.
+- If the council doesn't converge, the base position is chosen by a scorecard computed from the ledger. Evidence decides that, not vote counts.
+
+## The ledger
+Every claim, finding and test gets an ID and is checked by neutral verifiers who open the files and run the commands. Verdicts: VERIFIED; REFUTED; FABRICATED (the cited evidence doesn't exist or doesn't say that); UNRESOLVED (the verifiers couldn't settle it, or disagreed). A finding that held against an earlier version but has since been fixed is marked FIXED. Judgment arguments are recorded but not adjudicated.
+
+## How you are scored (by code, from the ledger)
+- Fabrication is the worst outcome. A fabricated verification claim (say, "tests pass" when they don't) disqualifies your position for that round.
+- Findings against other positions earn credit only if upheld, weighted by severity. A refuted finding costs more than an upheld one earns, so don't pad with nitpicks.
+- Successfully challenging a wrong claim earns credit; a failed challenge costs.
+- Your ideas that other seats adopt, and that survive into the final version, count in your favour.
+- Changing your position is good when the evidence warrants it: cite the ledger IDs that changed your mind. A change with nothing verified behind it is recorded as capitulation.
+- Ignoring a verified finding against your position (not fixing, conceding or challenging it) is recorded as stubbornness. Re-asserting a refuted claim without new evidence counts against you.
+- Holding a minority position is fine when the evidence supports you. Say why.
+
+## Evidence
+Cite something a verifier can check: a file:line (relative to the worktree root), a command plus the real tail of its output, or a test ID. Trade-offs and taste are welcome as kind "judgment"; they are argued, not adjudicated.
+
+## Questions for the user
+The council settles judgment calls itself. Raise a question only when the request itself is ambiguous and reasonable readings lead to materially different results, and always state the assumption you're proceeding on. The user is consulted only when 3 or more seats raise or second the same question.
+
+# Task
+
+Fix the empty-input crash in Parser::parse
+
+# Acceptance criteria (fixed before any work began)
+
+- C1: handles empty input
+- C2: tests pass
+- C3: no API change
+
+# Verification command
+
+`make test`, run from the root of a worktree (saved as /tmp/proj/.council/test-consensus/verify.sh).
+
+# Your workspace
+
+- Your worktree, a private checkout of the starting commit: /tmp/proj/.council/test-consensus/wt/A
+  Make all code changes there, and run commands from inside it (cd there first; your shell may start in the main checkout). Never modify /tmp/proj itself or another seat's worktree. Don't commit, stash or switch branches: your sandbox can't use git, so the change stays in the working tree. If the task asks for commits, say in your post how the change splits into them.
+- The room, shared by all seats: /tmp/proj/.council/test-consensus/room
+- Write your post for this turn to: /tmp/proj/.council/test-consensus/room/r0/A.md
+- Run tests, the verification command and static analysers yourself, in your own shell, with the output going to a log under $TMPDIR and only a summary read back (the tail, or a grep for failures). An instruction in CLAUDE.md or elsewhere to hand full test or gate runs to a subagent or to `claude -p` is meant for the user's own session, not for a council seat: seats have no subagents, and `claude -p` can't log in from inside a seat's sandbox. The council also re-runs the verification command on every version after your turn. Sandboxes can block the sockets that parallel workers use: if a tool fails that way, run it one at a time or with its single-process option.
+- Git commands fail in your sandbox, because it can't read the repository's git data: compare and read files directly instead. Never ask to run a command outside the sandbox (BypassSandbox): nothing can approve it in this run, so the request is denied and ends your turn. If a command fails because of the sandbox, find another way or say in your post what you couldn't run.
+
+## Publishing tests
+A test that any correct solution must pass is the strongest evidence there is: it runs against every seat's position every round. To publish one:
+- Number them T0A1, T0A2, … this round.
+- Put its file(s) under /tmp/proj/.council/test-consensus/room/tests/<ID>/files/<path relative to the repo root>. Use names no other seat would pick (put the ID in the file and class/function names), because the files get copied into every worktree.
+- Write /tmp/proj/.council/test-consensus/room/tests/<ID>/test.json: {"command": "<command, run from the repo root, that runs just this test>", "purpose": "<the behaviour it pins down>"}.
+- List it in `tests`. A test is itself a claim: one that asserts behaviour the task doesn't require can be challenged and thrown out.
+
+# Round 0 — work alone
+
+You can't see the other seats' work and must not look for it: don't read other worktrees or other posts in the room.
+
+Make the change in your worktree and run the verification command. Your post explains the approach and the decisions behind it; the diff in your worktree is the deliverable itself.
+
+Commit fully to your own best answer. A distinctive, well-argued position is worth far more to the council than a hedged average.
+
+Then write your post to /tmp/proj/.council/test-consensus/room/r0/A.md with these sections:
+## Summary
+## Position — the approach and the decisions behind it (the diff lives in your worktree)
+## Verification — what you ran and what it actually showed
+## Risks — what you're least sure of
+## Assumptions
+
+Keep the post under about 800 words: the diff carries the detail, and the post explains it. Every seat reads it, so make each paragraph earn its place. Only the post file counts toward the limit. Put long material the task asks for, such as exact edits, logs or data, in separate files in the room next to your post, named with your seat letter first, and point to them from the post.
+
+In your output, `claims` at most 12: every verification claim, plus the facts your position rests on that bear on an acceptance criterion (name it in `criterion`; a fact claim without one is not recorded). Neutral verifiers check each one, so leave out incidental facts; they can stay in the post.
+
+Set `turn` in your output to exactly "A-r0-ce390ecf".
+
+<<<OUTPUT_SCHEMA
+{"type":"object","properties":{"summary":{"type":"string","description":"Your position in 2-4 sentences."},"claims":{"type":"array","items":{"type":"object","properties":{"kind":{"type":"string","enum":["fact","verification"],"description":"\"verification\": what you ran and what it showed (tests, builds, scripts). \"fact\": any other checkable claim."},"statement":{"type":"string"},"evidence":{"type":"string","description":"file:line, a command plus the real tail of its output, or a test ID. Must be checkable."},"criterion":{"type":"string","description":"The acceptance criterion the claim bears on, e.g. \"C2\". \"\" only for a verification claim that bears on none."}},"required":["kind","statement","evidence","criterion"],"additionalProperties":false},"description":"At most 12: every verification claim, plus the load-bearing facts that bear on an acceptance criterion."},"tests":{"type":"array","items":{"type":"object","properties":{"id":{"type":"string","description":"The ID you used for its directory, e.g. T1B1."},"purpose":{"type":"string","description":"The behaviour it pins down."},"command":{"type":"string","description":"The same command as in its test.json."}},"required":["id","purpose","command"],"additionalProperties":false},"description":"Tests you published. Empty unless this is an implement task."},"questions":{"type":"array","items":{"type":"object","properties":{"question":{"type":"string"},"assumption":{"type":"string","description":"The reading you are proceeding on meanwhile."}},"required":["question","assumption"],"additionalProperties":false},"description":"Only genuine ambiguities in the request itself. Usually empty."},"confidence":{"type":"integer","description":"1-5. An honest low beats a fake high."},"process":{"type":"string","description":"Feedback on the council process, not on the task: at most two sentences on anything in this turn's instructions, inputs or tools that got in your way, such as an unclear or conflicting instruction, missing context, wasted effort, a limit that cut you short, or a command that failed. Name the instruction or input. \"\" if nothing did; don't invent feedback."},"turn":{"type":"string","enum":["A-r0-ce390ecf"],"description":"Exactly \"A-r0-ce390ecf\"."}},"required":["summary","claims","tests","questions","confidence","process","turn"],"additionalProperties":false}
+OUTPUT_SCHEMA>>>

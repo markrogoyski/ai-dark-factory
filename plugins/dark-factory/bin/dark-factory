@@ -1,0 +1,1615 @@
+#!/usr/bin/env python3
+"""council — plumbing for the /council workflow.
+
+The workflow script can only spawn Claude agents; it has no shell. Everything that has to be
+deterministic — worktrees, snapshots, test runs, and driving the Codex and Gemini (agy) CLIs — lives here, and the
+workflow's agents call it. Every subcommand prints one JSON object on its last line.
+
+    council init        --repo DIR --seats A,B,C,D [--run-id ID] [--ref FILE]...
+    council seat-run    --run-dir D [--vendor codex|gemini] --seat KEY --job KEY --model M --effort E --cwd DIR
+                        --prompt-file F --expect HASH [--sandbox MODE] [--writable DIR]... [--fresh]
+                        [--checkout L-LABEL]   (first creates --cwd as a checkout of that snapshot)
+                        (reads the payload from the relay's saved transcript when F is missing)
+    council measure     --run-dir D --seat L --label rN [--since rM] [--tests T0A1,T1B2] [--no-snapshot]
+    council wait        --run-dir D --job KEY
+    council materialize --run-dir D --seat L --label rN [--name DIR]
+    council usage       --run-dir D [--no-claude]
+    council preflight   --vendors codex,gemini
+    council jobs        --run-dir D
+    council cleanup     --run-dir D [--all]
+    council retro       --run-dir D [--expect HASH] [--out-dir DIR]
+                        (saves <run>/retro.md, plus the run's process notes read from the retro
+                        agent's saved transcript, where they outlive the run)
+    council hash        --file F
+
+Long-running work (Codex and Gemini turns, test runs) executes as a detached job so it survives the 10-minute
+Bash tool timeout: the command waits up to --max-wait seconds, then returns {"status": "running"}
+and the caller polls with `council wait`.
+"""
+
+import argparse
+import json
+import os
+import re
+import shutil
+import signal
+import struct
+import subprocess
+import sys
+import tempfile
+import time
+
+SELF = os.path.realpath(__file__)
+DEPS = ('vendor', 'node_modules')           # ignored dependency dirs cloned into each worktree
+# Tool caches that test runs leave behind; never part of a seat's change, even when a project
+# forgot to gitignore them.
+SNAPSHOT_EXCLUDES = ('__pycache__/', '*.pyc', '.pytest_cache/', '.mypy_cache/', '.ruff_cache/',
+                     '.phpunit.result.cache', '.phpunit.cache/', '.php-cs-fixer.cache', '.DS_Store',
+                     'node_modules/', '.tox/', '.nyc_output/',
+                     # agent instructions init copies in when git ignores them (perhaps only through the
+                     # user's global excludes, which this file replaces); a tracked one still diffs
+                     '/CLAUDE.md', '/CLAUDE.local.md', '/AGENTS.md', '/GEMINI.md')
+ROOM_DIRS = ('r0', 'r1', 'r2', 'r3', 'r4', 'r5', 'final', 'final2', 'ratify', 'audit', 'final3', 'reaudit', 'tests')
+SCHEMA_OPEN, SCHEMA_CLOSE = '<<<OUTPUT_SCHEMA', 'OUTPUT_SCHEMA>>>'
+DEFAULT_MAX_WAIT = 540                      # stays under the Bash tool's 600 s ceiling
+# How often waits poll. Tests set these small through the environment; real runs keep the defaults.
+JOB_POLL_SEC = float(os.environ.get('COUNCIL_JOB_POLL', '2'))
+TRANSCRIPT_POLL_SEC = float(os.environ.get('COUNCIL_TRANSCRIPT_POLL', '1'))
+TRANSCRIPT_WAIT_SEC = float(os.environ.get('COUNCIL_TRANSCRIPT_WAIT', '10'))
+TAIL_LINES = 40
+
+
+class CouncilError(Exception):
+    pass
+
+
+# ---------------------------------------------------------------- output
+
+def emit(obj):
+    print(json.dumps(obj, ensure_ascii=False))
+    sys.stdout.flush()
+
+
+def fail(msg):
+    emit({'status': 'error', 'error': msg})
+    sys.exit(1)
+
+
+# ---------------------------------------------------------------- prompt hash
+# Must match promptHash() in council.js exactly: CRLF -> LF, strip trailing [ \t\n],
+# then "<length>-<fnv1a32>" over UTF-16 code units.
+
+def normalize(text):
+    return re.sub(r'[ \t\n]+\Z', '', text.replace('\r\n', '\n'))
+
+
+def prompt_hash(text):
+    t = normalize(text)
+    raw = t.encode('utf-16-le')
+    units = struct.unpack('<%dH' % (len(raw) // 2), raw)
+    h = 0x811C9DC5
+    for u in units:
+        h = ((h ^ u) * 0x01000193) & 0xFFFFFFFF
+    return '%d-%08x' % (len(units), h)
+
+
+def split_schema(payload):
+    """Pull the <<<OUTPUT_SCHEMA ... OUTPUT_SCHEMA>>> block out of a prompt payload."""
+    start = payload.find(SCHEMA_OPEN)
+    if start < 0:
+        return payload, None
+    end = payload.find(SCHEMA_CLOSE, start)
+    if end < 0:
+        raise CouncilError('payload has an unterminated OUTPUT_SCHEMA block')
+    schema_text = payload[start + len(SCHEMA_OPEN):end].strip()
+    try:
+        schema = json.loads(schema_text)
+    except json.JSONDecodeError as e:
+        raise CouncilError(f'OUTPUT_SCHEMA block is not valid JSON: {e}')
+    prompt = (payload[:start] + payload[end + len(SCHEMA_CLOSE):]).strip() + '\n'
+    return prompt, schema
+
+
+# ---------------------------------------------------------------- helpers
+
+def git(*args, cwd=None, env=None, check=True):
+    r = subprocess.run(['git', *args], cwd=cwd, env=env, stdin=subprocess.DEVNULL,
+                       capture_output=True, text=True)
+    if check and r.returncode != 0:
+        raise CouncilError(f"git {' '.join(args)} failed: {r.stderr.strip() or r.stdout.strip()}")
+    return r.stdout
+
+
+def read(path):
+    with open(path, encoding='utf-8') as f:
+        return f.read()
+
+
+def write(path, text):
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    tmp = path + '.tmp'
+    with open(tmp, 'w', encoding='utf-8') as f:
+        f.write(text)
+    os.replace(tmp, path)
+
+
+def write_json(path, obj):
+    write(path, json.dumps(obj, indent=2, ensure_ascii=False) + '\n')
+
+
+def tail(text, n=TAIL_LINES):
+    lines = text.rstrip('\n').split('\n')
+    return '\n'.join(lines[-n:])
+
+
+def load_run(run_dir):
+    path = os.path.join(run_dir, 'run.json')
+    if not os.path.exists(path):
+        raise CouncilError(f'not a council run directory (no run.json): {run_dir}')
+    return json.loads(read(path))
+
+
+def seat_tree(run, seat):
+    return os.path.join(run['runDir'], 'wt', seat)
+
+
+def clone_deps(src_root, dst_root):
+    """Copy ignored dependency dirs (vendor/, node_modules/) into a fresh worktree.
+
+    A real copy, not a symlink: Composer's autoloader resolves __DIR__ through symlinks, so a
+    symlinked vendor/ would silently autoload the *main* tree's classes. On APFS `cp -c` clones
+    copy-on-write, so this is near-instant and costs no disk.
+    """
+    cloned = []
+    for d in DEPS:
+        src, dst = os.path.join(src_root, d), os.path.join(dst_root, d)
+        if not os.path.isdir(src) or os.path.exists(dst):
+            continue
+        ignored = subprocess.run(['git', 'check-ignore', '-q', d], cwd=src_root,
+                                 stdin=subprocess.DEVNULL).returncode == 0
+        if not ignored:
+            continue
+        r = subprocess.run(['cp', '-cR', src, dst], stdin=subprocess.DEVNULL, capture_output=True)
+        if r.returncode != 0:
+            shutil.rmtree(dst, ignore_errors=True)
+            subprocess.run(['cp', '-R', src, dst], stdin=subprocess.DEVNULL, check=True)
+        cloned.append(d)
+    return cloned
+
+
+def run_shell(cmd, cwd, timeout, log_path):
+    """Run a shell command in its own process group; kill the whole group on timeout."""
+    os.makedirs(os.path.dirname(log_path), exist_ok=True)
+    started = time.time()
+    with open(log_path, 'w', encoding='utf-8', errors='replace') as log:
+        p = subprocess.Popen(['/bin/bash', '-c', cmd], cwd=cwd, stdin=subprocess.DEVNULL,
+                             stdout=log, stderr=subprocess.STDOUT, start_new_session=True)
+        timed_out = False
+        try:
+            code = p.wait(timeout=timeout)
+        except subprocess.TimeoutExpired:
+            timed_out = True
+            try:
+                os.killpg(p.pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+            code = p.wait()
+    output = read(log_path) if os.path.exists(log_path) else ''
+    return {'exitCode': code, 'timedOut': timed_out, 'seconds': round(time.time() - started, 1),
+            'tail': tail(output), 'log': log_path}
+
+
+# ---------------------------------------------------------------- init
+
+REF_MAX_BYTES = 5 * 1024 * 1024
+
+
+def resolve_refs(root, refs):
+    """Absolute paths of the reference documents (a plan, a checklist, a spec): ~ expanded, relative
+    paths tried against the repo root, then the current directory. Raises before anything is created."""
+    out = []
+    for ref in refs or []:
+        p = os.path.expanduser(ref)
+        tries = [p] if os.path.isabs(p) else [os.path.join(root, p), os.path.abspath(p)]
+        found = next((t for t in tries if os.path.exists(t)), None)
+        if not found:
+            raise CouncilError(f'reference document not found: {ref}')
+        if not os.path.isfile(found):
+            raise CouncilError(f'reference document is not a file (pass files, not directories): {ref}')
+        if os.path.getsize(found) > REF_MAX_BYTES:
+            raise CouncilError(f'reference document is over {REF_MAX_BYTES // (1024 * 1024)} MB: {ref}')
+        out.append(os.path.realpath(found))
+    return out
+
+
+def in_worktrees(root, path):
+    """Whether a seat's worktree has this file as it is now: committed at HEAD and unmodified."""
+    rel = os.path.relpath(path, os.path.realpath(root))
+    if rel.startswith('..'):
+        return False
+    tracked = git('ls-files', '--error-unmatch', '--', rel, cwd=root, check=False)
+    if not tracked.strip():
+        return False
+    return subprocess.run(['git', 'diff', '--quiet', 'HEAD', '--', rel], cwd=root, stdin=subprocess.DEVNULL,
+                          capture_output=True).returncode == 0
+
+
+def copy_refs(root, run_dir, paths):
+    """Snapshot the reference documents into <run>/refs/, where every seat can read them: worktrees
+    check out HEAD, so an uncommitted plan is invisible there. Copied by the CLI, not by a model."""
+    dest_dir = os.path.join(run_dir, 'refs')
+    os.makedirs(dest_dir, exist_ok=True)
+    out, used = [], set()
+    for src in paths:
+        base, ext = os.path.splitext(os.path.basename(src))
+        name, n = base + ext, 2
+        while name in used:
+            name, n = f'{base}-{n}{ext}', n + 1
+        used.add(name)
+        dest = os.path.join(dest_dir, name)
+        shutil.copyfile(src, dest)
+        out.append({'source': src, 'path': dest, 'bytes': os.path.getsize(dest), 'inWorktrees': in_worktrees(root, src)})
+    return out
+
+
+AGENT_DOCS = ('CLAUDE.md', 'CLAUDE.local.md', 'AGENTS.md', 'GEMINI.md')
+
+
+def copy_agent_docs(root, wt):
+    """Copy the project's agent instructions into a worktree when git ignores them, since a checkout of
+    HEAD never has them. Only ignored files: they stay out of every seat's diff."""
+    copied = []
+    for name in AGENT_DOCS:
+        src, dst = os.path.join(root, name), os.path.join(wt, name)
+        if not os.path.isfile(src) or os.path.exists(dst):
+            continue
+        ignored = subprocess.run(['git', 'check-ignore', '-q', name], cwd=root, stdin=subprocess.DEVNULL,
+                                 capture_output=True).returncode == 0
+        if ignored:
+            shutil.copy2(src, dst)
+            copied.append(name)
+    return copied
+
+
+def cmd_init(a):
+    repo = os.path.abspath(a.repo or os.getcwd())
+    root = git('rev-parse', '--show-toplevel', cwd=repo).strip()
+    head = git('rev-parse', '--verify', '--quiet', 'HEAD', cwd=root, check=False).strip()
+    if not head:
+        raise CouncilError('the repository has no commits yet; council worktrees branch from HEAD')
+    ref_paths = resolve_refs(root, a.ref)
+    common = git('rev-parse', '--git-common-dir', cwd=root).strip()
+    if not os.path.isabs(common):
+        common = os.path.normpath(os.path.join(root, common))
+
+    run_id = a.run_id or time.strftime('%Y%m%d-%H%M%S')
+    if not re.fullmatch(r'[A-Za-z0-9._-]+', run_id):
+        raise CouncilError(f'invalid run id: {run_id}')
+    run_dir = os.path.join(root, '.council', run_id)
+    seats = [s for s in a.seats.split(',') if s]
+    if not seats or any(not re.fullmatch(r'[A-Z]', s) for s in seats):
+        raise CouncilError('--seats must be single capital letters, e.g. A,B,C,D')
+
+    # Keep .council/ out of `git status` and out of ripgrep, locally, without touching .gitignore.
+    exclude = os.path.join(common, 'info', 'exclude')
+    os.makedirs(os.path.dirname(exclude), exist_ok=True)
+    existing = read(exclude) if os.path.exists(exclude) else ''
+    if '/.council/' not in existing.split('\n'):
+        with open(exclude, 'a', encoding='utf-8') as f:
+            f.write(('' if existing.endswith('\n') or not existing else '\n') + '/.council/\n')
+
+    for d in ('jobs', 'logs', 'seats', 'wt', 'snap', 'tmp', 'scratch'):
+        os.makedirs(os.path.join(run_dir, d), exist_ok=True)
+    for d in ROOM_DIRS:
+        os.makedirs(os.path.join(run_dir, 'room', d), exist_ok=True)
+
+    worktrees, deps, docs = {}, [], []
+    for s in seats:
+        path = os.path.join(run_dir, 'wt', s)
+        if not os.path.exists(path):
+            git('worktree', 'add', '--detach', path, head, cwd=root)
+        deps = clone_deps(root, path) or deps
+        docs = copy_agent_docs(root, path)
+        worktrees[s] = path
+
+    dirty = [l for l in git('status', '--porcelain', '--untracked-files=no', cwd=root).split('\n') if l]
+    untracked = [l for l in git('status', '--porcelain', cwd=root).split('\n') if l.startswith('??')]
+
+    refs = copy_refs(root, run_dir, ref_paths)
+
+    run = {'runId': run_id, 'runDir': run_dir, 'repoRoot': root, 'head': head, 'seats': seats,
+           'room': os.path.join(run_dir, 'room'), 'cli': SELF, 'refs': refs}
+    run_path = os.path.join(run_dir, 'run.json')
+    if not os.path.exists(run_path):
+        write_json(run_path, dict(run, created=time.strftime('%Y-%m-%dT%H:%M:%S')))
+    emit(dict(run, status='ok', worktrees=worktrees, depsCloned=deps, agentDocs=docs,
+              dirty=dirty, untrackedCount=len(untracked)))
+
+
+# ---------------------------------------------------------------- jobs
+
+def job_dir(run_dir, key):
+    if not re.fullmatch(r'[A-Za-z0-9._-]+', key):
+        raise CouncilError(f'invalid job key: {key}')
+    return os.path.join(run_dir, 'jobs', key)
+
+
+def pid_alive(pid):
+    try:
+        os.kill(pid, 0)
+        return True
+    except ProcessLookupError:
+        return False
+    except PermissionError:                  # exists, but we may not signal it (e.g. from inside a sandbox)
+        return True
+
+
+def job_state(jd):
+    status = os.path.join(jd, 'status.json')
+    if os.path.exists(status):
+        return json.loads(read(status))
+    pid_file = os.path.join(jd, 'pid')
+    if os.path.exists(pid_file) and pid_alive(int(read(pid_file).strip() or 0)):
+        return {'status': 'running'}
+    if os.path.exists(os.path.join(jd, 'spec.json')):
+        err = os.path.join(jd, 'runner.err')
+        return {'status': 'error', 'error': 'job runner died: ' + (tail(read(err), 10) if os.path.exists(err) else 'no output')}
+    return None
+
+
+def start_job(jd, spec):
+    os.makedirs(jd, exist_ok=True)
+    write_json(os.path.join(jd, 'spec.json'), spec)
+    with open(os.path.join(jd, 'runner.err'), 'w') as err:
+        p = subprocess.Popen([sys.executable, SELF, '_job', jd], stdin=subprocess.DEVNULL,
+                             stdout=subprocess.DEVNULL, stderr=err, start_new_session=True, close_fds=True)
+    write(os.path.join(jd, 'pid'), str(p.pid))
+
+
+def wait_job(jd, key, max_wait):
+    deadline = time.time() + max_wait
+    while True:
+        state = job_state(jd)
+        if state and state.get('status') != 'running':
+            return state
+        if time.time() >= deadline:
+            return {'status': 'running', 'job': key,
+                    'hint': 'still working; poll again with `council wait --run-dir ... --job ' + key + '`'}
+        time.sleep(JOB_POLL_SEC)
+
+
+def archive_job(jd):
+    n = 1
+    while os.path.exists(f'{jd}.old{n}'):
+        n += 1
+    os.replace(jd, f'{jd}.old{n}')
+
+
+def settle_existing_job(jd, key, max_wait, decide):
+    """A job directory for this key may already exist. `decide(old_spec, state)` says what to do with
+    it: 'wait' (it is this work, running or done: wait for it and return its result), a dict (emit
+    that, e.g. a reused result), or None (it is stale or failed: archive it). True when the request
+    was answered from the existing job; False when the caller should start a new one."""
+    if not os.path.isdir(jd):
+        return False
+    spec_path = os.path.join(jd, 'spec.json')
+    old = json.loads(read(spec_path)) if os.path.exists(spec_path) else {}
+    action = decide(old, job_state(jd))
+    if action is None:
+        archive_job(jd)
+        return False
+    emit(wait_job(jd, key, max_wait) if action == 'wait' else action)
+    return True
+
+
+def cmd_wait(a):
+    jd = job_dir(a.run_dir, a.job)
+    if not os.path.isdir(jd):
+        raise CouncilError(f'no such job: {a.job}')
+    emit(wait_job(jd, a.job, a.max_wait))
+
+
+def cmd_jobs(a):
+    root = os.path.join(a.run_dir, 'jobs')
+    rows = []
+    for key in sorted(os.listdir(root)) if os.path.isdir(root) else []:
+        jd = os.path.join(root, key)
+        if os.path.isdir(jd) and '.old' not in key:
+            st = job_state(jd) or {'status': 'empty'}
+            rows.append({'job': key, 'status': st.get('status'), 'seconds': st.get('elapsedSec'),
+                         'error': (st.get('error') or '')[:200]})
+    emit({'status': 'ok', 'jobs': rows})
+
+
+# ---------------------------------------------------------------- codex seats
+
+PAYLOAD_OPEN, PAYLOAD_CLOSE = '=====BEGIN PAYLOAD {}=====', '=====END PAYLOAD {}====='
+TRANSCRIPT_MAX_AGE = 6 * 3600
+
+
+def extract_payload(text, expect):
+    """The payload between the markers for `expect`, without the indent the workflow harness puts
+    in front of every line of an agent's prompt; None unless it hashes to `expect`."""
+    lines = text.split('\n')
+    begin, end = PAYLOAD_OPEN.format(expect), PAYLOAD_CLOSE.format(expect)
+    starts = [i for i, line in enumerate(lines) if line.strip() == begin]
+    ends = [i for i, line in enumerate(lines) if line.strip() == end]
+    if not starts or not ends or ends[-1] <= starts[0]:
+        return None
+    first = lines[starts[0]]
+    indent = first[:len(first) - len(first.lstrip(' \t'))]
+    body = []
+    for line in lines[starts[0] + 1:ends[-1]]:
+        if line.startswith(indent):
+            body.append(line[len(indent):])
+        elif not line.strip():
+            body.append('')
+        else:
+            return None
+    payload = '\n'.join(body)
+    return payload if prompt_hash(payload) == expect else None
+
+
+def transcript_texts(path, needle):
+    """Message texts in a Claude Code transcript (JSONL) that contain `needle`."""
+    with open(path, 'rb') as f:
+        data = f.read()
+    raw_needle = needle.encode()
+    if raw_needle not in data:
+        return
+    for raw in data.split(b'\n'):
+        if raw_needle not in raw:
+            continue
+        try:
+            content = json.loads(raw).get('message', {}).get('content')
+        except (ValueError, AttributeError):
+            continue
+        if isinstance(content, str):
+            yield content
+        elif isinstance(content, list):
+            for block in content:
+                if isinstance(block, dict) and isinstance(block.get('text'), str):
+                    yield block['text']
+
+
+def payload_from_transcripts(expect, wait=10):
+    """Claude Code saves every agent's prompt in its transcript, so read the relay's payload from
+    there instead of having a model copy it: small models drop and add lines in long copies. The
+    hash check makes this safe; None if no saved prompt matches."""
+    base = os.environ.get('CLAUDE_CONFIG_DIR') or os.path.expanduser('~/.claude')
+    root = os.path.join(base, 'projects')
+    needle = PAYLOAD_OPEN.format(expect)
+    deadline = time.time() + wait
+    while True:
+        now, found = time.time(), []
+        for dirpath, _, names in os.walk(root):
+            for name in names:
+                if name.startswith('agent-') and name.endswith('.jsonl'):
+                    path = os.path.join(dirpath, name)
+                    try:
+                        mtime = os.path.getmtime(path)
+                    except OSError:
+                        continue
+                    if now - mtime < TRANSCRIPT_MAX_AGE:
+                        found.append((mtime, path))
+        for _, path in sorted(found, reverse=True):
+            try:
+                for text in transcript_texts(path, needle):
+                    payload = extract_payload(text, expect)
+                    if payload is not None:
+                        return payload
+            except OSError:
+                continue
+        if time.time() >= deadline:            # the transcript may not be flushed the instant the agent starts
+            return None
+        time.sleep(TRANSCRIPT_POLL_SEC)
+
+
+def home_blocked(home, who, create=False):
+    """Codex and agy write to their home directory as they start, and need the network. Inside Claude
+    Code's sandbox that write fails with EPERM; report it plainly now instead of as an opaque vendor
+    error later. None when the directory is writable. With `create`, a missing directory is made
+    (Codex makes its own); without, a missing one is an error: the CLI isn't set up."""
+    try:
+        if create:
+            os.makedirs(home, exist_ok=True)
+        fd, probe = tempfile.mkstemp(prefix='.council-probe-', dir=home)
+        os.close(fd)
+        os.unlink(probe)
+        return None
+    except OSError as e:
+        if isinstance(e, FileNotFoundError) and not create:
+            raise CouncilError(f'{home} does not exist: install the Antigravity CLI (agy) and log in')
+        return (f'cannot write to {home} ({e.strerror}). This command is running inside a sandbox; '
+                f'{who} needs to run outside it, with network access.')
+
+
+def codex_blocked():
+    return home_blocked(os.environ.get('CODEX_HOME') or os.path.expanduser('~/.codex'), 'Codex', create=True)
+
+
+def agy_home():
+    return os.path.expanduser('~/.gemini/antigravity-cli')
+
+
+def gemini_blocked():
+    return home_blocked(agy_home(), 'agy')
+
+
+def ensure_agy_grant(grant_dir):
+    """A Gemini seat runs headless, where agy can't ask for anything: it needs the global
+    `proceed-in-sandbox` mode, so commands run in agy's sandbox without prompting, and a write
+    grant for the run's files. The grant is one per repository (<repo>/.council), added once."""
+    path = os.path.join(agy_home(), 'settings.json')
+    settings = json.loads(read(path)) if os.path.exists(path) else {}
+    if settings.get('toolPermission') != 'proceed-in-sandbox':
+        raise CouncilError(f'Gemini seats need "toolPermission": "proceed-in-sandbox" in {path} '
+                           '(headless agy otherwise denies every command and file edit)')
+    rule = f'write_file({grant_dir})'
+    perms = settings.setdefault('permissions', {})
+    allow = perms.setdefault('allow', [])
+    if rule in allow:
+        return
+    allow.append(rule)
+    tmp = f'{path}.council-{os.getpid()}'
+    write(tmp, json.dumps(settings, indent=2) + '\n')
+    os.replace(tmp, path)
+
+
+def cmd_seat_run(a):
+    blocked = codex_blocked() if a.vendor == 'codex' else gemini_blocked()   # first: inside the sandbox, the transcripts may be unreadable too
+    if blocked:
+        emit({'status': 'sandboxed', 'error': blocked})
+        return
+    if a.vendor == 'gemini':
+        ensure_agy_grant(os.path.dirname(os.path.abspath(a.run_dir)))   # fails now, not inside the job
+    if a.checkout:
+        # An auditor works in a checkout of the version under review, made here, outside the
+        # vendor's sandbox, which can't write the repository's worktree records.
+        seat, _, label = a.checkout.partition('-')
+        checkout_snapshot(load_run(a.run_dir), seat, label, os.path.abspath(a.cwd))
+    text = read(a.prompt_file) if os.path.exists(a.prompt_file) else None
+    got = prompt_hash(text) if text is not None else None
+    if a.expect and got != a.expect:
+        found = payload_from_transcripts(a.expect, a.transcript_wait)
+        if found is not None:
+            write(a.prompt_file, found)
+            text, got = found, a.expect
+        elif text is None:
+            emit({'status': 'need-file', 'expected': a.expect,
+                  'hint': 'The payload could not be read from the saved prompt. Write it to the prompt file exactly and retry.'})
+            return
+        else:
+            emit({'status': 'hash-mismatch', 'expected': a.expect, 'got': got,
+                  'hint': 'The prompt file is not an exact copy of the payload. Rewrite it exactly and retry.'})
+            return
+    if text is None:
+        raise CouncilError(f'no prompt file: {a.prompt_file}')
+    prompt, schema = split_schema(normalize(text))
+
+    spec = {
+        'kind': a.vendor, 'runDir': os.path.abspath(a.run_dir), 'seat': a.seat, 'job': a.job,
+        'hash': got, 'model': a.model, 'effort': a.effort, 'sandbox': a.sandbox,
+        'cwd': os.path.abspath(a.cwd), 'writable': [os.path.abspath(w) for w in (a.writable or [])],
+        'fresh': bool(a.fresh), 'timeout': a.timeout_min * 60, 'schema': schema is not None,
+    }
+    jd = job_dir(a.run_dir, a.job)
+
+    def decide(old, state):
+        same = all(old.get(k) == spec[k] for k in TURN_IDENTITY)
+        status = state and state.get('status')
+        if same and status in ('running', 'done'):
+            return 'wait'                                # the same turn: reuse the result or keep waiting
+        if same and status == 'error' and recently_failed_twice(jd, got):
+            # A relay that reruns a failed turn again and again only repeats the failure (Gemini's
+            # B-r1 ran four times, four minutes each). One rerun is allowed; then the error stands.
+            return dict(state, repeated=True, hint='This exact turn has already failed twice. Return this error; do not run it again.')
+        return None                                      # failed before, or same key with a new prompt
+
+    if settle_existing_job(jd, a.job, a.max_wait, decide):
+        return
+
+    os.makedirs(jd, exist_ok=True)
+    write(os.path.join(jd, 'prompt.md'), prompt)
+    if schema is not None:
+        write_json(os.path.join(jd, 'schema.json'), schema)
+    start_job(jd, spec)
+    emit(wait_job(jd, a.job, a.max_wait))
+
+
+# What makes two seat-run calls the same turn: a job is reused only when all of these match.
+TURN_IDENTITY = ('kind', 'hash', 'model', 'effort', 'sandbox', 'cwd', 'writable', 'fresh', 'schema')
+RERUN_WINDOW = 1800      # a failure older than this may be retried again (after a quota reset, say)
+
+
+def recently_failed_twice(jd, got):
+    """Whether this turn (same prompt hash) already failed, was rerun, and failed again, within the
+    last half hour. The current job is the latest failure; an archived one is the earlier."""
+    status = os.path.join(jd, 'status.json')
+    if not os.path.exists(status) or time.time() - os.path.getmtime(status) > RERUN_WINDOW:
+        return False
+    n = 1
+    while os.path.exists(f'{jd}.old{n}'):
+        old = f'{jd}.old{n}'
+        n += 1
+        try:
+            if (json.loads(read(os.path.join(old, 'spec.json'))).get('hash') == got
+                    and json.loads(read(os.path.join(old, 'status.json'))).get('status') == 'error'):
+                return True
+        except (OSError, ValueError):
+            continue
+    return False
+
+
+def record_usage(run_dir, spec, usage, thread_total, started):
+    """Append one vendor turn to the run's usage.jsonl: this turn's share, and the thread's running total."""
+    with open(os.path.join(run_dir, 'usage.jsonl'), 'a') as f:
+        f.write(json.dumps({'job': spec['job'], 'seat': spec['seat'], 'model': spec['model'],
+                            'usage': usage, 'threadTotal': thread_total,
+                            'seconds': round(time.time() - started, 1)}) + '\n')
+
+
+def turn_usage(seat_dir, thread_id, reported):
+    """This turn's share of a thread's usage. On `codex exec resume`, turn.completed reports the
+    whole thread's running total, so subtract the total recorded after the previous turn."""
+    if not reported or not thread_id:
+        return reported
+    path = os.path.join(seat_dir, 'usage-total.json')
+    prev = {}
+    if os.path.exists(path):
+        rec = json.loads(read(path))
+        if rec.get('thread') == thread_id:
+            prev = rec.get('usage', {})
+    turn = {k: v - prev.get(k, 0) for k, v in reported.items()}
+    if any(v < 0 for v in turn.values()):                 # a total that went down isn't a running total
+        turn = dict(reported)
+    write_json(path, {'thread': thread_id, 'usage': reported})
+    return turn
+
+
+def seat_git_dirs(spec):
+    """The git data a commit in a seat's worktree writes: its own git dir (HEAD, index, reflog) and
+    the shared object store. Codex's sandbox keeps both read-only unless they are writable roots;
+    the rest of .git (config, refs, hooks) stays read-only. Only for a seat worktree under wt/."""
+    cwd = os.path.realpath(spec['cwd'])
+    if not cwd.startswith(os.path.realpath(os.path.join(spec['runDir'], 'wt')) + os.sep):
+        return []
+    out = git('rev-parse', '--path-format=absolute', '--git-dir', '--git-common-dir', cwd=cwd, check=False).split('\n')
+    if len(out) < 2 or not out[0] or out[0] == out[1]:
+        return []
+    return [out[0], os.path.join(out[1], 'objects')]
+
+
+def codex_command(jd, spec, thread):
+    """The `codex exec` command for a job, and the directory it runs in (the prompt goes on stdin)."""
+    run_dir = spec['runDir']
+    # A read-only turn (panel, spec review) must not change the repository, but Codex's read-only
+    # sandbox also forbids temp files, which zsh heredocs and Rscript need. So it runs in
+    # workspace-write from an empty scratch directory: it can read everything, and write only
+    # there and to the temp directories.
+    sandbox, cwd = spec['sandbox'], spec['cwd']
+    if sandbox == 'read-only':
+        sandbox, cwd = 'workspace-write', os.path.join(run_dir, 'scratch', f'codex-{spec["job"]}')
+        os.makedirs(cwd, exist_ok=True)
+
+    out_path = os.path.join(jd, 'out.json')
+    cmd = ['codex', 'exec']
+    if thread:
+        cmd.append('resume')
+    cmd += ['--json', '-o', out_path, '--skip-git-repo-check', '-m', spec['model'],
+            '-c', f'model_reasoning_effort="{spec["effort"]}"',
+            '-c', f'sandbox_mode="{sandbox}"']
+    if spec['schema']:
+        cmd += ['--output-schema', os.path.join(jd, 'schema.json')]
+    writable = spec['writable'] + seat_git_dirs(spec) if spec['sandbox'] == 'workspace-write' else []
+    if writable:
+        cmd += ['-c', 'sandbox_workspace_write.writable_roots=' + json.dumps(writable)]
+    if thread:
+        cmd.append(thread)
+    else:
+        cmd += ['-C', cwd]
+    return cmd + ['-'], cwd
+
+
+def run_codex_job(jd, spec):
+    started = time.time()
+    run_dir = spec['runDir']
+    thread_file = os.path.join(run_dir, 'seats', spec['seat'], 'thread')
+    thread = None if spec['fresh'] or not os.path.exists(thread_file) else read(thread_file).strip()
+
+    out_path = os.path.join(jd, 'out.json')
+    cmd, cwd = codex_command(jd, spec, thread)                # prompt on stdin — never leave stdin open
+
+    events_path, err_path = os.path.join(jd, 'events.jsonl'), os.path.join(jd, 'stderr.txt')
+    with open(os.path.join(jd, 'prompt.md'), 'rb') as stdin, open(events_path, 'w') as so, open(err_path, 'w') as se:
+        p = subprocess.Popen(cmd, cwd=cwd, stdin=stdin, stdout=so, stderr=se, start_new_session=True)
+        write(os.path.join(jd, 'codex.pid'), str(p.pid))
+        try:
+            code = p.wait(timeout=spec['timeout'])
+        except subprocess.TimeoutExpired:
+            try:
+                os.killpg(p.pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+            p.wait()
+            return {'status': 'error', 'error': f'codex timed out after {spec["timeout"] // 60} min'}
+
+    new_thread, usage, errors = None, {}, []
+    for line in read(events_path).split('\n'):
+        try:
+            ev = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        t = ev.get('type')
+        if t == 'thread.started':
+            new_thread = ev.get('thread_id')
+        elif t == 'turn.completed' and isinstance(ev.get('usage'), dict):
+            usage = {k: v for k, v in ev['usage'].items() if isinstance(v, (int, float))}
+        elif t in ('error', 'turn.failed'):
+            errors.append(json.dumps(ev.get('error') or ev.get('message') or ev)[:500])
+    if new_thread and not thread:
+        write(thread_file, new_thread)
+
+    thread_total = usage
+    usage = turn_usage(os.path.dirname(thread_file), thread or new_thread, thread_total)
+    record_usage(run_dir, spec, usage, thread_total, started)
+
+    if code != 0 or not os.path.exists(out_path):
+        stderr = read(err_path) if os.path.exists(err_path) else ''
+        stderr = '\n'.join(l for l in stderr.split('\n') if 'Reading additional input from stdin' not in l)
+        return {'status': 'error', 'error': (' | '.join(errors) or tail(stderr, 15) or f'codex exited {code}')[:2000]}
+    raw = read(out_path)
+    if not spec['schema']:
+        result = raw
+    else:
+        try:
+            result = json.loads(raw)
+        except json.JSONDecodeError:
+            return {'status': 'error', 'error': 'codex final message was not valid JSON: ' + raw[:500]}
+    return {'status': 'done', 'job': spec['job'], 'seat': spec['seat'], 'thread': thread or new_thread,
+            'elapsedSec': round(time.time() - started, 1), 'usage': usage, 'result': result}
+
+
+def fits_schema(schema, result):
+    """Whether a structured output has this turn's shape. A resumed agy turn that answers in plain
+    text leaves the previous turn's structured_output in place, still with status SUCCESS. Shape
+    alone can't tell two debate rounds apart, so the workflow also pins a per-turn tag as a
+    one-value enum (`turn`), and a top-level enum must hold."""
+    props = schema.get('properties', {})
+    return (isinstance(result, dict) and all(k in result for k in schema.get('required', []))
+            and (schema.get('additionalProperties', True) is not False or set(result) <= set(props))
+            and all(result.get(k) in p['enum'] for k, p in props.items()
+                    if isinstance(p, dict) and 'enum' in p and k in result))
+
+
+def run_gemini_job(jd, spec):
+    """One agy turn. agy reports SUCCESS with exit 0 in several failures (a tool it couldn't ask
+    about was denied and ended the turn, an unknown conversation id silently started a new one, a
+    resumed turn answered in text and the previous turn's structured output came back), so every
+    result is checked here rather than trusted."""
+    started = time.time()
+    run_dir = spec['runDir']
+    seat_dir = os.path.join(run_dir, 'seats', spec['seat'])
+    conv_file = os.path.join(seat_dir, 'conversation')
+    conv = None if spec['fresh'] or not os.path.exists(conv_file) else read(conv_file).strip()
+
+    # Where agy starts decides what its sandbox lets shell commands touch: nothing under the start
+    # directory can be written, even with a grant, and from anywhere inside the repository nothing
+    # under .council can even be read. So it starts in an empty directory outside the repository,
+    # and the prompt names the worktree by absolute path; the grant on <repo>/.council (added by
+    # seat-run) covers the worktrees and the room.
+    run_tag = f"{os.path.basename(run_dir)}-{prompt_hash(run_dir).split('-')[1]}"
+    cwd = os.path.join(tempfile.gettempdir(), 'council-agy', run_tag, re.sub(r'[^A-Za-z0-9._-]', '-', spec['seat']))
+    os.makedirs(cwd, exist_ok=True)
+
+    schema = json.loads(read(os.path.join(jd, 'schema.json'))) if spec['schema'] else None
+    out_path, err_path = os.path.join(jd, 'out.json'), os.path.join(jd, 'stderr.txt')
+
+    def call(prompt, conversation):
+        cmd = ['agy', '-p', prompt, '--model', spec['model'], '--output-format', 'json', '--sandbox']
+        if schema is not None:
+            cmd += ['--json-schema', os.path.join(jd, 'schema.json')]
+        if conversation:
+            cmd += ['--conversation', conversation]
+        with open(out_path, 'w') as so, open(err_path, 'a') as se:
+            p = subprocess.Popen(cmd, cwd=cwd, stdin=subprocess.DEVNULL, stdout=so, stderr=se, start_new_session=True)
+            write(os.path.join(jd, 'agy.pid'), str(p.pid))
+            try:
+                code = p.wait(timeout=max(60, spec['timeout'] - (time.time() - started)))
+            except subprocess.TimeoutExpired:
+                try:
+                    os.killpg(p.pid, signal.SIGKILL)
+                except ProcessLookupError:
+                    pass
+                p.wait()
+                return None, f'agy timed out after {spec["timeout"] // 60} min'
+        try:
+            return json.loads(read(out_path)), None
+        except (json.JSONDecodeError, OSError):
+            return None, (tail(read(err_path), 15) or f'agy exited {code} with no JSON')
+
+    def fits(result):
+        return fits_schema(schema, result)
+
+    out, err = call(read(os.path.join(jd, 'prompt.md')), conv)
+    if out is None:
+        return {'status': 'error', 'error': err[:2000]}
+    new_conv = out.get('conversation_id') or None
+    if new_conv and conv and new_conv != conv:
+        return {'status': 'error', 'error': f'agy did not resume conversation {conv} (it started {new_conv}): '
+                f'the seat lost its memory. {tail(read(err_path), 5)}'[:2000]}
+    if new_conv and not conv:
+        write(conv_file, new_conv)
+    thread = conv or new_conv
+
+    # A permission request ends a headless turn, but the conversation keeps its work: the seat asked
+    # to run a command outside the sandbox (git, which can't read the repository's data from inside
+    # it). Resume once, saying so, rather than lose the seat.
+    resumed = ''
+    if out.get('status') == 'SUCCESS' and out.get('denied_actions') and thread:
+        resumed = ', '.join(d.get('action', '?') for d in out['denied_actions'])
+        write(os.path.join(jd, 'out-denied.json'), json.dumps(out))
+        out, err = call(DENIED_NUDGE.format(denied=resumed), thread)
+        if out is None:
+            return {'status': 'error', 'error': f'agy denied {resumed}, and resuming after it failed: {err}'[:2000]}
+    nudged = False
+    if (schema is not None and out.get('status') == 'SUCCESS' and not out.get('denied_actions')
+            and not fits(out.get('structured_output')) and thread):
+        nudged = True
+        write(os.path.join(jd, 'out-first.json'), json.dumps(out))
+        out, err = call('You answered in text, not as structured output. Return your answer to my previous '
+                        'message now as structured output that matches the JSON schema. Change nothing else.', thread)
+        if out is None:
+            return {'status': 'error', 'error': err[:2000]}
+
+    reported = {k: v for k, v in (out.get('usage') or {}).items() if isinstance(v, (int, float))}
+    usage = turn_usage(seat_dir, thread, reported)
+    record_usage(run_dir, spec, usage, reported, started)
+
+    stderr = read(err_path) if os.path.exists(err_path) else ''
+    if out.get('status') != 'SUCCESS':
+        return {'status': 'error', 'error': (out.get('error') or tail(stderr, 15) or f'agy status {out.get("status")}')[:2000]}
+    denied = ', '.join(d.get('action', '?') for d in out.get('denied_actions') or [])
+    result = out.get('structured_output') if schema is not None else out.get('response')
+    if schema is not None and result is not None and not fits(result):
+        return {'status': 'error', 'error': 'agy returned structured output that does not match this turn\'s schema'
+                + (' (also after a follow-up asking for it)' if nudged else '') + f'. Its text: {oneline(out.get("response"))}'[:2000]}
+    if result is None or result == '':
+        why = (f'agy denied {denied}, which ended the turn early' + (' (also after resuming once)' if resumed else '') if denied
+               else 'agy returned no output' + (' (no structured_output)' if schema is not None else ''))
+        return {'status': 'error', 'error': f'{why}. {tail(stderr, 5)}'.strip()[:2000]}
+    return {'status': 'done', 'job': spec['job'], 'seat': spec['seat'], 'thread': thread,
+            'elapsedSec': round(time.time() - started, 1), 'usage': usage, 'result': result,
+            **({'denied': denied} if denied else {}), **({'resumedAfter': resumed} if resumed else {}),
+            **({'nudged': True} if nudged else {})}
+
+
+DENIED_NUDGE = ('Your last request ({denied}) needed a permission that nobody can grant in this run, so it was denied and your turn '
+                'stopped there. Your work so far is kept. Don\'t ask to run anything outside the sandbox again: git commands fail '
+                'inside it, so read and compare files directly. Carry on with the task from where you stopped, and finish as the '
+                'task asks, with your answer as structured output if it asks for one.')
+
+
+def oneline(text, n=300):
+    text = ' '.join(str(text or '').split())
+    return text if len(text) <= n else text[:n] + ' […]'
+
+
+# ---------------------------------------------------------------- snapshots and measurement
+
+def parse_numstat(text):
+    """(files, added, removed) from `git diff --numstat` output; binary files ('-') count as no lines."""
+    files, added, removed = [], 0, 0
+    for line in text.split('\n'):
+        parts = line.split('\t')
+        if len(parts) == 3:
+            files.append(parts[2])
+            added += int(parts[0]) if parts[0].isdigit() else 0
+            removed += int(parts[1]) if parts[1].isdigit() else 0
+    return files, added, removed
+
+
+def numstat(wt, a, b):
+    return parse_numstat(git('diff', '--numstat', a, b, cwd=wt))
+
+
+def worktree_tree(run, wt, index_name, base=None):
+    """The tree object for a worktree's current files (tracked or not, minus SNAPSHOT_EXCLUDES; a
+    file committed on `base` is kept), written through a throwaway index so the worktree's own
+    index is never touched."""
+    idx = os.path.join(run['runDir'], 'tmp', index_name)
+    excludes = os.path.join(run['runDir'], 'tmp', 'snapshot-excludes')
+    if not os.path.exists(excludes):
+        write(excludes, '\n'.join(SNAPSHOT_EXCLUDES) + '\n')
+    env = dict(os.environ, GIT_INDEX_FILE=idx)
+    if os.path.exists(idx):
+        os.remove(idx)
+    try:
+        git('read-tree', base or run['head'], cwd=wt, env=env)
+        git('-c', f'core.excludesFile={excludes}', 'add', '-A', cwd=wt, env=env)
+        return git('write-tree', cwd=wt, env=env).strip()
+    finally:
+        if os.path.exists(idx):
+            os.remove(idx)
+
+
+def seat_head(run, wt):
+    """The worktree's HEAD when it is the base commit or a descendant of it (the seat committed
+    there); otherwise the base commit, so a seat that moved HEAD elsewhere is still measured
+    against the base."""
+    head = git('rev-parse', '--verify', '--quiet', 'HEAD', cwd=wt, check=False).strip()
+    if head and subprocess.run(['git', 'merge-base', '--is-ancestor', run['head'], head], cwd=wt,
+                               stdin=subprocess.DEVNULL, capture_output=True).returncode == 0:
+        return head
+    return run['head']
+
+
+def snapshot(run, seat, label, path=None, since=None):
+    """Record the seat's current tree as a commit under refs/council/<run>/<seat>-<label>, and
+    write to room/<label>/: <seat>.diff against the base commit, <seat>.stat (per-file counts),
+    and, with `since`, <seat>.delta.diff against the seat's <since> snapshot, so readers can see
+    what changed since they last looked. Uses a throwaway index, so the worktree's own index is
+    never touched. Commits the seat made on top of the base commit are kept: the snapshot is the
+    seat's HEAD, plus one council commit on top for whatever it left uncommitted."""
+    wt = path or seat_tree(run, seat)
+    base = seat_head(run, wt)
+    tree = worktree_tree(run, wt, f'index-{seat}-{label}', base)
+    if base != run['head'] and tree == git('rev-parse', f'{base}^{{tree}}', cwd=wt).strip():
+        commit = base
+    else:
+        ident = dict(os.environ, GIT_AUTHOR_NAME='council', GIT_AUTHOR_EMAIL='council@localhost',
+                     GIT_COMMITTER_NAME='council', GIT_COMMITTER_EMAIL='council@localhost')
+        message = f'council {run["runId"]} {seat} {label}' + ('' if base == run['head'] else ': uncommitted changes')
+        commit = git('commit-tree', tree, '-p', base, '-m', message, cwd=wt, env=ident).strip()
+    ref = f'refs/council/{run["runId"]}/{seat}-{label}'
+    git('update-ref', ref, commit, cwd=wt)
+    diff_path = os.path.join(run['room'], label, f'{seat}.diff')
+    write(diff_path, git('diff', '--binary', run['head'], commit, cwd=wt))
+    stat_path = os.path.join(run['room'], label, f'{seat}.stat')
+    write(stat_path, git('diff', '--stat=200,160', run['head'], commit, cwd=wt))
+    files, added, removed = numstat(wt, run['head'], commit)
+    out = {'ref': ref, 'commit': commit, 'tree': tree, 'diff': diff_path, 'stat': stat_path, 'files': len(files),
+           'fileList': files[:50], 'added': added, 'removed': removed, 'delta': None,
+           'seatCommits': int(git('rev-list', '--count', f'{run["head"]}..{base}', cwd=wt).strip())}
+    prev = since and git('rev-parse', '--verify', '--quiet', f'refs/council/{run["runId"]}/{seat}-{since}',
+                         cwd=wt, check=False).strip()
+    if prev:
+        delta_path = os.path.join(run['room'], label, f'{seat}.delta.diff')
+        write(delta_path, git('diff', '--binary', prev, commit, cwd=wt))
+        dfiles, dadded, dremoved = numstat(wt, prev, commit)
+        out['delta'] = {'since': since, 'diff': delta_path, 'files': len(dfiles), 'added': dadded, 'removed': dremoved}
+    return out
+
+
+def suite(run, cwd, label, seat, timeout):
+    verify = os.path.join(run['runDir'], 'verify.sh')
+    if not os.path.exists(verify) or not read(verify).strip():
+        return {'ran': False, 'passed': False, 'note': 'no verification command configured'}
+    log = os.path.join(run['runDir'], 'logs', f'suite-{seat}-{label}.log')
+    r = run_shell(f'bash {json.dumps(verify)}', cwd, timeout, log)
+    return dict(r, ran=True, passed=(r['exitCode'] == 0 and not r['timedOut']))
+
+
+def crosstest(run, cwd, label, seat, test_ids, timeout, reset=False):
+    """Copy each published test's files into cwd, run it, and remove them again. With `reset` (a
+    scratch checkout), tracked files a test changed are restored before the next one runs."""
+    results = []
+    for tid in test_ids:
+        tdir = os.path.join(run['room'], 'tests', tid)
+        meta_path = os.path.join(tdir, 'test.json')
+        if not os.path.exists(meta_path):
+            results.append({'test': tid, 'outcome': 'error', 'note': 'missing test.json'})
+            continue
+        try:
+            meta = json.loads(read(meta_path))
+            command = str(meta['command'])
+        except (json.JSONDecodeError, KeyError) as e:
+            results.append({'test': tid, 'outcome': 'error', 'note': f'bad test.json: {e}'})
+            continue
+        files_root = os.path.join(tdir, 'files')
+        rels = []
+        for base, _, names in os.walk(files_root):
+            for n in names:
+                rels.append(os.path.relpath(os.path.join(base, n), files_root))
+        copied, made_dirs, conflict = [], [], None
+        for rel in rels:
+            src, dst = os.path.join(files_root, rel), os.path.join(cwd, rel)
+            if os.path.exists(dst):
+                with open(src, 'rb') as f1, open(dst, 'rb') as f2:
+                    if f1.read() == f2.read():
+                        continue                          # already there, identical: run in place
+                conflict = rel
+                break
+            d = os.path.dirname(dst)
+            missing = []
+            while d and not os.path.exists(d):
+                missing.append(d)
+                d = os.path.dirname(d)
+            for m in reversed(missing):
+                os.makedirs(m, exist_ok=True)
+                made_dirs.append(m)
+            shutil.copy2(src, dst)
+            copied.append(dst)
+        if conflict:
+            results.append({'test': tid, 'outcome': 'conflict', 'note': f'{conflict} already exists with different content'})
+        else:
+            log = os.path.join(run['runDir'], 'logs', f'cross-{tid}-on-{seat}-{label}.log')
+            r = run_shell(command, cwd, timeout, log)
+            outcome = 'pass' if r['exitCode'] == 0 and not r['timedOut'] else 'fail'
+            results.append({'test': tid, 'outcome': outcome, 'exitCode': r['exitCode'],
+                            'timedOut': r['timedOut'], 'tail': tail(r['tail'], 12)})
+        for f in copied:
+            try:
+                os.remove(f)
+            except FileNotFoundError:
+                pass
+        for d in reversed(made_dirs):
+            try:
+                os.rmdir(d)
+            except OSError:
+                pass
+        if reset:
+            mutated = tracked_changes(cwd)
+            if mutated:
+                results[-1]['mutated'] = mutated[:20]
+                git('checkout', '-q', '--', '.', cwd=cwd, check=False)
+    return results
+
+
+def scratch_checkout(run, seat, label, commit, live):
+    """A disposable checkout of a snapshot commit, where the suite and the cross-tests run: the
+    seat's live worktree can change while they run (or a test can change it), and then the result
+    would describe bytes nobody snapshotted. Dependencies are cloned from the live worktree, so a
+    dependency the seat installed is there too. Returns (path, error)."""
+    path = os.path.join(run['runDir'], 'scratch', f'{seat}-{label}-{os.getpid()}')
+    try:
+        shutil.rmtree(path, ignore_errors=True)
+        git('worktree', 'add', '--detach', path, commit, cwd=run['repoRoot'])
+        clone_deps(live, path)
+        return path, None
+    except (CouncilError, OSError, subprocess.CalledProcessError) as e:
+        drop_checkout(run, path)
+        return None, oneline(str(e), 300)
+
+
+def drop_checkout(run, path):
+    git('worktree', 'remove', '--force', path, cwd=run['repoRoot'], check=False)
+    shutil.rmtree(path, ignore_errors=True)
+
+
+def tracked_changes(path):
+    """Tracked files a command changed in a scratch checkout. Ignored outputs (caches, builds) don't count."""
+    return [l[3:] for l in git('status', '--porcelain', '--untracked-files=no', cwd=path).split('\n') if l]
+
+
+def run_measure_job(jd, spec):
+    started = time.time()
+    run = load_run(spec['runDir'])
+    live = spec.get('path') or seat_tree(run, spec['seat'])
+    out = {'status': 'done', 'job': spec['job'], 'seat': spec['seat'], 'label': spec['label'], 'tree': live}
+    cwd, scratch = live, None
+    if spec.get('snapshot', True):
+        out['snapshot'] = snapshot(run, spec['seat'], spec['label'], spec.get('path'), spec.get('since'))
+        scratch, err = scratch_checkout(run, spec['seat'], spec['label'], out['snapshot']['commit'], live)
+        out['scratch'] = bool(scratch)
+        if scratch:
+            cwd = scratch
+        else:
+            out['scratchError'] = f'ran in the live worktree instead: {err}'
+    post = os.path.join(run['room'], spec['label'], f'{spec["seat"]}.md')
+    out['postWords'] = len(read(post).split()) if os.path.exists(post) else None
+    try:
+        out['suite'] = suite(run, cwd, spec['label'], spec['seat'], spec['suiteTimeout'])
+        if scratch:
+            # The suite must not change tracked files; reset them so cross-tests start from the snapshot.
+            mutated = tracked_changes(scratch)
+            if mutated:
+                out['suite']['mutated'] = mutated[:20]
+                git('checkout', '-q', '--', '.', cwd=scratch, check=False)
+            if out['suite'].get('ran') and not out['suite'].get('passed') and not out['suite'].get('timedOut'):
+                # The checkout has only the tracked files and the dependency dirs. A suite that also
+                # needs some other ignored file (a local .env or phpunit.xml) fails here and not in the
+                # seat's tree; that must not disqualify the seat, so the live tree's result stands.
+                live_run = suite(run, live, f'{spec["label"]}-live', spec['seat'], spec['suiteTimeout'])
+                if live_run.get('passed'):
+                    out['suite'] = dict(live_run, scratchFailed=tail(out['suite'].get('tail', ''), 15))
+        out['crossTests'] = crosstest(run, cwd, spec['label'], spec['seat'], spec['tests'], spec['testTimeout'],
+                                      reset=scratch is not None)
+    finally:
+        if scratch:
+            drop_checkout(run, scratch)
+    out['elapsedSec'] = round(time.time() - started, 1)
+    return out
+
+
+def input_digest(run, seat, label, path, tests):
+    """Everything a measurement's result depends on: the seat's tree as it is now (written with a
+    throwaway index, as snapshot does) and the commits under it, its post, the verification command
+    and the published tests.
+    A finished measurement is reused only when all of it is unchanged."""
+    wt = path or seat_tree(run, seat)
+    base = seat_head(run, wt)
+    tree = worktree_tree(run, wt, f'index-digest-{seat}-{label}-{os.getpid()}', base)
+
+    def digest_of(p):
+        if os.path.isfile(p):
+            return prompt_hash(read(p))
+        if os.path.isdir(p):
+            files = sorted(os.path.relpath(os.path.join(b, n), p) for b, _, ns in os.walk(p) for n in ns)
+            return prompt_hash('\n'.join(f'{f} {prompt_hash(read(os.path.join(p, f)))}' for f in files))
+        return None
+    return {'tree': tree, 'head': base,
+            'post': digest_of(os.path.join(run['room'], label, f'{seat}.md')),
+            'verify': digest_of(os.path.join(run['runDir'], 'verify.sh')),
+            'tests': {t: digest_of(os.path.join(run['room'], 'tests', t)) for t in tests}}
+
+
+def cmd_measure(a):
+    run = load_run(a.run_dir)
+    tests = [t for t in (a.tests or '').split(',') if t]
+    key = f'measure-{a.seat}-{a.label}'
+    jd = job_dir(a.run_dir, key)
+    path = os.path.abspath(a.path) if a.path else None
+    spec = {'kind': 'measure', 'runDir': run['runDir'], 'seat': a.seat, 'label': a.label, 'job': key,
+            'tests': tests, 'path': path, 'since': a.since,
+            'snapshot': not a.no_snapshot, 'suiteTimeout': a.suite_timeout, 'testTimeout': a.test_timeout,
+            'inputs': input_digest(run, a.seat, a.label, path, tests)}
+
+    def decide(old, state):
+        status = state and state.get('status')
+        if status == 'running':
+            return 'wait'
+        if old == spec and status == 'done':
+            return dict(state, reused=True)
+        return None                                      # failed, or something it depends on changed
+
+    if settle_existing_job(jd, key, a.max_wait, decide):
+        return
+    start_job(jd, spec)
+    emit(wait_job(jd, key, a.max_wait))
+
+
+def checkout_snapshot(run, seat, label, path):
+    """A checkout of the seat's <label> snapshot at `path`, created once and reused after."""
+    ref = f'refs/council/{run["runId"]}/{seat}-{label}'
+    if not git('rev-parse', '--verify', '--quiet', ref, cwd=run['repoRoot'], check=False).strip():
+        raise CouncilError(f'no snapshot {seat}-{label} (it is taken when that round is measured)')
+    if not os.path.exists(path):
+        git('worktree', 'add', '--detach', path, ref, cwd=run['repoRoot'])
+        clone_deps(run['repoRoot'], path)
+    return ref
+
+
+def cmd_materialize(a):
+    run = load_run(a.run_dir)
+    name = a.name or f'{a.seat}-{a.label}'
+    if not re.fullmatch(r'[A-Za-z0-9._-]+', name):
+        raise CouncilError(f'invalid checkout name: {name}')
+    path = os.path.join(run['runDir'], 'snap', name)
+    ref = checkout_snapshot(run, a.seat, a.label, path)
+    emit({'status': 'ok', 'path': path, 'ref': ref})
+
+
+# ---------------------------------------------------------------- reporting and cleanup
+
+def cmd_usage(a):
+    path = os.path.join(a.run_dir, 'usage.jsonl')
+    by_model = {}
+    if os.path.exists(path):
+        for line in read(path).split('\n'):
+            if not line.strip():
+                continue
+            rec = json.loads(line)
+            m = by_model.setdefault(rec['model'], {'turns': 0, 'seconds': 0})
+            m['turns'] += 1
+            m['seconds'] = round(m['seconds'] + rec.get('seconds', 0), 1)
+            for k, v in rec.get('usage', {}).items():
+                m[k] = m.get(k, 0) + v
+    out = {'status': 'ok', 'byModel': by_model}
+    if not a.no_claude:
+        out['claude'] = claude_usage(load_run(a.run_dir))
+    emit(out)
+
+
+USAGE_KEYS = ('input_tokens', 'output_tokens', 'cache_creation_input_tokens', 'cache_read_input_tokens')
+
+
+def agent_role(label):
+    """The council role behind a workflow agent's label (see the labels council.js gives agents)."""
+    for role, pat in (('relay', r'\(relay'), ('setup', r'^setup$'), ('retro', r'^retro$'), ('intake', r'^intake$'),
+                      ('record', r'^record$'), ('checker', r'^check '),
+                      ('panel', r'^panel '), ('questions', r'^questions '), ('ballot', r'^b\d+:'),
+                      ('auditor', r'^(re)?audit '), ('spec', r'^spec '), ('seat', r'^(r\d+|final\d?|ratify|inc\d+):')):
+        if re.search(pat, label or ''):
+            return role
+    return 'other'
+
+
+def claude_usage(run):
+    """Token use of this run's Claude agents (seats, checkers, panel, relays, setup, retro), read from
+    their saved transcripts: Claude Code keeps one per agent, and every council prompt names the run
+    directory. Each API message is counted once, though a transcript may log it more than once."""
+    base = os.environ.get('CLAUDE_CONFIG_DIR') or os.path.expanduser('~/.claude')
+    created = os.path.getmtime(os.path.join(run['runDir'], 'run.json'))
+    needle = run['runDir'].encode()
+    by_model, by_role, agents = {}, {}, 0
+    for dirpath, _, names in os.walk(os.path.join(base, 'projects')):
+        for name in names:
+            if not (name.startswith('agent-') and name.endswith('.jsonl')):
+                continue
+            path = os.path.join(dirpath, name)
+            try:
+                if os.path.getmtime(path) < created:
+                    continue
+                with open(path, 'rb') as f:
+                    data = f.read()
+            except OSError:
+                continue
+            if needle not in data:
+                continue
+            meta_path = path[:-len('.jsonl')] + '.meta.json'
+            try:
+                meta = json.loads(read(meta_path)) if os.path.exists(meta_path) else {}
+            except ValueError:
+                meta = {}
+            messages = {}
+            for raw in data.split(b'\n'):
+                try:
+                    msg = json.loads(raw).get('message') or {}
+                except (ValueError, AttributeError):
+                    continue
+                if isinstance(msg, dict) and msg.get('role') == 'assistant' and isinstance(msg.get('usage'), dict):
+                    messages[msg.get('id') or len(messages)] = msg           # the last record of a message wins
+            if not messages:
+                continue
+            agents += 1
+            role = agent_role(meta.get('description', ''))
+            for msg in messages.values():
+                for bucket in (by_model.setdefault(msg.get('model') or meta.get('model') or '?', {'messages': 0}),
+                               by_role.setdefault(role, {'messages': 0})):
+                    bucket['messages'] += 1
+                    for k in USAGE_KEYS:
+                        v = msg['usage'].get(k)
+                        if isinstance(v, (int, float)):
+                            bucket[k] = bucket.get(k, 0) + v
+    return {'agents': agents, 'byModel': by_model, 'byRole': by_role}
+
+
+# ---------------------------------------------------------------- preflight
+
+VENDOR_EXE = {'codex': 'codex', 'gemini': 'agy'}
+
+
+def cmd_preflight(a):
+    """Check, before any seat starts, that each external vendor's CLI can run from here: it is on
+    PATH, answers --version, and isn't stuck inside Claude Code's sandbox (the same probe seat-run
+    makes). Gemini also needs agy's proceed-in-sandbox mode. Costs no model turn."""
+    vendors = [v for v in (a.vendors or '').split(',') if v]
+    unknown = [v for v in vendors if v not in VENDOR_EXE]
+    if unknown:
+        raise CouncilError(f'unknown vendor(s): {", ".join(unknown)}')
+    checks = {}
+    for v in vendors:
+        exe = VENDOR_EXE[v]
+        c = {'ok': False, 'exe': exe}
+        checks[v] = c
+        if not shutil.which(exe):
+            c['error'] = f'{exe} is not on PATH'
+            continue
+        try:
+            blocked = codex_blocked() if v == 'codex' else gemini_blocked()
+        except CouncilError as e:
+            c['error'] = str(e)
+            continue
+        if blocked:
+            c.update(sandboxed=True, error=blocked)
+            continue
+        if v == 'gemini':
+            path = os.path.join(agy_home(), 'settings.json')
+            try:
+                settings = json.loads(read(path)) if os.path.exists(path) else {}
+            except ValueError:
+                settings = {}
+            if settings.get('toolPermission') != 'proceed-in-sandbox':
+                c['error'] = f'Gemini seats need "toolPermission": "proceed-in-sandbox" in {path}'
+                continue
+        try:
+            r = subprocess.run([exe, '--version'], stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=60)
+        except (OSError, subprocess.TimeoutExpired) as e:
+            c['error'] = f'{exe} --version failed: {e}'
+            continue
+        if r.returncode != 0:
+            c['error'] = f'{exe} --version exited {r.returncode}: {oneline(r.stderr or r.stdout, 200)}'
+            continue
+        c.update(ok=True, version=oneline(r.stdout, 80))
+    bad = {v: c for v, c in checks.items() if not c['ok']}
+    status = 'ok' if not bad else 'sandboxed' if all(c.get('sandboxed') for c in bad.values()) else 'error'
+    emit({'status': status, 'vendors': checks})
+
+
+def cmd_cleanup(a):
+    run = load_run(a.run_dir)
+    root, removed = run['repoRoot'], []
+    for sub in ('wt', 'snap'):
+        base = os.path.join(run['runDir'], sub)
+        for name in sorted(os.listdir(base)) if os.path.isdir(base) else []:
+            path = os.path.join(base, name)
+            git('worktree', 'remove', '--force', path, cwd=root, check=False)
+            shutil.rmtree(path, ignore_errors=True)
+            removed.append(path)
+    git('worktree', 'prune', cwd=root, check=False)
+    refs = [r for r in git('for-each-ref', '--format=%(refname)', f'refs/council/{run["runId"]}/',
+                           cwd=root).split('\n') if r]
+    for r in refs:
+        git('update-ref', '-d', r, cwd=root, check=False)
+    if a.all:
+        shutil.rmtree(run['runDir'], ignore_errors=True)
+    emit({'status': 'ok', 'worktreesRemoved': len(removed), 'refsDeleted': len(refs),
+          'kept': None if a.all else run['room']})
+
+
+# ---------------------------------------------------------------- retro
+
+# A development checkout (plugins/dark-factory/bin/ under the repo) keeps retros in the repo, next
+# to the code they tune. An installed plugin's directory is replaced on every update, so elsewhere
+# they go under ~/.claude.
+_CHECKOUT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(SELF))))
+RETRO_DIR = (os.path.join(_CHECKOUT, 'retros')
+             if os.path.isfile(os.path.join(_CHECKOUT, '.claude-plugin', 'marketplace.json'))
+             and os.path.isdir(os.path.join(_CHECKOUT, '.git'))
+             else os.path.expanduser('~/.claude/dark-factory/retros'))
+
+
+FACTS_RE = re.compile(r'^## Run facts \(data\)\n\n```json\n(.*?)\n```', re.S | re.M)
+
+
+def facts_of(payload):
+    """The JSON facts a factory run puts in its retro payload, or None."""
+    m = FACTS_RE.search(payload or '')
+    if not m:
+        return None
+    try:
+        return json.loads(m.group(1))
+    except ValueError:
+        return None
+
+
+def retro_dir(a):
+    return os.path.abspath(os.path.expanduser(a.out_dir or os.environ.get('COUNCIL_RETRO_DIR') or RETRO_DIR))
+
+
+def cmd_retro(a):
+    """Keep a run's retro where it outlives the run (`cleanup --all` deletes the run directory),
+    next to the workflow it is about. The retro agent writes <run>/retro.md; the process notes
+    and run facts it was given are read from its own saved prompt, hash-checked, as seat-run
+    reads a relay's payload, so no model copies them. A factory run's facts are also kept as
+    <run>-<repo>.facts.json, for `retro --summary`; --facts-only keeps just those."""
+    if a.summary:
+        print(retro_summary(retro_dir(a)))
+        return
+    if not a.run_dir:
+        raise CouncilError('retro needs --run-dir (or --summary)')
+    run = load_run(a.run_dir)
+    path = os.path.join(run['runDir'], 'retro.md')
+    if not a.facts_only and not os.path.isfile(path):
+        raise CouncilError(f'write the retro to {path} first')
+    data = payload_from_transcripts(a.expect, a.transcript_wait) if a.expect else None
+    if data is not None:
+        write(os.path.join(run['runDir'], 'retro-data.md'), data + '\n')
+    facts = facts_of(data)
+    if a.facts_only and facts is None:
+        raise CouncilError('no run facts found in the payload (is the record agent\'s transcript saved?)')
+    out_dir = retro_dir(a)
+    repo = re.sub(r'[^A-Za-z0-9._-]', '-', os.path.basename(run['repoRoot'])) or 'repo'
+    base = os.path.join(out_dir, f"{run['runId']}-{repo}")
+    try:
+        if not a.facts_only:
+            write(base + '.md', read(path).rstrip('\n') + ('\n\n' + data if data is not None else '') + '\n')
+        if facts is not None:
+            write_json(base + '.facts.json', facts)
+    except PermissionError as e:
+        emit({'status': 'sandboxed', 'error': f'cannot write to {out_dir} ({e.strerror}). This command is running '
+              'inside a sandbox that only allows writes to the project.'})
+        return
+    emit({'status': 'ok', 'path': base + ('.facts.json' if a.facts_only else '.md'), 'notes': data is not None, 'facts': facts is not None})
+
+
+def retro_summary(out_dir):
+    """How the factory's router has done, from every saved *.facts.json: per tier, the runs, how
+    the tier was chosen, the escalations by trigger, the hints that a tier was too high, readiness
+    and the median Claude turns. Plain text, for reading before tuning the intake rubric."""
+    rows = []
+    for name in sorted(os.listdir(out_dir)) if os.path.isdir(out_dir) else []:
+        if name.endswith('.facts.json'):
+            try:
+                rows.append(json.loads(read(os.path.join(out_dir, name))))
+            except (OSError, ValueError):
+                continue
+    if not rows:
+        return f'No factory facts under {out_dir} yet.'
+
+    def started(r):
+        e = r.get('escalation')
+        return e['from'] if e else r.get('tier') or '?'
+
+    def tally(xs):
+        out = {}
+        for x in xs:
+            out[x] = out.get(x, 0) + 1
+        return ', '.join(f'{k} {v}' for k, v in sorted(out.items(), key=lambda kv: (-kv[1], str(kv[0])))) or 'none'
+
+    lines = [f'{len(rows)} factory run(s) in {out_dir}', '']
+    for tier in ['simple', 'fix', 'feature', 'architecture', '?']:
+        rs = [r for r in rows if started(r) == tier]
+        if not rs:
+            continue
+        esc = [r['escalation'] for r in rs if r.get('escalation')]
+        turns = sorted((r.get('turns') or {}).get('claude', 0) for r in rs)
+        over = [h for r in rs for h in (r.get('overTierHints') or [])]
+        overruled = [r for r in rs if r.get('chosenBy') == 'overruled']
+        lines.append(f'{tier}: {len(rs)} run(s), chosen by {tally(r.get("chosenBy") or "?" for r in rs)}')
+        lines.append(f'  escalated: {len(esc)}' + (f' ({tally(e["trigger"] + " -> " + e["to"] for e in esc)})' if esc else ''))
+        if overruled:
+            lines.append(f'  overruled intake: {len(overruled)} (intake said {tally(r.get("recommended") or "?" for r in overruled)}; '
+                         f'{sum(1 for r in overruled if r.get("escalation"))} of them escalated)')
+        lines.append(f'  readiness: {tally(r.get("readiness") or "?" for r in rs)}')
+        lines.append(f'  median Claude turns: {turns[len(turns) // 2]}')
+        if over:
+            lines.append(f'  hints the tier was too high: {tally(over)}')
+    return '\n'.join(lines)
+
+
+def cmd_hash(a):
+    emit({'status': 'ok', 'hash': prompt_hash(read(a.file))})
+
+
+# ---------------------------------------------------------------- detached job entry point
+
+# A model at capacity or a short rate limit clears up within a minute or two, so a vendor turn that
+# fails that way is retried once, here, instead of costing the relay a second agent. So is a
+# malformed tool call by the vendor's own model (agy passes Gemini's "Malformed function call"
+# through as the turn's error; the model usually gets it right on a second try). A used-up quota
+# doesn't clear up, and a turn that hit its deadline would only hit it again: neither is retried.
+TRANSIENT = re.compile(r'at capacity|overloaded|rate.?limit|too many requests|\b(429|503)\b|'
+                       r'temporarily unavailable|try again later|RESOURCE_EXHAUSTED|'
+                       r'malformed function call|improperly formatted function call', re.I)
+
+
+def error_class(err):
+    """What kind of failure a vendor turn's error is, so callers act on a field, not on free text."""
+    err = err or ''
+    if re.search(r'timed out', err, re.I):
+        return 'timeout'
+    if re.search(r'quota', err, re.I):
+        return 'quota'
+    if TRANSIENT.search(err):
+        return 'transient'
+    if re.search(r'not logged in|log ?in again|unauthori[sz]ed|authenticat|\b401\b', err, re.I):
+        return 'auth'
+    return 'vendor'
+
+
+def transient(result):
+    return result.get('status') == 'error' and error_class(result.get('error')) == 'transient'
+
+
+def cmd_job(jd):
+    spec = json.loads(read(os.path.join(jd, 'spec.json')))
+    try:
+        if spec['kind'] in ('codex', 'gemini'):
+            run = run_codex_job if spec['kind'] == 'codex' else run_gemini_job
+            result = run(jd, spec)
+            if transient(result):
+                first = result['error']
+                time.sleep(float(os.environ.get('COUNCIL_RETRY_WAIT', '90')))
+                result = run(jd, spec)
+                result['retried'] = oneline(first)[:300]
+            if result.get('status') == 'error':
+                result['errorClass'] = error_class(result.get('error'))
+        elif spec['kind'] == 'measure':
+            result = run_measure_job(jd, spec)
+        else:
+            result = {'status': 'error', 'error': f'unknown job kind {spec["kind"]}'}
+    except Exception as e:                                # the status file must always get written
+        result = {'status': 'error', 'error': f'{type(e).__name__}: {e}'}
+    write_json(os.path.join(jd, 'status.json'), result)
+
+
+# ---------------------------------------------------------------- main
+
+def main():
+    if len(sys.argv) == 3 and sys.argv[1] == '_job':
+        cmd_job(sys.argv[2])
+        return
+
+    ap = argparse.ArgumentParser(prog='dark-factory', description=__doc__.split('\n')[0])
+    sub = ap.add_subparsers(dest='cmd', required=True)
+
+    p = sub.add_parser('init')
+    p.add_argument('--repo')
+    p.add_argument('--seats', required=True)
+    p.add_argument('--run-id')
+    p.add_argument('--ref', action='append', help='a plan or other document the work follows; copied into <run>/refs/')
+
+    p = sub.add_parser('seat-run')
+    p.add_argument('--run-dir', required=True)
+    p.add_argument('--vendor', default='codex', choices=['codex', 'gemini'])
+    p.add_argument('--seat', required=True, help='thread key; the Codex thread or agy conversation is resumed per key')
+    p.add_argument('--job', required=True)
+    p.add_argument('--model', required=True)
+    p.add_argument('--effort', default='high')
+    p.add_argument('--sandbox', default='workspace-write', choices=['read-only', 'workspace-write'])
+    p.add_argument('--cwd', required=True)
+    p.add_argument('--writable', action='append')
+    p.add_argument('--prompt-file', required=True)
+    p.add_argument('--expect')
+    p.add_argument('--transcript-wait', type=float, default=TRANSCRIPT_WAIT_SEC,
+                   help='seconds to wait for the relay transcript to appear')
+    p.add_argument('--fresh', action='store_true')
+    p.add_argument('--timeout-min', type=int, default=90)
+    p.add_argument('--max-wait', type=int, default=DEFAULT_MAX_WAIT)
+    p.add_argument('--checkout', help='SEAT-LABEL: create --cwd as a checkout of that snapshot first, if it does not exist')
+
+    p = sub.add_parser('wait')
+    p.add_argument('--run-dir', required=True)
+    p.add_argument('--job', required=True)
+    p.add_argument('--max-wait', type=int, default=DEFAULT_MAX_WAIT)
+
+    p = sub.add_parser('measure')
+    p.add_argument('--run-dir', required=True)
+    p.add_argument('--seat', required=True)
+    p.add_argument('--label', required=True)
+    p.add_argument('--since', help='label of the previous snapshot; also writes <seat>.delta.diff')
+    p.add_argument('--tests')
+    p.add_argument('--path')
+    p.add_argument('--no-snapshot', action='store_true')
+    p.add_argument('--suite-timeout', type=int, default=1200)
+    p.add_argument('--test-timeout', type=int, default=300)
+    p.add_argument('--max-wait', type=int, default=DEFAULT_MAX_WAIT)
+
+    p = sub.add_parser('materialize')
+    p.add_argument('--run-dir', required=True)
+    p.add_argument('--seat', required=True)
+    p.add_argument('--label', required=True)
+    p.add_argument('--name', help='directory name under snap/ (default SEAT-LABEL)')
+
+    p = sub.add_parser('usage')
+    p.add_argument('--run-dir', required=True)
+    p.add_argument('--no-claude', action='store_true', help='skip the Claude agents\' token use (read from transcripts)')
+
+    p = sub.add_parser('jobs')
+    p.add_argument('--run-dir', required=True)
+
+    p = sub.add_parser('preflight')
+    p.add_argument('--vendors', required=True, help='comma-separated: codex, gemini')
+
+    p = sub.add_parser('cleanup')
+    p.add_argument('--run-dir', required=True)
+    p.add_argument('--all', action='store_true', help='also delete the room transcript')
+
+    p = sub.add_parser('retro')
+    p.add_argument('--run-dir')
+    p.add_argument('--facts-only', action='store_true', help='save only the factory run facts from the payload (no retro.md)')
+    p.add_argument('--summary', action='store_true', help='tally the saved factory facts by tier')
+    p.add_argument('--expect', help='hash of the process notes and run facts in the retro agent\'s prompt')
+    p.add_argument('--out-dir', help=f'where retros are kept (default $COUNCIL_RETRO_DIR or {RETRO_DIR})')
+    p.add_argument('--transcript-wait', type=float, default=TRANSCRIPT_WAIT_SEC,
+                   help='seconds to wait for the retro agent\'s transcript to appear')
+
+    p = sub.add_parser('hash')
+    p.add_argument('--file', required=True)
+
+    a = ap.parse_args()
+    if getattr(a, 'run_dir', None):
+        a.run_dir = os.path.abspath(os.path.expanduser(a.run_dir))
+    handlers = {'init': cmd_init, 'seat-run': cmd_seat_run, 'wait': cmd_wait, 'measure': cmd_measure,
+                'materialize': cmd_materialize, 'usage': cmd_usage, 'jobs': cmd_jobs,
+                'cleanup': cmd_cleanup, 'retro': cmd_retro, 'hash': cmd_hash, 'preflight': cmd_preflight}
+    try:
+        handlers[a.cmd](a)
+    except CouncilError as e:
+        fail(str(e))
+
+
+if __name__ == '__main__':
+    main()

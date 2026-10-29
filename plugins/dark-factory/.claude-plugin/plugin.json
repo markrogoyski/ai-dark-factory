@@ -1,0 +1,8 @@
+{
+  "name": "dark-factory",
+  "version": "0.1.0",
+  "description": "Multi-model workflows that build software with independent review: /dark-factory:factory routes a task to the process it needs, /dark-factory:council debates it to one result, /dark-factory:ensemble ranks independent attempts.",
+  "author": { "name": "Mark Rogoyski" },
+  "repository": "https://github.com/markrogoyski/ai-dark-factory",
+  "license": "MIT"
+}

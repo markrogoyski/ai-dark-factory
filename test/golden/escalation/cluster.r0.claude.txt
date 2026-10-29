@@ -1,0 +1,11 @@
+Council members flagged questions they think only the user can answer. Group the ones that ask the same thing.
+
+# Existing questions
+- (none)
+
+# New questions
+- #0 (seat A): A: does "sync" mean one-way or two-way? [proceeding on: one-way]
+- #1 (seat B): B: does "sync" mean one-way or two-way? [proceeding on: one-way]
+- #2 (seat C): C: does "sync" mean one-way or two-way? [proceeding on: two-way]
+
+For each new question (by index), set `matches` to the ID of the existing question that asks the same thing (the same underlying ambiguity, even if worded differently), or to a label new-1, new-2, … that new questions asking the same thing as each other share. For each new label, give one clear canonical wording in `newQuestions`.

@@ -1,0 +1,44 @@
+The council continues. You are still seat D, and the rules, task and workspace from round 0 still apply (the task and acceptance criteria are also in /tmp/proj/.council/test-blind/TASK.md). Your worktree is /tmp/proj/.council/test-blind/wt/D; the room is /tmp/proj/.council/test-blind/room.
+
+# Ratification
+
+Seat A has written the final version:
+- Post: /tmp/proj/.council/test-blind/room/final/A.md
+- Diff: /tmp/proj/.council/test-blind/room/final/A.diff
+- Changes since the round-0 version the council last reviewed: /tmp/proj/.council/test-blind/room/final/A.delta.diff (1 files, +3/−1)
+- Worktree: /tmp/proj/.council/test-blind/wt/A
+- Neutral check of the final version: suite PASS · published tests 0/0 · criteria 2 met, 1 partial of 3 · no standing findings
+
+# Standings and ledger after round 0
+
+## Positions
+- A: final version · 1 files +1/−1 · suite PASS · criteria 2 met, 1 partial of 3
+- B: position B v0 · 1 files +1/−1 · suite PASS · criteria 2 met, 1 partial of 3
+- C: position C v0 · 1 files +1/−1 · suite PASS · criteria 2 met, 1 partial of 3
+- D (you): position D v0 · 1 files +1/−1 · suite PASS · criteria 2 met, 1 partial of 3
+
+## Standing findings (verified or unresolved, not yet fixed)
+- none
+
+## Refuted or fabricated (don't re-assert without new evidence)
+- none
+
+## Other claims checked in round 0
+- [0A1] A · verification · VERIFIED: A: suite passes — evidence: make test → OK — verifier: checked 0A1
+- [0B1] B · verification · VERIFIED: B: suite passes — evidence: make test → OK — verifier: checked 0B1
+- [0C1] C · verification · VERIFIED: C: suite passes — evidence: make test → OK — verifier: checked 0C1
+- [0D1] D · verification · VERIFIED: D: suite passes — evidence: make test → OK — verifier: checked 0D1
+
+## Published tests (run against every position)
+- none yet
+
+Review the final version as a whole, not only whether your own points made it in. Endorse it unless you find a real problem.
+Objections must be concrete. Fact objections of severity blocker or major go to two independent adjudicators, and if upheld the author gets one chance to fix them. Judgment objections are recorded as dissent in the final report, so make your best argument.
+
+Write your review to /tmp/proj/.council/test-blind/room/ratify/D.md.
+
+Set `turn` in your output to exactly "D-ratify-ee853d56".
+
+<<<OUTPUT_SCHEMA
+{"type":"object","properties":{"endorse":{"type":"boolean"},"objections":{"type":"array","items":{"type":"object","properties":{"severity":{"type":"string","enum":["blocker","major","minor"]},"kind":{"type":"string","enum":["fact","judgment"]},"statement":{"type":"string"},"evidence":{"type":"string"}},"required":["severity","kind","statement","evidence"],"additionalProperties":false}},"note":{"type":"string"},"process":{"type":"string","description":"Feedback on the council process, not on the task: at most two sentences on anything in this turn's instructions, inputs or tools that got in your way, such as an unclear or conflicting instruction, missing context, wasted effort, a limit that cut you short, or a command that failed. Name the instruction or input. \"\" if nothing did; don't invent feedback."},"turn":{"type":"string","enum":["D-ratify-ee853d56"],"description":"Exactly \"D-ratify-ee853d56\"."}},"required":["endorse","objections","note","process","turn"],"additionalProperties":false}
+OUTPUT_SCHEMA>>>

@@ -1,0 +1,48 @@
+You are an adjudicator for a council of AI models. You wrote none of this work and have no stake in it. Each item below is a claim that a council member has disputed. Decide whether the claim is true. Investigate yourself: read the code, the diffs, the tests, the posts. Don't defer to either side's confidence.
+
+# Task
+
+Fix the empty-input crash in Parser::parse
+
+# Acceptance criteria (fixed before any work began)
+
+- C1: handles empty input
+- C2: tests pass
+- C3: no API change
+
+# Verification command
+
+`make test`, run from the root of a worktree (saved as /tmp/proj/.council/test-audit/verify.sh).
+
+# Where things are
+- The room: /tmp/proj/.council/test-audit/room. Posts are r<N>/<seat>.md, diffs r<N>/<seat>.diff (final/<seat>.diff for the final version), published tests tests/<ID>/.
+- A seat's version of any file: `git -C /tmp/proj show refs/council/test-audit/<seat>-r<N>:<path>` (use <seat>-final for the final version).
+- Seats' live worktrees: /tmp/proj/.council/test-audit/wt/<seat>/. Read only: don't modify anything.
+
+Verdicts: verified (true as stated; for a finding, the defect exists in the version it criticised), refuted (false, or the evidence doesn't support it), fabricated (the cited evidence itself is invented), unverifiable (you genuinely couldn't settle it; say why).
+For a finding marked "judgment", a trade-off rather than a checkable defect, the question is whether you would make the change it asks for yourself: verified if it makes the code clearly simpler, better factored or easier to change, with nothing lost; refuted if it is a matter of taste, a wash, or wrong. It is upheld only if every adjudicator verifies it.
+
+# Disputed claims
+
+## [XC1] audit finding by the correctness auditor against A's final version, severity major
+Claim: parse("") throws instead of returning []
+Evidence cited: TXC1 fails
+Judge it against: A's final version (diff /tmp/proj/.council/test-audit/room/final/A.diff; any file: `git -C /tmp/proj show refs/council/test-audit/A-final:<path>`)
+Earlier ruling: open
+Raised by an independent auditor of the final version; nobody has ruled on it yet.
+
+## [XD1] audit finding by the design auditor against A's final version, severity major, judgment
+Claim: inline trimInput(): Str::trim already does this
+Evidence cited: src/Str.php:40
+Judge it against: A's final version (diff /tmp/proj/.council/test-audit/room/final/A.diff; any file: `git -C /tmp/proj show refs/council/test-audit/A-final:<path>`)
+Earlier ruling: judgment
+Raised by an independent auditor of the final version; nobody has ruled on it yet.
+
+## [XD3] audit finding by the design auditor against A's final version, severity major, judgment
+Claim: split parse() into two methods
+Evidence cited: src/Parser.php:10-60
+Judge it against: A's final version (diff /tmp/proj/.council/test-audit/room/final/A.diff; any file: `git -C /tmp/proj show refs/council/test-audit/A-final:<path>`)
+Earlier ruling: judgment
+Raised by an independent auditor of the final version; nobody has ruled on it yet.
+
+Return one ruling per claim ID.

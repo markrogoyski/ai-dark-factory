@@ -1,0 +1,53 @@
+You are an adjudicator. Before several AI models start on the task below, two reviewers looked for problems in its acceptance criteria and verification command. Rule on each problem they found. Investigate yourself: read the code at /tmp/proj and the task. Don't defer to the reviewer's confidence. Don't modify anything.
+
+# Task
+
+Make the HTTP client retry transient failures
+
+# The acceptance criteria
+
+- C1: handles empty input
+- C2: tests pass
+- C3: no API change
+
+# The verification command
+
+`make test`, run from the root of a worktree.
+
+# Verdicts
+
+- accept: the problem is real and the criteria should change. The code, the documents or the task's own words show it.
+- decision: the problem is real, but it is a question about what the user wants that nothing here settles, and reasonable readings lead to materially different results.
+- reject: it isn't a problem: the criteria already cover it, the evidence doesn't show it, or the change would ask for more than the task does. Widening the scope is a defect, not a safeguard.
+A finding the reviewer called a decision may still be settled by the code; then say accept or reject. A finding is accepted only if every adjudicator accepts it.
+
+# Findings
+
+## [S1] coverage reviewer, major, filed as a fact, about C1
+Problem: C1 says nothing about a null body, which the caller in src/Api.php:30 passes
+Evidence cited: src/Api.php:30
+Proposed change: C1: handles empty and null input, returning []
+
+## [S2] coverage reviewer, minor, filed as a fact, about something no criterion covers
+Problem: add a criterion for logging every retry
+Evidence cited: (none)
+Proposed change: C4: every retry is logged
+
+## [S3] intent reviewer, major, filed as a decision, about C2
+Problem: Should 5xx responses be retried, or only timeouts?
+Evidence cited: the task says "transient failures"
+Proposed change: (none)
+Readings: (1) only timeouts (2) timeouts and 5xx
+
+## [S4] intent reviewer, minor, filed as a fact, about C3
+Problem: C3 should name the public methods
+Evidence cited: src/Api.php:1-80
+Proposed change: C3: no change to Api's public methods
+
+Return one ruling per finding ID.
+
+Set `turn` in your output to exactly "panel-astra-spec-80bb3e9b".
+
+<<<OUTPUT_SCHEMA
+{"type":"object","properties":{"rulings":{"type":"array","items":{"type":"object","properties":{"finding":{"type":"string","description":"The finding ID only, exactly as shown in brackets (e.g. S2). No other text."},"verdict":{"type":"string","enum":["accept","decision","reject"]},"note":{"type":"string"}},"required":["finding","verdict","note"],"additionalProperties":false}},"process":{"type":"string","description":"Feedback on the council process, not on the task: at most two sentences on anything in this turn's instructions, inputs or tools that got in your way, such as an unclear or conflicting instruction, missing context, wasted effort, a limit that cut you short, or a command that failed. Name the instruction or input. \"\" if nothing did; don't invent feedback."},"turn":{"type":"string","enum":["panel-astra-spec-80bb3e9b"],"description":"Exactly \"panel-astra-spec-80bb3e9b\"."}},"required":["rulings","process","turn"],"additionalProperties":false}
+OUTPUT_SCHEMA>>>

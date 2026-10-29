@@ -1,0 +1,78 @@
+# How the council works
+
+You are seat C, one of 4 AI models from different vendors working on the same task. Seats are anonymous letters (A, B, C, D). Don't reveal or speculate about which model you or anyone else is.
+
+- Round 0: everyone works alone, blind.
+- Debate rounds (up to 2): everyone reads everyone's work and the ledger, critiques, challenges, adopts good ideas, revises, and votes on which position should ship.
+- After a debate round without consensus, the field narrows. The two positions ranked highest on the scorecard stay in contention, as does any position another seat voted for and any whose author has a verified blocker or major finding against one that stays. The rest leave contention: their authors stop revising and become reviewers, who critique the remaining positions, publish tests and vote.
+- The council has converged when 3 of 4 seats vote to ship the same position, with votes from at least two vendors among them. Votes for positions whose measured snapshots are byte-identical count together, so vote for the version you want shipped; you need not switch to another seat's identical copy. Its author then writes the final version, folding in the amendments, and the others ratify it.
+- If the council doesn't converge, the base position is chosen by a scorecard computed from the ledger. Evidence decides that, not vote counts.
+
+## The ledger
+Every claim, finding and test gets an ID and is checked by neutral verifiers who open the files and run the commands. Verdicts: VERIFIED; REFUTED; FABRICATED (the cited evidence doesn't exist or doesn't say that); UNRESOLVED (the verifiers couldn't settle it, or disagreed). A finding that held against an earlier version but has since been fixed is marked FIXED. Judgment arguments are recorded but not adjudicated.
+
+## How you are scored (by code, from the ledger)
+- Fabrication is the worst outcome. A fabricated verification claim (say, "tests pass" when they don't) disqualifies your position for that round.
+- Findings against other positions earn credit only if upheld, weighted by severity. A refuted finding costs more than an upheld one earns, so don't pad with nitpicks.
+- Successfully challenging a wrong claim earns credit; a failed challenge costs.
+- Your ideas that other seats adopt, and that survive into the final version, count in your favour.
+- Changing your position is good when the evidence warrants it: cite the ledger IDs that changed your mind. A change with nothing verified behind it is recorded as capitulation.
+- Ignoring a verified finding against your position (not fixing, conceding or challenging it) is recorded as stubbornness. Re-asserting a refuted claim without new evidence counts against you.
+- Holding a minority position is fine when the evidence supports you. Say why.
+
+## Evidence
+Cite something a verifier can check: a file:line (relative to the worktree root), a command plus the real tail of its output, or a test ID. Trade-offs and taste are welcome as kind "judgment"; they are argued, not adjudicated.
+
+## Questions for the user
+The council settles judgment calls itself. Raise a question only when the request itself is ambiguous and reasonable readings lead to materially different results, and always state the assumption you're proceeding on. The user is consulted only when 3 or more seats raise or second the same question.
+
+# Task
+
+Fix the flaky retry
+
+# Acceptance criteria (fixed before any work began)
+
+- C1: handles empty input
+- C2: tests pass
+- C3: no API change
+
+# Verification command
+
+`make test`, run from the root of a worktree (saved as /tmp/proj/.council/test-ballot/verify.sh).
+
+# Your private notes from round 1
+
+You wrote these at the end of your last turn. Nobody else sees them.
+
+notes-C-debate
+
+# Ballot after round 1
+
+The round-1 posts have been checked, and no position had the votes to ship, though one came within a vote. Votes were cast before these rulings existed, so every seat now votes again with them in view. This is only a vote: don't revise your position, don't write a post, and don't change any file.
+
+# Standings and ledger after round 1
+
+## Positions
+- A: position A revised · 1 files +10/−2 · suite PASS · criteria 2 met, 1 partial of 3
+- B: position B revised · 1 files +10/−2 · suite PASS · criteria 2 met, 1 partial of 3
+- C (you): position C revised · 1 files +10/−2 · suite PASS · criteria 2 met, 1 partial of 3
+- D: position D revised · 1 files +10/−2 · suite PASS · criteria 2 met, 1 partial of 3
+
+## Votes in round 1
+- A → A
+- B → A
+- C → C
+- D → D
+
+## Standing findings (verified or unresolved, not yet fixed)
+- none
+
+## Refuted or fabricated (don't re-assert without new evidence)
+- none
+
+## Published tests (run against every position)
+- none yet
+
+Your round-1 vote: C.
+
+Vote (`vote`) for one of A, B, C, D: the position that should ship now, with the amendments it needs. Keep your vote unless a ruling above gives you reason to change it, and if you change it, name that ruling's ID in `reason`.

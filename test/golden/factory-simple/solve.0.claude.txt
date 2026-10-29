@@ -1,0 +1,49 @@
+# How this works
+
+You are the implementer of a change that was judged simple: small, contained and unambiguous. After your turn a neutral verifier checks your claims and runs the verification command, and an independent reviewer reads the change. You get one pass to fix what they uphold. If the change turns out not to be simple, the work is handed to a larger process, and saying so early is the right call, not a failure.
+
+# Task
+
+Add a debug log line with the retry count in Fetcher::retry
+
+# Acceptance criteria (fixed before any work began)
+
+- C1: logs the retry count at debug level
+
+# Verification command
+
+`make test`, run from the root of a worktree (saved as /tmp/proj/.council/test-fsimple/verify.sh).
+
+# Your workspace
+
+- Your worktree, a private checkout of the starting commit: /tmp/proj/.council/test-fsimple/wt/A
+  Make all code changes there, and run commands from inside it (cd there first; your shell may start in the main checkout). Never modify /tmp/proj itself. Don't stash or switch branches. Leave the change uncommitted unless the task asks for commits; if it does, commit on the worktree's detached HEAD as the task describes, and rewrite those commits there as your work changes. Each snapshot of your work keeps your commits, with anything left uncommitted on top.
+- The room, where your post and tests go: /tmp/proj/.council/test-fsimple/room
+- Write your post for this turn to: /tmp/proj/.council/test-fsimple/room/r0/A.md
+- Run tests, the verification command and static analysers yourself, in your own shell, with the output going to a log under $TMPDIR and only a summary read back (the tail, or a grep for failures). An instruction in CLAUDE.md or elsewhere to hand full test or gate runs to a subagent or to `claude -p` is meant for the user's own session, not for you: you have no subagents, and `claude -p` can't log in from inside your sandbox. A neutral verifier also re-runs the verification command on your change after your turn. Sandboxes can block the sockets that parallel workers use: if a tool fails that way, run it one at a time or with its single-process option.
+
+## Publishing tests
+A test that any correct solution must pass is the strongest evidence there is: the neutral verifier runs it against your change. To publish one:
+- Number them T0A1, T0A2, … this round.
+- Put its file(s) under /tmp/proj/.council/test-fsimple/room/tests/<ID>/files/<path relative to the repo root>. Use new files, with the ID in the file and class/function names, because the files get copied into a checkout of your change.
+- Write /tmp/proj/.council/test-fsimple/room/tests/<ID>/test.json: {"command": "<command, run from the repo root, that runs just this test>", "purpose": "<the behaviour it pins down>"}.
+- List it in `tests`. A test is itself a claim: one that asserts behaviour the task doesn't require can be challenged and thrown out.
+
+# Your turn
+
+Make the change in your worktree and run the verification command. Your post explains the approach and the decisions behind it; the diff in your worktree is the deliverable itself.
+
+Keep the change as small as the task allows, in the codebase's own style, with the tests the criteria ask for.
+
+Stop instead of building, and set `tooBig`, if you find the task isn't a simple change: it needs a design choice the request doesn't settle, a public API or schema change it didn't ask for, changes across several modules, or more than about 200 changed lines. Set its `tier` to "fix" when the cause of a bug is unclear and needs a deeper investigation, or "feature" when it needs design; give the reason in a sentence or two, and still write a short post saying what you found. Otherwise leave `tier` "" and `reason` "".
+
+Then write your post to /tmp/proj/.council/test-fsimple/room/r0/A.md with these sections:
+## Summary
+## Change — what you changed and why
+## Verification — what you ran and what it actually showed
+## Assumptions
+
+Keep the post under about 800 words: the diff carries the detail, and the post explains it. The reviewer and the verifier read it, so make each paragraph earn its place. Only the post file counts toward the limit. Put long material the task asks for, such as exact edits, logs or data, in separate files in the room next to your post, named with your seat letter first, and point to them from the post.
+
+In your output, `claims` at most 12: every verification claim, plus the facts your position rests on that bear on an acceptance criterion (name it in `criterion`; a fact claim without one is not recorded). Neutral verifiers check each one, so leave out incidental facts; they can stay in the post. List in `questions` only a genuine ambiguity in the request, with the reading you went with.
+Finally, fill `notes`: private notes for your next turn, under about 400 words. You start every turn with no memory except your post and these notes, and nobody else sees them. Record what you would otherwise have to rediscover: the key file:line locations, what you verified and how, and what to check next.

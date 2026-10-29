@@ -1,0 +1,57 @@
+The council continues. You are still seat A, and the rules, task and workspace from round 0 still apply (the task and acceptance criteria are also in /tmp/proj/.council/test-blind/TASK.md). Your worktree is /tmp/proj/.council/test-blind/wt/A; the room is /tmp/proj/.council/test-blind/room.
+
+# Final turn — you write the final version
+
+The council converged before any debate: the blind round-0 versions of B, C, D are byte-identical to yours, and the verification command passes on that version.
+
+# Standings and ledger after round 0
+
+## Positions
+- A (you): position A v0 · 1 files +1/−1 · suite PASS · criteria 2 met, 1 partial of 3
+- B: position B v0 · 1 files +1/−1 · suite PASS · criteria 2 met, 1 partial of 3
+- C: position C v0 · 1 files +1/−1 · suite PASS · criteria 2 met, 1 partial of 3
+- D: position D v0 · 1 files +1/−1 · suite PASS · criteria 2 met, 1 partial of 3
+
+## Standing findings (verified or unresolved, not yet fixed)
+- none
+
+## Refuted or fabricated (don't re-assert without new evidence)
+- none
+
+## Other claims checked in round 0
+- [0A1] A · verification · VERIFIED: A: suite passes — evidence: make test → OK — verifier: checked 0A1
+- [0B1] B · verification · VERIFIED: B: suite passes — evidence: make test → OK — verifier: checked 0B1
+- [0C1] C · verification · VERIFIED: C: suite passes — evidence: make test → OK — verifier: checked 0C1
+- [0D1] D · verification · VERIFIED: D: suite passes — evidence: make test → OK — verifier: checked 0D1
+
+## Published tests (run against every position)
+- none yet
+
+You now own the final result. Starting from your position:
+1. Fix every standing finding against your position, or decline it with evidence:
+   - (none)
+2. Weigh each amendment from the seats that voted for or accepted you:
+   - (none)
+3. Make the valid published tests that fail on your position pass:
+   - (none)
+4. Fold in ideas from other positions that clearly improve the result, and credit them in `adopted`.
+5. Close the gaps on acceptance criteria not yet met: C3 (partial).
+
+Work in your worktree (/tmp/proj/.council/test-blind/wt/A) and run the verification command before you finish.
+
+Write the final post to /tmp/proj/.council/test-blind/room/final/A.md with these sections:
+## Summary
+## Final position — complete and standing on its own, not a delta
+## Changes from your last round, and why
+## Addressed — each finding and amendment, and how
+## Declined — each one you didn't take, and why
+
+Keep the post under about 800 words: the diff carries the detail, and the post explains it. Every seat reads it, so make each paragraph earn its place. Only the post file counts toward the limit. Put long material the task asks for, such as exact edits, logs or data, in separate files in the room next to your post, named with your seat letter first, and point to them from the post.
+
+List every item from 1 and 2 in `addressed` or `declined`, by its ID or by quoting the amendment. `claims` are claims about the final version: at most 12: every verification claim, plus the facts your position rests on that bear on an acceptance criterion (name it in `criterion`; a fact claim without one is not recorded). Neutral verifiers check each one, so leave out incidental facts; they can stay in the post.
+
+Set `turn` in your output to exactly "A-final-02d54ee6".
+
+<<<OUTPUT_SCHEMA
+{"type":"object","properties":{"summary":{"type":"string"},"addressed":{"type":"array","items":{"type":"object","properties":{"ref":{"type":"string"},"how":{"type":"string"}},"required":["ref","how"],"additionalProperties":false}},"declined":{"type":"array","items":{"type":"object","properties":{"ref":{"type":"string"},"why":{"type":"string"}},"required":["ref","why"],"additionalProperties":false}},"adopted":{"type":"array","items":{"type":"object","properties":{"from":{"type":"string","description":"Seat letter."},"idea":{"type":"string"}},"required":["from","idea"],"additionalProperties":false}},"claims":{"type":"array","items":{"type":"object","properties":{"kind":{"type":"string","enum":["fact","verification"],"description":"\"verification\": what you ran and what it showed (tests, builds, scripts). \"fact\": any other checkable claim."},"statement":{"type":"string"},"evidence":{"type":"string","description":"file:line, a command plus the real tail of its output, or a test ID. Must be checkable."},"criterion":{"type":"string","description":"The acceptance criterion the claim bears on, e.g. \"C2\". \"\" only for a verification claim that bears on none."}},"required":["kind","statement","evidence","criterion"],"additionalProperties":false}},"process":{"type":"string","description":"Feedback on the council process, not on the task: at most two sentences on anything in this turn's instructions, inputs or tools that got in your way, such as an unclear or conflicting instruction, missing context, wasted effort, a limit that cut you short, or a command that failed. Name the instruction or input. \"\" if nothing did; don't invent feedback."},"turn":{"type":"string","enum":["A-final-02d54ee6"],"description":"Exactly \"A-final-02d54ee6\"."}},"required":["summary","addressed","declined","adopted","claims","process","turn"],"additionalProperties":false}
+OUTPUT_SCHEMA>>>
