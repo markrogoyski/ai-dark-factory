@@ -14,6 +14,9 @@ Add a retry budget to the sync client, configurable per endpoint
 
 `make test`, run from the root of a worktree (saved as /tmp/proj/.council/test-ffeat/verify.sh).
 
+Run gates through `dark-factory verify --run-dir '/tmp/proj/.council/test-ffeat' --path <your-checkout> --label <unique-role-and-stage> --max-wait 5`. It runs verify.sh with the explicit overrides in /tmp/proj/.council/test-ffeat/verification.json, records cwd, command, overrides, output and exit, and returns a suite result. Poll a running job with `dark-factory wait --run-dir '/tmp/proj/.council/test-ffeat' --job <returned-job> --max-wait 5`; if your shell tool itself returns a running session, poll that session first. The helper's --suite-timeout controls the gate deadline.
+For a focused test or an intended red, put the command in a file and pass --command-file <file>; keep the full release gate unchanged. Shell-local exports are not shared verification configuration. Setup and specification amendment own verification.json; other roles must report missing settings instead of silently changing that file or project-wide defaults. A workaround is established only after the exact gate passes neutral measurement in a disposable checkout.
+
 # What you are checking: seat A, round 0
 - Current version: post /tmp/proj/.council/test-ffeat/room/r0/A.md
 - Earlier versions: /tmp/proj/.council/test-ffeat/room/r<N>/A.md

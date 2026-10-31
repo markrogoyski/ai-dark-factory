@@ -148,6 +148,14 @@ const AUDIT_SCHEMA = strict({ type: 'object', properties: {
   } } },
 } })
 
+const FACTORY_AUDIT_SCHEMA = strict({ type: 'object', properties: {
+  ...AUDIT_SCHEMA.properties,
+  evidenceReview: { type: 'object', properties: {
+    status: { type: 'string', enum: ['complete', 'incomplete', 'not-assigned'] },
+    note: { type: 'string', description: 'Historical criteria checked and evidence used, or what remains missing.' },
+  } },
+} })
+
 const SPEC_SCHEMA = strict({ type: 'object', properties: {
   summary:  { type: 'string', description: 'Your verdict on the specification, in 1-3 sentences.' },
   findings: { type: 'array', items: { type: 'object', properties: {

@@ -128,7 +128,7 @@ const timeoutKindOf = r => r === 0 ? 'solve' : typeof r === 'number' ? 'debate' 
 function auditTurn(a, W, round) {
   const prompt = auditPrompt(S, a, W, round)
   const label = `${roundTag(round)} ${a.lens}: ${a.key}`
-  const schema = S.tier === 'architecture' ? PLAN_REVIEW_SCHEMA : AUDIT_SCHEMA
+  const schema = S.tier === 'architecture' ? PLAN_REVIEW_SCHEMA : S.tier ? FACTORY_AUDIT_SCHEMA : AUDIT_SCHEMA
   if (a.vendor === 'claude' && !hostRuntime) return ask(prompt, { label, phase: 'Audit', schema, model: a.model, effort: a.effort }, 'auditor', a.name)
   if (S.tier === 'architecture') {
     return externalTurn({
@@ -139,9 +139,10 @@ function auditTurn(a, W, round) {
   return externalTurn({
     key: `${roundTag(round)}-${a.lens}`, threadKey: `audit-${a.lens}`, fresh: round === 'H', vendor: a.vendor, model: a.model, effort: a.effort,
     role: 'auditor', who: a.name, sandbox: 'workspace-write', cwd: auditCheckout(S, a, round),
-    writable: [`${S.run.room}/tests`, `${S.run.room}/${roundTag(round)}`], timeoutKind: 'audit',
+    writable: [`${S.run.room}/tests`, `${S.run.room}/${roundTag(round)}`,
+      ...(S.tier ? [`${S.run.runDir}/jobs`, `${S.run.runDir}/logs`] : [])], timeoutKind: 'audit',
     checkout: `${W.L}-${round === 'H' ? S.auditedTag : roundTag('I')}`,
-  }, prompt, AUDIT_SCHEMA, label, 'Audit')
+  }, prompt, schema, label, 'Audit')
 }
 
 function seatTurn(s, round, prompt, schema) {
@@ -153,7 +154,8 @@ function seatTurn(s, round, prompt, schema) {
   }
   return externalTurn({
     key: `${s.L}-${tag}`, threadKey: s.L, fresh: false, vendor: s.vendor, model: s.model, effort: s.effort, role: 'seat', who: s.name,
-    sandbox: 'workspace-write', cwd: s.wt, writable: [S.run.room], timeoutKind: timeoutKindOf(round),
+    sandbox: 'workspace-write', cwd: s.wt, writable: [S.run.room,
+      ...(S.tier ? [`${S.run.runDir}/jobs`, `${S.run.runDir}/logs`] : [])], timeoutKind: timeoutKindOf(round),
   }, prompt, schema, label, ph)
 }
 
@@ -315,6 +317,16 @@ async function runAudit(W, o = {}) {
     if (reviews[i]) audit.reviews[a.lens] = ingestAudit(S, a, 'H', W.L, reviews[i])
     else { audit.gaps.push(`no review from the ${a.lens} auditor`); S.notes.push(`The ${a.lens} auditor (${a.name}) returned no review.`) }
   })
+  const historyGap = () => {
+    if (!S.tier || S.mode !== 'implement') return
+    audit.gaps = audit.gaps.filter(g => !g.startsWith('historical evidence review incomplete:'))
+    const owner = evidenceOwner(S)
+    const review = audit.rereviews[owner.lens] || audit.reviews[owner.lens]
+    if (!review || !review.evidenceReview || review.evidenceReview.status !== 'complete') {
+      audit.gaps.push(`historical evidence review incomplete: ${owner.lens}${review && review.evidenceReview && review.evidenceReview.note ? ` (${oneLine(review.evidenceReview.note, 400)})` : ''}`)
+    }
+  }
+  historyGap()
   const triage = auditTriage(S, 'H')
   log(`audit: ${S.auditors.map(a => `${a.lens} ${audit.reviews[a.lens] ? plural(S.ledger.filter(c => c.author === a.id).length, 'item') : 'failed'}`).join(', ')}` +
     `${triage.panel.length ? `; to the panel: ${triage.panel.join(', ')}` : ''}`)
@@ -347,14 +359,18 @@ async function runAudit(W, o = {}) {
   }
   await runChecks('I', W.L)
   const p = S.pos[W.L]
-  if (o.rereview === false || !fix || (p.delta && p.deltaRound === 'I' && !p.delta.files)) return audit
+  if (!fix) return audit
+  const reviewCode = o.rereview !== false && !(p.delta && p.deltaRound === 'I' && !p.delta.files)
+  const historyOwner = S.tier && S.mode === 'implement' ? evidenceOwner(S) : null
+  if (!reviewCode && !historyOwner) return audit
 
-  const lookers = S.auditors.filter(a => audit.reviews[a.lens])
+  const lookers = S.auditors.filter(a => audit.reviews[a.lens] && (reviewCode || a.id === historyOwner?.id))
   const again = await parallel(lookers.map(a => () => auditTurn(a, W, 'J')))
   lookers.forEach((a, i) => {
     if (again[i]) audit.rereviews[a.lens] = ingestAudit(S, a, 'J', W.L, again[i])
     else audit.gaps.push(`no re-review of the fix from the ${a.lens} auditor`)
   })
+  historyGap()
   const late = S.ledger.filter(c => c.round === 'J' && c.kind === 'finding' && !c.judgment && W8[c.severity] >= 2).map(c => c.id)
   if (late.length) {
     log(`audit: the re-review raised ${late.join(', ')}; to the panel`)

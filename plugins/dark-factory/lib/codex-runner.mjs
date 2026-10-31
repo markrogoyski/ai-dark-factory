@@ -266,9 +266,11 @@ export function createRuntime({ repo, hostRunDir, concurrency = 3, timeoutMin = 
       if (!/^[\w.-]+$/.test(request.setupRunId) || request.setupRunId === '.' || request.setupRunId === '..') throw new Error('Invalid setup run ID')
       ownedRuns.add(join(repo, '.council', request.setupRunId))
     }
-    const checker = request.role === 'checker'
-    const writes = setup || checker || ['retro', 'record'].includes(request.role) || request.label === 'spec amend'
-    const writable = setup ? gitDirs : checker ? [runDir, ...gitDirs] : writes ? [runDir] : []
+    // Specification amendments remeasure the baseline, including temporary Git indexes and
+    // snapshot refs, through the same helper path as a checker.
+    const measures = request.role === 'checker' || request.label === 'spec amend'
+    const writes = setup || measures || ['retro', 'record'].includes(request.role)
+    const writable = setup ? gitDirs : measures ? [runDir, ...gitDirs] : writes ? [runDir] : []
     let preflight = ''
     if (setup && request.preflightVendors?.length) {
       const checked = await execute(['preflight', '--vendors', request.preflightVendors.join(',')], { cwd: repo, env: childEnv, signal })

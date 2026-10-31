@@ -493,7 +493,12 @@ function escalatedResult(S, res) {
 function routedResult(S, res) {
   if (!res || typeof res !== 'object' || res.escalated) return res
   const f = S.factory
-  return { ...res, factory: { tier: f.tier, chosenBy: f.chosenBy, asked: f.asked, recommended: f.recommended, reasons: f.intake ? f.intake.reasons : '' },
+  return { ...res,
+    ...(res.mode === 'implement' && res.final && res.final.snapshotRef ? {
+      final: { ...res.final, snapshotTree: S.pos[res.final.author]?.tree?.hash || null },
+      delivery: { status: 'pending', record: `${res.runDir}/delivery.json` },
+    } : {}),
+    factory: { tier: f.tier, chosenBy: f.chosenBy, asked: f.asked, recommended: f.recommended, reasons: f.intake ? f.intake.reasons : '' },
     forTheOrchestrator: `The factory ran this at the ${f.tier} tier (${f.chosenBy === 'intake' ? 'intake\'s choice' : f.chosenBy === 'pinned' ? 'the user\'s choice, which intake agreed with' : `the user's choice, over intake's ${f.recommended}`}); mention it in a few words. ${res.forTheOrchestrator || ''}` }
 }
 

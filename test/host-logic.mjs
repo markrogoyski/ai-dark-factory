@@ -207,7 +207,7 @@ function emptyResult(schema) {
   return ''
 }
 
-async function factoryFlow(tier, { escalate = false, oversizedPlan = false, failedReview = false, args = {} } = {}) {
+async function factoryFlow(tier, { escalate = false, oversizedPlan = false, failedReview = false, evidenceStatus = 'complete', args = {} } = {}) {
   const calls = [], phases = []
   let setups = 0
   const runtime = {
@@ -236,6 +236,10 @@ async function factoryFlow(tier, { escalate = false, oversizedPlan = false, fail
       calls.push(request)
       if (failedReview && request.role === 'auditor') return { status: 'error', error: 'reviewer unavailable' }
       const result = emptyResult(request.schema)
+      if (request.role === 'auditor' && request.schema.properties.evidenceReview) {
+        result.evidenceReview = { status: request.prompt.includes('You own the historical acceptance check') ? evidenceStatus : 'not-assigned', note: 'Historical artifact check.' }
+        if (evidenceStatus === null) delete result.evidenceReview
+      }
       if (request.role === 'seat') {
         result.summary = `position ${request.threadKey}`
         if (request.schema.properties.confidence) result.confidence = 4
@@ -255,6 +259,24 @@ async function factoryFlow(tier, { escalate = false, oversizedPlan = false, fail
     jobs => Promise.all(jobs.map(f => f())), phase => phases.push(phase), () => {}, { task: 'Improve the parser', host: 'codex', ...args })
   return { result, calls, phases }
 }
+
+test('historical evidence gaps keep clean factory audits incomplete', async () => {
+  for (const evidenceStatus of ['incomplete', null]) {
+    const { result } = await factoryFlow('feature', { evidenceStatus })
+    assert.equal(result.final.readiness.state, 'incomplete')
+    assert.ok(result.final.readiness.incomplete.some(x => x.includes('historical evidence review incomplete: tests')))
+    assert.equal(result.audit.fixPass, false)
+    assert.equal(result.delivery.status, 'pending')
+  }
+  const { result, calls } = await factoryFlow('feature')
+  assert.equal(result.final.readiness.state, 'ready')
+  const check = calls.find(c => c.role === 'checker' && c.prompt.includes('# Step 1 — measure'))
+  assert.ok(check.prompt.includes('--max-wait 5'))
+  assert.ok(!check.prompt.includes('timeout 600000'))
+  const owner = calls.find(c => c.role === 'auditor' && c.prompt.includes('You own the historical acceptance check'))
+  assert.ok(owner.prompt.includes('dark-factory evidence --run-dir'))
+  assert.ok(owner.prompt.includes("Don't open anything else under"))
+})
 
 describe('Codex factory phase routing', () => {
   for (const tier of ['simple', 'fix', 'feature', 'architecture']) {

@@ -30,9 +30,9 @@ if ('signals' in schema.properties) {
 } else if ('runDir' in schema.properties) {
   kind = 'setup'
   const runId = prompt.match(/--run-id '?([\w.-]+)'?/)
-  const run = helper('init', '--repo', repo, '--seats', 'A', ...(runId ? ['--run-id', runId[1]] : []))
+  const run = helper('init', '--repo', repo, '--seats', 'A', ...(runId ? ['--run-id', runId[1]] : []), ...(prompt.includes('--factory') ? ['--factory'] : []))
   fs.writeFileSync(path.join(run.runDir, 'verify.sh'), 'node check.cjs\n')
-  const baseline = helper('measure', '--run-dir', run.runDir, '--seat', 'A', '--label', 'base', '--no-snapshot')
+  const baseline = helper('measure', '--run-dir', run.runDir, '--seat', 'A', '--label', 'base')
   Object.assign(result, { status: 'ok', mode: 'implement', runId: run.runId, runDir: run.runDir, repoRoot: repo,
     verify: 'node check.cjs', baselinePasses: baseline.suite.passed, baselineNote: 'Arithmetic test initially fails.',
     criteria: [{ id: 'C1', text: 'sum(2,3) returns 5; node check.cjs passes.' }] })
@@ -56,6 +56,12 @@ if ('signals' in schema.properties) {
 } else if ('findings' in schema.properties) {
   kind = 'audit'
   result.summary = 'The arithmetic fix is correct.'
+  if (schema.properties.evidenceReview) {
+    const runDir = fs.readFileSync(path.join(repo, '.test-run-path'), 'utf8')
+    const evidence = helper('evidence', '--run-dir', runDir, '--seat', 'A', '--label', 'r0')
+    const verified = helper('verify', '--run-dir', runDir, '--path', process.cwd(), '--label', 'audit')
+    result.evidenceReview = { status: evidence.status === 'ok' && verified.suite.passed ? 'complete' : 'incomplete', note: 'Verified the snapshot bundle and reran the gate.' }
+  }
 } else if ('saved' in schema.properties) {
   kind = 'record'
   const runDir = fs.readFileSync(path.join(repo, '.test-run-path'), 'utf8')

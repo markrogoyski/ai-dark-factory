@@ -17,7 +17,7 @@ Read the task for any other document it tells the seats to follow or read, for e
 - If the task depends on a plan or document you can't identify or find, don't guess and don't proceed: return status "needs-plan" with planMissing saying what is missing, and empty values elsewhere. That includes a task that refers to "the plan" without naming a file: only the session that started the council knows which plan is meant, so never pick one yourself.
 
 ## Step 2 — create the run
-Run: dark-factory init --repo "$PWD" --seats A followed by --ref <path> for each other document from step 1
+Run: dark-factory init --repo "$PWD" --seats A --factory followed by --ref <path> for each other document from step 1
 It prints JSON with runId, runDir, repoRoot, refs (the snapshots it made of those documents) and dirty (tracked files with uncommitted changes).
 - If it fails, return status "error" with its message, and empty values elsewhere.
 - If dirty is non-empty, stop and return status "dirty" with that list. The worktrees branch from HEAD, so uncommitted changes would be invisible to every seat.
@@ -25,7 +25,8 @@ It prints JSON with runId, runDir, repoRoot, refs (the snapshots it made of thos
 ## Step 3 — the verification command
 Find the project's standard command for checking a change: its test suite, from CLAUDE.md or AGENTS.md, a Makefile, composer.json, package.json, pyproject.toml and so on. Prefer the normal test run. Avoid full static-analysis sweeps and very slow suites unless the task is about them. If the project has no tests, there is no command.
 Write it to <runDir>/verify.sh as just the command, with no shebang line; it is run as `bash verify.sh` from the root of a worktree. Write an empty file if there is no command.
-Then measure the baseline: dark-factory measure --run-dir <runDir> --seat A --label base --no-snapshot (if it prints status "running", poll with dark-factory wait --run-dir <runDir> --job measure-A-base). Set baselinePasses to suite.passed. If the suite fails or doesn't run at baseline, put the reason and the failing tail in baselineNote.
+Store sandbox-compatible execution settings as explicit string overrides in <runDir>/verification.json: {"env": {"VARIABLE": "value"}}. Preserve all required checks. Prefer these run-owned overrides to changing project defaults. Preflight the exact command through neutral measurement below, including worker/socket/cache restrictions; shell-local exports are insufficient. Keep this configuration fixed for the run after specification review.
+Then measure the baseline: dark-factory measure --run-dir <runDir> --seat A --label base (if it prints status "running", poll with dark-factory wait --run-dir <runDir> --job measure-A-base). Set baselinePasses to suite.passed. If the suite fails or doesn't run at baseline, put the reason and the failing tail in baselineNote.
 
 ## Step 4 — acceptance criteria
 Write 1 to 3 acceptance criteria for this simple change: concrete, checkable statements of what a correct result must satisfy, derived from the task and the code, not from any particular solution. Read the relevant code before writing them. Number them C1, C2, ….

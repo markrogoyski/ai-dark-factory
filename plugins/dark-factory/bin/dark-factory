@@ -28,6 +28,7 @@ and the caller polls with `council wait`.
 """
 
 import argparse
+import hashlib
 import json
 import os
 import re
@@ -57,6 +58,10 @@ JOB_POLL_SEC = float(os.environ.get('COUNCIL_JOB_POLL', '2'))
 TRANSCRIPT_POLL_SEC = float(os.environ.get('COUNCIL_TRANSCRIPT_POLL', '1'))
 TRANSCRIPT_WAIT_SEC = float(os.environ.get('COUNCIL_TRANSCRIPT_WAIT', '10'))
 TAIL_LINES = 40
+# Keep tool discovery, locale, identity and temporary paths stable across roles. Project-specific
+# variables belong in verification.json; a builder's shell exports must not leak into a gate.
+VERIFICATION_BASE_ENV = ('PATH', 'HOME', 'USER', 'LOGNAME', 'SHELL', 'TMPDIR', 'TMP', 'TEMP',
+                         'LANG', 'LC_ALL', 'LC_CTYPE', 'SYSTEMROOT')
 
 
 class CouncilError(Exception):
@@ -177,7 +182,7 @@ def clone_deps(src_root, dst_root):
     return cloned
 
 
-def run_shell(cmd, cwd, timeout, log_path):
+def run_shell(cmd, cwd, timeout, log_path, env=None):
     """Run a command in its own process group; expose its PID until it exits.
 
     A host runner cancelling a measurement can signal <log_path>.pid as well as the detached
@@ -191,7 +196,7 @@ def run_shell(cmd, cwd, timeout, log_path):
     try:
         with open(log_path, 'w', encoding='utf-8', errors='replace') as log:
             p = subprocess.Popen(['/bin/bash', '-c', cmd], cwd=cwd, stdin=subprocess.DEVNULL,
-                                 stdout=log, stderr=subprocess.STDOUT, start_new_session=True)
+                                 stdout=log, stderr=subprocess.STDOUT, start_new_session=True, env=env)
             write(pid_path, str(p.pid))
             try:
                 code = p.wait(timeout=timeout)
@@ -340,6 +345,13 @@ def cmd_init(a):
 
     run = {'runId': run_id, 'runDir': run_dir, 'repoRoot': root, 'head': head, 'seats': seats,
            'room': os.path.join(run_dir, 'room'), 'cli': SELF, 'refs': refs}
+    if getattr(a, 'factory', False):
+        run['factory'] = True
+        run['verificationBaseEnv'] = {k: os.environ[k] for k in VERIFICATION_BASE_ENV if k in os.environ}
+        run['deliveryBaseline'] = {p: checkout_file(root, p) for p in checkout_changes(root)}
+        config = os.path.join(run_dir, 'verification.json')
+        if not os.path.exists(config):
+            write_json(config, {'env': {}})
     run_path = os.path.join(run_dir, 'run.json')
     if not os.path.exists(run_path):
         write_json(run_path, dict(run, created=time.strftime('%Y-%m-%dT%H:%M:%S')))
@@ -1112,16 +1124,170 @@ def snapshot(run, seat, label, path=None, since=None):
     return out
 
 
-def suite(run, cwd, label, seat, timeout):
+def verification_settings(run):
+    """Capture only explicit run overrides, never serialize the caller's environment."""
+    path = os.path.join(run['runDir'], 'verification.json')
+    config = json.loads(read(path)) if os.path.exists(path) else {'env': {}}
+    if not isinstance(config, dict) or set(config) != {'env'} or not isinstance(config['env'], dict):
+        raise CouncilError('verification.json must contain exactly an env object')
+    for key, value in config['env'].items():
+        if not re.fullmatch(r'[A-Za-z_][A-Za-z0-9_]*', key) or not isinstance(value, str) or '\0' in value:
+            raise CouncilError('verification env requires valid variable names and string values without NUL')
     verify = os.path.join(run['runDir'], 'verify.sh')
-    if not os.path.exists(verify) or not read(verify).strip():
+    return {'command': read(verify).strip() if os.path.exists(verify) else '', 'env': config['env'],
+            **({'baseEnv': run['verificationBaseEnv']} if run.get('factory') else {})}
+
+
+def verification_environment(settings):
+    return dict(settings.get('baseEnv', os.environ), **settings['env'])
+
+
+def suite(run, cwd, label, seat, timeout, settings=None):
+    settings = verification_settings(run) if settings is None else settings
+    if not settings['command']:
         return {'ran': False, 'passed': False, 'note': 'no verification command configured'}
     log = os.path.join(run['runDir'], 'logs', f'suite-{seat}-{label}.log')
-    r = run_shell(f'bash {json.dumps(verify)}', cwd, timeout, log)
-    return dict(r, ran=True, passed=(r['exitCode'] == 0 and not r['timedOut']))
+    r = run_shell(settings['command'], cwd, timeout, log, env=verification_environment(settings))
+    return dict(r, ran=True, passed=(r['exitCode'] == 0 and not r['timedOut']),
+                cwd=cwd, command=settings['command'], env=settings['env'], log=log)
 
 
-def crosstest(run, cwd, label, seat, test_ids, timeout, reset=False):
+def safe_relative(root, rel):
+    """Artifact paths are relative, confined, and may not follow symlinks."""
+    if not isinstance(rel, str) or not rel or os.path.isabs(rel) or any(p in ('', '.', '..') for p in rel.split('/')):
+        raise CouncilError(f'invalid relative artifact path: {rel!r}')
+    root = os.path.realpath(root)
+    path = os.path.join(root, rel)
+    if os.path.commonpath([root, os.path.realpath(path)]) != root:
+        raise CouncilError(f'artifact escapes its directory: {rel}')
+    part = root
+    for name in rel.split('/'):
+        part = os.path.join(part, name)
+        if os.path.islink(part):
+            raise CouncilError(f'artifact is a symlink: {rel}')
+    return path
+
+
+def file_sha256(path):
+    with open(path, 'rb') as f:
+        return hashlib.file_digest(f, 'sha256').hexdigest() if hasattr(hashlib, 'file_digest') else hashlib.sha256(f.read()).hexdigest()
+
+
+def evidence_inputs(run, seat):
+    root = safe_relative(run['runDir'], f'room/evidence/{seat}')
+    manifest = os.path.join(root, 'manifest.json')
+    if not os.path.exists(manifest):
+        return []
+    data = json.loads(read(safe_relative(root, 'manifest.json')))
+    if not isinstance(data, list):
+        raise CouncilError('evidence manifest must be an array of {path, criterion, stage} records')
+    records, seen = [], set()
+    for item in data:
+        if not isinstance(item, dict) or set(item) != {'path', 'criterion', 'stage'}:
+            raise CouncilError('each evidence entry requires path, criterion and stage')
+        if not all(isinstance(item[k], str) and item[k].strip() for k in item):
+            raise CouncilError('evidence entry values must be nonempty strings')
+        path = safe_relative(root, item['path'])
+        if item['path'] in seen or item['path'] == 'manifest.json' or not os.path.isfile(path):
+            raise CouncilError(f'duplicate, reserved or missing evidence file: {item["path"]}')
+        seen.add(item['path'])
+        records.append(dict(item, sha256=file_sha256(path)))
+    return records
+
+
+def publish_evidence(run, seat, label, measurement):
+    """Freeze raw artifacts separately from the room's arguments, bound to a measured tree."""
+    records = evidence_inputs(run, seat)
+    index = {'snapshot': measurement['snapshot']['commit'], 'tree': measurement['snapshot']['tree'],
+             'verification': measurement['verification'],
+             'suite': measurement['suite'], 'artifacts': records}
+    log = measurement['suite'].get('log')
+    if log:
+        index['suiteLogSha256'] = file_sha256(log)
+    # Content-addressed bundles are never overwritten on remeasurement of the same label.
+    digest = hashlib.sha256(json.dumps(index, sort_keys=True).encode()).hexdigest()
+    rel = f'evidence/{seat}-{label}-{digest}'
+    target = safe_relative(run['runDir'], rel)
+    if not os.path.exists(target):
+        os.makedirs(os.path.dirname(target), exist_ok=True)
+        staging = tempfile.mkdtemp(prefix='.publish-', dir=os.path.dirname(target))
+        try:
+            for item in records:
+                src = safe_relative(os.path.join(run['room'], 'evidence', seat), item['path'])
+                dst = safe_relative(staging, 'files/' + item['path'])
+                os.makedirs(os.path.dirname(dst), exist_ok=True)
+                shutil.copyfile(src, dst)
+                if file_sha256(dst) != item['sha256']:
+                    raise CouncilError('evidence changed while being published')
+            if log:
+                shutil.copyfile(log, os.path.join(staging, 'suite.log'))
+                if file_sha256(os.path.join(staging, 'suite.log')) != index['suiteLogSha256']:
+                    raise CouncilError('verification log changed while being published')
+            write_json(os.path.join(staging, 'index.json'), index)
+            os.rename(staging, target)
+        finally:
+            shutil.rmtree(staging, ignore_errors=True)
+    elif json.loads(read(safe_relative(target, 'index.json'))) != index:
+        raise CouncilError('published evidence index was modified')
+    pointer = os.path.join(run['runDir'], 'evidence', f'{seat}-{label}.json')
+    write_json(pointer, {'index': rel + '/index.json', 'sha256': file_sha256(os.path.join(target, 'index.json'))})
+    return {'status': 'published', 'index': os.path.join(target, 'index.json'), 'pointer': pointer}
+
+
+def run_verify_job(jd, spec):
+    run = load_run(spec['runDir'])
+    return {'status': 'done', 'job': spec['job'],
+            'suite': suite(run, spec['path'], spec['label'], 'verify', spec['suiteTimeout'], spec['verification'])}
+
+
+def inspect_evidence(run, seat, label):
+    pointer = json.loads(read(safe_relative(run['runDir'], f'evidence/{seat}-{label}.json')))
+    index_path = safe_relative(run['runDir'], pointer['index'])
+    if file_sha256(index_path) != pointer['sha256']:
+        raise CouncilError('evidence index hash mismatch')
+    index = json.loads(read(index_path))
+    ref = f'refs/council/{run["runId"]}/{seat}-{label}'
+    if index['snapshot'] != git('rev-parse', ref, cwd=run['repoRoot']).strip():
+        raise CouncilError('evidence does not describe the current snapshot')
+    if index['verification'] != verification_settings(run):
+        raise CouncilError('verification settings changed since the snapshot was measured')
+    root = os.path.dirname(index_path)
+    for item in index['artifacts']:
+        if file_sha256(safe_relative(root, 'files/' + item['path'])) != item['sha256']:
+            raise CouncilError(f'evidence file hash mismatch: {item["path"]}')
+    if index.get('suiteLogSha256') and file_sha256(safe_relative(root, 'suite.log')) != index['suiteLogSha256']:
+        raise CouncilError('evidence suite log hash mismatch')
+    return {'status': 'ok', 'index': index_path, 'snapshot': index['snapshot'], 'artifacts': index['artifacts']}
+
+
+def cmd_evidence(a):
+    emit(inspect_evidence(load_run(a.run_dir), a.seat, a.label))
+
+
+def cmd_verify(a):
+    run = load_run(a.run_dir)
+    key = f'verify-{a.label}'
+    jd = job_dir(a.run_dir, key)
+    settings = verification_settings(run)
+    if a.command_file:
+        settings['command'] = read(a.command_file).strip()
+    path = os.path.realpath(a.path)
+    spec = {'kind': 'verify', 'runDir': run['runDir'], 'job': key, 'label': a.label,
+            'path': path, 'verification': settings, 'suiteTimeout': a.suite_timeout}
+    # Mutable checkouts are always rerun; only join a currently running identical request.
+    def decide(old, state):
+        if state and state.get('status') == 'running':
+            if old != spec:
+                raise CouncilError('verification job is running with different inputs; use a new label')
+            return 'wait'
+        return None
+    if settle_existing_job(jd, key, a.max_wait, decide):
+        return
+    start_job(jd, spec)
+    emit(wait_job(jd, key, a.max_wait))
+
+
+def crosstest(run, cwd, label, seat, test_ids, timeout, reset=False, env=None):
     """Copy each published test's files into cwd, run it, and remove them again. With `reset` (a
     scratch checkout), tracked files a test changed are restored before the next one runs."""
     results = []
@@ -1165,7 +1331,7 @@ def crosstest(run, cwd, label, seat, test_ids, timeout, reset=False):
             results.append({'test': tid, 'outcome': 'conflict', 'note': f'{conflict} already exists with different content'})
         else:
             log = os.path.join(run['runDir'], 'logs', f'cross-{tid}-on-{seat}-{label}.log')
-            r = run_shell(command, cwd, timeout, log)
+            r = run_shell(command, cwd, timeout, log, env=env)
             outcome = 'pass' if r['exitCode'] == 0 and not r['timedOut'] else 'fail'
             results.append({'test': tid, 'outcome': outcome, 'exitCode': r['exitCode'],
                             'timedOut': r['timedOut'], 'tail': tail(r['tail'], 12)})
@@ -1218,6 +1384,8 @@ def run_measure_job(jd, spec):
     run = load_run(spec['runDir'])
     live = spec.get('path') or seat_tree(run, spec['seat'])
     out = {'status': 'done', 'job': spec['job'], 'seat': spec['seat'], 'label': spec['label'], 'tree': live}
+    settings = spec['verification'] if 'verification' in spec else verification_settings(run)
+    out['verification'] = settings
     cwd, scratch = live, None
     if spec.get('snapshot', True):
         out['snapshot'] = snapshot(run, spec['seat'], spec['label'], spec.get('path'), spec.get('since'))
@@ -1227,29 +1395,46 @@ def run_measure_job(jd, spec):
             cwd = scratch
         else:
             out['scratchError'] = f'ran in the live worktree instead: {err}'
+            if run.get('factory'):
+                out['scratchError'] = err
+                out['suite'] = {'ran': False, 'passed': False, 'tail': 'Disposable verification checkout failed: ' + err}
+                out['crossTests'] = []
+                return out
     post = os.path.join(run['room'], spec['label'], f'{spec["seat"]}.md')
     out['postWords'] = len(read(post).split()) if os.path.exists(post) else None
     try:
-        out['suite'] = suite(run, cwd, spec['label'], spec['seat'], spec['suiteTimeout'])
+        out['suite'] = suite(run, cwd, spec['label'], spec['seat'], spec['suiteTimeout'], settings)
         if scratch:
             # The suite must not change tracked files; reset them so cross-tests start from the snapshot.
             mutated = tracked_changes(scratch)
             if mutated:
                 out['suite']['mutated'] = mutated[:20]
+                if run.get('factory'):
+                    out['suite']['passed'] = False
+                    out['suite']['tail'] += '\nVerification changed tracked snapshot files: ' + ', '.join(mutated[:20])
                 git('checkout', '-q', '--', '.', cwd=scratch, check=False)
-            if out['suite'].get('ran') and not out['suite'].get('passed') and not out['suite'].get('timedOut'):
+            if not run.get('factory') and out['suite'].get('ran') and not out['suite'].get('passed') and not out['suite'].get('timedOut'):
                 # The checkout has only the tracked files and the dependency dirs. A suite that also
                 # needs some other ignored file (a local .env or phpunit.xml) fails here and not in the
                 # seat's tree; that must not disqualify the seat, so the live tree's result stands.
-                live_run = suite(run, live, f'{spec["label"]}-live', spec['seat'], spec['suiteTimeout'])
+                live_run = suite(run, live, f'{spec["label"]}-live', spec['seat'], spec['suiteTimeout'], settings)
                 if live_run.get('passed'):
                     out['suite'] = dict(live_run, scratchFailed=tail(out['suite'].get('tail', ''), 15))
         out['crossTests'] = crosstest(run, cwd, spec['label'], spec['seat'], spec['tests'], spec['testTimeout'],
-                                      reset=scratch is not None)
+                                      reset=scratch is not None, env=verification_environment(settings))
     finally:
         if scratch:
             drop_checkout(run, scratch)
     out['elapsedSec'] = round(time.time() - started, 1)
+    if run.get('factory') and out.get('snapshot'):
+        try:
+            out['evidence'] = publish_evidence(run, spec['seat'], spec['label'], out)
+        except (CouncilError, OSError, ValueError) as e:
+            out['evidence'] = {'status': 'error', 'error': str(e)}
+            # Never leave the previous publication discoverable as evidence for a new tree.
+            pointer = os.path.join(run['runDir'], 'evidence', f'{spec["seat"]}-{spec["label"]}.json')
+            if os.path.exists(pointer):
+                os.remove(pointer)
     return out
 
 
@@ -1272,6 +1457,8 @@ def input_digest(run, seat, label, path, tests):
     return {'tree': tree, 'head': base,
             'post': digest_of(os.path.join(run['room'], label, f'{seat}.md')),
             'verify': digest_of(os.path.join(run['runDir'], 'verify.sh')),
+            'verification': verification_settings(run),
+            **({'evidence': evidence_inputs(run, seat)} if run.get('factory') else {}),
             'tests': {t: digest_of(os.path.join(run['room'], 'tests', t)) for t in tests}}
 
 
@@ -1284,18 +1471,29 @@ def cmd_measure(a):
     spec = {'kind': 'measure', 'runDir': run['runDir'], 'seat': a.seat, 'label': a.label, 'job': key,
             'tests': tests, 'path': path, 'since': a.since,
             'snapshot': not a.no_snapshot, 'suiteTimeout': a.suite_timeout, 'testTimeout': a.test_timeout,
-            'inputs': input_digest(run, a.seat, a.label, path, tests)}
+            'inputs': input_digest(run, a.seat, a.label, path, tests), 'verification': verification_settings(run)}
 
     def decide(old, state):
         status = state and state.get('status')
         if status == 'running':
+            if old != spec:
+                raise CouncilError('measurement is running with different inputs; wait, then measure again')
             return 'wait'
         if old == spec and status == 'done':
+            if run.get('factory') and spec['snapshot']:
+                try:
+                    inspect_evidence(run, a.seat, a.label)
+                except (CouncilError, OSError, ValueError, KeyError):
+                    return None
             return dict(state, reused=True)
         return None                                      # failed, or something it depends on changed
 
     if settle_existing_job(jd, key, a.max_wait, decide):
         return
+    if run.get('factory'):
+        pointer = os.path.join(run['runDir'], 'evidence', f'{a.seat}-{a.label}.json')
+        if os.path.exists(pointer):
+            os.remove(pointer)
     start_job(jd, spec)
     emit(wait_job(jd, key, a.max_wait))
 
@@ -1319,6 +1517,154 @@ def cmd_materialize(a):
     path = os.path.join(run['runDir'], 'snap', name)
     ref = checkout_snapshot(run, a.seat, a.label, path)
     emit({'status': 'ok', 'path': path, 'ref': ref})
+
+
+# ---------------------------------------------------------------- delivery verification (never applies a patch)
+
+def checkout_changes(repo):
+    return sorted(set(git('diff', '--name-only', '-z', 'HEAD', cwd=repo).split('\0')[:-1] +
+                      git('ls-files', '--others', '--exclude-standard', '-z', cwd=repo).split('\0')[:-1]))
+
+
+def checkout_file(repo, rel):
+    # A leaf symlink is a Git blob; parent symlinks must never escape the checkout.
+    parent, name = os.path.split(rel)
+    path = os.path.join(safe_relative(repo, parent) if parent else repo, name)
+    if not name or name in ('.', '..') or os.path.isabs(rel) or rel.split('/')[0] in ('.git', '.council'):
+        raise CouncilError(f'invalid checkout path: {rel}')
+    if not os.path.lexists(path):
+        return None
+    if os.path.islink(path):
+        data, mode = os.readlink(path).encode(), '120000'
+    elif os.path.isfile(path):
+        with open(path, 'rb') as f:
+            data = f.read()
+        mode = '100755' if os.stat(path).st_mode & 0o111 else '100644'
+    else:
+        raise CouncilError(f'delivery does not support directory/submodule changes: {rel}')
+    blob = subprocess.run(['git', 'hash-object', '--stdin'], cwd=repo, input=data, capture_output=True, check=True)
+    return {'mode': mode, 'blob': blob.stdout.decode().strip(), 'sha256': hashlib.sha256(data).hexdigest()}
+
+
+def tree_files(repo, ref):
+    result = {}
+    for row in git('ls-tree', '-r', '-z', ref, cwd=repo).split('\0'):
+        if not row:
+            continue
+        meta, path = row.split('\t', 1)
+        mode, kind, blob = meta.split()
+        result[path] = {'mode': mode, 'blob': blob}
+    return result
+
+
+def delivery_entries(manifest):
+    if not isinstance(manifest, dict) or set(manifest) != {'adjustments', 'handoffs'}:
+        raise CouncilError('delivery manifest requires adjustments and handoffs arrays')
+    seen = set()
+    for kind in ('adjustments', 'handoffs'):
+        if not isinstance(manifest[kind], list):
+            raise CouncilError(f'delivery {kind} must be an array')
+        for item in manifest[kind]:
+            if not isinstance(item, dict) or set(item) != {'path', 'reason', 'sha256'}:
+                raise CouncilError('delivery entries require path, reason and sha256 (or "absent" for deletion)')
+            if not all(isinstance(v, str) and v.strip() for v in item.values()) or item['path'] in seen:
+                raise CouncilError('delivery entries must be nonempty and paths unique')
+            if not re.fullmatch(r'[0-9a-f]{64}|absent', item['sha256']):
+                raise CouncilError('delivery sha256 must be a SHA-256 digest or "absent"')
+            seen.add(item['path'])
+    return {item['path']: item for kind in ('adjustments', 'handoffs') for item in manifest[kind]}
+
+
+def inspect_delivery(run, final, manifest):
+    repo = run['repoRoot']
+    ref = final.get('snapshotRef', '')
+    match = re.fullmatch(re.escape(f'refs/council/{run["runId"]}/') + r'([A-Z])-([A-Za-z0-9][A-Za-z0-9._-]*)', ref) if isinstance(ref, str) else None
+    if not match:
+        raise CouncilError('delivery requires this run\'s final snapshotRef')
+    tree = git('rev-parse', f'{ref}^{{tree}}', cwd=repo).strip()
+    if final.get('snapshotTree') != tree:
+        raise CouncilError('snapshot no longer matches the tree in the factory result')
+    ready = final.get('readiness', {})
+    if ready.get('state') != 'ready' or ready.get('blocked') or ready.get('incomplete'):
+        raise CouncilError('factory readiness has not passed; delivery cannot be verified')
+    head = git('rev-parse', 'HEAD', cwd=repo).strip()
+    ancestor = subprocess.run(['git', 'merge-base', '--is-ancestor', run['head'], head], cwd=repo,
+                              stdin=subprocess.DEVNULL, capture_output=True)
+    if ancestor.returncode != 0:
+        raise CouncilError('main HEAD no longer descends from the setup commit')
+    if 'deliveryBaseline' not in run:
+        raise CouncilError('run has no delivery baseline; use a factory run initialized with --factory')
+    inspect_evidence(run, *match.groups())
+    declared = delivery_entries(manifest)
+    expected = tree_files(repo, ref)
+    before = tree_files(repo, run['head'])
+    changed = git('diff', '--no-renames', '--name-only', '-z', run['head'], ref, cwd=repo).split('\0')[:-1]
+    committed = git('diff', '--no-renames', '--name-only', '-z', run['head'], head, cwd=repo).split('\0')[:-1]
+    paths = sorted(set(changed) | set(committed) | set(checkout_changes(repo)) | set(run['deliveryBaseline']) | set(declared))
+    matches, problems, states = [], [], {}
+    for path in paths:
+        actual = checkout_file(repo, path)
+        states[path] = actual
+        if path in declared:
+            digest = actual['sha256'] if actual else 'absent'
+            if digest != declared[path]['sha256']:
+                problems.append(f'declared delivery bytes do not match: {path}')
+            continue
+        want = expected.get(path) if path in changed else run['deliveryBaseline'].get(path, before.get(path))
+        same = actual is None and want is None or actual and want and all(actual[k] == want[k] for k in ('mode', 'blob'))
+        if not same:
+            problems.append(f'{"reviewed snapshot differs" if path in changed else "unrelated file changed"}: {path}')
+        elif path in changed:
+            matches.append(path)
+    return {'snapshot': git('rev-parse', ref, cwd=repo).strip(), 'snapshotRef': ref, 'base': run['head'], 'mainHead': head,
+            'reviewedFilesMatch': matches, 'problems': problems, 'files': states}
+
+
+def run_delivery_job(jd, spec):
+    run = load_run(spec['runDir'])
+    before = inspect_delivery(run, spec['final'], spec['manifest'])
+    result = {'status': 'incomplete', 'factoryReadiness': spec['final']['readiness'],
+              'manifest': spec['manifest'], **before}
+    if not before['problems']:
+        result['validation'] = suite(run, run['repoRoot'], 'delivery', 'main', spec['suiteTimeout'], spec['verification'])
+        after = inspect_delivery(run, spec['final'], spec['manifest'])
+        result['problems'] = after['problems']
+        if after['files'] != before['files'] or after['mainHead'] != before['mainHead'] or after['snapshot'] != before['snapshot']:
+            result['problems'].append('project checks changed delivery files')
+        gate_ok = result['validation'].get('passed') or not spec['verification']['command']
+        if gate_ok and not result['problems']:
+            result['status'] = 'delivered'
+    write_json(os.path.join(run['runDir'], 'delivery.json'), result)
+    return result
+
+
+def cmd_verify_delivery(a):
+    run = load_run(a.run_dir)
+    report = json.loads(read(a.result))
+    if os.path.realpath(report.get('runDir', '')) != os.path.realpath(run['runDir']):
+        raise CouncilError('result belongs to a different run')
+    manifest = json.loads(read(a.manifest)) if a.manifest else {'adjustments': [], 'handoffs': []}
+    final = report.get('final', {})
+    try:
+        inspect_delivery(run, final, manifest)
+    except (CouncilError, OSError, ValueError, KeyError) as e:
+        write_json(os.path.join(run['runDir'], 'delivery.json'), {'status': 'incomplete', 'problems': [str(e)]})
+        raise
+    key = 'verify-delivery'
+    jd = job_dir(a.run_dir, key)
+    spec = {'kind': 'delivery', 'job': key, 'runDir': run['runDir'], 'final': final,
+            'manifest': manifest, 'verification': verification_settings(run), 'suiteTimeout': a.suite_timeout}
+    def decide(old, state):
+        if state and state.get('status') == 'running':
+            if old != spec:
+                raise CouncilError('delivery verification is already running with different inputs')
+            return 'wait'
+        return None
+    if settle_existing_job(jd, key, a.max_wait, decide):
+        return
+    write_json(os.path.join(run['runDir'], 'delivery.json'), {'status': 'pending', 'job': key})
+    start_job(jd, spec)
+    emit(wait_job(jd, key, a.max_wait))
 
 
 # ---------------------------------------------------------------- reporting and cleanup
@@ -1645,10 +1991,16 @@ def cmd_job(jd):
                 result['errorClass'] = error_class(result.get('error'))
         elif spec['kind'] == 'measure':
             result = run_measure_job(jd, spec)
+        elif spec['kind'] == 'verify':
+            result = run_verify_job(jd, spec)
+        elif spec['kind'] == 'delivery':
+            result = run_delivery_job(jd, spec)
         else:
             result = {'status': 'error', 'error': f'unknown job kind {spec["kind"]}'}
     except Exception as e:                                # the status file must always get written
         result = {'status': 'error', 'error': f'{type(e).__name__}: {e}'}
+        if spec['kind'] == 'delivery':
+            write_json(os.path.join(spec['runDir'], 'delivery.json'), result)
     write_json(os.path.join(jd, 'status.json'), result)
 
 
@@ -1666,6 +2018,7 @@ def main():
     p.add_argument('--repo')
     p.add_argument('--seats', required=True)
     p.add_argument('--run-id')
+    p.add_argument('--factory', action='store_true', help='capture delivery baseline and publish verification evidence')
     p.add_argument('--ref', action='append', help='a plan or other document the work follows; copied into <run>/refs/')
 
     p = sub.add_parser('seat-run')
@@ -1711,6 +2064,26 @@ def main():
     p.add_argument('--label', required=True)
     p.add_argument('--name', help='directory name under snap/ (default SEAT-LABEL)')
 
+    p = sub.add_parser('verify', help='run a gate in the named checkout using the shared verification settings')
+    p.add_argument('--run-dir', required=True)
+    p.add_argument('--path', required=True)
+    p.add_argument('--label', required=True, help='unique label for this gate run')
+    p.add_argument('--command-file', help='focused or red-test command; defaults to the full verify.sh gate')
+    p.add_argument('--suite-timeout', type=int, default=1200)
+    p.add_argument('--max-wait', type=int, default=DEFAULT_MAX_WAIT)
+
+    p = sub.add_parser('evidence', help='validate the published historical-evidence bundle for a snapshot')
+    p.add_argument('--run-dir', required=True)
+    p.add_argument('--seat', required=True)
+    p.add_argument('--label', required=True)
+
+    p = sub.add_parser('verify-delivery', help='compare delivered bytes and rerun the gate in the main checkout')
+    p.add_argument('--run-dir', required=True)
+    p.add_argument('--result', required=True, help='saved factory result JSON')
+    p.add_argument('--manifest', help='JSON with adjustments and handoffs, each with path/reason/sha256')
+    p.add_argument('--suite-timeout', type=int, default=1200)
+    p.add_argument('--max-wait', type=int, default=DEFAULT_MAX_WAIT)
+
     p = sub.add_parser('usage')
     p.add_argument('--run-dir', required=True)
     p.add_argument('--no-claude', action='store_true', help='skip the Claude agents\' token use (read from transcripts)')
@@ -1742,11 +2115,12 @@ def main():
     if getattr(a, 'run_dir', None):
         a.run_dir = os.path.abspath(os.path.expanduser(a.run_dir))
     handlers = {'init': cmd_init, 'seat-run': cmd_seat_run, 'wait': cmd_wait, 'measure': cmd_measure,
+                'verify': cmd_verify, 'verify-delivery': cmd_verify_delivery, 'evidence': cmd_evidence,
                 'materialize': cmd_materialize, 'usage': cmd_usage, 'jobs': cmd_jobs,
                 'cleanup': cmd_cleanup, 'retro': cmd_retro, 'hash': cmd_hash, 'preflight': cmd_preflight}
     try:
         handlers[a.cmd](a)
-    except CouncilError as e:
+    except (CouncilError, OSError, ValueError) as e:
         fail(str(e))
 
 

@@ -567,7 +567,8 @@ function ingestAudit(S, a, round, W, res) {
     if (!re.test(t.id) || S.byId[t.id]) { S.notes.push(`Ignored test '${t.id}' from the ${a.lens} auditor: bad or duplicate ID.`); continue }
     addClaim(S, { id: t.id, round, author: a.id, kind: 'test', target: W, statement: t.purpose, evidence: t.command })
   }
-  return { summary: res.summary || '', probes: (res.probes || []).filter(x => x && x.change).slice(0, 5) }
+  return { summary: res.summary || '', probes: (res.probes || []).filter(x => x && x.change).slice(0, 5),
+    ...(S.tier && S.mode === 'implement' ? { evidenceReview: res.evidenceReview || null } : {}) }
 }
 
 // Who rules on an audit round's items: the panel takes the blocker and major findings, judgment

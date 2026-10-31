@@ -81,6 +81,12 @@ within the user's existing authorization, checking the main tree and patch appli
 Preserve unrelated edits and rerun project checks after application. Creating a factory result
 does not itself authorize publishing or deploying it.
 
+Factory results report delivery as pending. After application and required local-plan updates,
+use the shipped helper's `verify-delivery` command as described in
+[references/delivery.md](references/delivery.md). It compares the delivered bytes, records any
+reviewed adjustments and handoffs, and runs the shared gate in the main checkout. Report its
+`delivery.json` separately from factory readiness; a ready snapshot can still fail delivery.
+
 Architecture returns a reviewed design and `milestones[]`, with arguments for later factory
 runs. Present those milestones and retain the design artifacts. Do not automatically launch
 them; execute only the milestones the user requests.

@@ -17,7 +17,7 @@ Read the task for any other document it tells the seats to follow or read, for e
 - If the task depends on a plan or document you can't identify or find, don't guess and don't proceed: return status "needs-plan" with planMissing saying what is missing, and empty values elsewhere. That includes a task that refers to "the plan" without naming a file: only the session that started the council knows which plan is meant, so never pick one yourself.
 
 ## Step 2 — create the run
-Run: dark-factory init --repo "$PWD" --seats A,B,C followed by --ref <path> for each other document from step 1
+Run: dark-factory init --repo "$PWD" --seats A,B,C --factory followed by --ref <path> for each other document from step 1
 It prints JSON with runId, runDir, repoRoot, refs (the snapshots it made of those documents) and dirty (tracked files with uncommitted changes).
 - If it fails, return status "error" with its message, and empty values elsewhere.
 

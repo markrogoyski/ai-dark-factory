@@ -186,6 +186,9 @@ async function run(name, scenario, args, hooks = {}) {
       : role.kind === 'spec' && !hooks.spec ? CLEAN_SPEC() : await scenario(role, p, opts)
     if (out === null) return null
     if (out && out.relayStatus) return out.relayStatus             // a relay that failed, as the relay reports it
+    if (out && (relay ? schemaIn(p) : s).properties?.evidenceReview && !out.evidenceReview) out.evidenceReview = {
+      status: p.includes('You own the historical acceptance check') ? 'complete' : 'not-assigned', note: 'Checked fixture evidence.',
+    }
     return relay ? { status: 'done', error: '', process: '', seconds: 42, result: { turn: tag, ...out } } : out
   }
   const parallel = async thunks => Promise.all(thunks.map(async t => { try { return await t() } catch (e) { thrown.add(e); return null } }))
@@ -1845,20 +1848,21 @@ async function scenarioFactoryFindings() {
                    { severity: 'minor', kind: 'judgment', statement: 'use the existing debug() helper', evidence: 'src/Log.php:10' }] }
       case 'panel': return { rulings: [...prompt.matchAll(/^## \[([A-Za-z0-9]+)\]/gm)].map(m => ({ claim: m[1], verdict: 'verified', note: 'upheld' })) }
       case 'auditfix': return { ...synth(), summary: 'counts from 1', addressed: [{ ref: 'XR1', how: 'count + 1' }, { ref: 'TXR1', how: 'passes' }], declined: [{ ref: 'XR2', why: 'debug() lacks context' }] }
+      case 'reaudit': return CLEAN_AUDIT()
       default: throw new Error(`unexpected role ${role.kind}`)
     }
   }
   const { result, calls } = await factory('factory-findings', handler, { task: LOG_TASK }, { audit: true })
-  assert.deepEqual(calls.map(c => c.role.kind), ['intake', 'setup', 'solve', 'check', 'audit', 'check', 'panel', 'panel', 'auditfix', 'check', 'record'])
+  assert.deepEqual(calls.map(c => c.role.kind), ['intake', 'setup', 'solve', 'check', 'audit', 'check', 'panel', 'panel', 'auditfix', 'check', 'reaudit', 'record'])
   const fix = calls.find(c => c.role.kind === 'auditfix')
   assert.ok(fix.prompt.startsWith('# How this works') && fix.prompt.includes('# Fix pass') && fix.prompt.includes('An independent reviewer read your change') && !fix.prompt.includes('After ratification'))
   assert.ok(fix.prompt.includes('[XR1] review auditor, major') && fix.prompt.includes('[TXR1] test from the review auditor') && fix.prompt.includes('Suggestions, not adjudicated'))
-  assert.ok(!calls.some(c => c.role.kind === 'reaudit'), 'no re-review: the check of the fix is the verification')
+  assert.ok(calls.find(c => c.role.kind === 'reaudit').prompt.includes('You own the historical acceptance check'), 'the reviewer confirms evidence for the fixed version')
   assert.deepEqual([result.status, result.final.readiness.state, result.final.fixPass], ['done', 'ready', true])
   assert.ok(result.final.diff.endsWith('/room/final3/A.diff'))
   assert.deepEqual(result.review.items.map(i => [i.id, i.status]), [['XR1', 'fixed'], ['XR2', 'judgment'], ['TXR1', 'verified']])
   assert.ok(result.report.markdown.includes('- **Fix pass:** A fixed what was upheld or failing') && !result.report.markdown.includes('Re-review'))
-  return 'the review\'s upheld finding and failing test go to one fix pass, checked again; no re-review; still Simple'
+  return 'the review\'s upheld finding and failing test go to one fix pass, checked again, with historical evidence reviewed; still Simple'
 }
 
 // A Simple run that fails its checks after the fix pass escalates to the Fix tier, in the same run:

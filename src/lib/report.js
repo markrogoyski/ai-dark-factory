@@ -194,6 +194,12 @@ function auditSection(S, W, audit) {
       : late.length ? `- **Re-review of ${what}** (${looked.join(', ')}):\n${late.map(c => `  - [${c.id}] ${c.severity}: ${oneLine(c.statement, 240)} → ${auditOutcome(S, c, W.L, audit)}`).join('\n')}`
       : `- **Re-review of ${what}** (${looked.join(', ')}): nothing new.`)
   }
+  if (S.tier && S.mode === 'implement') {
+    const owner = evidenceOwner(S)
+    const review = (audit.rereviews || {})[owner.lens] || audit.reviews[owner.lens]
+    const evidence = review && review.evidenceReview
+    lines.push(`- **Historical acceptance, ${owner.lens}:** ${sentence(evidence ? `${evidence.status}${evidence.note ? `: ${oneLine(evidence.note, 400)}` : ''}` : 'not checked')}`)
+  }
   return `\n\n### ${simple ? 'Review' : arch ? 'Independent review' : 'Independent audit'}\n\n${lines.join('\n')}`
 }
 
@@ -314,7 +320,8 @@ function specResult(S) {
 
 function auditResult(S, audit) {
   return audit.ran ? {
-    auditors: S.auditors.map(a => ({ lens: a.lens, model: a.name, reviewed: !!audit.reviews[a.lens], summary: (audit.reviews[a.lens] || {}).summary || '', probes: (audit.reviews[a.lens] || {}).probes || [] })),
+    auditors: S.auditors.map(a => ({ lens: a.lens, model: a.name, reviewed: !!audit.reviews[a.lens], summary: (audit.reviews[a.lens] || {}).summary || '', probes: (audit.reviews[a.lens] || {}).probes || [],
+      ...(S.tier && S.mode === 'implement' ? { evidenceReview: ((audit.rereviews || {})[a.lens] || audit.reviews[a.lens] || {}).evidenceReview || null } : {}) })),
     items: S.ledger.filter(c => lensOf(c.author)).map(c => ({ id: c.id, lens: lensOf(c.author), round: roundTag(c.round), kind: c.kind, severity: c.severity, judgment: c.judgment,
       status: c.fixed ? 'fixed' : c.status, statement: c.statement, evidence: c.evidence, note: c.note })),
     fixPass: audit.fixPass,
@@ -511,6 +518,13 @@ function retroMarkdown(r) {
 // the task asked for commits); its snapshot keeps those commits, so they go over as commits.
 function deliveryNote(S, label, W, what) {
   const ref = `refs/council/${S.run.runId}/${W.L}-${label}`
+  if (S.tier) return `Nothing has been applied to the user's tree. ${what} is ${S.run.room}/${label}/${W.L}.diff (worktree ${W.wt}; snapshot ${ref}). ` +
+    'Deliver within the user\'s existing authorization. Inspect the main tree and check patch applicability before git apply; preserve unrelated edits and transfer any requested commit history instead of squashing it. Complete required original-plan/handoff updates. ' +
+    `Save this result as JSON, then run \`${S.cli} verify-delivery --run-dir ${shq(S.run.runDir)} --result <result.json> --manifest <delivery-manifest.json> --max-wait 5\`. ` +
+    'The manifest has adjustments and handoffs arrays, each entry {path, reason, sha256}; paths are relative to the repository, hashes describe the exact reviewed delivery bytes ("absent" for a deletion). Use empty arrays when none apply. ' +
+    'Review and record any changes made after the factory audit, including scanner exclusions; verify their scope still covers the project files, especially in worktrees nested under .council. ' +
+    `Poll with \`${S.cli} wait --run-dir ${shq(S.run.runDir)} --job verify-delivery --max-wait 5\`. The helper compares the delivered files with the snapshot, checks unrelated files against setup, and runs the gate in the actual main checkout. ` +
+    `Report delivery separately from factory readiness, using ${S.run.runDir}/delivery.json. A failed or missing delivery check is not a completed delivery. `
   return `Nothing has been applied to the user's tree. ${what} is ${S.run.room}/${label}/${W.L}.diff (worktree ${W.wt}; snapshot ${ref}). ` +
     `Run \`git log --oneline HEAD..${ref}\` from the repo root. If it lists only one commit, named "council …", the change is uncommitted: after the user approves, ` +
     'apply the diff with `git apply` from the repo root. Otherwise the author committed it as the task asked: after the user approves, `git cherry-pick` those commits, ' +

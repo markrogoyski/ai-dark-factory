@@ -92,6 +92,61 @@ there is no workflow checkpoint resume. Seat sessions persist across their turns
 The reviewed change stays in its worktree until delivered to the main checkout. Architecture
 returns reviewed milestones and does not automatically build them.
 
+## Factory verification and delivery
+
+Factory setup stores the full gate in `<runDir>/verify.sh` and explicit execution overrides
+in `<runDir>/verification.json`, for example:
+
+```json
+{"env": {"PHPSTAN_FLAGS": "--debug --no-progress", "PSALM_FLAGS": "--threads=1 --no-cache --no-progress"}}
+```
+
+Factory setup also captures a small base environment for tool discovery, locale, identity,
+and temporary paths. Other shell-local exports do not reach verification; required project
+variables must be explicit overrides. These example variables require the project's commands
+to consume them. Setup must establish
+a working invocation without removing required checks; there are no PHP-specific defaults in
+the factory. Setup and specification amendment own the configuration. Seats and auditors use
+`dark-factory verify --run-dir RUN --path CHECKOUT --label UNIQUE --max-wait 5` to run the same
+gate and overrides. `--command-file FILE` runs a focused test or intended red instead. Each
+job captures its command and overrides before execution and records cwd, output, exit status,
+and timing. Only explicit overrides are recorded, not the caller's full environment; keep
+credentials out of this configuration.
+
+Neutral measurement includes the configuration and raw evidence in its cache identity.
+Factory baseline and increment checks run in disposable snapshots; a live-worktree pass
+cannot replace a failed snapshot check, and a gate that alters tracked snapshot files fails.
+Codex checkers poll running shell sessions and helper jobs, while `--suite-timeout` controls
+the gate deadline.
+
+Builders place raw historical artifacts under `room/evidence/SEAT/` with an ordered
+`manifest.json` array of `{ "path": "inc1/red.log", "criterion": "C5", "stage": "inc1-red" }`
+entries. Required artifacts include commands, cwd, outputs, exits, test-only diffs, source
+hashes, and handoff updates. Debate, votes and review conclusions stay out. Measurement
+publishes a content-addressed copy under `<runDir>/evidence/`, tied to the snapshot.
+`dark-factory evidence --run-dir RUN --seat A --label inc4` validates the bundle and returns
+its index. The tests auditor (or correctness/review lens when there is no tests auditor)
+owns historical acceptance. Missing evidence keeps readiness incomplete even with no bug
+findings and a passing current suite.
+
+A ready factory result has `delivery.status: pending`: the reviewed change is still in its
+worktree. After authorized application and required local-plan updates, run:
+
+```sh
+dark-factory verify-delivery --run-dir RUN --result RESULT.json --manifest MANIFEST.json --max-wait 5
+```
+
+The manifest contains `adjustments` and `handoffs` arrays, each entry with `path`, `reason`,
+and `sha256` for the exact reviewed bytes (`"absent"` for deletion). Empty arrays are valid;
+omit `--manifest` if both are empty. The helper compares delivered files to the snapshot,
+checks unrelated local files against setup, reruns the shared gate in the main checkout,
+and writes `<runDir>/delivery.json`. It never applies changes itself. Record and review any
+post-audit adjustment, including scanner exclusions for `.council`; verify that project
+files remain in scope in both main and nested worktrees. Only delivery's `status: delivered`
+means that this final check passed. Factory readiness remains a separate result.
+When no automated gate was configured, delivery records that it was not run rather than
+claiming a test pass.
+
 ## Layout
 
     .claude-plugin/marketplace.json   the marketplace: lists the plugins in this repo

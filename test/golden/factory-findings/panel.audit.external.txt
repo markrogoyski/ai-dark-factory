@@ -14,6 +14,9 @@ Add a debug log line with the retry count in Fetcher::retry
 
 `make test`, run from the root of a worktree (saved as /tmp/proj/.council/test-ffind/verify.sh).
 
+Run gates through `dark-factory verify --run-dir '/tmp/proj/.council/test-ffind' --path <your-checkout> --label <unique-role-and-stage> --max-wait 5`. It runs verify.sh with the explicit overrides in /tmp/proj/.council/test-ffind/verification.json, records cwd, command, overrides, output and exit, and returns a suite result. Poll a running job with `dark-factory wait --run-dir '/tmp/proj/.council/test-ffind' --job <returned-job> --max-wait 5`; if your shell tool itself returns a running session, poll that session first. The helper's --suite-timeout controls the gate deadline.
+For a focused test or an intended red, put the command in a file and pass --command-file <file>; keep the full release gate unchanged. Shell-local exports are not shared verification configuration. Setup and specification amendment own verification.json; other roles must report missing settings instead of silently changing that file or project-wide defaults. A workaround is established only after the exact gate passes neutral measurement in a disposable checkout.
+
 # Where things are
 - The room: /tmp/proj/.council/test-ffind/room. Posts are r<N>/<seat>.md, diffs r<N>/<seat>.diff (final/<seat>.diff for the final version), published tests tests/<ID>/.
 - A seat's version of any file: `git -C /tmp/proj show refs/council/test-ffind/<seat>-r<N>:<path>` (use <seat>-final for the final version).
@@ -32,8 +35,8 @@ Raised by an independent auditor of the final version; nobody has ruled on it ye
 
 Return one ruling per claim ID.
 
-Set `turn` in your output to exactly "panel-astra-audit-796be476".
+Set `turn` in your output to exactly "panel-astra-audit-e563f670".
 
 <<<OUTPUT_SCHEMA
-{"type":"object","properties":{"rulings":{"type":"array","items":{"type":"object","properties":{"claim":{"type":"string","description":"The claim ID only, exactly as shown in brackets (e.g. 1B3). No other text."},"verdict":{"type":"string","enum":["verified","refuted","fabricated","unverifiable"]},"note":{"type":"string"}},"required":["claim","verdict","note"],"additionalProperties":false}},"process":{"type":"string","description":"Feedback on the council process, not on the task: at most two sentences on anything in this turn's instructions, inputs or tools that got in your way, such as an unclear or conflicting instruction, missing context, wasted effort, a limit that cut you short, or a command that failed. Name the instruction or input. \"\" if nothing did; don't invent feedback."},"turn":{"type":"string","enum":["panel-astra-audit-796be476"],"description":"Exactly \"panel-astra-audit-796be476\"."}},"required":["rulings","process","turn"],"additionalProperties":false}
+{"type":"object","properties":{"rulings":{"type":"array","items":{"type":"object","properties":{"claim":{"type":"string","description":"The claim ID only, exactly as shown in brackets (e.g. 1B3). No other text."},"verdict":{"type":"string","enum":["verified","refuted","fabricated","unverifiable"]},"note":{"type":"string"}},"required":["claim","verdict","note"],"additionalProperties":false}},"process":{"type":"string","description":"Feedback on the council process, not on the task: at most two sentences on anything in this turn's instructions, inputs or tools that got in your way, such as an unclear or conflicting instruction, missing context, wasted effort, a limit that cut you short, or a command that failed. Name the instruction or input. \"\" if nothing did; don't invent feedback."},"turn":{"type":"string","enum":["panel-astra-audit-e563f670"],"description":"Exactly \"panel-astra-audit-e563f670\"."}},"required":["rulings","process","turn"],"additionalProperties":false}
 OUTPUT_SCHEMA>>>
