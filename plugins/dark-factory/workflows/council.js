@@ -1025,6 +1025,13 @@ function resumedPreamble(S, s, round) {
     `${typeof round === 'number' && round > 0 ? ` ${blindNote(S, round)}` : ''}\n${clarificationsFor(S, round)}`
 }
 
+function recoverSeatPrompt(S, post) {
+  return `Your previous turn wrote your post to ${post}, but its structured output was not accepted.
+Resume that same turn and return its answer now as structured output matching the requested schema.
+Use your existing session and, if needed, read only your own post. Do not restart the task, edit files, run checks, or read other seats' work.
+Preserve any denied checks and missing evidence; never claim an unrun check passed.`
+}
+
 function debatePrompt(S, s, k) {
   if (external(s)) {
     return `${resumedPreamble(S, s, k)}${S.mode === 'implement' ? testPublishing(S, s.L, k) : ''}\n${debateBody(S, s, k)}`
@@ -4223,6 +4230,20 @@ async function externalTurn(o, prompt, schema, label, ph) {
     try {
       r = await hostRuntime.turn({ ...o, prompt: payload, schema: full, label, phase: ph,
         run: S.run, expect: hash, timeoutMin: minutes })
+      if (o.recoveryPost && r && r.status === 'error' && r.recoverySession &&
+          !['auth', 'quota', 'cancelled', 'sandboxed'].includes(r.errorClass)) {
+        keepHostDiagnostics(label, { ...r, status: 'error' })
+        S.notes.push(`${V} turn ${o.key} failed: ${oneLine(r.error || r.status, 300)}. ` +
+          'Its post exists; requesting structured output once from the same session.')
+        const recovery = `${recoverSeatPrompt(S, o.recoveryPost)}\n\nSet \`turn\` in your output to exactly "${tag}".\n\n<<<OUTPUT_SCHEMA\n${JSON.stringify(full)}\nOUTPUT_SCHEMA>>>\n`
+        r = await hostRuntime.turn({ ...o, key: `${o.key}-recover`, recoveryPost: undefined,
+          resumeSession: r.recoverySession, fresh: false, sandbox: 'read-only', writable: [], effort: 'low',
+          prompt: recovery, schema: full, label: `${label} (recover output)`, phase: ph,
+          run: S.run, expect: promptHash(recovery), timeoutMin: Math.min(minutes || 3, 3) })
+        if (r && r.status === 'done' && r.result && r.result.turn === tag) {
+          S.notes.push(`${V} turn ${o.key}: recovered structured output from the existing session; verification and review still apply.`)
+        }
+      }
     } catch (e) {
       return fail(oneLine(e && e.message || e, 300))
     }
@@ -4321,6 +4342,7 @@ function seatTurn(s, round, prompt, schema) {
     key: `${s.L}-${tag}`, threadKey: s.L, fresh: false, vendor: s.vendor, model: s.model, effort: s.effort, role: 'seat', who: s.name,
     sandbox: 'workspace-write', cwd: s.wt, writable: [S.run.room,
       ...(S.tier ? [`${S.run.runDir}/jobs`, `${S.run.runDir}/logs`] : [])], timeoutKind: timeoutKindOf(round),
+    ...(hostRuntime && typeof round === 'number' ? { recoveryPost: postPath(S, s.L, round) } : {}),
   }, prompt, schema, label, ph)
 }
 

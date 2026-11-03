@@ -158,6 +158,54 @@ describe('runtime adapter boundary', () => {
     assert.match(h.state.notes[0], /earlier turn/)
   })
 
+  test('a posted seat gets one short read-only recovery with the original turn tag', async () => {
+    const calls = []
+    const h = harness({ turn: async request => {
+      calls.push(request)
+      return calls.length === 1
+        ? { status: 'error', error: 'timed out', errorClass: 'timeout', recoverySession: 'seat-session' }
+        : done(request)
+    } }, { task: 'Fix parser', host: 'codex', timeoutMin: { solve: 1 } })
+    h.state.run = run
+    const member = { ...L.parseSeat('sonnet'), L: 'A', wt: `${run.runDir}/wt/A`, external: true }
+    assert.equal((await h.seatTurn(member, 0, 'solve alone', schema)).summary, 'completed')
+    assert.equal(calls.length, 2)
+    const [first, recovery] = calls
+    assert.equal(first.recoveryPost, `${run.room}/r0/A.md`)
+    assert.equal(recovery.key, 'A-r0-recover')
+    assert.equal(recovery.threadKey, first.threadKey)
+    assert.equal(recovery.cwd, first.cwd)
+    assert.equal(recovery.resumeSession, 'seat-session')
+    assert.equal(recovery.fresh, false)
+    assert.equal(recovery.effort, 'low')
+    assert.equal(recovery.timeoutMin, 1)
+    assert.equal(recovery.sandbox, 'read-only')
+    assert.deepEqual(recovery.writable, [])
+    assert.deepEqual(recovery.schema, first.schema)
+    assert.match(recovery.prompt, /read only your own post/)
+    assert.doesNotMatch(recovery.prompt, /solve alone/)
+    assert.equal(recovery.recoveryPost, undefined)
+    assert.match(h.state.notes.join('\n'), /recovered structured output/)
+  })
+
+  test('recovery stays bounded and cannot accept stale output or bypass terminal errors', async () => {
+    for (const outcome of ['failed', 'stale', 'auth', 'quota', 'cancelled', 'sandboxed', 'no-session']) {
+      const calls = []
+      const h = harness({ turn: async request => {
+        calls.push(request)
+        if (outcome === 'stale' && calls.length === 2) return { status: 'done', result: { turn: 'old', summary: 'stale' } }
+        return { status: 'error', error: 'failed', errorClass: outcome,
+          recoverySession: outcome === 'no-session' ? undefined : 'seat-session' }
+      } })
+      h.state.run = run
+      const member = { ...L.parseSeat('sonnet'), L: 'A', wt: `${run.runDir}/wt/A`, external: true }
+      assert.equal(await h.seatTurn(member, 1, 'debate', schema), null)
+      assert.equal(calls.length, ['failed', 'stale'].includes(outcome) ? 2 : 1, outcome)
+      assert.equal(h.state.turnLog.at(-1).ok, false)
+      if (calls.length === 2) assert.equal(calls[1].timeoutMin, 3)
+    }
+  })
+
   test('native role diagnostics reach notes independently of model process feedback', async () => {
     const h = harness({ agent: async request => {
       request.onResult({ status: 'error', error: 'Invalid checker output',
@@ -220,7 +268,7 @@ function emptyResult(schema) {
 }
 
 async function factoryFlow(tier, { escalate = false, oversizedPlan = false, failedReview = false, deniedProbe = false,
-  failedSeat = false, deniedVerification = false, evidenceStatus = 'complete', args = {} } = {}) {
+  failedSeat = false, recoverSeat = false, failedRecovery = false, deniedVerification = false, evidenceStatus = 'complete', args = {} } = {}) {
   const calls = [], phases = []
   let setups = 0
   const runtime = {
@@ -249,6 +297,10 @@ async function factoryFlow(tier, { escalate = false, oversizedPlan = false, fail
     turn: async request => {
       calls.push(request)
       if (failedReview && request.role === 'auditor') return { status: 'error', error: 'reviewer unavailable' }
+      if (recoverSeat && request.role === 'seat' && request.vendor === 'claude' &&
+          (/-r0$/.test(request.key) || failedRecovery && /-recover$/.test(request.key))) {
+        return { status: 'error', error: 'Claude output failed', errorClass: recoverSeat, recoverySession: 'claude-session' }
+      }
       if (failedSeat && request.role === 'seat' && request.vendor === 'claude') return { status: 'error', error: 'Claude turn interrupted' }
       const result = emptyResult(request.schema)
       if (request.role === 'auditor' && request.schema.properties.evidenceReview) {
@@ -296,6 +348,36 @@ test('historical evidence gaps keep clean factory audits incomplete', async () =
 })
 
 describe('Codex factory phase routing', () => {
+  for (const errorClass of ['timeout', 'schema']) {
+    test(`a posted ${errorClass} failure recovers before the two-seat check and still gets independent review`, async () => {
+      const { result, calls } = await factoryFlow('architecture', {
+        recoverSeat: errorClass, args: { seats: ['sonnet', 'astra'], retro: false },
+      })
+      assert.equal(result.final.readiness.state, 'ready')
+      assert.equal(calls.filter(c => /-recover$/.test(c.key)).length, 1)
+      assert.ok(calls.some(c => c.role === 'seat' && /-r1$/.test(c.key)))
+      assert.ok(calls.some(c => c.role === 'auditor' && c.fresh))
+      assert.match(result.notes.join('\n'), /recovered structured output/)
+    })
+  }
+
+  test('failed recovery still stops a two-seat debate', async () => {
+    const { result, calls } = await factoryFlow('architecture', {
+      recoverSeat: 'schema', failedRecovery: true, args: { seats: ['sonnet', 'astra'], retro: false },
+    })
+    assert.equal(result.status, 'failed')
+    assert.match(result.reason, /fewer than two seat submissions were accepted/)
+    assert.equal(calls.filter(c => /-recover$/.test(c.key)).length, 1)
+    assert.ok(!calls.some(c => c.role === 'auditor'))
+  })
+
+  test('recovery cannot make denied required verification ready', async () => {
+    const { result } = await factoryFlow('fix', {
+      recoverSeat: 'schema', deniedVerification: true, args: { seats: ['sonnet', 'astra'], retro: false },
+    })
+    assert.notEqual(result.final.readiness.state, 'ready')
+  })
+
   test('completed Claude design with denials reaches debate and independent review with two seats', async () => {
     const { result, calls, phases } = await factoryFlow('architecture', {
       deniedProbe: true, args: { seats: ['sonnet', 'astra'], retro: false },

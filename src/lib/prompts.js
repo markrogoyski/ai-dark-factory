@@ -483,6 +483,13 @@ function resumedPreamble(S, s, round) {
     `${typeof round === 'number' && round > 0 ? ` ${blindNote(S, round)}` : ''}\n${clarificationsFor(S, round)}`
 }
 
+function recoverSeatPrompt(S, post) {
+  return `Your previous turn wrote your post to ${post}, but its structured output was not accepted.
+Resume that same turn and return its answer now as structured output matching the requested schema.
+Use your existing session and, if needed, read only your own post. Do not restart the task, edit files, run checks, or read other seats' work.
+Preserve any denied checks and missing evidence; never claim an unrun check passed.`
+}
+
 function debatePrompt(S, s, k) {
   if (external(s)) {
     return `${resumedPreamble(S, s, k)}${S.mode === 'implement' ? testPublishing(S, s.L, k) : ''}\n${debateBody(S, s, k)}`

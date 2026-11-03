@@ -9,6 +9,7 @@ import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
 import assert from 'node:assert/strict'
 import { rmSync } from 'node:fs'
+import { loadLib } from './lib.mjs'
 
 const here = dirname(fileURLToPath(import.meta.url))
 // bin/dark-factory polls on a timer; shorten it so the CLI scenarios don't sit sleeping. Children inherit this.
@@ -2322,10 +2323,21 @@ async function scenarioFactsSave() {
   return 'council retro --facts-only saves the run facts from the record agent\'s transcript; --summary tallies them by starting tier'
 }
 
+function scenarioHeadlessPrompts() {
+  const cli = join(here, '..', 'plugins', 'dark-factory', 'bin', 'dark-factory')
+  const guidance = execFileSync('python3', ['-B', '-c', 'import runpy,sys; print(runpy.run_path(sys.argv[1])["CLAUDE_HEADLESS"])', cli], { encoding: 'utf8' })
+  const recovery = loadLib().recoverSeatPrompt({}, '/repo/.council/test/room/r0/A.md')
+  checkGoldens('headless', [
+    { role: { kind: 'guidance' }, label: 'headless', prompt: guidance },
+    { role: { kind: 'recovery' }, label: 'recover output', prompt: recovery },
+  ])
+  return 'headless permission guidance and recovery prompt match reviewed goldens'
+}
+
 const ONLY = process.env.SIM_ONLY ? process.env.SIM_ONLY.split(',') : null    // SIM_ONLY=scenarioAgy,scenarioBallot
 for (const [name, fn] of Object.entries({ scenarioConsensus, scenarioDeadlock, scenarioEscalation, scenarioFailures, scenarioDirty, scenarioFocus, scenarioSandbox, scenarioPlan, scenarioPlanMissing, scenarioRefs, scenarioTranscript, scenarioRetroOff, scenarioRetroSave, scenarioLineup, scenarioAgy, scenarioLateEscalation, scenarioModeAndGuidance, scenarioInitDocs, scenarioRelayErrors, scenarioPreflight, scenarioReadiness, scenarioApproval, scenarioBallot, scenarioSeatRunErrors, scenarioMeasure, scenarioPreflightCli, scenarioBlind, scenarioAudit, scenarioSpec,
   scenarioFactorySimple, scenarioFactoryFindings, scenarioFactoryEscalate, scenarioFactoryHandUp, scenarioFactoryTier, scenarioFactoryRoute, scenarioFactorySplit,
-  scenarioFactoryFeature, scenarioFactoryFeatureHard, scenarioFactoryArchitecture, scenarioFactoryFeatureToArchitecture, scenarioFactsSave })) {
+  scenarioFactoryFeature, scenarioFactoryFeatureHard, scenarioFactoryArchitecture, scenarioFactoryFeatureToArchitecture, scenarioFactsSave, scenarioHeadlessPrompts })) {
   if (ONLY && !ONLY.includes(name)) continue
   try {
     console.log(`ok   ${name}: ${await fn()}`)

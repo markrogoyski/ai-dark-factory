@@ -219,9 +219,10 @@ export function createRuntime({ repo, hostRunDir, concurrency = 3, timeoutMin = 
       const args = ['seat-run', '--run-dir', runDir, '--vendor', request.vendor, '--seat', jobKey(request.threadKey || key),
         '--job', key, '--model', request.model, '--effort', request.effort || 'high', '--sandbox', request.sandbox || 'workspace-write',
         '--cwd', request.cwd || repo, '--prompt-file', promptFile, '--expect', promptHash(request.prompt), '--no-transcript',
-        '--timeout-min', String(request.timeoutMin || timeoutMin), '--max-wait', '5']
+        '--timeout-min', String(request.resumeSession ? Math.min(request.timeoutMin || timeoutMin, timeoutMin) : request.timeoutMin || timeoutMin), '--max-wait', '5']
       for (const writable of request.writable || []) args.push('--writable', writable)
       if (request.fresh) args.push('--fresh')
+      if (request.resumeSession) args.push('--resume-session', request.resumeSession)
       if (request.checkout) args.push('--checkout', request.checkout)
       const options = { cwd: repo, env: { ...childEnv, COUNCIL_RETRO_DIR: join(runDir, 'retros') }, signal }
       emit({ type: 'turn.started', label: request.label, role: request.role, vendor: request.vendor, model: request.model, job: key, runDir })
@@ -239,6 +240,18 @@ export function createRuntime({ repo, hostRunDir, concurrency = 3, timeoutMin = 
           try { validateResult(result.result, request.schema) } catch (error) {
             result = { ...result, status: 'error', error: `Invalid ${request.label || key} output: ${error.message}`, errorClass: 'schema' }
           }
+        }
+        // Report filesystem evidence to the shared engine; it decides whether to recover.
+        // Compare against the saved job prompt, not the host payload rewritten on replay.
+        if (request.recoveryPost && result.status === 'error' && result.thread) {
+          try {
+            const post = confined(runDir, request.recoveryPost)
+            const info = lstatSync(post)
+            const started = lstatSync(confined(runDir, join(jobDir, 'prompt.md'))).mtimeMs
+            if (info.isFile() && info.mtimeMs >= started && readFileSync(post, 'utf8').trim()) {
+              result = { ...result, recoverySession: result.thread }
+            }
+          } catch {} // A missing, stale, empty or unconfined post cannot justify recovery.
         }
         emit({ type: 'turn.completed', label: request.label, job: key, status: result.status, seconds: result.seconds,
           error: result.error, permissionDenials: result.permissionDenials })

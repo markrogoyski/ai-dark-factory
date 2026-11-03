@@ -38,9 +38,14 @@ if '--version' in sys.argv:
     print('Claude fake-test')
     sys.exit(0)
 with open(os.environ['CLAUDE_TEST_LOG'], 'a') as f:
-    f.write(json.dumps({'args': sys.argv[1:], 'cwd': os.getcwd(), 'prompt': sys.stdin.read()}) + '\\n')
+    f.write(json.dumps({'args': sys.argv[1:], 'cwd': os.getcwd(), 'prompt': sys.stdin.read(),
+                        'autoMemory': os.environ.get('CLAUDE_CODE_DISABLE_AUTO_MEMORY')}) + '\\n')
 time.sleep(float(os.environ.get('CLAUDE_TEST_SLEEP', '0')))
-print(os.environ['CLAUDE_TEST_RESULT'])
+out = json.loads(os.environ['CLAUDE_TEST_RESULT'])
+if isinstance(out, dict) and out.get('session_id') in ('session-1', 'session-cli'):
+    flag = '--resume' if '--resume' in sys.argv else '--session-id'
+    out['session_id'] = sys.argv[sys.argv.index(flag) + 1]
+print(json.dumps(out))
 sys.exit(int(os.environ.get('CLAUDE_TEST_EXIT', '0')))
 ''')
         os.chmod(fake, 0o755)
@@ -85,6 +90,8 @@ sys.exit(int(os.environ.get('CLAUDE_TEST_EXIT', '0')))
         self.assertEqual(args[args.index('--permission-prompts') + 1], 'none')
         guidance = args[args.index('--append-system-prompt') + 1]
         self.assertIn('one simple operation per command', guidance)
+        self.assertIn('Edit files with Edit, not sed -i, perl -pi or Python heredocs', guidance)
+        self.assertIn('Do not use background jobs or sleep polling', guidance)
         self.assertIn('Never claim that an unrun check passed', guidance)
         self.assertFalse(any('bypass' in x.lower() or 'skip-permissions' in x for x in args if x.startswith('--')))
         self.assertEqual(json.loads(args[args.index('--json-schema') + 1]), self.schema)
@@ -102,14 +109,25 @@ sys.exit(int(os.environ.get('CLAUDE_TEST_EXIT', '0')))
         self.run_turn(job='audit-A', fresh=True)
         calls = self.calls()
         self.assertNotIn('--resume', calls[0]['args'])
-        self.assertEqual(calls[1]['args'][-2:], ['--resume', 'session-1'])
+        session = calls[0]['args'][calls[0]['args'].index('--session-id') + 1]
+        self.assertEqual(calls[1]['args'][-2:], ['--resume', session])
         self.assertNotIn('--resume', calls[2]['args'])
+        self.assertNotEqual(calls[2]['args'][-1], session, 'a fresh reviewer gets its own session')
+
+    def test_auto_memory_is_disabled_for_new_resumed_and_read_only_turns(self):
+        with mock.patch.dict(os.environ, {'CLAUDE_CODE_DISABLE_AUTO_MEMORY': '0'}):
+            self.run_turn()
+            self.run_turn(job='r1-A')
+            self.run_turn(job='audit-A', fresh=True, sandbox='read-only')
+            self.assertEqual(os.environ['CLAUDE_CODE_DISABLE_AUTO_MEMORY'], '0')
+        self.assertEqual([c['autoMemory'] for c in self.calls()], ['1', '1', '1'])
+        self.assertFalse(os.path.exists(os.path.join(self.root, 'claude-home', 'settings.json')))
 
     def test_session_change_is_an_error(self):
-        self.run_turn()
+        session = self.run_turn()['thread']
         out = {'subtype': 'success', 'session_id': 'different', 'structured_output': {'answer': 'done', 'turn': 'r0-A'}}
         self.assertIn('did not resume', self.run_turn(out, job='r1-A')['error'])
-        self.assertEqual(council.read(os.path.join(self.root, 'seats', 'A', 'claude-session')), 'session-1')
+        self.assertEqual(council.read(os.path.join(self.root, 'seats', 'A', 'claude-session')), session)
 
     def test_per_turn_usage_is_not_subtracted(self):
         self.run_turn()
@@ -130,7 +148,7 @@ sys.exit(int(os.environ.get('CLAUDE_TEST_EXIT', '0')))
         self.assertEqual(result['result'], out['structured_output'])
         self.assertEqual(result['permissionDenials']['count'], 2)
         self.assertEqual(result['permissionDenials']['tools'], ['Bash'])
-        self.assertEqual(json.loads(council.read(result['permissionDenials']['source'])), out)
+        self.assertEqual(json.loads(council.read(result['permissionDenials']['source'])), dict(out, session_id=result['thread']))
         self.assertEqual(len(self.calls()), 1, 'a denied optional probe does not trigger a retry')
 
     def test_denials_do_not_rescue_interrupted_stale_or_missing_outputs(self):
@@ -169,9 +187,39 @@ sys.exit(int(os.environ.get('CLAUDE_TEST_EXIT', '0')))
                 self.assertEqual(result['status'], 'error')
                 self.assertIn(expected, result['error'])
 
+    def test_failure_before_a_session_starts_does_not_poison_the_next_attempt(self):
+        self.run_turn({'is_error': True, 'errors': ['temporarily unavailable']})
+        self.assertFalse(os.path.exists(os.path.join(self.root, 'seats', 'A', 'claude-session')))
+        self.assertEqual(self.run_turn(job='retry')['status'], 'done')
+        self.assertNotIn('--resume', self.calls()[-1]['args'])
+
     def test_timeout_stops_child(self):
         with mock.patch.dict(os.environ, {'CLAUDE_TEST_SLEEP': '10'}):
-            self.assertIn('timed out', self.run_turn(timeout=0.05)['error'])
+            result = self.run_turn(timeout=0.2)
+        self.assertIn('timed out', result['error'])
+        session = result['thread']
+        council.uuid.UUID(session)
+        self.assertEqual(council.read(os.path.join(self.root, 'seats', 'A', 'claude-session')), session)
+        self.assertEqual(self.run_turn(job='recover')['thread'], session)
+        self.assertEqual(self.calls()[-1]['args'][-2:], ['--resume', session])
+
+    def test_recovery_requires_the_original_session_and_never_retries(self):
+        jd = os.path.join(self.root, 'jobs', 'recover')
+        spec = self.spec('recover', resumeSession='expected')
+        council.write_json(os.path.join(jd, 'spec.json'), spec)
+        session_file = os.path.join(self.root, 'seats', 'A', 'claude-session')
+        for saved in (None, 'wrong', 'expected'):
+            if saved:
+                council.write(session_file, saved)
+            with mock.patch.object(council, 'run_claude_job', return_value={
+                    'status': 'error', 'error': 'temporarily unavailable'}) as run, \
+                    mock.patch.object(council.time, 'sleep', side_effect=AssertionError('recovery retried')):
+                council.cmd_job(jd)
+            result = json.loads(council.read(os.path.join(jd, 'status.json')))
+            self.assertEqual(result['status'], 'error')
+            self.assertEqual(run.call_count, 1 if saved == 'expected' else 0)
+            if saved != 'expected':
+                self.assertIn('refusing to start a fresh turn', result['error'])
 
     def test_effort_and_plain_text_output(self):
         result = self.run_turn({'subtype': 'success', 'session_id': 'session-1', 'result': 'plain result'},
@@ -239,6 +287,45 @@ sys.exit(int(os.environ.get('CLAUDE_TEST_EXIT', '0')))
                 self.assertEqual(result['status'], 'done', result)
                 self.assertEqual(result['result']['turn'], 'r0-A')
         self.assertEqual(len(self.calls()), 1)
+
+
+class CodexRecovery(unittest.TestCase):
+    def test_first_turn_timeout_keeps_the_streamed_thread_for_recovery(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = os.path.realpath(tmp)
+            bin_dir = os.path.join(root, 'bin')
+            os.makedirs(bin_dir)
+            fake = os.path.join(bin_dir, 'codex')
+            council.write(fake, f'#!{sys.executable}\n' + '''import json, sys, time
+sys.stdin.read()
+print(json.dumps({'type': 'thread.started', 'thread_id': 'thread-A'}), flush=True)
+if 'resume' not in sys.argv:
+    time.sleep(10)
+with open(sys.argv[sys.argv.index('-o') + 1], 'w') as f:
+    f.write('recovered')
+print(json.dumps({'type': 'turn.completed', 'usage': {'input_tokens': 7}}))
+''')
+            os.chmod(fake, 0o755)
+            spec = {'kind': 'codex', 'runDir': root, 'seat': 'A', 'job': 'A-r0', 'model': 'test',
+                    'effort': 'high', 'sandbox': 'workspace-write', 'cwd': root,
+                    'writable': [], 'fresh': False, 'timeout': 0.2, 'schema': False}
+            jd = os.path.join(root, 'jobs', spec['job'])
+            council.write(os.path.join(jd, 'prompt.md'), 'solve')
+            with mock.patch.dict(os.environ, {'PATH': bin_dir + os.pathsep + os.environ.get('PATH', '')}):
+                result = council.run_codex_job(jd, spec)
+                self.assertIn('timed out', result['error'])
+                self.assertEqual(result['thread'], 'thread-A')
+                self.assertEqual(council.read(os.path.join(root, 'seats', 'A', 'thread')), 'thread-A')
+                pid = int(council.read(os.path.join(jd, 'codex.pid')))
+                with self.assertRaises(ProcessLookupError):
+                    os.kill(pid, 0)
+                spec.update(job='A-r0-recover', resumeSession='thread-A', sandbox='read-only', timeout=5)
+                jd = os.path.join(root, 'jobs', spec['job'])
+                council.write(os.path.join(jd, 'prompt.md'), 'return structured output')
+                recovered = council.run_codex_job(jd, spec)
+                self.assertEqual(recovered['status'], 'done')
+                self.assertEqual(recovered['thread'], 'thread-A')
+                self.assertEqual(recovered['result'], 'recovered')
 
 
 class MeasurementProcesses(unittest.TestCase):

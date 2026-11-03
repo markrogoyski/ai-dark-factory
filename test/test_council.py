@@ -435,6 +435,12 @@ class CodexCommand(TmpDirCase):
         self.assertIn('sandbox_workspace_write.writable_roots=' + json.dumps([room]), cmd)
         self.assertEqual(cmd[-2:], ['T', '-'])
 
+    def test_output_recovery_uses_a_strict_read_only_sandbox(self):
+        cmd, cwd = council.codex_command(self.path('job'), self.spec(resumeSession='T'), 'T')
+        self.assertEqual(cwd, self.path('repo'))
+        self.assertIn('sandbox_mode="read-only"', cmd)
+        self.assertFalse(any(c.startswith('sandbox_workspace_write.writable_roots') for c in cmd))
+
 
 class SmallHelpers(unittest.TestCase):
     def test_tail(self):

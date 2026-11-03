@@ -39,6 +39,7 @@ import subprocess
 import sys
 import tempfile
 import time
+import uuid
 
 SELF = os.path.realpath(__file__)
 DEPS = ('vendor', 'node_modules')           # ignored dependency dirs cloned into each worktree
@@ -633,6 +634,7 @@ def cmd_seat_run(a):
         'hash': got, 'model': a.model, 'effort': a.effort, 'sandbox': a.sandbox,
         'cwd': os.path.abspath(a.cwd), 'writable': [os.path.abspath(w) for w in (a.writable or [])],
         'fresh': bool(a.fresh), 'timeout': a.timeout_min * 60, 'schema': schema is not None,
+        'resumeSession': getattr(a, 'resume_session', None),
     }
     jd = job_dir(a.run_dir, a.job)
 
@@ -659,7 +661,7 @@ def cmd_seat_run(a):
 
 
 # What makes two seat-run calls the same turn: a job is reused only when all of these match.
-TURN_IDENTITY = ('kind', 'hash', 'model', 'effort', 'sandbox', 'cwd', 'writable', 'fresh', 'schema')
+TURN_IDENTITY = ('kind', 'hash', 'model', 'effort', 'sandbox', 'cwd', 'writable', 'fresh', 'schema', 'resumeSession')
 RERUN_WINDOW = 1800      # a failure older than this may be retried again (after a quota reset, say)
 
 
@@ -729,7 +731,8 @@ def codex_command(jd, spec, thread):
     # workspace-write from an empty scratch directory: it can read everything, and write only
     # there and to the temp directories.
     sandbox, cwd = spec['sandbox'], spec['cwd']
-    if sandbox == 'read-only':
+    # Output recovery needs no shell probes or temp files, and must drop the seat's write access.
+    if sandbox == 'read-only' and not spec.get('resumeSession'):
         sandbox, cwd = 'workspace-write', os.path.join(run_dir, 'scratch', f'codex-{spec["job"]}')
         os.makedirs(cwd, exist_ok=True)
 
@@ -762,6 +765,7 @@ def run_codex_job(jd, spec):
     cmd, cwd = codex_command(jd, spec, thread)                # prompt on stdin — never leave stdin open
 
     events_path, err_path = os.path.join(jd, 'events.jsonl'), os.path.join(jd, 'stderr.txt')
+    timed_out = False
     with open(os.path.join(jd, 'prompt.md'), 'rb') as stdin, open(events_path, 'w') as so, open(err_path, 'w') as se:
         p = subprocess.Popen(cmd, cwd=cwd, stdin=stdin, stdout=so, stderr=se, start_new_session=True)
         write(os.path.join(jd, 'codex.pid'), str(p.pid))
@@ -772,8 +776,8 @@ def run_codex_job(jd, spec):
                 os.killpg(p.pid, signal.SIGKILL)
             except ProcessLookupError:
                 pass
-            p.wait()
-            return {'status': 'error', 'error': f'codex timed out after {spec["timeout"] // 60} min'}
+            code = p.wait()
+            timed_out = True
 
     new_thread, usage, errors = None, {}, []
     for line in read(events_path).split('\n'):
@@ -790,15 +794,22 @@ def run_codex_job(jd, spec):
             errors.append(json.dumps(ev.get('error') or ev.get('message') or ev)[:500])
     if new_thread and not thread:
         write(thread_file, new_thread)
+    if thread and new_thread and thread != new_thread:
+        return {'status': 'error', 'error': f'codex did not resume thread {thread} (it started {new_thread})'}
 
     thread_total = usage
     usage = turn_usage(os.path.dirname(thread_file), thread or new_thread, thread_total)
     record_usage(run_dir, spec, usage, thread_total, started)
 
+    if timed_out:
+        return {'status': 'error', 'thread': thread or new_thread,
+                'error': f'codex timed out after {spec["timeout"] // 60} min'}
+
     if code != 0 or not os.path.exists(out_path):
         stderr = read(err_path) if os.path.exists(err_path) else ''
         stderr = '\n'.join(l for l in stderr.split('\n') if 'Reading additional input from stdin' not in l)
-        return {'status': 'error', 'error': (' | '.join(errors) or tail(stderr, 15) or f'codex exited {code}')[:2000]}
+        return {'status': 'error', 'thread': thread or new_thread,
+                'error': (' | '.join(errors) or tail(stderr, 15) or f'codex exited {code}')[:2000]}
     raw = read(out_path)
     if not spec['schema']:
         result = raw
@@ -806,7 +817,8 @@ def run_codex_job(jd, spec):
         try:
             result = json.loads(raw)
         except json.JSONDecodeError:
-            return {'status': 'error', 'error': 'codex final message was not valid JSON: ' + raw[:500]}
+            return {'status': 'error', 'thread': thread or new_thread,
+                    'error': 'codex final message was not valid JSON: ' + raw[:500]}
     return {'status': 'done', 'job': spec['job'], 'seat': spec['seat'], 'thread': thread or new_thread,
             'elapsedSec': round(time.time() - started, 1), 'usage': usage, 'result': result}
 
@@ -827,6 +839,8 @@ CLAUDE_HEADLESS = (
     'This is a headless factory turn: nobody can approve new permissions. Keep the existing permission controls. '
     'When Write/Edit and Bash are available, write probe source in your allowed workspace, then execute it in a separate Bash call. '
     'Use one simple operation per command; avoid combining source heredocs, execution, pipelines and unrelated checks. '
+    'Edit files with Edit, not sed -i, perl -pi or Python heredocs (python3 - <<EOF). Use Write for new files. '
+    'Do not use background jobs or sleep polling. Run commands in the foreground; use the helper wait command for its running jobs. '
     'If a tool is denied, do not bypass the restriction. Continue with permitted work and explicitly report '
     'the denied check and any missing evidence in your answer. Never claim that an unrun check passed. '
     'Finish in the requested output format even when an optional probe was denied.'
@@ -843,7 +857,9 @@ def claude_tmp_dir(spec):
 def claude_env(spec):
     cache = os.path.join(claude_tmp_dir(spec), 'cache')
     os.makedirs(cache, exist_ok=True)
-    return {**os.environ, 'XDG_CACHE_HOME': cache}
+    # Worktrees share project auto-memory. Disable it for this process, including resumes.
+    # https://code.claude.com/docs/en/memory#enable-or-disable-auto-memory
+    return {**os.environ, 'XDG_CACHE_HOME': cache, 'CLAUDE_CODE_DISABLE_AUTO_MEMORY': '1'}
 
 
 def claude_command(jd, spec, session):
@@ -904,6 +920,10 @@ def run_claude_job(jd, spec):
     session_file = os.path.join(seat_dir, 'claude-session')
     session = None if spec['fresh'] or not os.path.exists(session_file) else read(session_file).strip()
     cmd, cwd = claude_command(jd, spec, session)
+    if not session:
+        # Allocate before launch: JSON output may never arrive if the turn times out.
+        session = str(uuid.uuid4())
+        cmd += ['--session-id', session]
     out_path, err_path = os.path.join(jd, 'out.json'), os.path.join(jd, 'stderr.txt')
     with open(os.path.join(jd, 'prompt.md'), 'rb') as stdin, open(out_path, 'w') as so, open(err_path, 'w') as se:
         p = subprocess.Popen(cmd, cwd=cwd, stdin=stdin, stdout=so, stderr=se, start_new_session=True,
@@ -917,14 +937,15 @@ def run_claude_job(jd, spec):
             except ProcessLookupError:
                 pass
             p.wait()
-            return {'status': 'error', 'error': f'claude timed out after {spec["timeout"] // 60} min'}
+            write(session_file, session)
+            return {'status': 'error', 'thread': session, 'error': f'claude timed out after {spec["timeout"] // 60} min'}
     stderr = read(err_path)
     try:
         out = json.loads(read(out_path))
     except (ValueError, OSError):
-        return {'status': 'error', 'error': (tail(stderr, 15) or f'claude exited {code} with no valid JSON')[:2000]}
+        return {'status': 'error', 'thread': session, 'error': (tail(stderr, 15) or f'claude exited {code} with no valid JSON')[:2000]}
     if not isinstance(out, dict):
-        return {'status': 'error', 'error': 'claude returned an invalid result envelope'}
+        return {'status': 'error', 'thread': session, 'error': 'claude returned an invalid result envelope'}
     # Denials describe tool attempts, not the outcome of the entire turn. Keep the raw
     # commands in out.json and carry a compact diagnostic through validation and reporting.
     denials = out.get('permission_denials') or []
@@ -935,14 +956,13 @@ def run_claude_job(jd, spec):
     }} if denials else {}
 
     def failed(message):
-        return {'status': 'error', 'error': message, **diagnostics}
+        return {'status': 'error', 'thread': session, 'error': message, **diagnostics}
 
     new_session = out.get('session_id') if isinstance(out.get('session_id'), str) else None
     if session and new_session and session != new_session:
-        return failed(f'claude did not resume session {session} (it started {new_session}): the seat lost its memory')
-    if new_session and not session:
+        return {**failed(f'claude did not resume session {session} (it started {new_session}): the seat lost its memory'), 'thread': None}
+    if new_session:
         write(session_file, new_session)
-    session = session or new_session
     reported = out.get('usage') if isinstance(out.get('usage'), dict) else {}
     usage = {k: v for k, v in reported.items() if isinstance(v, (int, float)) and not isinstance(v, bool)}
     total = claude_usage_total(seat_dir, session, usage)
@@ -952,7 +972,7 @@ def run_claude_job(jd, spec):
         return failed(oneline(errors, 2000))
     if out.get('terminal_reason') not in (None, 'completed') or (denials and out.get('subtype') != 'success'):
         return failed(f'claude did not complete the turn (terminal_reason={out.get("terminal_reason")}, subtype={out.get("subtype")})')
-    if not session:
+    if not new_session:
         return failed('claude returned no session_id; the seat cannot retain its memory')
     result = out.get('structured_output') if spec['schema'] else out.get('result')
     if spec['schema']:
@@ -1016,7 +1036,7 @@ def run_gemini_job(jd, spec):
 
     out, err = call(read(os.path.join(jd, 'prompt.md')), conv)
     if out is None:
-        return {'status': 'error', 'error': err[:2000]}
+        return {'status': 'error', 'thread': conv, 'error': err[:2000]}
     new_conv = out.get('conversation_id') or None
     if new_conv and conv and new_conv != conv:
         return {'status': 'error', 'error': f'agy did not resume conversation {conv} (it started {new_conv}): '
@@ -1029,7 +1049,7 @@ def run_gemini_job(jd, spec):
     # to run a command outside the sandbox (git, which can't read the repository's data from inside
     # it). Resume once, saying so, rather than lose the seat.
     resumed = ''
-    if out.get('status') == 'SUCCESS' and out.get('denied_actions') and thread:
+    if out.get('status') == 'SUCCESS' and out.get('denied_actions') and thread and not spec.get('resumeSession'):
         resumed = ', '.join(d.get('action', '?') for d in out['denied_actions'])
         write(os.path.join(jd, 'out-denied.json'), json.dumps(out))
         out, err = call(DENIED_NUDGE.format(denied=resumed), thread)
@@ -1037,7 +1057,7 @@ def run_gemini_job(jd, spec):
             return {'status': 'error', 'error': f'agy denied {resumed}, and resuming after it failed: {err}'[:2000]}
     nudged = False
     if (schema is not None and out.get('status') == 'SUCCESS' and not out.get('denied_actions')
-            and not fits(out.get('structured_output')) and thread):
+            and not fits(out.get('structured_output')) and thread and not spec.get('resumeSession')):
         nudged = True
         write(os.path.join(jd, 'out-first.json'), json.dumps(out))
         out, err = call('You answered in text, not as structured output. Return your answer to my previous '
@@ -2020,9 +2040,14 @@ def cmd_job(jd):
     spec = json.loads(read(os.path.join(jd, 'spec.json')))
     try:
         if spec['kind'] in ('codex', 'gemini', 'claude'):
+            if spec.get('resumeSession'):
+                session_name = {'claude': 'claude-session', 'codex': 'thread', 'gemini': 'conversation'}[spec['kind']]
+                path = os.path.join(spec['runDir'], 'seats', spec['seat'], session_name)
+                if spec['fresh'] or not os.path.isfile(path) or read(path).strip() != spec['resumeSession']:
+                    raise CouncilError('recovery session is missing or changed; refusing to start a fresh turn')
             run = {'codex': run_codex_job, 'gemini': run_gemini_job, 'claude': run_claude_job}[spec['kind']]
             result = run(jd, spec)
-            if transient(result):
+            if transient(result) and not spec.get('resumeSession'):
                 first = result['error']
                 time.sleep(float(os.environ.get('COUNCIL_RETRY_WAIT', '90')))
                 result = run(jd, spec)
@@ -2077,6 +2102,7 @@ def main():
     p.add_argument('--transcript-wait', type=float, default=TRANSCRIPT_WAIT_SEC,
                    help='seconds to wait for the relay transcript to appear')
     p.add_argument('--fresh', action='store_true')
+    p.add_argument('--resume-session', help='require this exact saved session; fail rather than start fresh (no transient retry)')
     p.add_argument('--timeout-min', type=int, default=90)
     p.add_argument('--max-wait', type=int, default=DEFAULT_MAX_WAIT)
     p.add_argument('--checkout', help='SEAT-LABEL: create --cwd as a checkout of that snapshot first, if it does not exist')

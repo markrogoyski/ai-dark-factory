@@ -1,11 +1,12 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync, realpathSync, existsSync } from 'node:fs'
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync, realpathSync, existsSync, utimesSync, symlinkSync, chmodSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { execFileSync, spawn } from 'node:child_process'
 import { parseCLI, resultExitCode, validateResult, createLimiter, createRuntime, runWorkflow } from '../plugins/dark-factory/lib/codex-runner.mjs'
+import { LIB } from '../tools/sources.mjs'
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const cli = join(root, 'plugins/dark-factory/bin/dark-factory-codex')
@@ -103,6 +104,103 @@ test('direct turns write exact payloads and preserve session, checkout and writa
   assert.equal(seen[0][seen[0].indexOf('--checkout') + 1], 'A-r0')
   assert.equal(seen[0][seen[0].indexOf('--timeout-min') + 1], '7')
   assert.equal(seen[1][0], 'wait')
+})
+
+test('recovery evidence requires a current nonempty post and a retained session', async t => {
+  const dir = temporary(t)
+  for (const mode of ['valid', 'schema', 'missing', 'empty', 'stale', 'symlink', 'outside', 'no-session']) {
+    const runDir = join(dir, mode)
+    mkdirSync(runDir)
+    const post = mode === 'outside' ? join(dir, 'outside.md') : join(runDir, 'room', 'r0', 'A.md')
+    const runtime = createRuntime({ repo: dir, hostRunDir: runDir, execute: async () => {
+      const jd = join(runDir, 'jobs', 'A-r0')
+      mkdirSync(jd, { recursive: true })
+      writeFileSync(join(jd, 'prompt.md'), 'original prompt')
+      if (mode !== 'missing') {
+        mkdirSync(join(runDir, 'room', 'r0'), { recursive: true })
+        if (mode === 'symlink') symlinkSync(join(jd, 'prompt.md'), post)
+        else writeFileSync(post, mode === 'empty' ? ' \n' : 'Completed post')
+        if (mode === 'stale') utimesSync(post, 1, 1)
+      }
+      return { status: mode === 'schema' ? 'done' : 'error', error: 'timed out',
+        thread: mode === 'no-session' ? undefined : 'session-A', result: { ok: 'invalid' } }
+    } })
+    const result = await runtime.turn({ key: 'A-r0', threadKey: 'A', vendor: 'claude', model: 'sonnet',
+      role: 'seat', prompt: 'solve', schema: object, recoveryPost: post })
+    assert.equal(result.status, 'error')
+    assert.equal(result.recoverySession, ['valid', 'schema'].includes(mode) ? 'session-A' : undefined, mode)
+  }
+})
+
+test('recovery passes the required session to the helper and keeps original job artifacts', async t => {
+  const dir = temporary(t), calls = []
+  mkdirSync(join(dir, 'jobs', 'A-r0'), { recursive: true })
+  writeFileSync(join(dir, 'jobs', 'A-r0', 'out.json'), 'original diagnostic')
+  const runtime = createRuntime({ repo: dir, hostRunDir: dir, execute: async argv => {
+    calls.push(argv)
+    return { status: 'done', result: { ok: true } }
+  } })
+  await runtime.turn({ key: 'A-r0-recover', threadKey: 'A', vendor: 'claude', model: 'sonnet',
+    prompt: 'return structured output', schema: object, resumeSession: 'session-A',
+    sandbox: 'read-only', writable: [], effort: 'low', timeoutMin: 3, fresh: false })
+  const argv = calls[0]
+  assert.equal(argv[argv.indexOf('--resume-session') + 1], 'session-A')
+  assert.equal(argv[argv.indexOf('--sandbox') + 1], 'read-only')
+  assert.equal(argv[argv.indexOf('--timeout-min') + 1], '3')
+  assert.ok(!argv.includes('--fresh'))
+  assert.equal(readFileSync(join(dir, 'jobs', 'A-r0', 'out.json'), 'utf8'), 'original diagnostic')
+})
+
+test('shared seat recovery resumes the real helper job with a stub Claude CLI', async t => {
+  const dir = temporary(t)
+  initRepo(dir)
+  const runDir = join(dir, '.council', 'recover'), bin = join(dir, 'bin')
+  const room = join(runDir, 'room'), post = join(room, 'r0', 'A.md'), log = join(dir, 'calls.jsonl')
+  mkdirSync(join(room, 'r0'), { recursive: true })
+  mkdirSync(bin)
+  const run = { runDir, room, repoRoot: dir, runId: 'recover' }
+  writeFileSync(join(runDir, 'run.json'), JSON.stringify(run))
+  const stub = join(bin, 'claude')
+  writeFileSync(stub, `#!/usr/bin/env python3
+import json, os, sys
+args = sys.argv[1:]
+prompt = sys.stdin.read()
+schema = json.loads(args[args.index('--json-schema') + 1])
+session_flag = '--resume' if '--resume' in args else '--session-id'
+session = args[args.index(session_flag) + 1]
+with open(os.environ['RECOVERY_TEST_LOG'], 'a') as f:
+    f.write(json.dumps({'args': args, 'prompt': prompt, 'session': session}) + '\\n')
+out = {'subtype': 'success', 'session_id': session, 'usage': {'input_tokens': 7}}
+if '--resume' in args:
+    out['structured_output'] = {'summary': 'recovered', 'process': '', 'turn': schema['properties']['turn']['enum'][0]}
+else:
+    with open(os.environ['RECOVERY_TEST_POST'], 'w') as f:
+        f.write('My completed independent post')
+    out['result'] = 'Completed work, missing structured output'
+print(json.dumps(out))
+`)
+  chmodSync(stub, 0o755)
+  const runtime = createRuntime({ repo: dir, hostRunDir: runDir, timeoutMin: 1,
+    env: { ...process.env, PATH: `${bin}:${process.env.PATH}`, CLAUDE_CONFIG_DIR: join(dir, 'claude-home'),
+      RECOVERY_TEST_POST: post, RECOVERY_TEST_LOG: log, COUNCIL_JOB_POLL: '0.01' } })
+  const source = [...LIB, 'src/boot.js', 'src/schemas.js', 'src/turns.js'].map(f => readFileSync(join(root, f), 'utf8')).join('\n')
+  const h = new Function('factoryRuntime', 'args', source + '\nreturn { state: S, seatTurn };')(runtime, { host: 'codex', task: 'Solve independently' })
+  h.state.run = run
+  const member = { L: 'A', key: 'sonnet', name: 'Claude Sonnet', vendor: 'claude', model: 'sonnet', effort: 'high', wt: dir }
+  const schema = { type: 'object', properties: { summary: { type: 'string' } }, required: ['summary'], additionalProperties: false }
+  const result = await h.seatTurn(member, 0, 'Solve independently and publish your post.', schema)
+  assert.equal(result.summary, 'recovered')
+  const calls = readFileSync(log, 'utf8').trim().split('\n').map(JSON.parse)
+  assert.equal(calls.length, 2)
+  assert.equal(calls[0].session, calls[1].session)
+  assert.equal(calls[1].args[calls[1].args.indexOf('--tools') + 1], 'Read,Glob,Grep')
+  assert.match(calls[1].prompt, /read only your own post/)
+  assert.equal(readFileSync(post, 'utf8'), 'My completed independent post')
+  assert.match(readFileSync(join(runDir, 'jobs', 'A-r0', 'out.json'), 'utf8'), /missing structured output/)
+  const recoverySpec = JSON.parse(readFileSync(join(runDir, 'jobs', 'A-r0-recover', 'spec.json'), 'utf8'))
+  assert.equal(recoverySpec.resumeSession, calls[0].session)
+  assert.equal(recoverySpec.timeout, 60, 'recovery also respects the runner default deadline')
+  assert.equal(readFileSync(join(runDir, 'usage.jsonl'), 'utf8').trim().split('\n').length, 2)
 })
 
 test('native agent roles use fresh contexts and reject invalid provider output', async t => {

@@ -57,7 +57,15 @@ additionally need the authenticated `agy` CLI. Each CLI keeps its normal permiss
 A completed Claude turn with valid output can proceed after a denied tool call; the report and host
 events retain the denial and link to its raw details in the job's `out.json`. Denied checks do not
 count as passing evidence: required verification and independent review still determine readiness.
-Interrupted turns and invalid output remain failures. Headless seats cannot grant new permissions.
+If a solve or debate turn fails after writing its own post, the runner can resume its saved
+session once to return the missing structured output. This read-only follow-up has low effort
+and a three-minute deadline (or the original deadline, if shorter); failed recovery still fails
+the turn. Headless seats cannot grant new permissions. Their instructions require Edit/Write
+for file changes, foreground commands, and no sleep polling.
+
+Headless Claude processes run with `CLAUDE_CODE_DISABLE_AUTO_MEMORY=1`, including resumed
+turns and fresh reviewers. Claude's [auto memory is shared across worktrees](https://code.claude.com/docs/en/memory#storage-location),
+so disabling it keeps project notes out of these independent sessions without changing account settings.
 
 Simple uses Sol to implement and Astra to review. Fix, Feature and Architecture use Opus,
 Astra and Sol seats. Orchestration roles can be changed through `roles`, for example
