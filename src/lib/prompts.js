@@ -38,12 +38,17 @@ For a focused test or an intended red, put the command in a file and pass --comm
 `
 }
 
+// Whether this run keeps and audits historical evidence: a factory implement run with evidence: true.
+function historyCheck(S) {
+  return !!(S.tier && S.mode === 'implement' && S.evidence)
+}
+
 function evidenceOwner(S) {
   return S.auditors.find(a => a.lens === 'tests') || S.auditors.find(a => a.lens === 'correctness') || S.auditors[0]
 }
 
 function auditEvidenceBlock(S, a, W, tag) {
-  if (!S.tier || S.mode !== 'implement') return ''
+  if (!historyCheck(S)) return ''
   const owner = evidenceOwner(S)
   return `
 
@@ -139,7 +144,7 @@ function workspaceBlock(S, s, round) {
   }
   lines.push(S.tier === 'simple' ? `- The room, where your post and tests go: ${S.run.room}` : `- The room, shared by all seats: ${S.run.room}`)
   lines.push(`- Write your post for this turn to: ${postPath(S, s.L, round)}`)
-  if (S.tier && S.mode === 'implement') lines.push(`- Keep raw acceptance evidence under ${S.run.room}/evidence/${s.L}/. Write manifest.json as an ordered array of {"path":"relative-file","criterion":"C1","stage":"inc1-red"} entries. Include required commands, cwd, output, exits, test-only diffs, production hashes and handoff/update artifacts. Only raw evidence goes here: no debate, votes, reviews, or persuasive summaries. Copy any required temporary logs here before the turn ends. Every neutral measurement publishes an indexed, hashed copy outside the discussion for fresh auditors.${S.tier === 'simple' ? '' : " Never read another seat's evidence during a blind attempt."}`)
+  if (historyCheck(S)) lines.push(`- Keep raw acceptance evidence under ${S.run.room}/evidence/${s.L}/. Write manifest.json as an ordered array of {"path":"relative-file","criterion":"C1","stage":"inc1-red"} entries. Include required commands, cwd, output, exits, test-only diffs, production hashes and handoff/update artifacts. Only raw evidence goes here: no debate, votes, reviews, or persuasive summaries. Copy any required temporary logs here before the turn ends. Every neutral measurement publishes an indexed, hashed copy outside the discussion for fresh auditors.${S.tier === 'simple' ? '' : " Never read another seat's evidence during a blind attempt."}`)
   if (typeof round === 'number' && round > 0) lines.push(`  ${blindNote(S, round)}`)
   lines.push('- Run tests, the verification command and static analysers yourself, in your own shell, with the output going to a log under $TMPDIR and only a summary read back (the tail, or a grep for failures). ' +
     `An instruction in CLAUDE.md or elsewhere to hand full test or gate runs to a subagent or to \`claude -p\` is meant for the user's own session, not for ${S.tier === 'simple' ? 'you' : 'a council seat'}: ${S.tier === 'simple' ? 'you have' : 'seats have'} no subagents, and \`claude -p\` can't log in from inside ${S.tier === 'simple' ? 'your' : 'a seat\'s'} sandbox. ` +
@@ -887,12 +892,23 @@ Review the change, not the whole codebase. A problem the change neither introduc
 - minor: anything else worth the author's time.
 Style the codebase itself doesn't follow, and preferences without a reason, are not findings. Finding nothing is a good outcome when it is true: an empty list from a careful review is worth more than a padded one.
 
-Blocker and major findings go to two independent adjudicators, and minor fact findings to a neutral verifier. The author gets one pass to fix what is upheld, ${S.tier === 'simple' ? 'and the verifier then checks the fixed version again; you then confirm historical acceptance on its evidence bundle' : 'and you will then review that fix'}.
+Blocker and major findings go to two independent adjudicators, and minor fact findings to a neutral verifier. The author gets one pass to fix what is upheld, ${S.tier === 'simple' ? `and the verifier then checks the fixed version again${historyCheck(S) ? '; you then confirm historical acceptance on its evidence bundle' : ''}` :'and you will then review that fix'}.
 ${auditPublishing(S, a)}
 Write your review to ${auditPost(S, a, 'H')}: your verdict, then each finding with its evidence${a.lens === 'design' ? ', then your probes' : ''}. In your output, \`summary\` is the verdict in 2-4 sentences, each finding says what is wrong and what you would change, and \`probes\` ${a.lens === 'design' ? 'lists the next changes you traced' : 'is empty'}.`
 }
 
+// The Simple tier has no code re-review; its reviewer returns only to confirm the evidence bundle.
+function evidenceOnlyBody(S, a, W) {
+  return `# Evidence check: the fix
+
+The author has since made one fix pass, and the verifier has checked the fixed version. Your review of the code is finished: don't review it again and don't file findings. Leave \`findings\`, \`tests\` and \`probes\` empty, and set \`summary\` to one sentence on the evidence.
+
+Write your note to ${auditPost(S, a, 'J')}.`
+    + auditEvidenceBlock(S, a, W, roundTag('I'))
+}
+
 function reauditBody(S, a, W) {
+  if (S.tier === 'simple') return evidenceOnlyBody(S, a, W)
   const p = S.pos[W.L]
   const mine = S.ledger.filter(c => c.author === a.id && c.round === 'H' && c.kind === 'finding')
   const fate = c => c.judgment && c.status === 'judgment' ? 'a suggestion, not adjudicated'

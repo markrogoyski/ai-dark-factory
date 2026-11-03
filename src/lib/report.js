@@ -194,7 +194,7 @@ function auditSection(S, W, audit) {
       : late.length ? `- **Re-review of ${what}** (${looked.join(', ')}):\n${late.map(c => `  - [${c.id}] ${c.severity}: ${oneLine(c.statement, 240)} → ${auditOutcome(S, c, W.L, audit)}`).join('\n')}`
       : `- **Re-review of ${what}** (${looked.join(', ')}): nothing new.`)
   }
-  if (S.tier && S.mode === 'implement') {
+  if (historyCheck(S)) {
     const owner = evidenceOwner(S)
     const review = (audit.rereviews || {})[owner.lens] || audit.reviews[owner.lens]
     const evidence = review && review.evidenceReview
@@ -321,7 +321,7 @@ function specResult(S) {
 function auditResult(S, audit) {
   return audit.ran ? {
     auditors: S.auditors.map(a => ({ lens: a.lens, model: a.name, reviewed: !!audit.reviews[a.lens], summary: (audit.reviews[a.lens] || {}).summary || '', probes: (audit.reviews[a.lens] || {}).probes || [],
-      ...(S.tier && S.mode === 'implement' ? { evidenceReview: ((audit.rereviews || {})[a.lens] || audit.reviews[a.lens] || {}).evidenceReview || null } : {}) })),
+      ...(historyCheck(S) ? { evidenceReview: ((audit.rereviews || {})[a.lens] || audit.reviews[a.lens] || {}).evidenceReview || null } : {}) })),
     items: S.ledger.filter(c => lensOf(c.author)).map(c => ({ id: c.id, lens: lensOf(c.author), round: roundTag(c.round), kind: c.kind, severity: c.severity, judgment: c.judgment,
       status: c.fixed ? 'fixed' : c.status, statement: c.statement, evidence: c.evidence, note: c.note })),
     fixPass: audit.fixPass,

@@ -823,6 +823,29 @@ def fits_schema(schema, result):
                     if isinstance(p, dict) and 'enum' in p and k in result))
 
 
+CLAUDE_HEADLESS = (
+    'This is a headless factory turn: nobody can approve new permissions. Keep the existing permission controls. '
+    'When Write/Edit and Bash are available, write probe source in your allowed workspace, then execute it in a separate Bash call. '
+    'Use one simple operation per command; avoid combining source heredocs, execution, pipelines and unrelated checks. '
+    'If a tool is denied, do not bypass the restriction. Continue with permitted work and explicitly report '
+    'the denied check and any missing evidence in your answer. Never claim that an unrun check passed. '
+    'Finish in the requested output format even when an optional probe was denied.'
+)
+
+
+def claude_tmp_dir(spec):
+    """A writable cache directory for one Claude job. Tools that default to ~/.cache (Psalm,
+    pip) are otherwise denied by the sandbox. TMPDIR isn't set: Claude's Bash sandbox replaces it
+    with its own writable temp directory."""
+    return os.path.join(spec['runDir'], 'tmp', f'claude-{spec["job"]}')
+
+
+def claude_env(spec):
+    cache = os.path.join(claude_tmp_dir(spec), 'cache')
+    os.makedirs(cache, exist_ok=True)
+    return {**os.environ, 'XDG_CACHE_HOME': cache}
+
+
 def claude_command(jd, spec, session):
     """One headless Claude turn, with explicit workspace access and no permission bypass.
 
@@ -836,16 +859,21 @@ def claude_command(jd, spec, session):
     readonly = spec['sandbox'] == 'read-only'
     cmd = ['claude', '--print', '--output-format', 'json', '--model', spec['model'], '--effort', effort,
            '--permission-mode', 'plan' if readonly else 'acceptEdits', '--permission-prompts', 'none',
+           '--append-system-prompt', CLAUDE_HEADLESS,
            '--tools', 'Read,Glob,Grep' if readonly else 'Bash,Read,Glob,Grep,Edit,Write']
+    # The run's reference files are read-only for every seat. A permission rule rather than
+    # --add-dir, which under acceptEdits would also make them editable.
+    settings = {'permissions': {'allow': [f'Read(/{os.path.join(spec["runDir"], "refs")}/**)']}}
     if not readonly:
-        roots = list(dict.fromkeys(spec['writable'] + seat_git_dirs(spec)))
+        roots = list(dict.fromkeys(spec['writable'] + seat_git_dirs(spec) + [claude_tmp_dir(spec)]))
         for root in roots:
             cmd += ['--add-dir', root]
-        cmd += ['--settings', json.dumps({'sandbox': {
+        settings['sandbox'] = {
             'enabled': True, 'failIfUnavailable': True,
             'autoAllowBashIfSandboxed': True, 'allowUnsandboxedCommands': False,
             'filesystem': {'disabled': False, 'allowWrite': roots},
-        }})]
+        }
+    cmd += ['--settings', json.dumps(settings)]
     if spec['schema']:
         cmd += ['--json-schema', read(os.path.join(jd, 'schema.json'))]
     if session:
@@ -878,7 +906,8 @@ def run_claude_job(jd, spec):
     cmd, cwd = claude_command(jd, spec, session)
     out_path, err_path = os.path.join(jd, 'out.json'), os.path.join(jd, 'stderr.txt')
     with open(os.path.join(jd, 'prompt.md'), 'rb') as stdin, open(out_path, 'w') as so, open(err_path, 'w') as se:
-        p = subprocess.Popen(cmd, cwd=cwd, stdin=stdin, stdout=so, stderr=se, start_new_session=True)
+        p = subprocess.Popen(cmd, cwd=cwd, stdin=stdin, stdout=so, stderr=se, start_new_session=True,
+                             env=claude_env(spec))
         write(os.path.join(jd, 'claude.pid'), str(p.pid))
         try:
             code = p.wait(timeout=spec['timeout'])
@@ -896,9 +925,21 @@ def run_claude_job(jd, spec):
         return {'status': 'error', 'error': (tail(stderr, 15) or f'claude exited {code} with no valid JSON')[:2000]}
     if not isinstance(out, dict):
         return {'status': 'error', 'error': 'claude returned an invalid result envelope'}
+    # Denials describe tool attempts, not the outcome of the entire turn. Keep the raw
+    # commands in out.json and carry a compact diagnostic through validation and reporting.
+    denials = out.get('permission_denials') or []
+    diagnostics = {'permissionDenials': {
+        'count': len(denials),
+        'tools': list(dict.fromkeys(str(d.get('tool_name', '?')) if isinstance(d, dict) else '?' for d in denials)),
+        'source': out_path,
+    }} if denials else {}
+
+    def failed(message):
+        return {'status': 'error', 'error': message, **diagnostics}
+
     new_session = out.get('session_id') if isinstance(out.get('session_id'), str) else None
     if session and new_session and session != new_session:
-        return {'status': 'error', 'error': f'claude did not resume session {session} (it started {new_session}): the seat lost its memory'}
+        return failed(f'claude did not resume session {session} (it started {new_session}): the seat lost its memory')
     if new_session and not session:
         write(session_file, new_session)
     session = session or new_session
@@ -908,21 +949,20 @@ def run_claude_job(jd, spec):
     record_usage(spec['runDir'], spec, usage, total, started)
     if code != 0 or out.get('is_error') or out.get('subtype') not in (None, 'success'):
         errors = out.get('errors') or out.get('result') or stderr or f'claude exited {code}'
-        return {'status': 'error', 'error': oneline(errors, 2000)}
-    if out.get('permission_denials'):
-        denied = ', '.join(str(d.get('tool_name', '?')) for d in out['permission_denials'] if isinstance(d, dict))
-        return {'status': 'error', 'error': f'claude permission denied: {denied or "a tool call"}; configure the required permission before retrying'}
+        return failed(oneline(errors, 2000))
+    if out.get('terminal_reason') not in (None, 'completed') or (denials and out.get('subtype') != 'success'):
+        return failed(f'claude did not complete the turn (terminal_reason={out.get("terminal_reason")}, subtype={out.get("subtype")})')
     if not session:
-        return {'status': 'error', 'error': 'claude returned no session_id; the seat cannot retain its memory'}
+        return failed('claude returned no session_id; the seat cannot retain its memory')
     result = out.get('structured_output') if spec['schema'] else out.get('result')
     if spec['schema']:
         schema = json.loads(read(os.path.join(jd, 'schema.json')))
         if not fits_schema(schema, result):
-            return {'status': 'error', 'error': 'claude returned structured output that does not match this turn\'s schema'}
+            return failed('claude returned structured output that does not match this turn\'s schema')
     elif result is None or result == '':
-        return {'status': 'error', 'error': 'claude returned no result'}
+        return failed('claude returned no result')
     return {'status': 'done', 'job': spec['job'], 'seat': spec['seat'], 'thread': session,
-            'elapsedSec': round(time.time() - started, 1), 'usage': usage, 'result': result}
+            'elapsedSec': round(time.time() - started, 1), 'usage': usage, 'result': result, **diagnostics}
 
 
 def run_gemini_job(jd, spec):

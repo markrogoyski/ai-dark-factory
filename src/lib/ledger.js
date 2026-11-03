@@ -568,7 +568,7 @@ function ingestAudit(S, a, round, W, res) {
     addClaim(S, { id: t.id, round, author: a.id, kind: 'test', target: W, statement: t.purpose, evidence: t.command })
   }
   return { summary: res.summary || '', probes: (res.probes || []).filter(x => x && x.change).slice(0, 5),
-    ...(S.tier && S.mode === 'implement' ? { evidenceReview: res.evidenceReview || null } : {}) }
+    ...(historyCheck(S) ? { evidenceReview: res.evidenceReview || null } : {}) }
 }
 
 // Who rules on an audit round's items: the panel takes the blocker and major findings, judgment

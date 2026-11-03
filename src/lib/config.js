@@ -33,7 +33,7 @@ const CATALOG = {
 }
 
 const DEFAULT_SEATS = ['opus', 'sonnet', 'astra', 'gemini']
-const CODEX_SEATS = ['astra', 'sol']
+const CODEX_SEATS = ['opus', 'astra', 'sol']
 const VENDOR_NAME = { claude: 'Claude', codex: 'Codex', gemini: 'Gemini' }
 const VENDOR_CLI = { claude: 'Claude CLI', codex: 'Codex CLI', gemini: 'Antigravity CLI (agy)' }
 
@@ -166,6 +166,9 @@ function parseConfig(args, opts = {}) {
     plan: (Array.isArray(raw.plan) ? raw.plan : raw.plan ? [raw.plan] : []).map(p => String(p).trim()).filter(Boolean),
     cli: String(raw.cli || 'dark-factory'),
     allowDirty: raw.allowDirty === true,
+    // The factory's historical-evidence check (seats keep raw evidence, an auditor confirms it,
+    // readiness requires it). Off unless asked for per run; see historyCheck().
+    evidence: raw.evidence === true,
     narrow: raw.narrow !== false,
     retro: raw.retro !== false,
     // Vote-timing experiments, off unless asked for per run: they change when or how the council

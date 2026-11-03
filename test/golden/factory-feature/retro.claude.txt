@@ -89,7 +89,6 @@ Auditors who never saw the debate reviewed the final change, each through one le
 - **Tests, Claude Sonnet:** No problems found.
   - No findings.
 - **Audit fix pass:** not needed: nothing was upheld, disputed or failing.
-- **Historical acceptance, tests:** complete: Checked fixture evidence.
 
 # Process notes and run facts
 

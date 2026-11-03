@@ -24,21 +24,21 @@ const turnOptions = { key: 'A-r0', threadKey: 'A', vendor: 'codex', model: 'gpt-
 const done = request => ({ status: 'done', result: { summary: 'completed', turn: request.schema.properties.turn.enum[0] }, elapsedSec: 3 })
 
 describe('Codex host configuration', () => {
-  test('every tier defaults to Codex models, with independent roles and reviewers', () => {
+  test('every tier defaults to an Opus seat beside Codex models, with Codex roles and reviewers', () => {
     const raw = { task: 'Add a parser', host: 'codex' }
     for (const tier of ['simple', 'fix', 'feature', 'architecture']) {
       const args = L.tierArgs(raw, tier, { mode: 'implement' })
       const config = L.parseConfig(args, { workflow: 'factory', tier })
-      assert.deepEqual(L.externalVendors(config), ['codex'])
+      assert.deepEqual(L.externalVendors(config).sort(), tier === 'simple' ? ['codex'] : ['claude', 'codex'])
       for (const member of [...config.lineup, ...config.panel, ...config.specReviewers, ...config.auditors]) {
-        assert.equal(member.vendor, 'codex')
+        assert.equal(member.vendor, member.key === 'opus' ? 'claude' : 'codex')
         assert.equal(L.external(member), true)
       }
       assert.equal(config.roles.intake.key, 'astra')
       assert.equal(config.roles.setup.key, 'sol')
       assert.equal(config.checkModel, 'sol')
       if (tier === 'simple') assert.deepEqual([config.lineup[0].key, config.auditors[0].key], ['sol', 'astra'])
-      if (tier === 'architecture') assert.deepEqual(config.lineup.map(s => s.key), ['astra', 'sol', 'luna'])
+      if (tier !== 'simple') assert.deepEqual(config.lineup.map(s => s.key), ['opus', 'astra', 'sol'])
     }
   })
 
@@ -61,7 +61,7 @@ describe('Codex host configuration', () => {
     const config = L.parseConfig(featureArgs, { workflow: 'factory', tier: 'feature' })
     assert.equal(config.host, 'codex')
     assert.equal(config.roles.setup.key, 'astra')
-    assert.deepEqual(config.lineup.map(s => s.key), ['astra', 'sol'])
+    assert.deepEqual(config.lineup.map(s => s.key), ['opus', 'astra', 'sol'])
     assert.equal(config.simple, null)
     assert.equal(featureArgs.simple, undefined)
   })
@@ -158,6 +158,18 @@ describe('runtime adapter boundary', () => {
     assert.match(h.state.notes[0], /earlier turn/)
   })
 
+  test('native role diagnostics reach notes independently of model process feedback', async () => {
+    const h = harness({ agent: async request => {
+      request.onResult({ status: 'error', error: 'Invalid checker output',
+        permissionDenials: { count: 1, tools: ['Bash'], source: '/run/jobs/check/out.json' } })
+      return null
+    } }, { task: 'Fix parser', host: 'codex', retro: false })
+    assert.equal(await h.ask('check', { label: 'check r0:A', model: 'sonnet', schema }, 'checker'), null)
+    assert.match(h.state.notes.join('\n'), /submission was not accepted/)
+    assert.match(h.state.notes.join('\n'), /Invalid checker output/)
+    assert.match(h.state.notes.join('\n'), /\/run\/jobs\/check\/out.json/)
+  })
+
   test('sandbox failures block that vendor without adding a Claude permission instruction', async () => {
     let calls = 0
     const h = harness({ turn: async () => { calls++; return { status: 'sandboxed', error: 'cannot access account state' } } })
@@ -207,7 +219,8 @@ function emptyResult(schema) {
   return ''
 }
 
-async function factoryFlow(tier, { escalate = false, oversizedPlan = false, failedReview = false, evidenceStatus = 'complete', args = {} } = {}) {
+async function factoryFlow(tier, { escalate = false, oversizedPlan = false, failedReview = false, deniedProbe = false,
+  failedSeat = false, deniedVerification = false, evidenceStatus = 'complete', args = {} } = {}) {
   const calls = [], phases = []
   let setups = 0
   const runtime = {
@@ -226,7 +239,8 @@ async function factoryFlow(tier, { escalate = false, oversizedPlan = false, fail
         const measured = request.prompt.includes('# Step 1 — measure')
         const letter = request.label.match(/:([A-F])/)[1]
         return { ...result, measured, diff: { files: measured ? 1 : 0, added: measured ? 1 : 0, removed: 0, tree: measured ? letter.toLowerCase().repeat(40) : '' },
-          suite: { ran: measured, passed: measured, tail: measured ? 'OK' : '' }, postWords: 200,
+          suite: { ran: measured && !deniedVerification, passed: measured && !deniedVerification,
+            tail: deniedVerification ? 'Required verification denied; no result' : measured ? 'OK' : '' }, postWords: 200,
           criteria: [{ criterion: 'C1', status: 'met', note: 'checked' }] }
       }
       if (request.role === 'record' || request.role === 'retro') return { ...result, saved: '/repo/.council/facts', error: '' }
@@ -235,6 +249,7 @@ async function factoryFlow(tier, { escalate = false, oversizedPlan = false, fail
     turn: async request => {
       calls.push(request)
       if (failedReview && request.role === 'auditor') return { status: 'error', error: 'reviewer unavailable' }
+      if (failedSeat && request.role === 'seat' && request.vendor === 'claude') return { status: 'error', error: 'Claude turn interrupted' }
       const result = emptyResult(request.schema)
       if (request.role === 'auditor' && request.schema.properties.evidenceReview) {
         result.evidenceReview = { status: request.prompt.includes('You own the historical acceptance check') ? evidenceStatus : 'not-assigned', note: 'Historical artifact check.' }
@@ -249,7 +264,9 @@ async function factoryFlow(tier, { escalate = false, oversizedPlan = false, fail
         if (request.schema.properties.milestones) result.milestones = [{ title: 'Parser', task: 'Implement the parser', criteria: ['Correct behavior'], after: [], tier: 'simple', working: 'The parser handles input' }]
         if (escalate && request.schema.properties.tooBig) result.tooBig = { tier: 'feature', reason: 'the API needs design work' }
       }
-      return { status: 'done', result, elapsedSec: 1 }
+      return { status: 'done', result, elapsedSec: 1,
+        ...(deniedProbe && request.role === 'seat' && request.vendor === 'claude' && /-r0$/.test(request.key)
+          ? { permissionDenials: { count: 2, tools: ['Bash'], source: `${request.run.runDir}/jobs/${request.key}/out.json` } } : {}) }
     },
   }
   const source = readFileSync(join(root, 'plugins/dark-factory/workflows/factory.js'), 'utf8').replace(/^export const meta\s*=/m, 'const meta =')
@@ -262,13 +279,13 @@ async function factoryFlow(tier, { escalate = false, oversizedPlan = false, fail
 
 test('historical evidence gaps keep clean factory audits incomplete', async () => {
   for (const evidenceStatus of ['incomplete', null]) {
-    const { result } = await factoryFlow('feature', { evidenceStatus })
+    const { result } = await factoryFlow('feature', { evidenceStatus, args: { evidence: true } })
     assert.equal(result.final.readiness.state, 'incomplete')
     assert.ok(result.final.readiness.incomplete.some(x => x.includes('historical evidence review incomplete: tests')))
     assert.equal(result.audit.fixPass, false)
     assert.equal(result.delivery.status, 'pending')
   }
-  const { result, calls } = await factoryFlow('feature')
+  const { result, calls } = await factoryFlow('feature', { args: { evidence: true } })
   assert.equal(result.final.readiness.state, 'ready')
   const check = calls.find(c => c.role === 'checker' && c.prompt.includes('# Step 1 — measure'))
   assert.ok(check.prompt.includes('--max-wait 5'))
@@ -279,15 +296,48 @@ test('historical evidence gaps keep clean factory audits incomplete', async () =
 })
 
 describe('Codex factory phase routing', () => {
+  test('completed Claude design with denials reaches debate and independent review with two seats', async () => {
+    const { result, calls, phases } = await factoryFlow('architecture', {
+      deniedProbe: true, args: { seats: ['sonnet', 'astra'], retro: false },
+    })
+    assert.equal(result.final.readiness.state, 'ready')
+    assert.equal(calls.filter(c => c.role === 'seat' && /-r0$/.test(c.key)).length, 2)
+    assert.ok(calls.some(c => c.role === 'seat' && /-r1$/.test(c.key)))
+    assert.ok(calls.some(c => c.role === 'auditor' && c.fresh))
+    assert.ok(!phases.includes('Build'))
+    assert.match(result.notes.join('\n'), /2 tool permission denial.*Bash/)
+    assert.match(result.notes.join('\n'), /accepted for verification and review/)
+    assert.match(result.notes.join('\n'), /out.json/)
+  })
+
+  test('a genuinely failed seat still stops a two-seat run with an accurate reason', async () => {
+    const { result, calls } = await factoryFlow('architecture', {
+      failedSeat: true, args: { seats: ['sonnet', 'astra'] },
+    })
+    assert.equal(result.status, 'failed')
+    assert.match(result.reason, /fewer than two seat submissions were accepted/)
+    assert.match(result.notes.join('\n'), /Claude turn interrupted/)
+    assert.ok(!calls.some(c => c.role === 'auditor'))
+  })
+
+  test('accepting a submission with denials cannot make missing required verification ready', async () => {
+    const { result } = await factoryFlow('simple', {
+      deniedProbe: true, deniedVerification: true,
+      args: { simple: { implementer: 'sonnet', reviewer: 'astra' } },
+    })
+    assert.notEqual(result.final.readiness.state, 'ready')
+    assert.match(result.notes.join('\n'), /tool permission denial/)
+  })
+
   for (const tier of ['simple', 'fix', 'feature', 'architecture']) {
     test(`${tier} completes through the shared engine and direct adapter`, async () => {
       const { result, calls, phases } = await factoryFlow(tier)
       assert.equal(result.factory.tier, tier)
       assert.equal(result.final.readiness.state, 'ready')
-      assert.ok(calls.every(c => c.vendor === 'codex'))
+      assert.ok(calls.every(c => c.vendor === (c.role === 'seat' && c.model === 'opus' ? 'claude' : 'codex')))
       assert.ok(calls.filter(c => ['intake', 'setup', 'checker'].includes(c.role)).every(c => c.fresh === true))
       assert.ok(calls.filter(c => c.role === 'auditor').every(c => c.fresh === true && c.threadKey.startsWith('audit-')))
-      assert.equal(calls.filter(c => c.role === 'seat' && /-r0$/.test(c.key)).length, tier === 'simple' ? 1 : tier === 'architecture' ? 3 : 2)
+      assert.equal(calls.filter(c => c.role === 'seat' && /-r0$/.test(c.key)).length, tier === 'simple' ? 1 : 3)
       assert.equal(phases.includes('Spec'), tier !== 'simple')
       assert.equal(phases.includes('Build'), tier === 'feature')
       assert.equal(phases.includes('Ratify'), tier === 'fix')
@@ -309,7 +359,7 @@ describe('Codex factory phase routing', () => {
     assert.equal(calls.filter(c => c.role === 'setup').length, 2)
     assert.ok(calls.filter(c => c.role === 'checker').every(c => c.model === 'gpt-6-astra'))
     const attempts = calls.filter(c => c.role === 'seat' && /-r0$/.test(c.key))
-    assert.equal(attempts.length, 3)
+    assert.equal(attempts.length, 4)
     assert.notEqual(attempts[0].run.runDir, attempts[1].run.runDir)
     assert.match(attempts[1].prompt, /You aren't shown the earlier change|You are not shown that attempt's change/)
   })
@@ -329,9 +379,9 @@ describe('Codex factory phase routing', () => {
     assert.equal(result.factory.startedAt, 'feature')
     assert.equal(result.factory.escalation.trigger, 'too-many-increments')
     assert.equal(calls.filter(c => c.role === 'setup').length, 2)
-    assert.equal(calls.filter(c => c.role === 'seat' && /-r0$/.test(c.key)).length, 5)
+    assert.equal(calls.filter(c => c.role === 'seat' && /-r0$/.test(c.key)).length, 6)
     assert.equal(phases.includes('Build'), false)
-    assert.ok(calls.every(c => c.vendor === 'codex'))
+    assert.ok(calls.every(c => c.vendor === (c.role === 'seat' && c.model === 'opus' ? 'claude' : 'codex')))
   })
 
   test('a failed independent review leaves an incomplete result and does not trigger escalation', async () => {

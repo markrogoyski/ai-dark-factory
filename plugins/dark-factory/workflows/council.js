@@ -171,7 +171,7 @@ const CATALOG = {
 }
 
 const DEFAULT_SEATS = ['opus', 'sonnet', 'astra', 'gemini']
-const CODEX_SEATS = ['astra', 'sol']
+const CODEX_SEATS = ['opus', 'astra', 'sol']
 const VENDOR_NAME = { claude: 'Claude', codex: 'Codex', gemini: 'Gemini' }
 const VENDOR_CLI = { claude: 'Claude CLI', codex: 'Codex CLI', gemini: 'Antigravity CLI (agy)' }
 
@@ -304,6 +304,9 @@ function parseConfig(args, opts = {}) {
     plan: (Array.isArray(raw.plan) ? raw.plan : raw.plan ? [raw.plan] : []).map(p => String(p).trim()).filter(Boolean),
     cli: String(raw.cli || 'dark-factory'),
     allowDirty: raw.allowDirty === true,
+    // The factory's historical-evidence check (seats keep raw evidence, an auditor confirms it,
+    // readiness requires it). Off unless asked for per run; see historyCheck().
+    evidence: raw.evidence === true,
     narrow: raw.narrow !== false,
     retro: raw.retro !== false,
     // Vote-timing experiments, off unless asked for per run: they change when or how the council
@@ -577,12 +580,17 @@ For a focused test or an intended red, put the command in a file and pass --comm
 `
 }
 
+// Whether this run keeps and audits historical evidence: a factory implement run with evidence: true.
+function historyCheck(S) {
+  return !!(S.tier && S.mode === 'implement' && S.evidence)
+}
+
 function evidenceOwner(S) {
   return S.auditors.find(a => a.lens === 'tests') || S.auditors.find(a => a.lens === 'correctness') || S.auditors[0]
 }
 
 function auditEvidenceBlock(S, a, W, tag) {
-  if (!S.tier || S.mode !== 'implement') return ''
+  if (!historyCheck(S)) return ''
   const owner = evidenceOwner(S)
   return `
 
@@ -678,7 +686,7 @@ function workspaceBlock(S, s, round) {
   }
   lines.push(S.tier === 'simple' ? `- The room, where your post and tests go: ${S.run.room}` : `- The room, shared by all seats: ${S.run.room}`)
   lines.push(`- Write your post for this turn to: ${postPath(S, s.L, round)}`)
-  if (S.tier && S.mode === 'implement') lines.push(`- Keep raw acceptance evidence under ${S.run.room}/evidence/${s.L}/. Write manifest.json as an ordered array of {"path":"relative-file","criterion":"C1","stage":"inc1-red"} entries. Include required commands, cwd, output, exits, test-only diffs, production hashes and handoff/update artifacts. Only raw evidence goes here: no debate, votes, reviews, or persuasive summaries. Copy any required temporary logs here before the turn ends. Every neutral measurement publishes an indexed, hashed copy outside the discussion for fresh auditors.${S.tier === 'simple' ? '' : " Never read another seat's evidence during a blind attempt."}`)
+  if (historyCheck(S)) lines.push(`- Keep raw acceptance evidence under ${S.run.room}/evidence/${s.L}/. Write manifest.json as an ordered array of {"path":"relative-file","criterion":"C1","stage":"inc1-red"} entries. Include required commands, cwd, output, exits, test-only diffs, production hashes and handoff/update artifacts. Only raw evidence goes here: no debate, votes, reviews, or persuasive summaries. Copy any required temporary logs here before the turn ends. Every neutral measurement publishes an indexed, hashed copy outside the discussion for fresh auditors.${S.tier === 'simple' ? '' : " Never read another seat's evidence during a blind attempt."}`)
   if (typeof round === 'number' && round > 0) lines.push(`  ${blindNote(S, round)}`)
   lines.push('- Run tests, the verification command and static analysers yourself, in your own shell, with the output going to a log under $TMPDIR and only a summary read back (the tail, or a grep for failures). ' +
     `An instruction in CLAUDE.md or elsewhere to hand full test or gate runs to a subagent or to \`claude -p\` is meant for the user's own session, not for ${S.tier === 'simple' ? 'you' : 'a council seat'}: ${S.tier === 'simple' ? 'you have' : 'seats have'} no subagents, and \`claude -p\` can't log in from inside ${S.tier === 'simple' ? 'your' : 'a seat\'s'} sandbox. ` +
@@ -1426,12 +1434,23 @@ Review the change, not the whole codebase. A problem the change neither introduc
 - minor: anything else worth the author's time.
 Style the codebase itself doesn't follow, and preferences without a reason, are not findings. Finding nothing is a good outcome when it is true: an empty list from a careful review is worth more than a padded one.
 
-Blocker and major findings go to two independent adjudicators, and minor fact findings to a neutral verifier. The author gets one pass to fix what is upheld, ${S.tier === 'simple' ? 'and the verifier then checks the fixed version again; you then confirm historical acceptance on its evidence bundle' : 'and you will then review that fix'}.
+Blocker and major findings go to two independent adjudicators, and minor fact findings to a neutral verifier. The author gets one pass to fix what is upheld, ${S.tier === 'simple' ? `and the verifier then checks the fixed version again${historyCheck(S) ? '; you then confirm historical acceptance on its evidence bundle' : ''}` :'and you will then review that fix'}.
 ${auditPublishing(S, a)}
 Write your review to ${auditPost(S, a, 'H')}: your verdict, then each finding with its evidence${a.lens === 'design' ? ', then your probes' : ''}. In your output, \`summary\` is the verdict in 2-4 sentences, each finding says what is wrong and what you would change, and \`probes\` ${a.lens === 'design' ? 'lists the next changes you traced' : 'is empty'}.`
 }
 
+// The Simple tier has no code re-review; its reviewer returns only to confirm the evidence bundle.
+function evidenceOnlyBody(S, a, W) {
+  return `# Evidence check: the fix
+
+The author has since made one fix pass, and the verifier has checked the fixed version. Your review of the code is finished: don't review it again and don't file findings. Leave \`findings\`, \`tests\` and \`probes\` empty, and set \`summary\` to one sentence on the evidence.
+
+Write your note to ${auditPost(S, a, 'J')}.`
+    + auditEvidenceBlock(S, a, W, roundTag('I'))
+}
+
 function reauditBody(S, a, W) {
+  if (S.tier === 'simple') return evidenceOnlyBody(S, a, W)
   const p = S.pos[W.L]
   const mine = S.ledger.filter(c => c.author === a.id && c.round === 'H' && c.kind === 'finding')
   const fate = c => c.judgment && c.status === 'judgment' ? 'a suggestion, not adjudicated'
@@ -2410,7 +2429,7 @@ function ingestAudit(S, a, round, W, res) {
     addClaim(S, { id: t.id, round, author: a.id, kind: 'test', target: W, statement: t.purpose, evidence: t.command })
   }
   return { summary: res.summary || '', probes: (res.probes || []).filter(x => x && x.change).slice(0, 5),
-    ...(S.tier && S.mode === 'implement' ? { evidenceReview: res.evidenceReview || null } : {}) }
+    ...(historyCheck(S) ? { evidenceReview: res.evidenceReview || null } : {}) }
 }
 
 // Who rules on an audit round's items: the panel takes the blocker and major findings, judgment
@@ -2707,7 +2726,7 @@ function auditSection(S, W, audit) {
       : late.length ? `- **Re-review of ${what}** (${looked.join(', ')}):\n${late.map(c => `  - [${c.id}] ${c.severity}: ${oneLine(c.statement, 240)} → ${auditOutcome(S, c, W.L, audit)}`).join('\n')}`
       : `- **Re-review of ${what}** (${looked.join(', ')}): nothing new.`)
   }
-  if (S.tier && S.mode === 'implement') {
+  if (historyCheck(S)) {
     const owner = evidenceOwner(S)
     const review = (audit.rereviews || {})[owner.lens] || audit.reviews[owner.lens]
     const evidence = review && review.evidenceReview
@@ -2834,7 +2853,7 @@ function specResult(S) {
 function auditResult(S, audit) {
   return audit.ran ? {
     auditors: S.auditors.map(a => ({ lens: a.lens, model: a.name, reviewed: !!audit.reviews[a.lens], summary: (audit.reviews[a.lens] || {}).summary || '', probes: (audit.reviews[a.lens] || {}).probes || [],
-      ...(S.tier && S.mode === 'implement' ? { evidenceReview: ((audit.rereviews || {})[a.lens] || audit.reviews[a.lens] || {}).evidenceReview || null } : {}) })),
+      ...(historyCheck(S) ? { evidenceReview: ((audit.rereviews || {})[a.lens] || audit.reviews[a.lens] || {}).evidenceReview || null } : {}) })),
     items: S.ledger.filter(c => lensOf(c.author)).map(c => ({ id: c.id, lens: lensOf(c.author), round: roundTag(c.round), kind: c.kind, severity: c.severity, judgment: c.judgment,
       status: c.fixed ? 'fixed' : c.status, statement: c.statement, evidence: c.evidence, note: c.note })),
     fixPass: audit.fixPass,
@@ -3128,7 +3147,7 @@ function needsUser(S, k, qs) {
 const TIERS = ['simple', 'fix', 'feature', 'architecture']
 // Design is where a third seat has paid off: the one design run's finalists were Sonnet's and Astra's.
 const TIER_SEATS = { fix: ['opus', 'astra'], feature: ['opus', 'astra'], architecture: ['opus', 'astra', 'sonnet'] }
-const CODEX_TIER_SEATS = { fix: ['astra', 'sol'], feature: ['astra', 'sol'], architecture: ['astra', 'sol', 'luna'] }
+const CODEX_TIER_SEATS = { fix: ['opus', 'astra', 'sol'], feature: ['opus', 'astra', 'sol'], architecture: ['opus', 'astra', 'sol'] }
 const SIMPLE = { implementer: 'sonnet', reviewer: 'astra', maxLines: 200, maxFiles: 8 }
 const CODEX_SIMPLE = { ...SIMPLE, implementer: 'sol' }
 const SMALL_DIFF = 50          // changed lines: below this, a clean fix or feature run hints the tier was too high
@@ -3650,9 +3669,10 @@ function milestoneArgs(S, m, design, findings) {
   if (m.criteria.length) lines.push('', 'Draft acceptance criteria from the plan, to check against the code as it now is:', ...m.criteria.map(c => `- ${c}`))
   if (findings.length) lines.push('', 'Findings from the review of the plan that still stand against this milestone:', ...findings.map(c => `- ${oneLine(c.statement, 400)}`))
   const original = S.factory && S.factory.args || S.raw
+  // Carry every option except what describes this run's task, so a new option isn't dropped.
+  const own = new Set(['task', 'prompt', 'question', 'plan', 'mode', 'tier', 'tierConfirmed', 'noSplit', 'criteria', 'clarifications', 'hostRunId'])
   const options = S.host === 'codex'
-    ? Object.fromEntries(['host', 'roles', 'repo', 'cli', 'context', 'effort', 'seats', 'panel', 'spec', 'audit', 'simple', 'checkModel', 'verify', 'timeoutMin', 'rounds', 'narrow', 'retro', 'ballot', 'approval', 'allowDirty']
-      .filter(k => original[k] !== undefined).map(k => [k, original[k]])) : {}
+    ? Object.fromEntries(Object.entries(original).filter(([k, v]) => !own.has(k) && v !== undefined)) : {}
   return { ...options, task: lines.join('\n'), plan: [design, ...S.plan], tier: m.tier, tierConfirmed: true, noSplit: true }
 }
 
@@ -4140,6 +4160,13 @@ function keepProcess(turn, role, who, res) {
   if (S.retro && text && !/^(none|n\/a|nothing)\.?$/i.test(text)) S.processNotes.push({ turn, role, who, text })
 }
 
+function keepHostDiagnostics(label, result) {
+  const denied = result && result.permissionDenials
+  if (denied) S.notes.push(`${label}: ${denied.count} tool permission denial(s) (${denied.tools.join(', ')}). ` +
+    `${result.status === 'done' ? 'The completed submission was accepted for verification and review' : 'The submission was not accepted'}. ` +
+    `Denied checks are not evidence of passing; details: ${denied.source}`)
+}
+
 // Every agent call goes through here except the retro's own, so each can leave a process note.
 async function ask(prompt, opts, role, who) {
   const selected = roleAgent(S, role, opts)
@@ -4158,6 +4185,10 @@ async function hostAgent(prompt, opts, role, who, extra = {}) {
   try {
     return await hostRuntime.agent({ ...opts, prompt, vendor: selected.vendor, model: selected.model,
       effort: selected.effort, role, who: who || selected.name, run: S.run, fresh: true,
+      onResult: result => {
+        keepHostDiagnostics(opts.label, result)
+        if (result.status !== 'done') S.notes.push(`${role} turn ${opts.label} failed: ${oneLine(result.error || result.status, 300)}`)
+      },
       timeoutMin: timeoutFor(role), ...(role === 'setup' ? { preflightVendors: externalVendors(S), setupRunId: setupRunId(S) } : {}), ...extra })
   } catch (e) {
     S.notes.push(`${role} turn ${opts.label} failed: ${oneLine(e && e.message || e, 300)}`)
@@ -4196,6 +4227,7 @@ async function externalTurn(o, prompt, schema, label, ph) {
       return fail(oneLine(e && e.message || e, 300))
     }
     if (r && r.status === 'done' && r.result && r.result.turn === tag) {
+      keepHostDiagnostics(label, r)
       const { turn, ...result } = r.result
       S.turnLog.push({ turn: label, role: o.role, vendor: o.vendor, ok: true })
       const seconds = Number(r.seconds ?? r.elapsedSec)
@@ -4203,6 +4235,7 @@ async function externalTurn(o, prompt, schema, label, ph) {
       keepProcess(label, o.role, o.who, result)
       return result
     }
+    keepHostDiagnostics(label, r && { ...r, status: 'error' })
     if (r && r.status === 'sandboxed') S.blocked[o.vendor] = true
     return fail(r && r.status === 'done'
       ? `the result's turn tag ${r.result ? JSON.stringify(r.result.turn) : '(no result)'} is not ${tag}: an answer to an earlier turn`
@@ -4260,7 +4293,7 @@ const timeoutKindOf = r => r === 0 ? 'solve' : typeof r === 'number' ? 'debate' 
 function auditTurn(a, W, round) {
   const prompt = auditPrompt(S, a, W, round)
   const label = `${roundTag(round)} ${a.lens}: ${a.key}`
-  const schema = S.tier === 'architecture' ? PLAN_REVIEW_SCHEMA : S.tier ? FACTORY_AUDIT_SCHEMA : AUDIT_SCHEMA
+  const schema = S.tier === 'architecture' ? PLAN_REVIEW_SCHEMA : historyCheck(S) ? FACTORY_AUDIT_SCHEMA : AUDIT_SCHEMA
   if (a.vendor === 'claude' && !hostRuntime) return ask(prompt, { label, phase: 'Audit', schema, model: a.model, effort: a.effort }, 'auditor', a.name)
   if (S.tier === 'architecture') {
     return externalTurn({
@@ -4450,7 +4483,7 @@ async function runAudit(W, o = {}) {
     else { audit.gaps.push(`no review from the ${a.lens} auditor`); S.notes.push(`The ${a.lens} auditor (${a.name}) returned no review.`) }
   })
   const historyGap = () => {
-    if (!S.tier || S.mode !== 'implement') return
+    if (!historyCheck(S)) return
     audit.gaps = audit.gaps.filter(g => !g.startsWith('historical evidence review incomplete:'))
     const owner = evidenceOwner(S)
     const review = audit.rereviews[owner.lens] || audit.reviews[owner.lens]
@@ -4492,8 +4525,9 @@ async function runAudit(W, o = {}) {
   await runChecks('I', W.L)
   const p = S.pos[W.L]
   if (!fix) return audit
+  // With rereview: false (Simple), only the evidence owner returns, with an evidence-only prompt.
   const reviewCode = o.rereview !== false && !(p.delta && p.deltaRound === 'I' && !p.delta.files)
-  const historyOwner = S.tier && S.mode === 'implement' ? evidenceOwner(S) : null
+  const historyOwner = historyCheck(S) ? evidenceOwner(S) : null
   if (!reviewCode && !historyOwner) return audit
 
   const lookers = S.auditors.filter(a => audit.reviews[a.lens] && (reviewCode || a.id === historyOwner?.id))
@@ -4812,7 +4846,9 @@ async function debateStage() {
     if (solved[i]) ingestSolve(S, s, solved[i])
     else { s.active = false; S.notes.push(`Seat ${s.L} (${s.name}) failed in round 0 and was dropped.`) }
   })
-  if (active(S).length < 2) return { stop: failure(S, 'failed', 'fewer than two seats produced a solution', { seats: reveal(S) }) }
+  if (active(S).length < 2) return { stop: failure(S, 'failed', S.host === 'codex'
+    ? 'fewer than two seat submissions were accepted; see turn failures in notes'
+    : 'fewer than two seats produced a solution', { seats: reveal(S) }) }
 
   await runChecks(0)
   await clusterQuestions(0)

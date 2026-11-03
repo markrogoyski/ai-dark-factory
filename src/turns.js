@@ -8,6 +8,13 @@ function keepProcess(turn, role, who, res) {
   if (S.retro && text && !/^(none|n\/a|nothing)\.?$/i.test(text)) S.processNotes.push({ turn, role, who, text })
 }
 
+function keepHostDiagnostics(label, result) {
+  const denied = result && result.permissionDenials
+  if (denied) S.notes.push(`${label}: ${denied.count} tool permission denial(s) (${denied.tools.join(', ')}). ` +
+    `${result.status === 'done' ? 'The completed submission was accepted for verification and review' : 'The submission was not accepted'}. ` +
+    `Denied checks are not evidence of passing; details: ${denied.source}`)
+}
+
 // Every agent call goes through here except the retro's own, so each can leave a process note.
 async function ask(prompt, opts, role, who) {
   const selected = roleAgent(S, role, opts)
@@ -26,6 +33,10 @@ async function hostAgent(prompt, opts, role, who, extra = {}) {
   try {
     return await hostRuntime.agent({ ...opts, prompt, vendor: selected.vendor, model: selected.model,
       effort: selected.effort, role, who: who || selected.name, run: S.run, fresh: true,
+      onResult: result => {
+        keepHostDiagnostics(opts.label, result)
+        if (result.status !== 'done') S.notes.push(`${role} turn ${opts.label} failed: ${oneLine(result.error || result.status, 300)}`)
+      },
       timeoutMin: timeoutFor(role), ...(role === 'setup' ? { preflightVendors: externalVendors(S), setupRunId: setupRunId(S) } : {}), ...extra })
   } catch (e) {
     S.notes.push(`${role} turn ${opts.label} failed: ${oneLine(e && e.message || e, 300)}`)
@@ -64,6 +75,7 @@ async function externalTurn(o, prompt, schema, label, ph) {
       return fail(oneLine(e && e.message || e, 300))
     }
     if (r && r.status === 'done' && r.result && r.result.turn === tag) {
+      keepHostDiagnostics(label, r)
       const { turn, ...result } = r.result
       S.turnLog.push({ turn: label, role: o.role, vendor: o.vendor, ok: true })
       const seconds = Number(r.seconds ?? r.elapsedSec)
@@ -71,6 +83,7 @@ async function externalTurn(o, prompt, schema, label, ph) {
       keepProcess(label, o.role, o.who, result)
       return result
     }
+    keepHostDiagnostics(label, r && { ...r, status: 'error' })
     if (r && r.status === 'sandboxed') S.blocked[o.vendor] = true
     return fail(r && r.status === 'done'
       ? `the result's turn tag ${r.result ? JSON.stringify(r.result.turn) : '(no result)'} is not ${tag}: an answer to an earlier turn`
@@ -128,7 +141,7 @@ const timeoutKindOf = r => r === 0 ? 'solve' : typeof r === 'number' ? 'debate' 
 function auditTurn(a, W, round) {
   const prompt = auditPrompt(S, a, W, round)
   const label = `${roundTag(round)} ${a.lens}: ${a.key}`
-  const schema = S.tier === 'architecture' ? PLAN_REVIEW_SCHEMA : S.tier ? FACTORY_AUDIT_SCHEMA : AUDIT_SCHEMA
+  const schema = S.tier === 'architecture' ? PLAN_REVIEW_SCHEMA : historyCheck(S) ? FACTORY_AUDIT_SCHEMA : AUDIT_SCHEMA
   if (a.vendor === 'claude' && !hostRuntime) return ask(prompt, { label, phase: 'Audit', schema, model: a.model, effort: a.effort }, 'auditor', a.name)
   if (S.tier === 'architecture') {
     return externalTurn({
@@ -318,7 +331,7 @@ async function runAudit(W, o = {}) {
     else { audit.gaps.push(`no review from the ${a.lens} auditor`); S.notes.push(`The ${a.lens} auditor (${a.name}) returned no review.`) }
   })
   const historyGap = () => {
-    if (!S.tier || S.mode !== 'implement') return
+    if (!historyCheck(S)) return
     audit.gaps = audit.gaps.filter(g => !g.startsWith('historical evidence review incomplete:'))
     const owner = evidenceOwner(S)
     const review = audit.rereviews[owner.lens] || audit.reviews[owner.lens]
@@ -360,8 +373,9 @@ async function runAudit(W, o = {}) {
   await runChecks('I', W.L)
   const p = S.pos[W.L]
   if (!fix) return audit
+  // With rereview: false (Simple), only the evidence owner returns, with an evidence-only prompt.
   const reviewCode = o.rereview !== false && !(p.delta && p.deltaRound === 'I' && !p.delta.files)
-  const historyOwner = S.tier && S.mode === 'implement' ? evidenceOwner(S) : null
+  const historyOwner = historyCheck(S) ? evidenceOwner(S) : null
   if (!reviewCode && !historyOwner) return audit
 
   const lookers = S.auditors.filter(a => audit.reviews[a.lens] && (reviewCode || a.id === historyOwner?.id))

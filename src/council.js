@@ -236,7 +236,9 @@ async function debateStage() {
     if (solved[i]) ingestSolve(S, s, solved[i])
     else { s.active = false; S.notes.push(`Seat ${s.L} (${s.name}) failed in round 0 and was dropped.`) }
   })
-  if (active(S).length < 2) return { stop: failure(S, 'failed', 'fewer than two seats produced a solution', { seats: reveal(S) }) }
+  if (active(S).length < 2) return { stop: failure(S, 'failed', S.host === 'codex'
+    ? 'fewer than two seat submissions were accepted; see turn failures in notes'
+    : 'fewer than two seats produced a solution', { seats: reveal(S) }) }
 
   await runChecks(0)
   await clusterQuestions(0)

@@ -31,8 +31,9 @@ documents in `plan`, including uncommitted plans; seats start from HEAD and cann
 see those files. Never silently enable `allowDirty` or commit/stash the user's changes to get
 past a dirty-tree result.
 
-The Codex profile uses OpenAI models by default. Explicit Claude or Gemini seats retain their
-vendors. Use `--concurrency` to bound simultaneous model turns and `--timeout-min` for turn
+The Codex profile's default seats are Claude Opus, Codex Astra and Codex Sol, so it needs an
+authenticated `claude` CLI; reviewers and roles default to OpenAI models. Explicit Claude or
+Gemini seats retain their vendors. Use `--concurrency` to bound simultaneous model turns and `--timeout-min` for turn
 deadlines. The engine supplies each seat's task and evidence; do not add the coordinator's
 conversation history to blind attempts or fresh reviews.
 

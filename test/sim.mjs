@@ -1852,12 +1852,14 @@ async function scenarioFactoryFindings() {
       default: throw new Error(`unexpected role ${role.kind}`)
     }
   }
-  const { result, calls } = await factory('factory-findings', handler, { task: LOG_TASK }, { audit: true })
+  const { result, calls } = await factory('factory-findings', handler, { task: LOG_TASK, evidence: true }, { audit: true })
   assert.deepEqual(calls.map(c => c.role.kind), ['intake', 'setup', 'solve', 'check', 'audit', 'check', 'panel', 'panel', 'auditfix', 'check', 'reaudit', 'record'])
   const fix = calls.find(c => c.role.kind === 'auditfix')
   assert.ok(fix.prompt.startsWith('# How this works') && fix.prompt.includes('# Fix pass') && fix.prompt.includes('An independent reviewer read your change') && !fix.prompt.includes('After ratification'))
   assert.ok(fix.prompt.includes('[XR1] review auditor, major') && fix.prompt.includes('[TXR1] test from the review auditor') && fix.prompt.includes('Suggestions, not adjudicated'))
-  assert.ok(calls.find(c => c.role.kind === 'reaudit').prompt.includes('You own the historical acceptance check'), 'the reviewer confirms evidence for the fixed version')
+  const again = calls.find(c => c.role.kind === 'reaudit').prompt
+  assert.ok(again.includes('You own the historical acceptance check'), 'the reviewer confirms evidence for the fixed version')
+  assert.ok(again.includes('# Evidence check: the fix') && !again.includes('Review only what the fix changed'), 'Simple has no code re-review')
   assert.deepEqual([result.status, result.final.readiness.state, result.final.fixPass], ['done', 'ready', true])
   assert.ok(result.final.diff.endsWith('/room/final3/A.diff'))
   assert.deepEqual(result.review.items.map(i => [i.id, i.status]), [['XR1', 'fixed'], ['XR2', 'judgment'], ['TXR1', 'verified']])

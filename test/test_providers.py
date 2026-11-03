@@ -83,7 +83,10 @@ sys.exit(int(os.environ.get('CLAUDE_TEST_EXIT', '0')))
         self.assertTrue(settings['sandbox']['enabled'])
         self.assertFalse(settings['sandbox']['allowUnsandboxedCommands'])
         self.assertEqual(args[args.index('--permission-prompts') + 1], 'none')
-        self.assertFalse(any('bypass' in x.lower() or 'skip-permissions' in x for x in args))
+        guidance = args[args.index('--append-system-prompt') + 1]
+        self.assertIn('one simple operation per command', guidance)
+        self.assertIn('Never claim that an unrun check passed', guidance)
+        self.assertFalse(any('bypass' in x.lower() or 'skip-permissions' in x for x in args if x.startswith('--')))
         self.assertEqual(json.loads(args[args.index('--json-schema') + 1]), self.schema)
 
     def test_read_only_has_no_shell_or_edit_tools(self):
@@ -117,10 +120,43 @@ sys.exit(int(os.environ.get('CLAUDE_TEST_EXIT', '0')))
         records = [json.loads(line) for line in council.read(os.path.join(self.root, 'usage.jsonl')).splitlines()]
         self.assertEqual(records[-1]['threadTotal'], {'input_tokens': 17, 'output_tokens': 2})
 
-    def test_denied_tools_and_invalid_outputs_are_errors(self):
+    def test_completed_turn_retains_denials_without_discarding_the_submission(self):
+        denial = {'tool_name': 'Bash', 'tool_input': {'command': 'php probe.php; echo status'}}
+        out = {'subtype': 'success', 'terminal_reason': 'completed', 'is_error': False,
+               'session_id': 'session-1', 'permission_denials': [denial, denial],
+               'structured_output': {'answer': 'Probe denied; result unverified.', 'turn': 'r0-A'}}
+        result = self.run_turn(out)
+        self.assertEqual(result['status'], 'done')
+        self.assertEqual(result['result'], out['structured_output'])
+        self.assertEqual(result['permissionDenials']['count'], 2)
+        self.assertEqual(result['permissionDenials']['tools'], ['Bash'])
+        self.assertEqual(json.loads(council.read(result['permissionDenials']['source'])), out)
+        self.assertEqual(len(self.calls()), 1, 'a denied optional probe does not trigger a retry')
+
+    def test_denials_do_not_rescue_interrupted_stale_or_missing_outputs(self):
+        good = {'subtype': 'success', 'terminal_reason': 'completed', 'session_id': 'session-1',
+                'permission_denials': [{'tool_name': 'Bash'}],
+                'structured_output': {'answer': 'done', 'turn': 'r0-A'}}
+        cases = [
+            (dict(good, terminal_reason='interrupted'), 'did not complete'),
+            (dict(good, subtype='error_max_turns', errors=['turn limit']), 'turn limit'),
+            (dict(good, subtype=None), 'did not complete'),
+            (dict(good, structured_output={'answer': 'old', 'turn': 'stale'}), 'schema'),
+            (dict(good, structured_output=None), 'schema'),
+            (dict(good, session_id=None), 'session_id'),
+        ]
+        for index, (out, expected) in enumerate(cases):
+            with self.subTest(expected=expected):
+                result = self.run_turn(out, job=f'denied-{index}', fresh=True)
+                self.assertEqual(result['status'], 'error')
+                self.assertIn(expected, result['error'])
+                self.assertEqual(result['permissionDenials']['tools'], ['Bash'])
+        with mock.patch.dict(os.environ, {'CLAUDE_TEST_EXIT': '1'}):
+            self.assertEqual(self.run_turn(good)['status'], 'error')
+
+    def test_invalid_outputs_are_errors(self):
         good = {'subtype': 'success', 'session_id': 'session-1', 'structured_output': {'answer': 'done', 'turn': 'r0-A'}}
         cases = [
-            (dict(good, permission_denials=[{'tool_name': 'Bash'}]), 'permission denied'),
             (dict(good, structured_output={'answer': 'old', 'turn': 'stale'}), 'schema'),
             (dict(good, structured_output=None, result='plain text'), 'schema'),
             (dict(good, is_error=True, errors=['Not logged in']), 'Not logged in'),

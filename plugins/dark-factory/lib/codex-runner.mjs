@@ -237,10 +237,11 @@ export function createRuntime({ repo, hostRunDir, concurrency = 3, timeoutMin = 
         if (cancelled || signal?.aborted) throw new Error('Run interrupted')
         if (result.status === 'done') {
           try { validateResult(result.result, request.schema) } catch (error) {
-            result = { status: 'error', error: `Invalid ${request.label || key} output: ${error.message}`, errorClass: 'schema' }
+            result = { ...result, status: 'error', error: `Invalid ${request.label || key} output: ${error.message}`, errorClass: 'schema' }
           }
         }
-        emit({ type: 'turn.completed', label: request.label, job: key, status: result.status, seconds: result.seconds, error: result.error })
+        emit({ type: 'turn.completed', label: request.label, job: key, status: result.status, seconds: result.seconds,
+          error: result.error, permissionDenials: result.permissionDenials })
         return result
       } catch (error) {
         emit({ type: 'turn.failed', label: request.label, job: key, error: error.message })
@@ -289,6 +290,8 @@ export function createRuntime({ repo, hostRunDir, concurrency = 3, timeoutMin = 
     const payload = `${prompt}\n\nSet \`turn\` in your output to exactly "${tag}".\n\n<<<OUTPUT_SCHEMA\n${JSON.stringify(schema)}\nOUTPUT_SCHEMA>>>\n`
     const result = await turn({ ...request, key, threadKey: key, fresh: true,
       cwd: setup ? repo : scratch, writable, sandbox: writes ? 'workspace-write' : 'read-only', prompt: payload, schema })
+    // The shared engine receives provider diagnostics separately from the model's schema.
+    request.onResult?.(result)
     if (result.status !== 'done') return null
     const { turn: returnedTag, ...value } = result.result
     if (returnedTag !== tag) return null

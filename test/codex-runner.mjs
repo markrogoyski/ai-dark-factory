@@ -142,6 +142,26 @@ test('preflight runs in the host and fails before launching the setup model', as
   assert.deepEqual(calls, [['preflight', '--vendors', 'codex']])
 })
 
+test('permission diagnostics survive validation, host events and native role unwrapping', async t => {
+  const dir = temporary(t), events = [], diagnostics = []
+  const permissionDenials = { count: 1, tools: ['Bash'], source: join(dir, 'jobs/check/out.json') }
+  let valid = true
+  const runtime = createRuntime({ repo: dir, hostRunDir: dir, emit: event => events.push(event), execute: async argv => {
+    const payload = readFileSync(argv[argv.indexOf('--prompt-file') + 1], 'utf8')
+    const schema = JSON.parse(payload.split('<<<OUTPUT_SCHEMA\n')[1].split('\nOUTPUT_SCHEMA>>>')[0])
+    return { status: 'done', permissionDenials, result: { ok: valid ? true : 'invalid', turn: schema.properties.turn.enum[0] } }
+  } })
+  const request = { prompt: 'check', schema: object, vendor: 'claude', model: 'sonnet', role: 'checker', onResult: r => diagnostics.push(r) }
+  assert.deepEqual(await runtime.agent(request), { ok: true }, 'diagnostics must not alter the model output schema')
+  valid = false
+  assert.equal(await runtime.agent(request), null)
+  assert.deepEqual(diagnostics.map(r => r.status), ['done', 'error'])
+  assert.equal(diagnostics[1].errorClass, 'schema')
+  for (const record of [...diagnostics, ...events.filter(e => e.type === 'turn.completed')]) {
+    assert.deepEqual(record.permissionDenials, permissionDenials)
+  }
+})
+
 test('custom model slugs get stable distinct filesystem-safe session and job keys', async t => {
   const dir = temporary(t), calls = []
   const runtime = createRuntime({ repo: dir, hostRunDir: dir, execute: async argv => {

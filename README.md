@@ -3,7 +3,8 @@
 A workflow engine for Claude Code and Codex in which models solve one task independently,
 debate it on an evidence ledger, and converge on one result. The Claude entry point defaults to
 Claude Opus, Claude Sonnet, Codex Astra and Gemini Flash. The Codex entry point defaults to
-OpenAI models and also supports explicit Claude and Gemini seats.
+Claude Opus, Codex Astra and Codex Sol seats with OpenAI reviewers, and also supports explicit
+Gemini seats.
 
     /dark-factory:council Fix the cancellation in Special::confluentHypergeometric at large negative z
 
@@ -50,13 +51,16 @@ separate CLI sessions; the runner starts them directly and bounds their concurre
 not need Claude relay agents. All four factory tiers and the council are available; the separate
 `ensemble` workflow remains a Claude Code entry point.
 
-You need Node, Python 3, Git, and an authenticated `codex` CLI. The default Codex profile needs
-no Claude or Gemini account. Explicit mixed-vendor selections additionally need the relevant
-authenticated `claude` or `agy` CLI. Each CLI keeps its normal permission controls; a required
-permission that cannot be obtained headlessly is reported as a failure.
+You need Node, Python 3, Git, and authenticated `codex` and `claude` CLIs: the default Codex
+profile has a Claude Opus seat. Pass `--seats astra,sol` for an OpenAI-only run. Gemini seats
+additionally need the authenticated `agy` CLI. Each CLI keeps its normal permission controls.
+A completed Claude turn with valid output can proceed after a denied tool call; the report and host
+events retain the denial and link to its raw details in the job's `out.json`. Denied checks do not
+count as passing evidence: required verification and independent review still determine readiness.
+Interrupted turns and invalid output remain failures. Headless seats cannot grant new permissions.
 
-Simple uses Sol to implement and Astra to review. Fix and Feature use Astra and Sol seats;
-Architecture adds Luna. Orchestration roles can be changed through `roles`, for example
+Simple uses Sol to implement and Astra to review. Fix, Feature and Architecture use Opus,
+Astra and Sol seats. Orchestration roles can be changed through `roles`, for example
 `{"intake": "sol", "checker": {"model": "astra", "effort": "high"}}`.
 
 You can also invoke the runner without installing a skill:
@@ -119,7 +123,8 @@ cannot replace a failed snapshot check, and a gate that alters tracked snapshot 
 Codex checkers poll running shell sessions and helper jobs, while `--suite-timeout` controls
 the gate deadline.
 
-Builders place raw historical artifacts under `room/evidence/SEAT/` with an ordered
+The historical-evidence check is off unless a factory run passes `evidence: true`. With it on,
+builders place raw historical artifacts under `room/evidence/SEAT/` with an ordered
 `manifest.json` array of `{ "path": "inc1/red.log", "criterion": "C5", "stage": "inc1-red" }`
 entries. Required artifacts include commands, cwd, outputs, exits, test-only diffs, source
 hashes, and handoff updates. Debate, votes and review conclusions stay out. Measurement
