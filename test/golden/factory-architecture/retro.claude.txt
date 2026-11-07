@@ -27,7 +27,7 @@ Return up to 3 things that worked and should be kept, and 3 to 5 changes, the mo
 1. **<change>** <why>. Evidence: <evidence>. Where: <where>.
 ```
 Don't copy the process notes or run facts into it; the next command attaches them exactly.
-2. Run this with the Bash tool, exactly as written: dark-factory retro --run-dir '/tmp/proj/.council/test-farch' --expect 2534-cc5ae771
+2. Run this with the Bash tool, exactly as written: dark-factory retro --run-dir '/tmp/proj/.council/test-farch' --expect 3531-47c77701
    The last line it prints is JSON. "ok": set saved to its "path". "sandboxed": run the same command again with the sandbox disabled (dangerouslyDisableSandbox: true). "error", or "sandboxed" again: set saved to "" and error to what it printed.
 
 # The report
@@ -98,7 +98,7 @@ Reviewers who never saw the debate reviewed the milestone plan, each through one
 
 # Process notes and run facts
 
-=====BEGIN PAYLOAD 2534-cc5ae771=====
+=====BEGIN PAYLOAD 3531-47c77701=====
 ## Process notes
 
 - None: no turn reported anything in its way.
@@ -125,6 +125,55 @@ Reviewers who never saw the debate reviewed the milestone plan, each through one
 
 ```json
 {
+  "metrics": {
+    "version": 1,
+    "taskId": null,
+    "variant": null,
+    "repetition": null,
+    "workflow": "factory",
+    "tier": "architecture",
+    "strategy": "independent",
+    "host": "claude",
+    "elapsedMs": null,
+    "turns": 37,
+    "turnsByRole": {
+      "intake": 1,
+      "setup": 1,
+      "relay": 8,
+      "spec": 2,
+      "seat": 8,
+      "checker": 9,
+      "auditor": 6,
+      "panel": 2
+    },
+    "failedTurns": 0,
+    "findingsByStage": {
+      "debate": {
+        "found": 1,
+        "upheld": 1,
+        "refuted": 0,
+        "fixed": 0
+      },
+      "audit": {
+        "found": 2,
+        "upheld": 1,
+        "refuted": 0,
+        "fixed": 1
+      }
+    },
+    "readiness": "ready",
+    "delivery": "not-recorded",
+    "escalated": false,
+    "requestedImplementation": true,
+    "deliveredImplementation": false,
+    "tokens": null,
+    "cost": null,
+    "limits": {
+      "maxTurns": null,
+      "maxRunMin": null
+    },
+    "scope": "before-retrospective"
+  },
   "runId": "test-farch",
   "repo": "/tmp/proj",
   "workflow": "factory",
@@ -169,4 +218,4 @@ Reviewers who never saw the debate reviewed the milestone plan, each through one
   "milestones": 3
 }
 ```
-=====END PAYLOAD 2534-cc5ae771=====
+=====END PAYLOAD 3531-47c77701=====

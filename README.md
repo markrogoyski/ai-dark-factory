@@ -50,8 +50,7 @@ $dark-factory --workflow pair Implement the retry policy
 The skill runs the same factory/council JavaScript through a local Node runner. Tier routing,
 escalation, verification, scoring, and readiness stay in that shared engine. Model turns are
 separate CLI sessions; the runner starts them directly and bounds their concurrency. It does
-not need Claude relay agents. All four factory tiers and the council are available; the separate
-`ensemble` workflow remains a Claude Code entry point.
+not need Claude relay agents. All four factory tiers, Pair, Council, and Ensemble are available through the same shared engine.
 
 You need Node, Python 3, Git, and authenticated `codex` and `claude` CLIs: the default Codex
 profile has a Claude Opus seat. Pass `--seats astra,sol` for an OpenAI-only run. Gemini seats
@@ -101,8 +100,7 @@ worktrees and evidence. Exit 0 means a completed ready result, 2 means a decisio
 readiness, and 1 means execution failure. Always inspect `final.readiness`, not just `status`.
 
 The skill handles `needs-plan`, `needs-tier`, `needs-split`, and `needs-user` using the same
-factory decisions described below. Reruns use updated arguments and start a new host run;
-there is no workflow checkpoint resume. Seat sessions persist across their turns within a run.
+factory decisions described below. Reruns normally start a new host run. Use `--resume HOST_RUN_DIR` to replay validated completed operations and continue a saved checkpoint; see Process controls below. Seat sessions persist across turns within a run.
 The reviewed change stays in its worktree until delivered to the main checkout. Architecture
 returns reviewed milestones and does not automatically build them.
 
@@ -163,8 +161,130 @@ historical-evidence options do not apply to Pair.
 
 Results include `design`, `reviews`, `findings`, `stopReason`, and `final.readiness`. Changes stay
 in `final.worktree`; a ready snapshot has `delivery.status: pending`. Apply it within the user's
-authorization, then use the delivery verification below. Reruns start new runs; Pair does not
-resume checkpoints or automatically launch a council when it stops.
+authorization, then use the delivery verification below. Pair does not automatically launch a council when it stops. The Codex host supports validated checkpoint resume; changed task inputs or evidence require a new run.
+
+## Process controls, explanation, and resume
+
+Use `--explain` to inspect the resolved process before implementation:
+
+```text
+$dark-factory --explain Add cancellation support
+$dark-factory --workflow pair --explain Implement the retry policy
+$dark-factory --strategy pair Implement the retry policy
+```
+
+Factory explanation runs its read-only intake, then returns the tier, strategy, participants,
+reviewers, required CLIs, verification setting, limits, and expected deliverable. Missing plans,
+split decisions, and tier disagreements still take precedence. Explanation of an explicit Pair,
+Council, or Ensemble performs no model turns. It does not run setup, preflight, or verification,
+and does not claim readiness. Architecture explicitly says it returns a plan without building.
+The same controls are available as object arguments in Claude Code.
+
+`maxTurns` (`--max-turns`) limits workflow model turns, including orchestration and explicit
+recovery turns. Provider transport retries within a turn remain governed by that CLI helper.
+`maxRunMin` (`--max-run-min`) limits run time; Codex cancels active jobs at the deadline, while
+native Claude checks the deadline before launching another turn. `--timeout-min` remains the
+per-turn deadline, and `--concurrency` bounds simultaneous turns in Codex. These are limits,
+not price forecasts. Exhausted required work remains incomplete. An optional retrospective
+that could not run does not erase a completed review. Codex retains spent turns and active
+elapsed time across resumes; time spent waiting between invocations is excluded.
+
+For Council and Factory's independent tiers, opt into repeated repairs with:
+
+```json
+{"task":"Fix the boundary case","repair":{"maxPasses":2,"minor":"block"},"maxTurns":60,"maxRunMin":45}
+```
+
+Each repair is measured, then reviewed in fresh contexts and separate checkouts. Existing
+findings retain stable IDs and evidence. The loop stops on readiness, unchanged artifacts and
+unresolved findings, missing review, or the repair limit (1–20 passes). The default minor policy
+requires actionable minor findings to close; `minor: "report"` retains them in the report without
+making them repair obligations. Preferences remain suggestions. Simple uses this fresh-review
+loop by default with one repair pass and retains its escalation rules. Council, Fix, Feature,
+and Architecture retain their original audit path unless `repair` is supplied. Pair continues
+to use its separate design-and-code `maxReviews` budget and strict finding closure.
+
+Codex saves a checkpoint when all in-flight operations at a boundary have completed successfully:
+
+```sh
+node plugins/dark-factory/bin/dark-factory-codex --resume /project/.council/host-abc
+node plugins/dark-factory/bin/dark-factory-codex --resume /project/.council/host-abc --args-file answers.json
+```
+
+A resume validates the engine, repository HEAD, tracked working/index changes, reference bytes,
+tracked and unignored worktree files, snapshot refs, and saved evidence before reusing any operation. Completed
+operations replay without model calls; new reviews remain fresh. A lock prevents two hosts
+from continuing the same run. The same task and execution options must be retained. Allowed
+updates are appended answers to the paused run's question IDs, `tierConfirmed`, `noSplit`,
+`explain`, and run-wide budgets. For a debate question the host preserves its `afterRound`. Pair author questions are free text; incorporate those answers into `context` in a new run.
+
+If an interrupted write changed a worktree, or inputs/evidence changed, resume fails with the
+mismatch and leaves all files intact. Start a new run in that case; no checkpoint is silently
+reset and no dependent review is reused. Ignored dependency directories and external toolchains are not frozen by the checkpoint; start a new run if those inputs change. An interruption before the first successful boundary
+may have no checkpoint. A new run after a changed task should carry the full questions and
+answers in `context`, rather than old question IDs. `hostRunDir`, `checkpoint`, and `hostEvents`
+in the result identify the saved artifacts.
+
+## Ensemble: reviewed alternatives
+
+```text
+/dark-factory:ensemble Compare fixes for the iterator boundary
+$dark-factory --workflow ensemble --seats sol,astra Compare fixes for the iterator boundary
+```
+
+Ensemble uses the shared setup, separate worktrees, neutral snapshot checks, verification gate,
+and host adapters. It retains its distinct stances and review lenses, followed by an advisory
+comparison. It does not debate, repair, or select a winner. Specify `mode: "implement"` or
+`"investigate"` when the wording is ambiguous.
+
+Object arguments support `candidates` (2–6, default 4), `reviewers` (1–4, default 2; capped by
+available lenses), and `models: {solve, review, compare}`. Claude defaults remain Sonnet solvers,
+per-lens Sonnet/Opus reviewers, and an Opus comparison. Codex defaults use Sol solvers,
+Sol/Astra reviewers, and an Astra comparison. Explicit `seats` chooses candidate models, using
+the shared model catalog. If `candidates` is also supplied, its count must match `seats`.
+References, criteria, verification, dirty-tree policy, explanation and run budgets are shared.
+
+Each candidate includes its measured `final.snapshotRef`, `final.readiness`, review gaps, and
+`delivery` status. Missing reviewers, stale reviewed trees, failed gates, or failed criteria
+cannot become a ready candidate. The overall result remains `advisory` with delivery
+`pending-selection` (Codex exit 2). Selecting an unchanged ready implementation allows its
+candidate object to be saved as the delivery result for `verify-delivery`. A merged change
+needs fresh measurement and independent review. With four candidates and two lenses the clean
+path is now about 18 turns: setup, four solvers, four neutral checks, eight reviews, and comparison,
+before external relay overhead or retries.
+
+## Evaluate process value without model calls
+
+Every workflow result includes versioned `metrics`; Codex also saves `metrics.json` in `hostRunDir`.
+It records workflow, tier, strategy, turns by role, failed turns, elapsed time when available,
+findings by stage, readiness, escalation, and recorded token usage. The runner also records
+repository HEAD. Factory retrospective facts include a metrics snapshot before the retrospective itself; the evaluator keeps that scope separate from completed-run metrics. Unknown measurements and dollar costs stay unknown. Native workflow results
+can be saved as JSON and passed to the same evaluator.
+
+Give repeated evaluations stable identities in the workflow arguments:
+
+```json
+{"task":"Fix the iterator boundary","evaluation":{"taskId":"iterator-boundary","variant":"repair-2","repetition":1},"repair":{"maxPasses":2}}
+```
+
+```sh
+node plugins/dark-factory/bin/dark-factory-evaluate --output comparison.json run-1/result.json run-2/result.json
+```
+
+The offline evaluator deduplicates runs, groups by host/workflow/tier/strategy/variant, and
+reports turns per ready result, readiness and escalation rates, findings by stage, available
+token totals, and delivery failures. Ensemble's ready candidates and review findings are counted
+separately from overall run readiness. Matched task comparisons include the repository revision;
+unknown revisions are labeled. Use several representative tasks and repetitions per variant:
+small changes, ambiguous bugs, scoped features, and architecture work. Compare like-for-like
+inputs and inspect the actual defects found before tuning defaults. Readiness is process
+evidence, not proof of correctness, and duplicate findings are not independent discoveries.
+
+For failures discovered after delivery, pass `--outcomes outcomes.json`. This is an explicit
+observation map keyed by `hostRunDir` (or `runDir` for native runs), with values such as
+`{"status":"regression","evidence":"integration-log.txt:42"}` or `{"status":"passed","evidence":"acceptance-log.txt"}`.
+The evaluator reports observed regressions separately from delivery-check failures and unknown
+outcomes. It never runs tasks, changes defaults, contacts providers, or invents current prices.
 
 ## Factory and Pair verification and delivery
 
@@ -227,7 +347,7 @@ claiming a test pass.
     .claude-plugin/marketplace.json   the marketplace: lists the plugins in this repo
     plugins/dark-factory/             the plugin, and the only thing that ships
       .claude-plugin/plugin.json
-      workflows/                      pair.js, factory.js, council.js (built from src/), ensemble.js
+      workflows/                      pair.js, factory.js, council.js, ensemble.js (built from src/)
       bin/dark-factory                the helper CLI the agents call
       bin/dark-factory-codex          the Codex host runner
       skills/dark-factory/            the Codex skill and its relative launcher
@@ -252,6 +372,8 @@ wasn't enough.
 | `fix` | the council with two seats, Opus and Astra: blind attempts, debate, audit | 15–25 |
 | `feature` | Opus and Astra plan it blind and debate the plans; the chosen plan's author builds it in checked increments; a three-lens audit | 25–40 |
 | `architecture` | Opus, Astra and Sonnet design it blind and debate the designs; the chosen design's author writes a milestone plan; a three-lens review and one revision; nothing is built | 35–50 |
+
+The table describes the independent strategy. Factory can also select Pair for scoped implementations with one clear approach. Use `strategy: "independent"` to retain the tier's competing-attempt process, or `strategy: "pair"` with `pair: {author, reviewer, maxReviews}` to request Pair. Task tier and collaboration strategy are reported separately. Explicit independent-process options (`seats`, `simple`, `panel`, `spec`, `audit`, `roles`, or `evidence`) keep automatic routing on the independent strategy; combining them with an explicit Pair strategy is rejected rather than silently discarding them.
 
 The model names below describe the Claude profile. Codex uses its own OpenAI defaults while
 keeping the same stages and rules; explicit `seats`, `simple`, `panel`, `spec`, `audit`, and
@@ -363,8 +485,7 @@ keeping the same stages and rules; explicit `seats`, `simple`, `panel`, `spec`, 
 - **The Simple tier** reuses the council's machinery: the setup agent (1–3 criteria, one
   worktree), the neutral checker, the audit with a single `review` lens (IDs `XR1`, `TXR1`), the
   panel for blocker and major findings, and the audit's one fix pass. A failing verification
-  command also earns the fix pass. There's no re-review: the checker's run on the fixed version
-  is the verification. `simple: {implementer, reviewer, maxLines, maxFiles}` changes it, and
+  command also earns the fix pass. Every repair receives a fresh independent code review as well as neutral verification. The default repair budget is one pass; `repair: {maxPasses: 2}` allows a bounded additional pass. `simple: {implementer, reviewer, maxLines, maxFiles}` changes it, and
   every `/dark-factory:council` argument passes through to the council tiers.
 - **Facts on every run.** Each factory run puts a JSON facts block in its retro payload: tier,
   how it was chosen, intake's signals, the escalation (from the tier it started at, with each
@@ -771,7 +892,7 @@ failure naming the line. After an intended change, run `UPDATE_GOLDEN=1 node tes
 read `git diff test/golden` before committing. The CLI's polling intervals can be shortened
 for tests with `COUNCIL_JOB_POLL`, `COUNCIL_TRANSCRIPT_POLL` and `COUNCIL_TRANSCRIPT_WAIT`.
 
-`plugins/dark-factory/workflows/ensemble.js` ships in the same plugin; it is hand-written.
+`plugins/dark-factory/workflows/ensemble.js` is generated from the shared sources, like the other workflows.
 
 Requirements: Claude Code with the Workflow tool, the `codex` CLI and the Antigravity CLI
 (`agy`) logged in, `python3`, and `git`. Implement mode needs a repository with at least one

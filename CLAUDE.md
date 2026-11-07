@@ -9,7 +9,7 @@ below are rules for changing this repo.
   `plugins/dark-factory/`. Only that directory ships to users; `src/`, `tools/` and `test/` are
   development only. A new workflow goes in `plugins/dark-factory/workflows/` and runs as
   `/dark-factory:<meta.name>`.
-- `plugins/dark-factory/workflows/council.js`, `factory.js`, and `pair.js` are generated from `src/` (the file
+- `plugins/dark-factory/workflows/council.js`, `factory.js`, `pair.js`, and `ensemble.js` are generated from `src/` (the file
   lists are in `tools/sources.mjs`). Edit `src/`, then `make build`. Never edit a built file.
 - Agents call the helper by its bare name, `dark-factory`: the plugin's `bin/` is on their PATH.
   Never write an install path into a prompt; the plugin's directory changes between installs.
@@ -19,7 +19,8 @@ below are rules for changing this repo.
 - `meta` in `src/00-meta.js` and `src/00-meta-factory.js` must stay a plain literal.
 - `/council` must not change when the factory does: factory-only behaviour goes behind `S.tier`,
   `S.factory` or `S.workflowName`, and the council's goldens stay byte-identical.
-- `plugins/dark-factory/workflows/ensemble.js` is hand-written. Edit it directly.
+- All four workflows are generated. Ensemble keeps its advisory selection policy in `src/`
+  while sharing setup, measurement, and runtime adapters.
 - Prompts are the product. A prompt change fails the golden tests, which is intended: run
   `UPDATE_GOLDEN=1 node test/sim.mjs`, then read `git diff test/golden` before committing.
 - The prompt hash exists twice, in `src/lib/util.js` and in `bin/dark-factory`. Change both

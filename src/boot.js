@@ -5,3 +5,4 @@ let S = newState(parseConfig(args))
 // Claude supplies agent()/parallel(); the standalone runner supplies this optional adapter.
 // Keep the feature check here so the same generated workflow runs in both hosts.
 const hostRuntime = typeof factoryRuntime === 'undefined' ? null : factoryRuntime
+const requestControl = { started: hostRuntime?.now ? hostRuntime.now() - (hostRuntime.elapsedBefore || 0) : S.controls.maxRunMin ? Date.now() : 0, turns: 0, ...S.controls }

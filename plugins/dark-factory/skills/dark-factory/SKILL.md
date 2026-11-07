@@ -1,6 +1,6 @@
 ---
 name: dark-factory
-description: "Run dark-factory for implementation, investigation, or design with independent verification and review. Use when the user asks for the pair, factory, or council process. Pair uses one author and one reviewer through design, implementation, and repeated fixes."
+description: "Run dark-factory for implementation, investigation, or design with independent verification and review. Use when the user asks for the pair, factory, council, or ensemble process. Pair uses one author and one reviewer through design, implementation, and repeated fixes."
 ---
 
 # Dark Factory
@@ -22,6 +22,10 @@ The paths above are placeholders. Use the actual skill and repository paths, quo
 arguments. The launcher finds the shipped runner and helper itself; neither needs to be on PATH.
 Node, Python 3, and an authenticated Codex CLI must be available. Mixed-vendor runs additionally
 need their selected CLIs and authentication.
+
+Use `--explain` to resolve a process without starting implementation (Factory performs intake only). Preserve requested `--strategy`, `--max-turns`, `--max-run-min`, and `--repair-passes`; full repair and evaluation options can be passed through `--args-file`.
+
+Use `--workflow ensemble` for independently reviewed alternatives. Its overall result remains advisory; inspect each candidate's readiness and missing reviews before selecting one. A merge requires fresh verification and review. An unchanged ready candidate can be saved as the result for delivery verification.
 
 Use `--workflow pair` for one author with one reviewer and `--workflow council` for a requested
 council run; factory is the default. Pair owns design review, implementation, repeated fixes,
@@ -63,20 +67,17 @@ Handle paused results using their actual fields and the user's existing instruct
 - `needs-plan`: locate the named document and rerun with its absolute path in `plan`. Ask only
   if the intended document cannot be determined.
 - `needs-tier`: show the requested and recommended tiers with intake's reason. If the user
-  already confirmed the choice, carry it forward; otherwise obtain that choice. Rerun with
-  `tierConfirmed: true` to retain the pin, or change `tier` to the accepted recommendation.
+  already confirmed the choice, carry it forward; otherwise obtain that choice. Resume the validated checkpoint with
+  `tierConfirmed: true` to retain the pin. Accepting a different `tier` changes execution arguments and requires a new run.
 - `needs-split`: show the independent pieces and dependencies. Follow an already stated
-  preference, or obtain the user's choice. `noSplit: true` retains one run; separate runs
+  preference, or obtain the user's choice. `noSplit: true` retains one run and can be supplied on resume; separate runs
   need each earlier result delivered and committed before dependent work starts from HEAD.
-- `needs-user`: present the unresolved questions. Append each full question and its answer
-  to `context`, preserving any original context, and rerun with the original arguments.
-  A new run may assign different question IDs; do not reuse old IDs as `clarifications`.
+- `needs-user`: present the unresolved questions. For questions with IDs and a validated resume, append `{id, answer}` to `clarifications` and use `--resume` with the saved hostRunDir. The host preserves the debate round. For Pair free-text questions, failed validation, or changed tasks, start a new run with each full question and answer appended to `context`; do not reuse old IDs in a new run.
 - `blocked`, `failed`, or incomplete readiness: report the concrete failing check, missing
   review, or CLI problem. Do not relabel it as success, change vendors without authority,
   or retry the same failing launch indefinitely.
 
-Reruns use this launcher and an updated args file. There is no workflow checkpoint/resume
-command: a rerun starts a new host run. Seat sessions continue only across turns within a run.
+Reruns normally start a new run. Use `--resume HOST_RUN_DIR` to reuse a validated checkpoint. The runner checks engine, repository, reference inputs, snapshots, worktrees and evidence before replaying completed operations. Changed task/configuration or evidence requires a new run; never reset files to force checkpoint validation. Saved worktrees and evidence remain intact. Run budgets retain spent work across resumes.
 
 ## Present and deliver
 

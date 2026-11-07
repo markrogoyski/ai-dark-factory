@@ -76,6 +76,7 @@ function withNotes(schema) {
 const VERDICT = { type: 'string', enum: ['verified', 'refuted', 'fabricated', 'unverifiable', 'n/a'] }
 
 const CHECK_SCHEMA = strict({ type: 'object', properties: {
+  ...(S.controls.repair ? { artifactHash: { type: 'string', description: 'For a design/plan: the exact hash printed by dark-factory hash --file POST. Empty for implementation.' } } : {}),
   measured: { type: 'boolean', description: 'Did the measure command complete?' },
   diff:     { type: 'object', properties: { files: { type: 'integer' }, added: { type: 'integer' }, removed: { type: 'integer' },
     tree: { type: 'string', description: 'snapshot.tree from the measure output, exactly; "" if there is none.' } } },
@@ -215,6 +216,7 @@ const SETUP_SCHEMA = strict({ type: 'object', properties: {
 
 // The factory's intake, and the Simple tier's one implementer, who can say the task isn't simple.
 const INTAKE_SCHEMA = strict({ type: 'object', properties: {
+  strategy: { type: 'string', enum: ['independent', 'pair'], description: 'Pair for scoped implementation with one clear approach and iterative review; independent for competing hypotheses or plans. Architecture and investigations require independent.' },
   status:      { type: 'string', enum: ['ok', 'needs-plan', 'needs-split'] },
   tier:        { type: 'string', enum: TIERS },
   mode:        { type: 'string', enum: MODES },

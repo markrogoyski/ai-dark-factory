@@ -116,7 +116,7 @@ function simpleTrigger(S, stage, o = {}) {
   }
   if (stage === 'review') {
     // A judgment finding the panel agreed on has become a fact (applyPanel), and is still about the approach.
-    const design = S.ledger.filter(c => c.round === 'H' && c.kind === 'finding' && c.wasJudgment && W8[c.severity] >= 2 && c.status === 'verified' && !c.withdrawn)
+    const design = S.ledger.filter(c => (c.round === 'H' || c.round === 'review0') && c.kind === 'finding' && c.wasJudgment && W8[c.severity] >= 2 && c.status === 'verified' && !c.withdrawn)
     if (design.length) {
       return { trigger: 'design-finding', to: 'feature', why: `the panel upheld ${design.map(c => `${c.severity} ${c.id}`).join(', ')} against the approach itself`, findings: design.map(c => c.id) }
     }
@@ -137,7 +137,7 @@ function simpleTrigger(S, stage, o = {}) {
 function escalationBrief(S, esc) {
   const L = esc.L || S.letters[0]
   const p = S.pos[L] || {}
-  const upheld = S.ledger.filter(c => c.round === 'H' && c.kind === 'finding' && !c.withdrawn && (c.status === 'verified' || (esc.findings || []).includes(c.id)))
+  const upheld = S.ledger.filter(c => (c.round === 'H' || c.round === 'review0') && c.kind === 'finding' && !c.withdrawn && (c.status === 'verified' || (esc.findings || []).includes(c.id)))
   const failing = validTests(S).filter(t => S.testResults[t.id] && S.testResults[t.id][L] && S.testResults[t.id][L] !== 'pass')
   return {
     from: S.tier || 'simple', to: esc.to, trigger: esc.trigger, why: esc.why, runDir: S.run ? S.run.runDir : '',
@@ -183,6 +183,7 @@ function runFacts(S, o) {
   const findings = S.ledger.filter(c => lensOf(c.author) && c.kind === 'finding')
   const count = (xs, key) => xs.reduce((m, x) => { const k = key(x); m[k] = (m[k] || 0) + 1; return m }, {})
   return {
+    metrics: { ...evaluationFacts(S, { final: { readiness: o.ready } }, null, S.turnLog.length), scope: 'before-retrospective' },
     runId: S.run ? S.run.runId : '', repo: S.run ? S.run.repoRoot : '', workflow: S.workflowName,
     tier: f.tier || null, chosenBy: f.chosenBy || null, asked: f.asked || null, recommended: f.recommended || null,
     signals: f.intake ? f.intake.signals : null,
@@ -319,7 +320,7 @@ ${payload}
 // A Simple run that finished without handing the work up.
 function simpleResult(S, o) {
   const { W, ready, audit, report, retro } = o
-  const tag = audit.fixPass ? roundTag('I') : S.auditedTag
+  const tag = audit.finalTag || (audit.fixPass ? roundTag('I') : S.auditedTag)
   const f = S.factory
   return {
     status: 'done', tier: 'simple', mode: S.mode, task: S.task, runDir: S.run.runDir, room: S.run.room, refs: S.refs,
@@ -330,6 +331,7 @@ function simpleResult(S, o) {
       diff: `${S.run.room}/${tag}/${W.L}.diff`, snapshotRef: `refs/council/${S.run.runId}/${W.L}-${tag}`, worktree: W.wt,
       check: finalSummary(S, W.L), readiness: ready, suite: S.pos[W.L].suite, criteria: S.pos[W.L].criteria, fixPass: audit.fixPass,
     },
+    audit: auditResult(S, audit),
     review: audit.ran ? {
       reviewer: S.auditors.map(a => a.name).join(', '), summary: ((audit.reviews.review) || {}).summary || '',
       items: S.ledger.filter(c => lensOf(c.author)).map(c => ({ id: c.id, kind: c.kind, severity: c.severity, judgment: c.judgment,
@@ -414,7 +416,7 @@ function featureReport(S, o) {
 // adds how the tier was reached.
 function featureResult(S, o) {
   const { outcome, W, ready, audit, report, retro } = o
-  const tag = audit.fixPass ? roundTag('I') : S.auditedTag
+  const tag = audit.finalTag || (audit.fixPass ? roundTag('I') : S.auditedTag)
   const b = S.build
   return {
     status: 'done', tier: 'feature', mode: S.mode, task: S.task, runDir: S.run.runDir, room: S.run.room, refs: S.refs,

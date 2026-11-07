@@ -1,13 +1,10 @@
+function newPairState() {
+  return { stage: 'design', design: '', approvedDesign: '', findings: [], reviews: [], author: null, measurement: null, label: null, lastReview: null, signatures: [], stop: '', questions: [] }
+}
+
 // Pair decisions are shared by both hosts. Only the reviewer can close findings.
 function parsePairArgs(args) {
-  if (typeof args !== 'string') return args || {}
-  const raw = {}
-  let rest = args, match
-  while ((match = rest.match(/^\s*--(author|reviewer|max-reviews)[= ]\s*([^\s]+)\s+([\s\S]*)$/))) {
-    raw[match[1] === 'max-reviews' ? 'maxReviews' : match[1]] = match[2]
-    rest = match[3]
-  }
-  return { ...raw, task: rest }
+  return parseArgs(args)
 }
 
 function parsePairConfig(args) {
@@ -131,5 +128,5 @@ function pairResult(S, status = 'blocked') {
     forTheOrchestrator: 'Read final.readiness first. Report unresolved findings or missing evidence before any success summary. ' +
       'Spot-check the reviewed snapshot and report the design and implementation review outcomes. The change stays in final.worktree. ' +
       'Deliver only within the user\'s authorization, preserving unrelated edits; use dark-factory verify-delivery afterward. ' +
-      'Do not start a council automatically. Reruns start new runs; there is no checkpoint resume.' }
+      'Do not start a council automatically. The Codex host can resume a validated checkpoint with --resume hostRunDir; changed inputs or evidence require a new run.' }
 }

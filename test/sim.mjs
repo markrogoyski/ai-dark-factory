@@ -223,6 +223,8 @@ function roleOf(label) {
   if ((m = label.match(/^r(\d+):([A-F]) (\w+)/))) return { kind: m[1] === '0' ? 'solve' : 'debate', round: +m[1], L: m[2], key: m[3] }
   if ((m = label.match(/^b(\d+):([A-F]) (\w+)/))) return { kind: 'ballot', round: +m[1], L: m[2], key: m[3] }
   if ((m = label.match(/^final2:([A-F]) (\w+)/))) return { kind: 'fix', L: m[1], key: m[2] }
+  if ((m = label.match(/^repair(\d+):([A-F]) (\w+)/))) return { kind: 'auditfix', L: m[2], key: m[3], pass: +m[1] }
+  if ((m = label.match(/^review(\d+) (\w+): (\w+)/))) return { kind: +m[1] === 0 ? 'audit' : 'reaudit', tag: m[2], key: m[3], pass: +m[1] }
   if ((m = label.match(/^final3:([A-F]) (\w+)/))) return { kind: 'auditfix', L: m[1], key: m[2] }
   if ((m = label.match(/^(audit|reaudit) (\w+): (\w+)/))) return { kind: m[1], tag: m[2], key: m[3] }
   if ((m = label.match(/^spec (\w+): (\w+)/))) return { kind: 'spec', tag: m[1], key: m[2] }
@@ -1823,11 +1825,11 @@ async function scenarioFactorySimple() {
   assert.ok(sv.includes('You are the implementer of a change that was judged simple') && sv.includes('`tooBig`') && !sv.includes('# How the council works') && !sv.includes('another seat'))
   const rv = call('audit')
   assert.ok(/\(relay/.test(rv.label) && rv.role.tag === 'review', 'Astra reviews through a relay')
-  assert.ok(rv.prompt.includes('You are an independent reviewer') && rv.prompt.includes('# What to review') && rv.prompt.includes('room/r0/A.diff') &&
-    rv.prompt.includes('the verifier then checks the fixed version again'))
+  assert.ok(rv.prompt.includes('Independently review the exact') && rv.prompt.includes('Your disposable checkout') && rv.prompt.includes('room/r0/A.diff') &&
+    rv.prompt.includes('including interactions and defects introduced by a repair'))
   assert.ok(/--checkout 'A-r0'/.test(rv.raw), 'the reviewer gets a checkout of the round-0 snapshot')
   assert.ok(result.final.diff.endsWith('/room/r0/A.diff') && result.final.snapshotRef === 'refs/council/test-fsimple/A-r0')
-  assert.ok(result.report.markdown.includes('### Simple change, by Claude Sonnet') && result.report.markdown.includes('### Review') && !result.report.markdown.includes('Independent audit'))
+  assert.ok(result.report.markdown.includes('### Simple change, by Claude Sonnet') && result.report.markdown.includes('### Independent review') && !result.report.markdown.includes('Independent audit'))
   assert.ok(result.forTheOrchestrator.includes('as a simple change') && result.forTheOrchestrator.includes('git apply'))
   const facts = factsIn(call('record').prompt)
   assert.deepEqual([facts.workflow, facts.tier, facts.chosenBy, facts.escalation, facts.readiness, facts.signals.files], ['factory', 'simple', 'intake', null, 'ready', 1])
@@ -1842,8 +1844,8 @@ async function scenarioFactoryFindings() {
       case 'intake': return INTAKE('simple')
       case 'setup': return SETUP('test-ffind')
       case 'solve': return solve(role.L, NOT_BIG)
-      case 'check': return check(prompt, () => 'verified', () => role.tag === 'final3' ? 'yes' : 'no',
-        () => prompt.includes('TXR1') ? [{ test: 'TXR1', outcome: role.tag === 'final3' ? 'pass' : 'fail', note: '' }] : [])
+      case 'check': return check(prompt, () => 'verified', () => role.tag === 'repair1' ? 'yes' : 'no',
+        () => prompt.includes('TXR1') ? [{ test: 'TXR1', outcome: role.tag === 'repair1' ? 'pass' : 'fail', note: '' }] : [])
       case 'audit': return { summary: 'Logs the wrong counter.', probes: [], tests: [{ id: 'TXR1', purpose: 'logs attempt 2 on the second try', command: 'phpunit TXR1Test.php' }],
         findings: [{ severity: 'major', kind: 'fact', statement: 'logs the attempt index from 0, not the count', evidence: 'TXR1 fails' },
                    { severity: 'minor', kind: 'judgment', statement: 'use the existing debug() helper', evidence: 'src/Log.php:10' }] }
@@ -1854,17 +1856,17 @@ async function scenarioFactoryFindings() {
     }
   }
   const { result, calls } = await factory('factory-findings', handler, { task: LOG_TASK, evidence: true }, { audit: true })
-  assert.deepEqual(calls.map(c => c.role.kind), ['intake', 'setup', 'solve', 'check', 'audit', 'check', 'panel', 'panel', 'auditfix', 'check', 'reaudit', 'record'])
+  assert.deepEqual(calls.map(c => c.role.kind), ['intake', 'setup', 'solve', 'check', 'audit', 'check', 'panel', 'panel', 'auditfix', 'check', 'reaudit', 'record'], JSON.stringify({ready: result.final?.readiness, audit: result.audit}))
   const fix = calls.find(c => c.role.kind === 'auditfix')
-  assert.ok(fix.prompt.startsWith('# How this works') && fix.prompt.includes('# Fix pass') && fix.prompt.includes('An independent reviewer read your change') && !fix.prompt.includes('After ratification'))
-  assert.ok(fix.prompt.includes('[XR1] review auditor, major') && fix.prompt.includes('[TXR1] test from the review auditor') && fix.prompt.includes('Suggestions, not adjudicated'))
+  assert.ok(fix.prompt.startsWith('# How this works') && fix.prompt.includes('Repair pass 1 of at most 1') && fix.prompt.includes('A fresh independent review follows') && !fix.prompt.includes('After ratification'))
+  assert.ok(fix.prompt.includes('[XR1]') && fix.prompt.includes('[TXR1]'))
   const again = calls.find(c => c.role.kind === 'reaudit').prompt
   assert.ok(again.includes('You own the historical acceptance check'), 'the reviewer confirms evidence for the fixed version')
-  assert.ok(again.includes('# Evidence check: the fix') && !again.includes('Review only what the fix changed'), 'Simple has no code re-review')
+  assert.ok(again.includes('Check every criterion and the changed code'), 'Simple re-reviews the measured repair')
   assert.deepEqual([result.status, result.final.readiness.state, result.final.fixPass], ['done', 'ready', true])
-  assert.ok(result.final.diff.endsWith('/room/final3/A.diff'))
+  assert.ok(result.final.diff.endsWith('/room/repair1/A.diff'))
   assert.deepEqual(result.review.items.map(i => [i.id, i.status]), [['XR1', 'fixed'], ['XR2', 'judgment'], ['TXR1', 'verified']])
-  assert.ok(result.report.markdown.includes('- **Fix pass:** A fixed what was upheld or failing') && !result.report.markdown.includes('Re-review'))
+  assert.ok(result.report.markdown.includes('2 fresh review cycle(s)'))
   return 'the review\'s upheld finding and failing test go to one fix pass, checked again, with historical evidence reviewed; still Simple'
 }
 
@@ -1900,7 +1902,7 @@ async function scenarioFactoryEscalate() {
     setups[1].prompt.includes('handed up because the verification command still fails after the fix pass') && setups[1].prompt.includes('- C1: handles empty input'))
   assert.ok(/--seats A,B /.test(setups[1].prompt) && setups[1].prompt.includes('Mode: implement.'))
   const fix = r.calls.find(c => c.role.kind === 'auditfix')
-  assert.ok(fix.prompt.includes('The verification command fails on your version') && fix.prompt.includes('expected 2, got 1'))
+  assert.ok(fix.prompt.includes('The required verification fails') && fix.prompt.includes('expected 2, got 1'))
   for (const c of r.calls.filter(c => c.role.kind === 'solve').slice(1)) {
     assert.ok(c.prompt.includes('# An earlier attempt') && c.prompt.includes('You are not shown that attempt\'s change') && c.prompt.includes('expected 2, got 1'), `${c.label}: told why`)
     assert.ok(!c.prompt.includes('test-fesc/room'), `${c.label}: not shown the earlier change`)

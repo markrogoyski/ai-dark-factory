@@ -168,6 +168,7 @@ function auditOutcome(S, c, W, audit) {
 // `audit`: what runAudit returns.
 function auditSection(S, W, audit) {
   if (!audit || !audit.ran) return ''
+  if (audit.cycles) return `\n\n### Independent review\n\n${audit.cycles.length} fresh review cycle(s), ${audit.cycles.filter(c => c.needed).length} cycle(s) needing repair. Budget: ${audit.repairPolicy.maxPasses} repair passes; minor findings: ${audit.repairPolicy.minor}.\n\n${S.ledger.filter(c => lensOf(c.author)).map(c => `[${c.id}] ${c.severity || c.kind}: ${c.statement} → ${c.fixed ? 'fixed' : c.status}`).join('\n')}\n${audit.stopReason || ''}\n${audit.gaps.join('\n')}`
   const simple = S.tier === 'simple', arch = S.tier === 'architecture'
   const lines = [simple ? `${S.host === 'codex' ? 'An independent reviewer' : 'A reviewer from another vendor'}, ${S.auditors.map(a => a.name).join(', ')}, read the change without seeing how it was made.`
     : arch ? `Reviewers who never saw the debate reviewed the milestone plan, each through one lens: ${listText(S.auditors.map(a => `${a.lens} (${a.name})`))}.`
@@ -257,7 +258,7 @@ function specQuestions(S, qs) {
     questions: qs.map(f => ({ id: f.id, question: f.statement, readings: f.readings, raisedBy: `the ${f.lens} reviewer`, evidence: f.evidence, adjudicators: f.note })),
     criteria: S.criteria, notes: S.notes,
     forTheOrchestrator: S.host === 'codex'
-      ? `Before any seat started, the specification review found questions only the user can settle. Show questions[] with their readings and ask for the answers. Preserve the original args, append each question and answer to context, and rerun the runner with that args file. This starts a new run; keep the old run directory for inspection.`
+      ? `Before any seat started, the specification review found questions only the user can settle. Show questions[] with their readings and ask for the answers. Preserve the original args, append {id, answer} to clarifications, and use --resume with this hostRunDir and the updated args file. The host validates the saved repository and evidence before replaying completed operations. If validation fails, start a new run with the full questions and answers in context.`
       :
       `Before any seat started, the spec review found ${qs.length === 1 ? 'a question' : 'questions'} about the request that the code and the task don't settle, ` +
       'and this run was told to ask rather than assume (spec: "ask"). Ask the user (AskUserQuestion works well: offer each question\'s readings as options; the first is the most conservative). ' +
@@ -325,6 +326,7 @@ function auditResult(S, audit) {
     items: S.ledger.filter(c => lensOf(c.author)).map(c => ({ id: c.id, lens: lensOf(c.author), round: roundTag(c.round), kind: c.kind, severity: c.severity, judgment: c.judgment,
       status: c.fixed ? 'fixed' : c.status, statement: c.statement, evidence: c.evidence, note: c.note })),
     fixPass: audit.fixPass,
+    ...(audit.cycles ? { cycles: audit.cycles, repairPolicy: audit.repairPolicy, stopReason: audit.stopReason, gaps: audit.gaps } : {}),
   } : null
 }
 
@@ -590,7 +592,7 @@ function needsUser(S, k, qs) {
     report: interimReport(S, k),
     seats: reveal(S), notes: S.notes,
     forTheOrchestrator: S.host === 'codex'
-      ? `Questions reached the escalation threshold after ${roundTag(k)}. Show report.markdown and questions[] with each seat's assumptions, then ask the user for answers. Preserve the original args, append each question and answer to context, and rerun the runner with that args file. This starts a new run; keep the old run directory for inspection.`
+      ? `Questions reached the escalation threshold after ${roundTag(k)}. Show report.markdown and questions[] with each seat's assumptions, then ask the user for answers. Preserve the original args, append {id, answer} to clarifications, and use --resume with this hostRunDir and the updated args file. The host validates the saved repository and evidence before replaying completed operations. If validation fails, start a new run with the full questions and answers in context.`
       :
       `${qs.length === 1 ? 'A question' : 'Questions'} reached the escalation threshold (${escalateAt(S)} seats) after ${roundTag(k)}: ` +
       'the council believes the request itself is ambiguous. First show the user report.markdown, the debate so far, with the seat-to-model reveal, so they can see what prompted the question. ' +

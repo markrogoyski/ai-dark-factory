@@ -1068,6 +1068,7 @@ function auditFixPrompt(S, W, todo) {
 }
 
 function versionText(S, c, Y, k) {
+  if (c.snapshotTag) return S.mode === 'implement' ? `${Y}'s reviewed snapshot (diff ${S.run.room}/${c.snapshotTag}/${Y}.diff; git -C ${S.run.repoRoot} show refs/council/${S.run.runId}/${Y}-${c.snapshotTag}:<path>)` : `${Y}'s reviewed artifact ${c.artifactPost}`
   const snap = r => S.mode === 'implement'
     ? `${Y}'s round-${r} version (diff ${S.run.room}/r${r}/${Y}.diff; checkout: \`${S.cli} materialize --run-dir ${S.run.runDir} --seat ${Y} --label r${r}\`)`
     : `${Y}'s round-${r} post (${S.run.room}/r${r}/${Y}.md)`
@@ -1112,7 +1113,7 @@ function checkerPrompt(S, Y, k, items) {
   const tag = roundTag(k)
   const since = sinceTag(S, k)
   const tests = validTests(S).map(t => t.id)
-  const post = k === 'H' ? S.pos[Y].post : postPath(S, Y, k)          // the audit re-measures the final version, which has no post of its own
+  const post = (k === 'H' || /^review\d+$/.test(k)) ? S.pos[Y].post : postPath(S, Y, k)          // the audit re-measures the final version, which has no post of its own
   const arch = S.tier === 'architecture'
   const what = typeof k === 'number' ? `round ${k}` : k === 'F' ? `the final ${S.mode === 'plan' ? 'plan' : arch ? 'design and its milestone plan' : 'version'}` : buildStep(k) ? `build increment ${buildStep(k)} of ${S.build.increments.length}`
     : k === 'H' ? (arch ? 'the final milestone plan, with the independent review\'s findings' : 'the final version, with the independent audit\'s findings and tests')
@@ -1127,7 +1128,7 @@ It snapshots ${Y}'s worktree, then runs the verification command and each publis
 `
     : `# Step 1 — count the post
 
-This is ${S.mode === 'plan' ? 'the planning stage' : S.mode === 'design' ? 'a design task' : 'an investigation task'}, so there is nothing to measure. Run \`wc -w < ${post}\` and set postWords to the number (0 if the file doesn't exist). Set measured=false, diff to zeros with tree "", delta to {since: "", files: 0, added: 0, removed: 0}, suite to {ran: false, passed: false, tail: ""}, and crossTests to [].
+This is ${S.mode === 'plan' ? 'the planning stage' : S.mode === 'design' ? 'a design task' : 'an investigation task'}, so there is nothing to measure. Run \`wc -w < ${post}\` and set postWords to the number (0 if the file doesn't exist). ${S.controls.repair ? `Run ${S.cli} hash --file ${shq(post)} and copy its hash to artifactHash. ` : ''}Set measured=false, diff to zeros with tree "", delta to {since: "", files: 0, added: 0, removed: 0}, suite to {ran: false, passed: false, tail: ""}, and crossTests to [].
 `
   return `You are a neutral verifier for a council of AI models. You wrote none of this work and have no stake in which position wins. Your job is to establish facts.
 
@@ -1203,7 +1204,8 @@ function setupPrompt(S) {
   const letters = S.letters.join(',')
   const A = S.letters[0]
   const vendors = externalVendors(S)
-  const what = S.workflowName === 'pair' ? 'a pair run: one author will design and implement the task in its own git worktree, with independent review of the design and each implementation revision'
+  const what = S.workflowName === 'ensemble' ? 'an ensemble run: independent candidates in separate worktrees, measured and reviewed before an advisory ranking; no debate or automatic selection'
+    : S.workflowName === 'pair' ? 'a pair run: one author will design and implement the task in its own git worktree, with independent review of the design and each implementation revision'
     : S.tier === 'simple' ? 'a factory run of a simple change: one AI model will make the change below in its own git worktree, and another will review it'
     : S.tier === 'feature' ? 'a factory run of a feature: several AI models will each plan the task below independently, in their own git worktrees, and debate the plans, and the author of the chosen plan will then build it'
     : S.tier === 'architecture' ? 'a factory run of an architecture: several AI models will each design the task below independently, in their own git worktrees, and debate the designs, and the author of the chosen design will then break it into milestones, each to be built later by a run of its own'
@@ -1261,7 +1263,9 @@ Return the values from these steps.`
 // it can't anchor on one, and its prompt stays the same when the user confirms or switches,
 // which lets the resumed run replay it from cache.
 function intakePrompt(S) {
-  return `You are the intake for a software factory. A task arrives, and you decide how much process it needs, before anyone works on it. Read; don't change anything, don't attempt the task, and don't run tests or builds. A few minutes of reading is enough: the task, any document it names, and the code it touches.
+  return `Choose collaboration separately from complexity: strategy=pair for a scoped implementation with one clear approach that benefits from repeated review; strategy=independent for competing root causes or plans. Keep the tier based on task complexity. Architecture and investigations always use independent attempts.
+
+You are the intake for a software factory. A task arrives, and you decide how much process it needs, before anyone works on it. Read; don't change anything, don't attempt the task, and don't run tests or builds. A few minutes of reading is enough: the task, any document it names, and the code it touches.
 
 # Task
 

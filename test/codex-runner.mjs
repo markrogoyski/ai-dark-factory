@@ -37,6 +37,20 @@ function empty(schema) {
   return 0
 }
 
+test('an engine failure still records effort metrics without inventing phase findings', async t => {
+  const repo = temporary(t)
+  initRepo(repo)
+  const options = parseCLI(['--cwd', repo, '--workflow', 'pair', 'Fix sum'])
+  options.args.repair = { maxPasses: 0 }
+  const result = await runWorkflow(options, { progress: () => {}, runtime: { execute: () => { throw new Error('No CLI should run') } } })
+  assert.equal(result.status, 'failed')
+  assert.equal(result.metrics.turns, 0)
+  assert.equal(result.metrics.readiness, 'incomplete')
+  assert.equal(result.metrics.detailIncomplete, true)
+  assert.equal(result.metrics.findingsByStage, null)
+  assert.ok(existsSync(join(result.hostRunDir, 'metrics.json')))
+})
+
 test('CLI merges full arguments and explicit options without parsing task text as code', t => {
   const dir = temporary(t)
   const file = join(dir, 'args.json')
@@ -394,6 +408,16 @@ test('installed pair workflow runs both author/reviewer directions and repeated 
     assert.ok(authors.every(c => c.vendor === (author === 'sol' ? 'codex' : 'claude')))
     assert.ok(reviewers.every(c => c.vendor === (author === 'sol' ? 'claude' : 'codex')))
     assert.equal(new Set(calls.map(c => c.vendor)).size, 2)
+    // A crash can leave the last valid checkpoint without a final result file.
+    rmSync(join(result.hostRunDir, 'result.json'))
+    const resumed = JSON.parse(execFileSync(process.execPath, [cli, '--resume', result.hostRunDir], {
+      encoding: 'utf8', timeout: 30_000, stdio: ['ignore', 'pipe', 'pipe'],
+    }))
+    assert.equal(resumed.final.snapshotTree, result.final.snapshotTree)
+    assert.deepEqual(resumed.findings, result.findings)
+    assert.equal(resumed.metrics.turns, result.metrics.turns)
+    assert.deepEqual(resumed.metrics.turnsByRole, result.metrics.turnsByRole)
+    assert.equal(readFileSync(join(dir, 'calls.jsonl'), 'utf8').trim().split('\n').length, calls.length, 'checkpoint replay launches no model CLI')
     execFileSync('git', ['-C', repo, 'apply', result.final.diff])
     const helper = join(root, 'plugins/dark-factory/bin/dark-factory')
     const invoke = args => JSON.parse(execFileSync(helper, args, { cwd: repo, encoding: 'utf8', timeout: 15_000 }).trim().split('\n').at(-1))
@@ -402,4 +426,30 @@ test('installed pair workflow runs both author/reviewer directions and repeated 
     assert.equal(delivery.status, 'delivered', JSON.stringify(delivery))
     assert.equal(delivery.validation.passed, true)
   }
+})
+
+test('Ensemble uses real isolated snapshots and fresh reviewers through stub CLIs', t => {
+  const dir = temporary(t), repo = join(dir, 'repo'), bin = join(dir, 'bin')
+  initRepo(repo); mkdirSync(bin)
+  writeFileSync(join(bin, 'codex'), readFileSync(join(root, 'test/fixtures/codex-cli.cjs')), { mode: 0o755 })
+  let stdout
+  try {
+    execFileSync(process.execPath, [cli, '--cwd', repo, '--workflow', 'ensemble', '--seats', 'sol,astra', 'Fix sum to add its operands'], {
+      encoding: 'utf8', timeout: 90_000, stdio: ['ignore', 'pipe', 'pipe'],
+      env: { ...process.env, PATH: `${bin}:${process.env.PATH}`, CODEX_HOME: join(dir, 'codex-home'),
+        FACTORY_TEST_REPO: repo, FACTORY_TEST_RUN_PATH: join(dir, 'run-path'), FACTORY_TEST_LOG: join(dir, 'calls.jsonl'), COUNCIL_JOB_POLL: '0.01' },
+    })
+    assert.fail('Advisory selection must return exit 2')
+  } catch (error) { assert.equal(error.status, 2, String(error.stderr)); stdout = error.stdout }
+  const result = JSON.parse(stdout)
+  assert.equal(result.status, 'advisory')
+  assert.ok(result.candidates.every(c => c.final.readiness.state === 'ready'), JSON.stringify(result))
+  assert.equal(new Set(result.candidates.map(c => c.final.worktree)).size, 2)
+  assert.match(readFileSync(join(repo, 'sum.cjs'), 'utf8'), /a - b/)
+  for (const c of result.candidates) assert.equal(c.final.snapshotTree, execFileSync('git', ['-C', repo, 'rev-parse', `${c.final.snapshotRef}^{tree}`], { encoding: 'utf8' }).trim())
+  const calls = readFileSync(join(dir, 'calls.jsonl'), 'utf8').trim().split('\n').map(JSON.parse)
+  const reviews = calls.filter(c => c.kind === 'ensemble-review')
+  assert.equal(reviews.length, 4)
+  assert.equal(new Set(reviews.map(c => c.thread)).size, 4)
+  assert.ok(reviews.every(c => c.cwd.includes('/snap/ensemble-')))
 })

@@ -50,7 +50,7 @@ function newState(config) {
 
 // Vendors whose CLIs this run depends on: the seats', the panel's, the spec reviewers' and the auditors'.
 function externalVendors(S) {
-  return [...new Set([...S.lineup, ...S.panel, ...S.specReviewers, ...S.auditors,
+  return [...new Set([...S.lineup, ...S.panel, ...S.specReviewers, ...S.auditors, ...(S.ensemble ? [S.ensemble.compare] : []),
     ...(S.host === 'codex' ? Object.values(S.roles).map(s => hostSeat(S.host, s)) : [])].filter(external).map(s => s.vendor))]
 }
 

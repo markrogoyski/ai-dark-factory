@@ -56,7 +56,7 @@ async function featureRun() {
   const lastK = `K${incs.length}`
   S.auditedTag = roundTag(lastK)
   const audit = await runAudit(W)
-  const lastCheck = audit.fixPass ? 'I' : audit.checked ? 'H' : lastK
+  const lastCheck = audit.lastCheck || (audit.fixPass ? 'I' : audit.checked ? 'H' : lastK)
   const ready = readiness(S, W.L, lastCheck, [], [], audit.gaps)
   const report = featureReport(S, { outcome, W, rows: decisionRows, ready, audit })
   if (S.retro) phase('Retro')

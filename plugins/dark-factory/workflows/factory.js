@@ -59,7 +59,7 @@ function shq(s) { return `'${String(s).replace(/'/g, `'\\''`)}'` }
 
 // Models often return an ID with its text attached ("1B3: the suite passes", "[1B3] …").
 // Accept the first ledger-shaped token instead of requiring an exact string.
-const ID_RE = /\b(T\d+[A-F]\d+|TX[CDRT]\d+|\d+[A-F]\d+|[FGI][A-F]\d+|K\d+[A-F]\d+|X[CDGKRST]\d+|Q\d+|S\d+)\b/
+const ID_RE = /\b((?:repair|review)\d+[A-F]\d+|T\d+[A-F]\d+|TX[CDRT]\d+|\d+[A-F]\d+|[FGI][A-F]\d+|K\d+[A-F]\d+|X[CDGKRST]\d+|Q\d+|S\d+)\b/
 
 function idOf(s) {
   const str = String(s ?? '').trim()
@@ -125,10 +125,18 @@ const countsOf = (xs, f) => Object.entries(xs.reduce((m, x) => { const k = f(x);
 // and for the factory with `--tier simple`, in either order.
 function parseArgs(a) {
   if (typeof a !== 'string') return a || {}
-  const out = {}
-  let rest = a, m
-  while ((m = rest.match(/^\s*--(seats|tier)[= ]\s*([\w:.,-]+)\s+([\s\S]*)$/))) { out[m[1]] = m[2]; rest = m[3] }
-  return { task: Object.keys(out).length ? rest : a, ...out }
+  const out = {}, names = { seats: 'seats', tier: 'tier', strategy: 'strategy', author: 'author', reviewer: 'reviewer',
+    'max-reviews': 'maxReviews', 'max-turns': 'maxTurns', 'max-run-min': 'maxRunMin', candidates: 'candidates', reviewers: 'reviewers', mode: 'mode' }
+  let rest = a, match
+  while (true) {
+    if (/^\s*--explain(?:\s|$)/.test(rest)) { out.explain = true; rest = rest.replace(/^\s*--explain(?:\s+|$)/, ''); continue }
+    match = rest.match(/^\s*--([\w-]+)[= ]\s*([^\s]+)(?:\s+([\s\S]*))?$/)
+    if (!match || (!names[match[1]] && match[1] !== 'repair-passes')) break
+    if (match[1] === 'repair-passes') out.repair = { maxPasses: match[2] }
+    else out[names[match[1]]] = match[2]
+    rest = match[3] || ''
+  }
+  return { task: rest, ...out }
 }
 
 const IMPLEMENT_RE =
@@ -281,7 +289,7 @@ function parseConfig(args, opts = {}) {
   const archLenses = host === 'codex' ? CODEX_ARCH_LENSES : ARCH_LENSES
   const spec = simple ? { reviewers: [], ask: false } : parseSpec(raw.spec, host === 'codex' ? { coverage: 'astra', intent: 'sol' } : SPEC_LENSES)
   return {
-    raw, host, roles, task, modeGiven, mode,
+    raw, host, roles, task, modeGiven, mode, controls: parseControls(raw),
     rounds: Math.max(1, Math.min(3, Number(raw.rounds) || 2)),
     context: String(raw.context || '').trim(),
     plan: (Array.isArray(raw.plan) ? raw.plan : raw.plan ? [raw.plan] : []).map(p => String(p).trim()).filter(Boolean),
@@ -366,7 +374,7 @@ function newState(config) {
 
 // Vendors whose CLIs this run depends on: the seats', the panel's, the spec reviewers' and the auditors'.
 function externalVendors(S) {
-  return [...new Set([...S.lineup, ...S.panel, ...S.specReviewers, ...S.auditors,
+  return [...new Set([...S.lineup, ...S.panel, ...S.specReviewers, ...S.auditors, ...(S.ensemble ? [S.ensemble.compare] : []),
     ...(S.host === 'codex' ? Object.values(S.roles).map(s => hostSeat(S.host, s)) : [])].filter(external).map(s => s.vendor))]
 }
 
@@ -1593,6 +1601,7 @@ function auditFixPrompt(S, W, todo) {
 }
 
 function versionText(S, c, Y, k) {
+  if (c.snapshotTag) return S.mode === 'implement' ? `${Y}'s reviewed snapshot (diff ${S.run.room}/${c.snapshotTag}/${Y}.diff; git -C ${S.run.repoRoot} show refs/council/${S.run.runId}/${Y}-${c.snapshotTag}:<path>)` : `${Y}'s reviewed artifact ${c.artifactPost}`
   const snap = r => S.mode === 'implement'
     ? `${Y}'s round-${r} version (diff ${S.run.room}/r${r}/${Y}.diff; checkout: \`${S.cli} materialize --run-dir ${S.run.runDir} --seat ${Y} --label r${r}\`)`
     : `${Y}'s round-${r} post (${S.run.room}/r${r}/${Y}.md)`
@@ -1637,7 +1646,7 @@ function checkerPrompt(S, Y, k, items) {
   const tag = roundTag(k)
   const since = sinceTag(S, k)
   const tests = validTests(S).map(t => t.id)
-  const post = k === 'H' ? S.pos[Y].post : postPath(S, Y, k)          // the audit re-measures the final version, which has no post of its own
+  const post = (k === 'H' || /^review\d+$/.test(k)) ? S.pos[Y].post : postPath(S, Y, k)          // the audit re-measures the final version, which has no post of its own
   const arch = S.tier === 'architecture'
   const what = typeof k === 'number' ? `round ${k}` : k === 'F' ? `the final ${S.mode === 'plan' ? 'plan' : arch ? 'design and its milestone plan' : 'version'}` : buildStep(k) ? `build increment ${buildStep(k)} of ${S.build.increments.length}`
     : k === 'H' ? (arch ? 'the final milestone plan, with the independent review\'s findings' : 'the final version, with the independent audit\'s findings and tests')
@@ -1652,7 +1661,7 @@ It snapshots ${Y}'s worktree, then runs the verification command and each publis
 `
     : `# Step 1 — count the post
 
-This is ${S.mode === 'plan' ? 'the planning stage' : S.mode === 'design' ? 'a design task' : 'an investigation task'}, so there is nothing to measure. Run \`wc -w < ${post}\` and set postWords to the number (0 if the file doesn't exist). Set measured=false, diff to zeros with tree "", delta to {since: "", files: 0, added: 0, removed: 0}, suite to {ran: false, passed: false, tail: ""}, and crossTests to [].
+This is ${S.mode === 'plan' ? 'the planning stage' : S.mode === 'design' ? 'a design task' : 'an investigation task'}, so there is nothing to measure. Run \`wc -w < ${post}\` and set postWords to the number (0 if the file doesn't exist). ${S.controls.repair ? `Run ${S.cli} hash --file ${shq(post)} and copy its hash to artifactHash. ` : ''}Set measured=false, diff to zeros with tree "", delta to {since: "", files: 0, added: 0, removed: 0}, suite to {ran: false, passed: false, tail: ""}, and crossTests to [].
 `
   return `You are a neutral verifier for a council of AI models. You wrote none of this work and have no stake in which position wins. Your job is to establish facts.
 
@@ -1728,7 +1737,8 @@ function setupPrompt(S) {
   const letters = S.letters.join(',')
   const A = S.letters[0]
   const vendors = externalVendors(S)
-  const what = S.workflowName === 'pair' ? 'a pair run: one author will design and implement the task in its own git worktree, with independent review of the design and each implementation revision'
+  const what = S.workflowName === 'ensemble' ? 'an ensemble run: independent candidates in separate worktrees, measured and reviewed before an advisory ranking; no debate or automatic selection'
+    : S.workflowName === 'pair' ? 'a pair run: one author will design and implement the task in its own git worktree, with independent review of the design and each implementation revision'
     : S.tier === 'simple' ? 'a factory run of a simple change: one AI model will make the change below in its own git worktree, and another will review it'
     : S.tier === 'feature' ? 'a factory run of a feature: several AI models will each plan the task below independently, in their own git worktrees, and debate the plans, and the author of the chosen plan will then build it'
     : S.tier === 'architecture' ? 'a factory run of an architecture: several AI models will each design the task below independently, in their own git worktrees, and debate the designs, and the author of the chosen design will then break it into milestones, each to be built later by a run of its own'
@@ -1786,7 +1796,9 @@ Return the values from these steps.`
 // it can't anchor on one, and its prompt stays the same when the user confirms or switches,
 // which lets the resumed run replay it from cache.
 function intakePrompt(S) {
-  return `You are the intake for a software factory. A task arrives, and you decide how much process it needs, before anyone works on it. Read; don't change anything, don't attempt the task, and don't run tests or builds. A few minutes of reading is enough: the task, any document it names, and the code it touches.
+  return `Choose collaboration separately from complexity: strategy=pair for a scoped implementation with one clear approach that benefits from repeated review; strategy=independent for competing root causes or plans. Keep the tier based on task complexity. Architecture and investigations always use independent attempts.
+
+You are the intake for a software factory. A task arrives, and you decide how much process it needs, before anyone works on it. Read; don't change anything, don't attempt the task, and don't run tests or builds. A few minutes of reading is enough: the task, any document it names, and the code it touches.
 
 # Task
 
@@ -2069,6 +2081,7 @@ function applyCheck(S, Y, k, r, items) {
     missingCriteria: S.criteria.map(c => c.id).filter(id => !judged.has(id)),
     missingItems: items.map(it => it.c.id).filter(id => !ruled.has(id)),
   }
+  if (S.controls.repair && S.mode !== 'implement') p.artifactHash = /^\d+-[0-9a-f]{8}$/.test(r.artifactHash || '') ? r.artifactHash : null
   if (Number.isInteger(r.postWords) && r.postWords > 0) p.postWords = r.postWords
   if (Number.isInteger(r.postWords) && r.postWords > S.postWords) S.longPosts.push({ turn: `${roundTag(k)}:${Y}`, words: r.postWords })
   if (S.mode === 'implement' && r.measured) {
@@ -2412,11 +2425,12 @@ function ingestAudit(S, a, round, W, res) {
       id: `${a.id}${n}`, round, author: a.id, kind: 'finding', target: W, severity: W8[f.severity] ? f.severity : 'minor',
       judgment: f.kind === 'judgment', statement: f.statement, evidence: f.evidence,
     })
+    if (/^review\d+$/.test(round)) { c.snapshotTag = S.reviewedSnapshot; c.artifactPost = S.pos[W]?.post }
     // The Architecture tier's reviewers say which milestone a finding is about (0: the whole plan).
     if (Number.isInteger(f.milestone) && f.milestone > 0) c.milestone = f.milestone
   }
   const re = new RegExp(`^T${a.id}\\d+$`)
-  for (const t of round === 'H' && S.mode === 'implement' ? (res.tests || []).slice(0, 10) : []) {
+  for (const t of (round === 'H' || /^review\d+$/.test(round)) && S.mode === 'implement' ? (res.tests || []).slice(0, 10) : []) {
     if (!t || !t.id) continue
     if (!re.test(t.id) || S.byId[t.id]) { S.notes.push(`Ignored test '${t.id}' from the ${a.lens} auditor: bad or duplicate ID.`); continue }
     addClaim(S, { id: t.id, round, author: a.id, kind: 'test', target: W, statement: t.purpose, evidence: t.command })
@@ -2693,6 +2707,7 @@ function auditOutcome(S, c, W, audit) {
 // `audit`: what runAudit returns.
 function auditSection(S, W, audit) {
   if (!audit || !audit.ran) return ''
+  if (audit.cycles) return `\n\n### Independent review\n\n${audit.cycles.length} fresh review cycle(s), ${audit.cycles.filter(c => c.needed).length} cycle(s) needing repair. Budget: ${audit.repairPolicy.maxPasses} repair passes; minor findings: ${audit.repairPolicy.minor}.\n\n${S.ledger.filter(c => lensOf(c.author)).map(c => `[${c.id}] ${c.severity || c.kind}: ${c.statement} → ${c.fixed ? 'fixed' : c.status}`).join('\n')}\n${audit.stopReason || ''}\n${audit.gaps.join('\n')}`
   const simple = S.tier === 'simple', arch = S.tier === 'architecture'
   const lines = [simple ? `${S.host === 'codex' ? 'An independent reviewer' : 'A reviewer from another vendor'}, ${S.auditors.map(a => a.name).join(', ')}, read the change without seeing how it was made.`
     : arch ? `Reviewers who never saw the debate reviewed the milestone plan, each through one lens: ${listText(S.auditors.map(a => `${a.lens} (${a.name})`))}.`
@@ -2782,7 +2797,7 @@ function specQuestions(S, qs) {
     questions: qs.map(f => ({ id: f.id, question: f.statement, readings: f.readings, raisedBy: `the ${f.lens} reviewer`, evidence: f.evidence, adjudicators: f.note })),
     criteria: S.criteria, notes: S.notes,
     forTheOrchestrator: S.host === 'codex'
-      ? `Before any seat started, the specification review found questions only the user can settle. Show questions[] with their readings and ask for the answers. Preserve the original args, append each question and answer to context, and rerun the runner with that args file. This starts a new run; keep the old run directory for inspection.`
+      ? `Before any seat started, the specification review found questions only the user can settle. Show questions[] with their readings and ask for the answers. Preserve the original args, append {id, answer} to clarifications, and use --resume with this hostRunDir and the updated args file. The host validates the saved repository and evidence before replaying completed operations. If validation fails, start a new run with the full questions and answers in context.`
       :
       `Before any seat started, the spec review found ${qs.length === 1 ? 'a question' : 'questions'} about the request that the code and the task don't settle, ` +
       'and this run was told to ask rather than assume (spec: "ask"). Ask the user (AskUserQuestion works well: offer each question\'s readings as options; the first is the most conservative). ' +
@@ -2850,6 +2865,7 @@ function auditResult(S, audit) {
     items: S.ledger.filter(c => lensOf(c.author)).map(c => ({ id: c.id, lens: lensOf(c.author), round: roundTag(c.round), kind: c.kind, severity: c.severity, judgment: c.judgment,
       status: c.fixed ? 'fixed' : c.status, statement: c.statement, evidence: c.evidence, note: c.note })),
     fixPass: audit.fixPass,
+    ...(audit.cycles ? { cycles: audit.cycles, repairPolicy: audit.repairPolicy, stopReason: audit.stopReason, gaps: audit.gaps } : {}),
   } : null
 }
 
@@ -3115,7 +3131,7 @@ function needsUser(S, k, qs) {
     report: interimReport(S, k),
     seats: reveal(S), notes: S.notes,
     forTheOrchestrator: S.host === 'codex'
-      ? `Questions reached the escalation threshold after ${roundTag(k)}. Show report.markdown and questions[] with each seat's assumptions, then ask the user for answers. Preserve the original args, append each question and answer to context, and rerun the runner with that args file. This starts a new run; keep the old run directory for inspection.`
+      ? `Questions reached the escalation threshold after ${roundTag(k)}. Show report.markdown and questions[] with each seat's assumptions, then ask the user for answers. Preserve the original args, append {id, answer} to clarifications, and use --resume with this hostRunDir and the updated args file. The host validates the saved repository and evidence before replaying completed operations. If validation fails, start a new run with the full questions and answers in context.`
       :
       `${qs.length === 1 ? 'A question' : 'Questions'} reached the escalation threshold (${escalateAt(S)} seats) after ${roundTag(k)}: ` +
       'the council believes the request itself is ambiguous. First show the user report.markdown, the debate so far, with the seat-to-model reveal, so they can see what prompted the question. ' +
@@ -3244,7 +3260,7 @@ function simpleTrigger(S, stage, o = {}) {
   }
   if (stage === 'review') {
     // A judgment finding the panel agreed on has become a fact (applyPanel), and is still about the approach.
-    const design = S.ledger.filter(c => c.round === 'H' && c.kind === 'finding' && c.wasJudgment && W8[c.severity] >= 2 && c.status === 'verified' && !c.withdrawn)
+    const design = S.ledger.filter(c => (c.round === 'H' || c.round === 'review0') && c.kind === 'finding' && c.wasJudgment && W8[c.severity] >= 2 && c.status === 'verified' && !c.withdrawn)
     if (design.length) {
       return { trigger: 'design-finding', to: 'feature', why: `the panel upheld ${design.map(c => `${c.severity} ${c.id}`).join(', ')} against the approach itself`, findings: design.map(c => c.id) }
     }
@@ -3265,7 +3281,7 @@ function simpleTrigger(S, stage, o = {}) {
 function escalationBrief(S, esc) {
   const L = esc.L || S.letters[0]
   const p = S.pos[L] || {}
-  const upheld = S.ledger.filter(c => c.round === 'H' && c.kind === 'finding' && !c.withdrawn && (c.status === 'verified' || (esc.findings || []).includes(c.id)))
+  const upheld = S.ledger.filter(c => (c.round === 'H' || c.round === 'review0') && c.kind === 'finding' && !c.withdrawn && (c.status === 'verified' || (esc.findings || []).includes(c.id)))
   const failing = validTests(S).filter(t => S.testResults[t.id] && S.testResults[t.id][L] && S.testResults[t.id][L] !== 'pass')
   return {
     from: S.tier || 'simple', to: esc.to, trigger: esc.trigger, why: esc.why, runDir: S.run ? S.run.runDir : '',
@@ -3311,6 +3327,7 @@ function runFacts(S, o) {
   const findings = S.ledger.filter(c => lensOf(c.author) && c.kind === 'finding')
   const count = (xs, key) => xs.reduce((m, x) => { const k = key(x); m[k] = (m[k] || 0) + 1; return m }, {})
   return {
+    metrics: { ...evaluationFacts(S, { final: { readiness: o.ready } }, null, S.turnLog.length), scope: 'before-retrospective' },
     runId: S.run ? S.run.runId : '', repo: S.run ? S.run.repoRoot : '', workflow: S.workflowName,
     tier: f.tier || null, chosenBy: f.chosenBy || null, asked: f.asked || null, recommended: f.recommended || null,
     signals: f.intake ? f.intake.signals : null,
@@ -3447,7 +3464,7 @@ ${payload}
 // A Simple run that finished without handing the work up.
 function simpleResult(S, o) {
   const { W, ready, audit, report, retro } = o
-  const tag = audit.fixPass ? roundTag('I') : S.auditedTag
+  const tag = audit.finalTag || (audit.fixPass ? roundTag('I') : S.auditedTag)
   const f = S.factory
   return {
     status: 'done', tier: 'simple', mode: S.mode, task: S.task, runDir: S.run.runDir, room: S.run.room, refs: S.refs,
@@ -3458,6 +3475,7 @@ function simpleResult(S, o) {
       diff: `${S.run.room}/${tag}/${W.L}.diff`, snapshotRef: `refs/council/${S.run.runId}/${W.L}-${tag}`, worktree: W.wt,
       check: finalSummary(S, W.L), readiness: ready, suite: S.pos[W.L].suite, criteria: S.pos[W.L].criteria, fixPass: audit.fixPass,
     },
+    audit: auditResult(S, audit),
     review: audit.ran ? {
       reviewer: S.auditors.map(a => a.name).join(', '), summary: ((audit.reviews.review) || {}).summary || '',
       items: S.ledger.filter(c => lensOf(c.author)).map(c => ({ id: c.id, kind: c.kind, severity: c.severity, judgment: c.judgment,
@@ -3542,7 +3560,7 @@ function featureReport(S, o) {
 // adds how the tier was reached.
 function featureResult(S, o) {
   const { outcome, W, ready, audit, report, retro } = o
-  const tag = audit.fixPass ? roundTag('I') : S.auditedTag
+  const tag = audit.finalTag || (audit.fixPass ? roundTag('I') : S.auditedTag)
   const b = S.build
   return {
     status: 'done', tier: 'feature', mode: S.mode, task: S.task, runDir: S.run.runDir, room: S.run.room, refs: S.refs,
@@ -3791,6 +3809,435 @@ function architectureResult(S, o) {
   }
 }
 
+// Request-wide policy. Runtime clocks and execution stay in the adapters.
+function boundedInteger(value, fallback, name, max = 10000) {
+  if (value === undefined) return fallback
+  const n = Number(value)
+  if (!Number.isSafeInteger(n) || n < 1 || n > max) throw new Error(`${name} must be an integer from 1 to ${max}.`)
+  return n
+}
+
+function parseControls(raw) {
+  const repair = raw.repair === undefined ? null : raw.repair
+  if (repair !== null && (!repair || typeof repair !== 'object' || Array.isArray(repair))) throw new Error('repair must be an object.')
+  if (repair?.minor !== undefined && !['block', 'report'].includes(repair.minor)) throw new Error('repair.minor must be block or report.')
+  return {
+    maxTurns: boundedInteger(raw.maxTurns, null, 'maxTurns'),
+    maxRunMin: boundedInteger(raw.maxRunMin, null, 'maxRunMin', 10080),
+    repair: repair && { maxPasses: boundedInteger(repair.maxPasses, 2, 'repair.maxPasses', 20), minor: repair.minor || 'block' },
+  }
+}
+
+function factoryStrategy(S, intake) {
+  const requested = S.raw.strategy || 'auto'
+  if (!['auto', 'pair', 'independent'].includes(requested)) throw new Error('strategy must be auto, pair, or independent.')
+  const independentOptions = ['seats', 'simple', 'panel', 'spec', 'audit', 'roles', 'evidence'].filter(k => S.raw[k] !== undefined)
+  if (requested === 'pair' && independentOptions.length) throw new Error(`Pair strategy does not accept ${independentOptions.join(', ')}; configure participants with pair: {author, reviewer, maxReviews}.`)
+  const tier = S.factory.tier
+  if (requested === 'pair' && (intake.mode !== 'implement' || tier === 'architecture')) throw new Error('Pair strategy requires an implementation below Architecture.')
+  return requested === 'pair' || (requested === 'auto' && !independentOptions.length && intake.strategy === 'pair' && intake.mode === 'implement' && tier !== 'architecture') ? 'pair' : 'independent'
+}
+
+function factoryPairConfig(S) {
+  const raw = { ...S.raw, ...S.raw.pair }
+  for (const key of ['tier', 'seats', 'simple', 'panel', 'spec', 'audit', 'roles', 'evidence', 'strategy', 'pair']) delete raw[key]
+  return parsePairConfig(raw)
+}
+
+function executionPlan(S) {
+  const people = xs => xs.map(s => ({ model: s.key, vendor: s.vendor, effort: s.effort }))
+  return {
+    workflow: S.factory ? 'factory' : S.workflowName, tier: S.factory?.tier || S.tier, strategy: S.factory?.strategy || (S.pairOptions ? 'pair' : 'independent'),
+    mode: S.mode, output: S.workflowName === 'ensemble' ? 'measured, independently reviewed candidates and advisory ranking; no automatic selection' : S.mode === 'implement' ? 'reviewed implementation in a worktree; delivery pending' : S.tier === 'architecture' ? 'reviewed design and milestones; no implementation' : S.mode,
+    participants: people(S.lineup), reviewers: people(S.auditors), panel: people(S.panel), specification: people(S.specReviewers),
+    roles: Object.fromEntries(Object.entries(S.roles || {}).map(([role, s]) => [role, { model: s.key, vendor: s.vendor }])),
+    requiredCLIs: externalVendors(S).map(v => v === 'gemini' ? 'agy' : v),
+    verification: S.verify || S.raw.verify || 'discovered during setup; not yet run',
+    limits: { ...S.controls, repair: S.controls.repair || (S.tier === 'simple' ? { maxPasses: 1, minor: 'block' } : null), maxReviews: S.pairOptions?.maxReviews || null, rounds: S.pairOptions ? null : S.rounds },
+    effort: S.pairOptions ? 'Setup, design and code turns, up to the review budget; measurements between code revisions.'
+      : 'Depends on findings, retries and escalation. Limits are caps, not cost forecasts.',
+    intake: S.factory?.intake || null,
+  }
+}
+
+function explanation(S) {
+  return { status: 'explained', task: S.task, plan: executionPlan(S), execution: 'not-started', final: { readiness: { state: 'not-assessed', blocked: [], incomplete: ['Explanation only; no implementation or review ran.'] } } }
+}
+
+function repairTodo(S, W) {
+  const found = S.ledger.filter(c => c.kind === 'finding' && c.target === W && !c.withdrawn && !c.fixed)
+  const actionable = found.filter(c => !c.judgment && (S.controls.repair?.minor !== 'report' || W8[c.severity] >= 2))
+  const criteria = (S.pos[W]?.criteria || []).filter(c => c.status === 'unmet')
+  const todo = { criteria, upheld: actionable.filter(c => c.status === 'verified'), disputed: actionable.filter(c => c.status === 'unresolved' || c.status === 'open'),
+    suggestions: found.filter(c => c.judgment), failing: validTests(S).filter(t => S.testResults[t.id]?.[W] && S.testResults[t.id][W] !== 'pass'),
+    suite: S.mode === 'implement' && S.verify && S.pos[W]?.suite?.ran && !S.pos[W].suite.passed ? S.pos[W].suite.tail || 'failed' : '' }
+  todo.needed = !!(todo.criteria.length || todo.upheld.length || todo.disputed.length || todo.failing.length || todo.suite)
+  return todo
+}
+
+function repairSignature(S, W) {
+  const p = S.pos[W]
+  return JSON.stringify([p.tree?.hash || p.artifactHash || p.summary, S.ledger.filter(c => c.target === W && c.kind === 'finding' && !c.fixed && !c.withdrawn)
+    .map(c => [c.statement, c.severity, c.status]).sort(), p.criteria, p.suite?.ran, p.suite?.passed])
+}
+
+function repairReviewPrompt(S, a, W, round, tag, checkout) {
+  const arch = S.tier === 'architecture'
+  const findings = S.ledger.filter(c => c.kind === 'finding' && lensOf(c.author) && c.target === W.L && !c.withdrawn)
+  const alternatives = arch && a.lens === 'risk' ? active(S).filter(s => s.L !== W.L).map(s => S.pos[s.L].post) : []
+  return `Independently review the exact ${arch ? 'design and milestone plan' : 'measured implementation'} below. You have a fresh context. Do not read the debate or author sessions.
+${taskBlock(S, round)}
+Artifact: ${S.pos[W.L].post}
+${arch ? `Repository: ${S.run.repoRoot}. Read only. The plan must be grounded, sequenced and feasible.` : `Snapshot: refs/council/${S.run.runId}/${W.L}-${tag}
+Diff: ${S.run.room}/${tag}/${W.L}.diff
+Your disposable checkout: ${checkout}. Create it if needed: ${S.cli} materialize --run-dir ${shq(S.run.runDir)} --seat ${W.L} --label ${tag} --name ${round}-${a.lens}
+Run reproductions there; never alter the author's worktree.`}
+${arch ? 'Read only the named designs and repository; do not write files.' : `Write only in your disposable checkout, ${S.run.room}/tests/, and your review. The verification helper may write its jobs and logs. The user's repository at ${S.run.repoRoot} is read-only.`}
+${alternatives.length ? `Alternative designs, for the risk review only: ${alternatives.join(', ')}. Do not read their debate.` : ''}
+${arch ? PLAN_LENS[a.lens] : a.lens === 'correctness' && S.auditors.some(x => x.lens === 'tests') ? AUDIT_LENS.correctness.replace(TESTS_BULLET, '') : AUDIT_LENS[a.lens] || AUDIT_LENS.correctness}
+${reviewScope(arch)}
+Check every criterion and the ${arch ? 'milestone plan' : 'changed code'}, including interactions and defects introduced by a repair. Existing findings are obligations to verify, not conclusions to trust:
+${findings.map(c => `[${c.id}] ${c.severity}: ${c.statement} (${c.fixed ? 'checker reports fixed' : c.status}); evidence: ${c.evidence}`).join('\n') || '(none)'}
+Do not duplicate an open finding. If a finding reported fixed is still present, file a fact finding citing its original ID and a concrete reproduction; a summary alone cannot block readiness. File new actionable defects with concrete evidence and severity. Preferences alone are not findings. Leave optional suggestions in the summary. A neutral checker and panel establish closure; an author's claim never closes a finding.
+${arch ? 'Return the review, with milestone numbers. Do not modify files.' : `${auditPublishing(S, a)}
+Never reuse an existing test ID: ${validTests(S).map(t => t.id).join(', ') || '(none)'}.
+Write your review to ${auditPost(S, a, round)}.`}
+${auditEvidenceBlock(S, a, W, tag)}
+${a.vendor === 'gemini' ? GEMINI_REVIEWER : ''}
+The process has a bounded repair budget. This review must stand on its evidence even if no further repair remains.`
+}
+
+function reviewScope(architecture = false) {
+  return architecture ? `Review the plan, not the whole codebase. Problems the plan neither depends on nor makes worse are out of scope.
+- blocker: a milestone cannot be built as written, or carrying out the plan would not deliver the task.
+- major: broken intermediate states, unmet dependencies, oversized milestones, ineffective criteria, or an unmitigated likely risk.
+- minor: anything else worth the author's time.
+Preferences without a reason are not findings. A careful review may find nothing.` : `Review the change, not the whole codebase. Pre-existing problems are out of scope unless the task required fixing them or the change makes them worse.
+- blocker: wrong results, lost data, a crash or a security hole on realistic inputs, or a regression in working behaviour.
+- major: a real defect on a plausible input, changed behaviour no test would catch, or a design problem that materially hinders a likely next change.
+- minor: anything else worth the author's time.
+Preferences without a reason are not findings. A careful review may find nothing.`
+}
+
+function boundedRepairPrompt(S, W, todo, tag, pass, max) {
+  return `${S.tier === 'architecture' ? protocol(S, W.L) : S.tier === 'simple' ? simpleIntro(S) : S.tier === 'feature' ? buildIntro(S) : protocol(S, W.L)}
+${taskBlock(S, tag)}
+${workspaceBlock(S, W, tag)}${notesBlock(S, W)}
+Repair pass ${pass} of at most ${max}. Address these obligations, retaining unrelated work:
+${[...todo.upheld, ...todo.disputed, ...todo.failing].map(c => `[${c.id}] ${c.statement}\nEvidence: ${c.evidence}\nRuling: ${c.note}`).join('\n')}
+${todo.criteria?.length ? `Unmet criteria: ${todo.criteria.map(c => `${c.criterion}: ${c.note || 'not met'}`).join('; ')}` : ''}
+${todo.suite ? `The required verification fails: ${todo.suite}` : ''}
+${todo.failing.length ? `Published reproductions live under ${S.run.room}/tests/<ID>/files/ and run with test.json. Do not edit those files or create conflicting files at their paths. Add lasting regression coverage to the project's own suite, in its style and at separate paths.` : ''}
+${todo.suggestions.length ? `Optional suggestions, not adjudicated; adopt only when they clearly improve this change: ${todo.suggestions.map(c => `[${c.id}] ${c.statement}`).join('; ')}` : ''}
+Re-run relevant reproductions and the complete verification gate. A fresh independent review follows; do not claim a finding closed yourself. List each item in addressed or declined, with evidence.
+${S.tier === 'architecture' ? 'Revise the design only. Return the complete milestones list, including unchanged milestones.' : 'Implement the repairs in your worktree. Keep the change limited to the review obligations.'}
+Write the complete updated final post to ${postPath(S, W.L, tag)}.`
+}
+
+// Evidence about process value, not a model's opinion of its own quality.
+function evaluationFacts(S, result, elapsedMs, turns) {
+  const byStage = {}
+  for (const f of S.spec.findings) {
+    const row = byStage.specification || (byStage.specification = { found: 0, upheld: 0, refuted: 0, amended: 0 })
+    row.found++; if (f.status === 'accepted') row.upheld++; if (f.status === 'rejected') row.refuted++
+    if (S.spec.applied.some(a => a.id === f.id)) row.amended++
+  }
+  for (const c of S.ledger.filter(c => c.kind === 'finding')) {
+    const stage = lensOf(c.author) ? 'audit' : typeof c.round === 'number' ? 'debate' : 'ratification'
+    const row = byStage[stage] || (byStage[stage] = { found: 0, upheld: 0, refuted: 0, fixed: 0 })
+    row.found++; if (c.status === 'verified') row.upheld++; if (c.status === 'refuted') row.refuted++; if (c.fixed) row.fixed++
+  }
+  for (const f of S.pair?.findings || []) {
+    const row = byStage[f.stage] || (byStage[f.stage] = { found: 0, upheld: 0, refuted: 0, fixed: 0 })
+    row.found++; if (f.status === 'fixed') { row.fixed++; row.upheld++ }; if (f.status === 'refuted') row.refuted++
+  }
+  const candidates = result.candidates
+  if (candidates) byStage.ensembleReview = { found: candidates.reduce((n, c) => n + c.reviews.reduce((n, r) => n + (r.defects?.length || 0), 0), 0) }
+  return { version: 1, taskId: S.raw.evaluation?.taskId || null, variant: S.raw.evaluation?.variant || null,
+    repetition: S.raw.evaluation?.repetition || null, workflow: S.factory ? 'factory' : S.workflowName,
+    tier: S.factory?.tier || S.tier, strategy: S.factory?.strategy || (S.pair ? 'pair' : 'independent'), host: S.host,
+    elapsedMs, turns, turnsByRole: S.turnLog.reduce((m, t) => ({ ...m, [t.role]: (m[t.role] || 0) + 1 }), {}),
+    failedTurns: S.turnLog.filter(t => !t.ok).length, findingsByStage: byStage,
+    ...(candidates ? { candidates: { total: candidates.length, ready: candidates.filter(c => c.final.readiness.state === 'ready').length } } : {}),
+    readiness: result.final?.readiness?.state || null, delivery: result.delivery?.status || 'not-recorded',
+    escalated: !!S.factory?.escalation, requestedImplementation: S.factory?.intake?.mode === 'implement' || S.mode === 'implement',
+    deliveredImplementation: false, tokens: null, cost: null,
+    limits: { maxTurns: S.controls.maxTurns, maxRunMin: S.controls.maxRunMin } }
+}
+
+// Independent candidates share the snapshot and host machinery, but ranking stays advisory.
+function parseEnsembleConfig(args) {
+  const raw = parseArgs(args)
+  const mode = raw.mode || (IMPLEMENT_RE.test(raw.task || '') ? 'implement' : 'investigate')
+  if (!['implement', 'investigate'].includes(mode)) throw new Error('ensemble mode must be implement or investigate.')
+  const models = raw.models || {}, codex = raw.host === 'codex'
+  const named = seatList(raw.seats)
+  const count = boundedInteger(raw.candidates, named.length || 4, 'candidates', 6)
+  if (count < 2 || (named.length && named.length !== count)) throw new Error('ensemble needs 2–6 candidates, matching seats when supplied.')
+  const solve = models.solve || raw.solveModel || (codex ? 'sol' : 'sonnet')
+  const config = parseConfig({ ...raw, mode, seats: named.length ? named : Array(count).fill(solve), spec: false, audit: false }, { workflow: 'ensemble', tier: 'ensemble' })
+  const { stances, lenses } = ensembleChoices(config)
+  const review = models.review || raw.reviewModel
+  const picked = lenses.slice(0, boundedInteger(raw.reviewers, 2, 'reviewers', 4)).map(l => ({ ...l, ...hostSeat(config.host, parseSeat(review || (codex ? (l.model === 'opus' ? 'astra' : 'sol') : l.model), raw.effort)), lens: l.key }))
+  return { ...config, raw, panel: [], specReviewers: [], auditors: picked,
+    ensemble: { stances: stances.slice(0, count), lenses: picked, compare: hostSeat(config.host, parseSeat(models.compare || raw.compareModel || (codex ? 'astra' : 'opus'), raw.effort)) } }
+}
+
+function ensembleChoices(S) {
+  const MODE = S.mode
+  const stances = MODE === 'implement' ? [
+    { key: 'minimal',    brief: 'Smallest change that fully solves the problem. Touch as few files and lines as possible. No refactors, no renames, no drive-by cleanups. If a one-line fix is correct, that is the answer.' },
+    { key: 'root-cause', brief: 'Do not fix the symptom. Trace back to the underlying cause and fix that, even if it means touching more code. Explicitly state what the tempting surface-level fix would be and why it is wrong or incomplete.' },
+    { key: 'edge-cases', brief: 'Solve it with adversarial attention to edge cases: boundary values, empty/zero/negative/overflow inputs, error paths, concurrent or repeated invocation. Add tests that would fail on a naive fix.' },
+    { key: 'idiomatic',  brief: 'Before writing anything, grep for how this codebase already solves the nearest analogous problem, and mirror it exactly — naming, structure, error handling, docs, test layout. Match the house style over your own preference.' },
+    { key: 'contrarian', brief: 'Assume the framing of the request is subtly wrong. Solve the problem the user actually has, and say plainly where you deviated from what was literally asked and why.' },
+    { key: 'test-first', brief: 'Write the failing test first from the specification or the cited reference, watch it fail, then write the minimum code that makes it pass. Report both runs.' },
+  ] : [
+    { key: 'trace-code',  brief: 'Answer by tracing the actual implementation path end to end in the source. Every claim must carry a file:line. Do not reason from names or from what the code probably does.' },
+    { key: 'history',     brief: 'Answer from history: git log, git blame, prior commits, tests, CHANGELOG, issue and PR references. What did the authors intend, what changed, and when did the behaviour you are asked about appear?' },
+    { key: 'falsify',     brief: 'Assume the obvious answer is wrong. Actively hunt for counterexamples, contradicting code paths, and cases the obvious answer fails to explain. Report the obvious answer only if you genuinely could not break it.' },
+    { key: 'empirical',   brief: 'Do not reason about behaviour — observe it. Run the tests, write a scratch script, add temporary instrumentation, execute the real code, and report actual observed output as your primary evidence.' },
+    { key: 'outside-in',  brief: 'Start from the public surface and the docs, not the internals: what does this promise callers, and where does the implementation fail to keep that promise?' },
+    { key: 'analogy',     brief: 'Find how comparable systems, libraries, or other parts of this same repo handle this, and answer by contrast — what is standard here, and where does this code depart from it?' },
+  ]
+
+  // ---------------------------------------------------------------- lenses
+  // Ordered most-signal first; `reviewers` takes a prefix of this list.
+
+  const lenses = MODE === 'implement' ? [
+    { key: 'correctness',  model: 'opus',   brief: 'Hunt for a concrete input or state on which this change produces a wrong result, throws, or silently corrupts data. A defect without a triggering scenario is not a defect — state inputs and the resulting wrong output.' },
+    { key: 'verification', model: 'sonnet', brief: 'Do not take the claimed verification on trust. Go to the worktree path yourself, re-run the build and the test suite, and report the real command and its real output. If the candidate claims tests pass and they do not, that is a blocker.' },
+    { key: 'fit',          model: 'sonnet', brief: 'Judge it against the surrounding codebase: conventions, naming, error handling, docs, test placement, project instructions (CLAUDE.md and skills). Flag scope creep — anything changed that the task did not require.' },
+    { key: 'simplicity',   model: 'opus',   brief: 'Ask what could be deleted. Is there existing code that already does this? Is there a materially simpler formulation with the same behaviour? Unnecessary abstraction and indirection are defects.' },
+  ] : [
+    { key: 'evidence',     model: 'sonnet', brief: 'Check the receipts. For each cited file:line or command output, open it and confirm it says what the candidate claims. Any claim you cannot confirm is a defect, and a fabricated citation is a blocker.' },
+    { key: 'refute',       model: 'opus',   brief: 'Try to prove the conclusion false. Look for the code path, input, or commit that contradicts it. Default to refuted when you are genuinely uncertain — a confidently wrong answer is worse than an unresolved one.' },
+    { key: 'completeness', model: 'opus',   brief: 'Ask what is missing: an unexplored code path, an unasked question, a case the answer does not cover, an alternative explanation never considered.' },
+  ]
+
+  return { stances, lenses }
+}
+
+function ensembleSolvePrompt(S, s, stance) {
+  return `${taskBlock(S, 0)}
+Your independent stance: ${stance.key}. ${stance.brief}
+${workspaceBlock(S, s, 0)}
+Read repository instructions. Do not inspect other candidates or their posts. ${S.mode === 'implement' ? 'Implement the task and run the verification gate in your worktree.' : 'Investigate read-only; scratch files belong in a temporary directory. Ground every claim in checkable evidence.'}
+Write your complete result to ${postPath(S, s.L, 0)}. Return actual verification commands and output; never claim a check you did not run.`
+}
+
+function ensembleReviewPrompt(S, s, a, solution, checkout) {
+  return `${taskBlock(S, 0)}
+You are a fresh independent reviewer. Lens: ${a.lens}. ${a.brief}
+Candidate: ${postPath(S, s.L, 0)}
+${S.mode === 'implement' ? `Review snapshot refs/council/${S.run.runId}/${s.L}-r0, tree ${S.pos[s.L].tree?.hash || '(unmeasured)'}. Return that exact tree as snapshotTree. Your disposable checkout is ${checkout}; create if absent with ${S.cli} materialize --run-dir ${shq(S.run.runDir)} --seat ${s.L} --label r0 --name ensemble-${s.L}-${a.lens}. Never write the author's worktree. Re-run checks here.` : `Inspect the repository read-only and validate the cited evidence. Return snapshotTree as an empty string.`}
+Inspect every acceptance criterion and return its evidenced assessment. Return complete=true only after the full review. Defects must have concrete triggers and evidence. Do not read other candidates or reviews.
+${S.mode === 'implement' ? reviewScope() : 'Review the answer against the task. Blockers invalidate its conclusion; major defects leave material claims unsupported or required questions unanswered; minor defects are localized corrections.'}
+${a.vendor === 'gemini' ? GEMINI_REVIEWER : ''}
+Candidate's report (verify it yourself): ${JSON.stringify(solution)}`
+}
+
+function newPairState() {
+  return { stage: 'design', design: '', approvedDesign: '', findings: [], reviews: [], author: null, measurement: null, label: null, lastReview: null, signatures: [], stop: '', questions: [] }
+}
+
+// Pair decisions are shared by both hosts. Only the reviewer can close findings.
+function parsePairArgs(args) {
+  return parseArgs(args)
+}
+
+function parsePairConfig(args) {
+  const raw = parsePairArgs(args)
+  for (const key of ['tier', 'seats', 'simple', 'panel', 'spec', 'audit', 'roles', 'evidence']) {
+    if (raw[key] !== undefined) throw new Error(`pair: ${key} is not a pair option; use author, reviewer, and maxReviews.`)
+  }
+  if (raw.mode && raw.mode !== 'implement') throw new Error('pair: this workflow delivers an implementation.')
+  const author = parseSeat(raw.author || (raw.host === 'codex' ? 'sol' : 'opus'), raw.effort)
+  const reviewer = parseSeat(raw.reviewer || (author.vendor === 'claude' ? 'astra' : 'opus'), raw.effort)
+  const maxReviews = raw.maxReviews === undefined ? 8 : Number(raw.maxReviews)
+  if (!Number.isSafeInteger(maxReviews) || maxReviews < 2 || maxReviews > 100) throw new Error('pair: maxReviews must be an integer from 2 to 100.')
+  const config = parseConfig({ ...raw, mode: 'implement', retro: false,
+    simple: { implementer: author.key, reviewer: reviewer.key } }, { workflow: 'pair', tier: 'simple' })
+  // Reuse setup and transport, without acquiring council roles or Simple escalation rules.
+  return { ...config, raw, tier: 'pair', simple: null, panel: [], specReviewers: [],
+    roles: { setup: author }, lineup: [hostSeat(config.host, author)],
+    auditors: [{ ...hostSeat(config.host, reviewer), lens: 'review', id: 'PR' }],
+    pairOptions: { author, reviewer, maxReviews } }
+}
+
+function pairVersion(S) {
+  return S.pair.stage === 'design' ? `design:${promptHash(S.pair.design)}:${S.pair.measurement?.snapshot?.tree || 'base'}`
+    : `code:${S.pair.measurement?.snapshot?.tree || 'unmeasured'}`
+}
+
+function pairReviewTag(S) {
+  return S.pair.measurement?.snapshot?.ref?.slice(`refs/council/${S.run.runId}/A-`.length) || 'base'
+}
+
+function pairOpen(S) {
+  return S.pair.findings.filter(f => f.status === 'open')
+}
+
+function pairIngestReview(S, review) {
+  const p = S.pair
+  if (!review || review.version !== pairVersion(S) || review.complete !== true) return 'The reviewer did not complete a review of the current version.'
+  const resolutions = review.resolutions || []
+  const seen = new Set()
+  for (const r of resolutions) {
+    if (!p.findings.some(f => f.id === r.id) || seen.has(r.id) || !['open', 'fixed', 'refuted'].includes(r.status) || !String(r.evidence || '').trim()) {
+      return 'The reviewer returned an invalid or unsupported finding resolution.'
+    }
+    if (p.stage === 'design' && r.status === 'fixed' && p.findings.find(f => f.id === r.id).stage === 'code') {
+      return 'Implementation findings must be verified against code, not closed by a revised design.'
+    }
+    seen.add(r.id)
+  }
+  for (const f of review.findings || []) {
+    if (!String(f.statement || '').trim() || !String(f.evidence || '').trim() || !['blocker', 'major', 'minor'].includes(f.severity)) {
+      return 'The reviewer returned a finding without a statement, severity, or evidence.'
+    }
+  }
+  for (const r of resolutions) {
+    const f = p.findings.find(f => f.id === r.id)
+    f.status = r.status
+    f.resolution = r.evidence
+    f.history.push({ review: p.reviews.length + 1, ...r })
+  }
+  for (const f of review.findings || []) {
+    p.findings.push({ ...f, id: `P${p.findings.length + 1}`, stage: p.stage, status: 'open', resolution: '', history: [] })
+  }
+  p.lastReview = review
+  p.reviews.push({ stage: p.stage, label: p.label, ...review })
+  return null
+}
+
+function pairReadiness(S) {
+  const p = S.pair, r = p.lastReview
+  const blocked = [], incomplete = []
+  if (p.stop) incomplete.push(p.stop)
+  if (!r || r.version !== pairVersion(S) || !r.complete) incomplete.push('The current version has no completed review.')
+  for (const f of pairOpen(S).filter(f => p.stage === 'code' || f.stage === 'design')) blocked.push(`${f.id} (${f.severity}): ${f.statement}`)
+  if (!S.criteria.length) incomplete.push('No acceptance criteria were established.')
+  for (const c of S.criteria) {
+    const assessments = (r?.criteria || []).filter(x => x.criterion === c.id)
+    if (assessments.length !== 1 || !String(assessments[0].note || '').trim()) incomplete.push(`No single evidenced assessment of ${c.id}.`)
+    else if (assessments[0].status !== 'met') blocked.push(`Criterion ${c.id} is ${assessments[0].status}.`)
+  }
+  if (p.stage === 'code') {
+    if (!p.approvedDesign) incomplete.push('The design has not passed review.')
+    const m = p.measurement
+    if (!m || m.status !== 'done' || !/^[0-9a-f]{40,64}$/.test(m.snapshot?.tree || '')) incomplete.push('No measured snapshot of the current implementation.')
+    if (S.verify && !m?.suite?.ran) incomplete.push('Required verification did not run.')
+    else if (S.verify && !m.suite.passed) blocked.push('Required verification failed on the reviewed snapshot.')
+  }
+  if (r?.requiresDesignRevision) blocked.push('The reviewer requires a revised design.')
+  return { state: blocked.length ? 'blocked' : incomplete.length ? 'incomplete' : 'ready', blocked, incomplete }
+}
+
+function pairStalled(S) {
+  const p = S.pair
+  const signature = JSON.stringify([pairVersion(S), pairOpen(S).map(f => [f.id, f.statement]),
+    p.lastReview?.criteria.map(c => [c.criterion, c.status]), p.lastReview?.requiresDesignRevision,
+    p.measurement?.suite?.ran, p.measurement?.suite?.passed])
+  p.signatures.push(signature)
+  return p.signatures.length >= 2 && p.signatures.at(-2) === signature
+}
+
+function pairResult(S, status = 'blocked') {
+  const p = S.pair, m = p.stage === 'code' ? p.measurement : null
+  const ready = pairReadiness(S)
+  if (p.stage !== 'code' && ready.state === 'ready') {
+    ready.state = 'incomplete'; ready.incomplete.push('Implementation has not been reviewed.')
+  }
+  const report = [`Pair: ${S.pairOptions.author.name} authors; ${S.pairOptions.reviewer.name} reviews.`,
+    `Readiness: ${ready.state}. Reviews: ${p.reviews.length}/${S.pairOptions.maxReviews}.`,
+    `Verification: ${!S.verify ? 'no automated gate configured; no test pass claimed' : !m?.suite?.ran ? 'not run on a final snapshot' : m.suite.passed ? 'passed on the reviewed snapshot' : 'failed on the reviewed snapshot'}.`,
+    ...ready.blocked, ...ready.incomplete,
+    ...p.findings.map(f => `${f.id}: ${f.status} — ${f.statement}${f.resolution ? ` (${f.resolution})` : ''}`)].join('\n\n')
+  return { status, workflow: 'pair', mode: 'implement', task: S.task, runDir: S.run?.runDir || null,
+    room: S.run?.room || null, refs: S.refs, stage: p.stage, stopReason: p.stop,
+    design: p.design, author: S.pairOptions.author.name, reviewer: S.pairOptions.reviewer.name,
+    reviews: p.reviews, findings: p.findings, questions: p.questions, notes: S.notes,
+    report: { markdown: report },
+    final: { author: 'A', model: S.pairOptions.author.name, summary: p.author?.summary || '',
+      worktree: S.seats[0]?.wt || null, post: p.label && S.run ? `${S.run.room}/${p.label}/A.md` : null,
+      snapshotRef: m?.snapshot?.ref || null, snapshotTree: m?.snapshot?.tree || null, diff: m?.snapshot?.diff || null,
+      suite: m?.suite || null, criteria: p.lastReview?.criteria || [], readiness: ready },
+    delivery: { status: status === 'done' && ready.state === 'ready' ? 'pending' : 'not-ready' },
+    forTheOrchestrator: 'Read final.readiness first. Report unresolved findings or missing evidence before any success summary. ' +
+      'Spot-check the reviewed snapshot and report the design and implementation review outcomes. The change stays in final.worktree. ' +
+      'Deliver only within the user\'s authorization, preserving unrelated edits; use dark-factory verify-delivery afterward. ' +
+      'Do not start a council automatically. The Codex host can resume a validated checkpoint with --resume hostRunDir; changed inputs or evidence require a new run.' }
+}
+
+function pairAuthorPrompt(S, label) {
+  const p = S.pair, design = p.stage === 'design'
+  return `You are the sole author in a pair workflow. Own the task through completion; an independent reviewer checks each stage.
+
+${taskBlock(S, 99)}
+# Stage: ${design ? 'design' : 'implementation'}
+
+Your worktree: ${S.seats[0].wt}. Work only there; never edit the main checkout or reviewer checkouts.
+Read the repository instructions and the relevant code. Do not delegate or launch other models.
+${design ? `Return a complete short design in design: the approach, affected files, assumptions, risks, and how every acceptance criterion will be tested. Cite existing code where the approach depends on it. Revise the entire design in response to feedback. Do not implement yet.`
+    : `Implement the reviewed design, including the required tests and documentation. Run appropriate focused checks and the shared verification gate. Fix all open actionable findings and any failed verification. Return design as an empty string; the accepted design remains fixed until the reviewer requests design revision.`}
+
+# Current design
+${p.design || '(none yet)'}
+
+# Findings ledger
+${JSON.stringify(p.findings)}
+
+# Latest review and measurement
+${JSON.stringify({ review: p.lastReview, measurement: p.measurement })}
+
+# Author continuity
+${p.author?.notes || '(first author turn)'}
+
+For each open finding, return its ID with the change made or an evidence-backed disagreement in addressed. You cannot close a finding yourself. Do not weaken tests, criteria, or the verification configuration to obtain a pass. If the task requires a user decision, return status needs-user and specific questions; if execution is blocked, return blocked with the reason in summary. Otherwise return done.
+Write a concise handoff at ${S.run.room}/${label}/A.md (create the directory). Include the ${design ? 'full design' : 'change summary and actual checks'}, responses to findings, and important remaining work. Return private notes sufficient for a fresh author context to continue. Keep implementation and design artifacts inside this run until delivery.`
+}
+
+function pairReviewPrompt(S, label, checkout) {
+  const p = S.pair, design = p.stage === 'design'
+  const tag = pairReviewTag(S)
+  return `You are the independent reviewer in a pair workflow. This is a fresh review context. You did not author the work. Review the current artifact yourself, using repository evidence, and verify every proposed finding resolution.
+
+${taskBlock(S, 99)}
+# Review stage: ${p.stage}
+Version: ${pairVersion(S)}
+Return that exact version. Return complete=true only after examining the entire current artifact and every acceptance criterion, including regressions introduced by fixes.
+
+Repository checkout to inspect: ${checkout}
+${hostMaterializationNote(S, label, tag, checkout)}
+This checkout is separate from the author's worktree. Do not edit the author's worktree, main checkout, design, criteria, or verification configuration. You may run probes in your own checkout; assess the original snapshot, record the probe commands and results, and restore any tracked files you change. Never treat a passing probe on modified code as evidence about the reviewed snapshot. Do not delegate or launch models. Do not read the author's private notes or session history.
+
+# Design
+${p.design}
+
+${design ? 'Check the approach against the task and existing code: correctness, missing requirements, assumptions, alternatives that materially affect the outcome, scope, and planned test coverage. Each criterion is met only if the design explains how it will be satisfied and checked.'
+    : `Review the implementation and tests against the task and approved design. Inspect the whole diff at ${p.measurement.snapshot.diff}, not only the latest fixes. Look for incorrect behavior, regressions, missing requirements, and tests that would miss the defect. The neutral helper measured this exact snapshot:
+${JSON.stringify(p.measurement)}
+Passing tests do not replace code review. Treat a failing or missing required check as unresolved.`}
+
+# Findings and proposed responses
+${JSON.stringify({ findings: p.findings, addressed: p.author.addressed })}
+
+Use resolutions to update existing IDs: open if still actionable, fixed only after inspecting the correction, refuted only with evidence that the finding was mistaken. Give concrete evidence for every resolution. Reopen an old ID when its defect recurs. Missing resolutions leave findings open. In design review, leave code findings open until the implementation is fixed; check that the revised design explains their correction. Add only genuinely new defects in findings; the engine assigns their IDs. Actionable minor findings count too. Put optional preferences and unrelated improvements in suggestions; do not manufacture findings to fill a quota.
+Return an evidenced met/partial/unmet assessment for every acceptance criterion. In code review, set requiresDesignRevision=true only if the implementation needs a materially different design; explain it in a finding. The engine will return the author to design review. In design review, keep that field false and express needed revisions as findings. Return complete=false if you cannot finish the review; an empty findings list is not approval in that case.`
+}
+
+function hostMaterializationNote(S, label, tag, checkout) {
+  return `If that checkout does not exist, create it with ${S.cli} materialize --run-dir ${shq(S.run.runDir)} --seat A --label ${shq(tag)} --name ${shq(`pair-review-${label}`)}. The CLI transport normally creates it before your turn. Inspect this checkout, not the main repository's working files.`
+}
+
+function pairMeasurePrompt(S, label) {
+  return `You are transporting a deterministic verification result for the pair workflow. Do not review, change, or judge the implementation. Run exactly:
+${S.cli} measure --run-dir ${shq(S.run.runDir)} --seat A --label ${shq(label)} --max-wait 5
+If status is running, poll ${S.cli} wait --run-dir ${shq(S.run.runDir)} --job ${shq(`measure-A-${label}`)} --max-wait 5 until it finishes. Poll an active shell session before launching another command. Do not use sleep polling.
+Return status done only for the helper's completed result. Copy snapshot.ref, snapshot.tree, snapshot.diff, and suite.ran, suite.passed, suite.command, and suite.tail exactly (empty command or tail if absent). On failure return error with the actual message and empty snapshot values. Do not substitute results from the live worktree or remove required checks.`
+}
+
 // From here the script runs. `S` is the one state object: the lib/ functions take it as their first
 // argument, and the code below it (schemas, turns, the flows) uses it directly. `let`, because the
 // factory rebuilds it once it knows the tier.
@@ -3798,6 +4245,7 @@ let S = newState(parseConfig(args))
 // Claude supplies agent()/parallel(); the standalone runner supplies this optional adapter.
 // Keep the feature check here so the same generated workflow runs in both hosts.
 const hostRuntime = typeof factoryRuntime === 'undefined' ? null : factoryRuntime
+const requestControl = { started: hostRuntime?.now ? hostRuntime.now() - (hostRuntime.elapsedBefore || 0) : S.controls.maxRunMin ? Date.now() : 0, turns: 0, ...S.controls }
 
 // Output schemas for every agent turn. Built from the config, so they sit after boot.
 
@@ -3877,6 +4325,7 @@ function withNotes(schema) {
 const VERDICT = { type: 'string', enum: ['verified', 'refuted', 'fabricated', 'unverifiable', 'n/a'] }
 
 const CHECK_SCHEMA = strict({ type: 'object', properties: {
+  ...(S.controls.repair ? { artifactHash: { type: 'string', description: 'For a design/plan: the exact hash printed by dark-factory hash --file POST. Empty for implementation.' } } : {}),
   measured: { type: 'boolean', description: 'Did the measure command complete?' },
   diff:     { type: 'object', properties: { files: { type: 'integer' }, added: { type: 'integer' }, removed: { type: 'integer' },
     tree: { type: 'string', description: 'snapshot.tree from the measure output, exactly; "" if there is none.' } } },
@@ -4016,6 +4465,7 @@ const SETUP_SCHEMA = strict({ type: 'object', properties: {
 
 // The factory's intake, and the Simple tier's one implementer, who can say the task isn't simple.
 const INTAKE_SCHEMA = strict({ type: 'object', properties: {
+  strategy: { type: 'string', enum: ['independent', 'pair'], description: 'Pair for scoped implementation with one clear approach and iterative review; independent for competing hypotheses or plans. Architecture and investigations require independent.' },
   status:      { type: 'string', enum: ['ok', 'needs-plan', 'needs-split'] },
   tier:        { type: 'string', enum: TIERS },
   mode:        { type: 'string', enum: MODES },
@@ -4148,6 +4598,34 @@ function withTurn(schema, tag) {
 // parallel() and log(), and the state object `S` from boot; the decisions they act on are computed
 // in lib/.
 
+function reserveTurn() {
+  const c = requestControl
+  if ((c.maxTurns && c.turns >= c.maxTurns) || (c.maxRunMin && (hostRuntime?.now ? hostRuntime.now() : Date.now()) - c.started >= c.maxRunMin * 60000)) {
+    const error = new Error(c.maxTurns && c.turns >= c.maxTurns ? `Run turn budget exhausted (${c.maxTurns}).` : `Run time budget exhausted (${c.maxRunMin} minutes).`)
+    c.stop = error.message
+    error.code = 'RUN_LIMIT'
+    throw error
+  }
+  c.turns++
+}
+
+async function controlledRun(work) {
+  let result
+  try { result = await work() } catch (error) {
+    if (error.code !== 'RUN_LIMIT') throw error
+    result = { status: 'blocked', stopReason: error.message, task: S.task, runDir: S.run?.runDir || null,
+      final: { readiness: { state: 'incomplete', blocked: [], incomplete: [error.message] } } }
+  }
+  if (requestControl.stop && result.final?.readiness?.state !== 'ready') {
+    result.status = 'blocked'
+    result.stopReason = requestControl.stop
+    result.final = { ...result.final, readiness: { state: 'incomplete', blocked: result.final?.readiness?.blocked || [], incomplete: [...(result.final?.readiness?.incomplete || []), requestControl.stop] } }
+  }
+  result.plan = result.plan || executionPlan(S)
+  result.metrics = evaluationFacts(S, result, requestControl.started ? (hostRuntime?.now ? hostRuntime.now() : Date.now()) - requestControl.started : null, requestControl.turns)
+  return result
+}
+
 function keepProcess(turn, role, who, res) {
   const text = res && typeof res.process === 'string' ? oneLine(res.process, 400) : ''
   if (S.retro && text && !/^(none|n\/a|nothing)\.?$/i.test(text)) S.processNotes.push({ turn, role, who, text })
@@ -4162,6 +4640,7 @@ function keepHostDiagnostics(label, result) {
 
 // Every agent call goes through here except the retro's own, so each can leave a process note.
 async function ask(prompt, opts, role, who) {
+  reserveTurn()
   const selected = roleAgent(S, role, opts)
   const res = hostRuntime
     ? await hostAgent(prompt, { ...opts, schema: withProcess(opts.schema) }, role, who)
@@ -4199,6 +4678,7 @@ function timeoutFor(kind) {
 }
 
 async function externalTurn(o, prompt, schema, label, ph) {
+  reserveTurn()
   const V = VENDOR_NAME[o.vendor]
   if (S.blocked[o.vendor]) { S.notes.push(`${V} turn ${o.key} skipped: the ${VENDOR_CLI[o.vendor]} can't run in this session's sandbox.`); return null }
   const tag = `${o.key}-${promptHash(prompt).split('-')[1]}`        // bound to this exact request
@@ -4481,6 +4961,7 @@ async function runSpecReview() {
 // The Architecture tier reuses it as the review of its milestone plan, with o = {fixSchema}: the
 // revision returns the milestones again, and audit.fixResult keeps what it returned.
 async function runAudit(W, o = {}) {
+  if (S.controls.repair || S.tier === 'simple') return boundedAudit(W, o)
   const audit = { ran: false, checked: false, reviews: {}, testsAtAudit: {}, fixPass: false, addressed: [], rereviews: {}, gaps: [], fixResult: null }
   if (!S.auditors.length || (S.mode !== 'implement' && S.tier !== 'architecture')) return audit
   phase('Audit')
@@ -4588,6 +5069,7 @@ async function runRetro(o) {
   const hash = promptHash(payload)
   let r = null
   try {
+    reserveTurn()
     const prompt = retroPrompt(S, o.reportMd, payload, hash)
     const opts = { label: 'retro', phase: 'Retro', schema: RETRO_SCHEMA, model: 'sonnet', effort: 'medium' }
     r = hostRuntime ? await hostAgent(prompt, opts, 'retro', null, { payload, payloadFile: `${S.run.runDir}/retro-data.md` }) : await agent(prompt, opts)
@@ -4606,6 +5088,7 @@ async function recordFacts(payload) {
   const hash = promptHash(payload)
   let r = null
   try {
+    reserveTurn()
     const prompt = recordPrompt(S, payload, hash)
     const opts = { label: 'record', phase: 'Record', schema: RECORD_SCHEMA, model: 'haiku', effort: 'low' }
     r = hostRuntime ? await hostAgent(prompt, opts, 'record', null, { payload, payloadFile: `${S.run.runDir}/retro-data.md` }) : await agent(prompt, opts)
@@ -4614,6 +5097,84 @@ async function recordFacts(payload) {
   }
   S.turnLog.push({ turn: 'record', role: 'record', vendor: hostRuntime ? S.roles.record.vendor : 'claude', ok: !!r })
   return { recorded: true, saved: (r && r.saved) || '', error: r ? r.error || '' : 'the record agent failed', notes: S.processNotes, markdown: '' }
+}
+
+// Bounded repairs use fresh reviews of each measured revision. Legacy council calls retain
+// their original prompts unless the caller selects the repair policy.
+async function boundedReview(a, W, round, tag) {
+  const checkout = auditCheckout(S, a, round)
+  const prompt = repairReviewPrompt(S, a, W, round, tag, checkout)
+  const schema = S.tier === 'architecture' ? PLAN_REVIEW_SCHEMA : historyCheck(S) ? FACTORY_AUDIT_SCHEMA : AUDIT_SCHEMA
+  if (a.vendor === 'claude' && !hostRuntime) return ask(prompt, { label: `${round} ${a.lens}: ${a.key}`, phase: 'Audit', schema, model: a.model, effort: a.effort }, 'auditor', a.name)
+  return externalTurn({ key: `${round}-${a.lens}`, threadKey: `audit-${round}-${a.lens}`, fresh: true,
+    vendor: a.vendor, model: a.model, effort: a.effort, role: 'auditor', who: a.name,
+    sandbox: S.mode === 'implement' ? 'workspace-write' : 'read-only', cwd: S.mode === 'implement' ? checkout : S.run.repoRoot,
+    writable: S.mode === 'implement' ? [`${S.run.room}/tests`, `${S.run.room}/${round}`, `${S.run.runDir}/jobs`, `${S.run.runDir}/logs`] : [],
+    ...(S.mode === 'implement' ? { checkout: `${W.L}-${tag}` } : {}), timeoutKind: 'audit',
+  }, prompt, schema, `${round} ${a.lens}: ${a.key}`, 'Audit')
+}
+
+async function boundedAudit(W, o) {
+  const policy = S.controls.repair || { maxPasses: 1, minor: 'block' }
+  const audit = { ran: false, checked: false, reviews: {}, testsAtAudit: {}, fixPass: false, addressed: [], rereviews: {}, gaps: [], fixResult: null,
+    cycles: [], repairPolicy: policy, stopReason: '', finalTag: S.auditedTag, lastCheck: S.pos[W.L]?.assessment?.round ?? null }
+  if (!S.auditors.length || (S.mode !== 'implement' && S.tier !== 'architecture')) return audit
+  audit.ran = true
+  if (S.mode !== 'implement' && !S.pos[W.L]?.artifactHash) { audit.gaps.push('No content hash for the reviewed design.'); return audit }
+  let previous = null
+  for (let pass = 0; pass <= policy.maxPasses; pass++) {
+    phase('Audit')
+    const round = `review${pass}`, before = S.ledger.length
+    const reviewedTree = S.pos[W.L].tree?.hash
+    S.reviewedSnapshot = audit.finalTag
+    const reviews = await parallel(S.auditors.map(a => () => boundedReview(a, W, round, audit.finalTag)))
+    const current = {}
+    S.auditors.forEach((a, i) => {
+      if (reviews[i]) current[a.lens] = ingestAudit(S, a, round, W.L, reviews[i])
+      else audit.gaps.push(`no ${round} review from the ${a.lens} auditor`)
+    })
+    if (pass === 0) audit.reviews = current
+    else audit.rereviews = current
+    if (historyCheck(S)) {
+      audit.gaps = audit.gaps.filter(g => !g.startsWith('historical evidence review incomplete:'))
+      const owner = evidenceOwner(S)
+      if (current[owner.lens]?.evidenceReview?.status !== 'complete') audit.gaps.push(`historical evidence review incomplete: ${owner.lens}`)
+    }
+    // New findings and reproductions must be adjudicated against the same measured revision.
+    if (S.ledger.length > before || audit.lastCheck === null) {
+      await runChecks(round, W.L, auditTriage(S, round))
+      // No author changed the artifact during this review. An upheld new defect cannot
+      // simultaneously be fixed on these same bytes, even if a checker claims it is.
+      for (const c of S.ledger.slice(before)) if (c.kind === 'finding' && c.status === 'verified') c.fixed = false
+      audit.checked = true; audit.lastCheck = round; audit.finalTag = round
+      if (reviewedTree && S.pos[W.L].tree?.hash !== reviewedTree) audit.gaps.push('The measured snapshot changed during independent review.')
+    }
+    const todo = repairTodo(S, W.L)
+    const signature = repairSignature(S, W.L)
+    audit.cycles.push({ review: round, snapshot: audit.finalTag, findings: S.ledger.slice(before).map(c => c.id), needed: todo.needed })
+    // A Simple approach defect still escalates before spending a repair turn.
+    if (pass === 0 && o.beforeFix) {
+      const escalation = o.beforeFix()
+      if (escalation) { audit.escalate = escalation; return audit }
+    }
+    if (audit.gaps.length || !todo.needed) return audit
+    if (signature === previous || pass === policy.maxPasses) {
+      audit.stopReason = signature === previous ? 'Repair stalled: the measured artifact and unresolved findings did not change.' : `Repair budget exhausted (${policy.maxPasses} passes).`
+      audit.gaps.push(audit.stopReason)
+      return audit
+    }
+    previous = signature
+    const tag = `repair${pass + 1}`
+    const fix = await seatTurn(W, tag, boundedRepairPrompt(S, W, todo, tag, pass + 1, policy.maxPasses), o.fixSchema || SYNTH_SCHEMA)
+    audit.fixPass = true; audit.fixResult = fix
+    if (!fix) { audit.gaps.push('The repair turn failed.'); return audit }
+    S.pos[W.L] = { ...S.pos[W.L], summary: fix.summary || S.pos[W.L].summary, post: postPath(S, W.L, tag) }
+    keepNotes(S, W, tag, fix); ingestClaims(S, W.L, tag, fix.claims); keepDeclined(S, tag, fix)
+    audit.addressed.push(...(fix.addressed || []).filter(x => x?.ref))
+    await runChecks(tag, W.L)
+    audit.lastCheck = tag; audit.finalTag = tag
+  }
+  return audit
 }
 
 // ---------------------------------------------------------------- run
@@ -4695,8 +5256,8 @@ async function councilRun() {
 
   // ---- Report
 
-  const finalTag = audit.fixPass ? roundTag('I') : S.auditedTag
-  const lastCheck = audit.fixPass ? 'I' : audit.checked ? 'H' : fixPass ? 'G' : 'F'
+  const finalTag = audit.finalTag || (audit.fixPass ? roundTag('I') : S.auditedTag)
+  const lastCheck = audit.lastCheck || (audit.fixPass ? 'I' : audit.checked ? 'H' : fixPass ? 'G' : 'F')
   const remaining = S.ledger.filter(c => isStanding(S, c) && c.target === W.L)
   const unanswered = S.questions.filter(q => !answered(S, q.id))
   const ready = readiness(S, W.L, lastCheck, raters, reviews, audit.gaps)
@@ -4930,6 +5491,146 @@ async function synthesize(W, outcome, schema) {
   return synth
 }
 
+const PAIR_AUTHOR_SCHEMA = strict({ type: 'object', properties: {
+  status: { type: 'string', enum: ['done', 'needs-user', 'blocked'] },
+  summary: { type: 'string' }, design: { type: 'string' }, notes: { type: 'string' },
+  addressed: { type: 'array', items: { type: 'object', properties: {
+    id: { type: 'string' }, response: { type: 'string' }, evidence: { type: 'string' },
+  } } },
+  questions: { type: 'array', items: { type: 'string' } },
+} })
+
+const PAIR_REVIEW_SCHEMA = strict({ type: 'object', properties: {
+  version: { type: 'string' }, complete: { type: 'boolean' }, summary: { type: 'string' },
+  requiresDesignRevision: { type: 'boolean' },
+  findings: { type: 'array', items: { type: 'object', properties: {
+    severity: SEVERITY, statement: { type: 'string' }, evidence: { type: 'string' },
+  } } },
+  resolutions: { type: 'array', items: { type: 'object', properties: {
+    id: { type: 'string' }, status: { type: 'string', enum: ['open', 'fixed', 'refuted'] }, evidence: { type: 'string' },
+  } } },
+  criteria: CHECK_SCHEMA.properties.criteria,
+  suggestions: { type: 'array', items: { type: 'string' } },
+} })
+
+const PAIR_MEASURE_SCHEMA = strict({ type: 'object', properties: {
+  status: { type: 'string', enum: ['done', 'error'] }, error: { type: 'string' },
+  snapshot: { type: 'object', properties: { ref: { type: 'string' }, tree: { type: 'string' }, diff: { type: 'string' } } },
+  suite: { type: 'object', properties: { ...CHECK_SCHEMA.properties.suite.properties, command: { type: 'string' } } },
+} })
+
+async function pairRun() {
+  phase('Setup')
+  // Native Claude workflows need a native transport for setup and measurements. Prefer one
+  // of the two selected participants; CLI seats and all Codex-host turns use their adapters.
+  const native = [S.pairOptions.author, S.pairOptions.reviewer].find(s => s.vendor === 'claude')
+  const transportModel = native ? native.model : 'haiku'
+  const setup = await ask(setupPrompt(S), { label: 'setup', phase: 'Setup', schema: SETUP_SCHEMA,
+    model: transportModel, effort: 'medium' }, 'setup')
+  if (setup?.status === 'needs-plan') return needsPlan(S, setup.planMissing, setup.runDir)
+  if (setup?.status === 'preflight') return preflightStop(S, setup.preflight)
+  if (!setup || setup.status === 'error' || !setup.runDir || !setup.runId || !setup.repoRoot) {
+    S.pair.stop = setup?.error || 'Setup did not return a run.'
+    return pairResult(S, 'failed')
+  }
+  S.run = { runId: setup.runId, runDir: setup.runDir, repoRoot: setup.repoRoot, room: `${setup.runDir}/room` }
+  S.seats = [{ L: 'A', ...S.lineup[0], wt: `${S.run.runDir}/wt/A`, active: true }]
+  if (((setup.dirty || []).length && !S.allowDirty) || setup.status === 'dirty') {
+    S.pair.stop = 'Tracked working-tree changes are absent from worktrees based on HEAD. Commit or stash them, or explicitly set allowDirty.'
+    return pairResult(S)
+  }
+  S.criteria = setup.criteria || []
+  S.verify = String(setup.verify || '').trim()
+  S.refs = (setup.refs || []).filter(r => r.path?.startsWith(`${S.run.runDir}/refs/`))
+  if (!S.criteria.length || new Set(S.criteria.map(c => c.id)).size !== S.criteria.length || S.criteria.some(c => !c.id || !c.text) ||
+      S.refs.length !== (setup.refs || []).length || S.refs.length < S.plan.length ||
+      (S.raw.verify && S.verify !== String(S.raw.verify).trim())) {
+    S.pair.stop = 'Setup omitted criteria, reference snapshots, or the requested verification command.'
+    return pairResult(S)
+  }
+  const p = S.pair
+  log(`pair: ${S.pairOptions.author.name} authors; ${S.pairOptions.reviewer.name} reviews; budget ${S.pairOptions.maxReviews} reviews`)
+  while (p.reviews.length < S.pairOptions.maxReviews) {
+    const label = `pair-${p.stage}-${p.reviews.length + 1}`
+    p.label = label
+    phase(p.stage === 'design' ? 'Design' : 'Implement')
+    const author = await pairAuthorTurn(label)
+    if (!author) { p.stop = 'The author turn failed.'; return pairResult(S, 'failed') }
+    p.author = author
+    if (author.status !== 'done') {
+      p.stop = author.summary || 'The author could not continue.'
+      p.questions = author.questions || []
+      return pairResult(S, author.status === 'needs-user' ? 'needs-user' : 'blocked')
+    }
+    if (p.stage === 'design') {
+      if (!author.design?.trim()) { p.stop = 'The author returned no design.'; return pairResult(S, 'failed') }
+      p.design = author.design
+    } else {
+      phase('Verify')
+      try {
+        p.measurement = hostRuntime ? await hostRuntime.measure({ run: S.run, seat: 'A', label })
+          : await ask(pairMeasurePrompt(S, label), { label: `measure ${label}`, phase: 'Verify', schema: PAIR_MEASURE_SCHEMA,
+            model: transportModel, effort: 'low' }, 'checker')
+      } catch (error) { p.measurement = { status: 'error', error: String(error?.message || error) } }
+      const m = p.measurement
+      if (!m || m.status !== 'done' || !/^[0-9a-f]{40,64}$/.test(m.snapshot?.tree || '') ||
+          m.snapshot.ref !== `refs/council/${S.run.runId}/A-${label}` || m.snapshot.diff !== `${S.run.room}/${label}/A.diff` ||
+          (m.suite?.ran && String(m.suite.command || '').trim() !== S.verify)) {
+        p.stop = m?.error || 'Snapshot verification failed to produce evidence.'
+        return pairResult(S, 'failed')
+      }
+    }
+    phase(p.stage === 'design' ? 'Review design' : 'Review code')
+    const review = await pairReviewTurn(label)
+    const error = pairIngestReview(S, review)
+    if (error) { p.stop = error; return pairResult(S, review ? 'blocked' : 'failed') }
+    const ready = pairReadiness(S)
+    log(`pair: ${p.stage} review ${p.reviews.length}: ${ready.state}; ${pairOpen(S).length} open finding(s)`)
+    if (ready.state === 'ready') {
+      if (p.stage === 'code') return pairResult(S, 'done')
+      p.approvedDesign = p.design
+      p.stage = 'code'
+      p.lastReview = null
+      continue
+    }
+    if (pairStalled(S)) { p.stop = 'Review stalled: the artifact and unresolved findings did not change.'; return pairResult(S) }
+    if (p.stage === 'code' && review.requiresDesignRevision) {
+      p.stage = 'design'
+      p.approvedDesign = ''
+      p.lastReview = null
+    }
+  }
+  p.stop = `Review budget exhausted (${S.pairOptions.maxReviews}); work remains unresolved.`
+  return pairResult(S)
+}
+
+function pairAuthorTurn(label) {
+  const a = S.seats[0], prompt = pairAuthorPrompt(S, label)
+  const ph = S.pair.stage === 'design' ? 'Design' : 'Implement'
+  if (a.vendor === 'claude' && !hostRuntime) return ask(prompt, {
+    label, phase: ph, schema: PAIR_AUTHOR_SCHEMA, model: a.model, effort: a.effort,
+  }, 'author', a.name)
+  return externalTurn({ key: label, threadKey: 'pair-author', fresh: false, vendor: a.vendor,
+    model: a.model, effort: a.effort, role: 'author', who: a.name, sandbox: 'workspace-write', cwd: a.wt,
+    writable: [S.run.room, `${S.run.runDir}/jobs`, `${S.run.runDir}/logs`], timeoutKind: 'solve',
+  }, prompt, PAIR_AUTHOR_SCHEMA, label, ph)
+}
+
+function pairReviewTurn(label) {
+  const a = S.auditors[0]
+  const checkout = `${S.run.runDir}/snap/pair-review-${label}`
+  const prompt = pairReviewPrompt(S, label, checkout)
+  const ph = S.pair.stage === 'design' ? 'Review design' : 'Review code'
+  if (a.vendor === 'claude' && !hostRuntime) return ask(prompt, {
+    label: `review ${label}`, phase: ph, schema: PAIR_REVIEW_SCHEMA, model: a.model, effort: a.effort,
+  }, 'reviewer', a.name)
+  return externalTurn({ key: `review-${label}`, threadKey: `review-${label}`, fresh: true,
+    vendor: a.vendor, model: a.model, effort: a.effort, role: 'reviewer', who: a.name,
+    sandbox: 'workspace-write', cwd: checkout, writable: [`${S.run.runDir}/jobs`, `${S.run.runDir}/logs`],
+    timeoutKind: 'audit', checkout: `A-${pairReviewTag(S)}`,
+  }, prompt, PAIR_REVIEW_SCHEMA, `review ${label}`, ph)
+}
+
 // ---------------------------------------------------------------- the Simple tier
 
 // One implementer, the neutral check, one reviewer from another vendor, at most one fix pass. At
@@ -4977,7 +5678,7 @@ async function simpleRun() {
   const audit = await runAudit(W, { rereview: false, beforeFix: () => simpleTrigger(S, 'review') })
   if (audit.escalate) return escalate(audit.escalate)
 
-  const lastCheck = audit.fixPass ? 'I' : audit.checked ? 'H' : 0
+  const lastCheck = audit.lastCheck || (audit.fixPass ? 'I' : audit.checked ? 'H' : 0)
   const ready = readiness(S, W.L, lastCheck, [], [], audit.gaps)
   handUp = simpleTrigger(S, 'final', { ready })
   if (handUp) return escalate(handUp)
@@ -5046,7 +5747,7 @@ async function featureRun() {
   const lastK = `K${incs.length}`
   S.auditedTag = roundTag(lastK)
   const audit = await runAudit(W)
-  const lastCheck = audit.fixPass ? 'I' : audit.checked ? 'H' : lastK
+  const lastCheck = audit.lastCheck || (audit.fixPass ? 'I' : audit.checked ? 'H' : lastK)
   const ready = readiness(S, W.L, lastCheck, [], [], audit.gaps)
   const report = featureReport(S, { outcome, W, rows: decisionRows, ready, audit })
   if (S.retro) phase('Retro')
@@ -5087,7 +5788,7 @@ async function architectureRun() {
     else S.notes.push(`${W.L}'s revision listed no milestones; the plan keeps the ones it had.`)
   }
 
-  const lastCheck = audit.fixPass ? 'I' : audit.checked ? 'H' : 'F'
+  const lastCheck = audit.lastCheck || (audit.fixPass ? 'I' : audit.checked ? 'H' : 'F')
   const ready = readiness(S, W.L, lastCheck, [], [], [...audit.gaps, ...(S.milestones.length ? [] : ['the plan lists no milestones'])])
   const report = architectureReport(S, { outcome, W, rows: decisionRows, ready, audit })
   if (S.retro) phase('Retro')
@@ -5100,29 +5801,43 @@ async function architectureRun() {
 // Intake picks the tier, unless the user pinned one; a pin intake disagrees with is asked about
 // once, and so is a task intake would split into separate runs. Then the run is rebuilt for its
 // tier: the Simple flow, the Feature flow, the Architecture flow, or the council.
-phase('Intake')
-const factoryArgs = parseFactory(S.raw)
-S = newState(parseConfig(S.raw, { workflow: 'factory' }))
-const intake = await ask(intakePrompt(S), { label: 'intake', phase: 'Intake', schema: INTAKE_SCHEMA, model: 'opus', effort: 'medium' }, 'intake')
-if (!intake) return failure(S, 'failed', 'the intake agent returned nothing')
-if (intake.status === 'needs-plan') return needsPlan(S, intake.planMissing, null)
-const pieces = splitItems(intake)
-S.factory = { tier: null, asked: factoryArgs.tier, tierConfirmed: factoryArgs.tierConfirmed, chosenBy: 'intake', recommended: intakeTier(intake), intake, escalation: null, args: S.raw,
-  split: pieces.length ? { pieces: pieces.length, declined: true } : null }
-if (pieces.length && !factoryArgs.noSplit) return needsSplit(S, pieces, intake)
-const push = tierPushback(S, intake)
-if (push) return needsTier(S, push, intake)
-const tier = factoryArgs.tier || intakeTier(intake)
-S.factory.tier = tier
-S.factory.chosenBy = !factoryArgs.tier ? 'intake' : tier === S.factory.recommended ? 'pinned' : 'overruled'
-log(`factory: tier ${tier} (${S.factory.chosenBy}${S.factory.chosenBy === 'intake' ? '' : `; intake recommends ${S.factory.recommended}`}): ${oneLine(intake.reasons, 200)}`)
-{
-  const carried = { factory: S.factory, turnLog: S.turnLog, processNotes: S.processNotes }
-  S = newState(parseConfig(tierArgs(S.raw, tier, intake), { workflow: 'factory', tier }))
-  Object.assign(S, carried)
+return await controlledRun(factoryRun)
+
+async function factoryRun() {
+  phase('Intake')
+  const factoryArgs = parseFactory(S.raw)
+  S = newState(parseConfig(S.raw, { workflow: 'factory' }))
+  const intake = await ask(intakePrompt(S), { label: 'intake', phase: 'Intake', schema: INTAKE_SCHEMA, model: 'opus', effort: 'medium' }, 'intake')
+  if (!intake) return failure(S, 'failed', 'the intake agent returned nothing')
+  if (intake.status === 'needs-plan') return needsPlan(S, intake.planMissing, null)
+  const pieces = splitItems(intake)
+  S.factory = { tier: null, asked: factoryArgs.tier, tierConfirmed: factoryArgs.tierConfirmed, chosenBy: 'intake', recommended: intakeTier(intake), intake, escalation: null, args: S.raw,
+    split: pieces.length ? { pieces: pieces.length, declined: true } : null }
+  if (pieces.length && !factoryArgs.noSplit) return needsSplit(S, pieces, intake)
+  const push = tierPushback(S, intake)
+  if (push) return needsTier(S, push, intake)
+  const tier = factoryArgs.tier || intakeTier(intake)
+  S.factory.tier = tier
+  S.factory.chosenBy = !factoryArgs.tier ? 'intake' : tier === S.factory.recommended ? 'pinned' : 'overruled'
+  S.factory.strategy = factoryStrategy(S, intake)
+  log(`factory: tier ${tier} (${S.factory.chosenBy}${S.factory.chosenBy === 'intake' ? '' : `; intake recommends ${S.factory.recommended}`}): ${oneLine(intake.reasons, 200)}`)
+  {
+    const carried = { factory: S.factory, turnLog: S.turnLog, processNotes: S.processNotes }
+    S = newState(parseConfig(tierArgs(S.raw, tier, intake), { workflow: 'factory', tier }))
+    Object.assign(S, carried)
+  }
+  if (S.factory.strategy === 'pair') {
+    const carried = { factory: S.factory, turnLog: S.turnLog, processNotes: S.processNotes }
+    S = newState(factoryPairConfig(S))
+    Object.assign(S, carried, { pair: newPairState() })
+    if (S.raw.explain) return explanation(S)
+    const result = await pairRun()
+    return { ...result, workflow: 'factory', tier, strategy: 'pair', factory: carried.factory }
+  }
+  if (S.raw.explain) return explanation(S)
+  if (tier === 'simple') return await simpleRun()
+  return routedResult(S, await tierRun(tier))
 }
-if (tier === 'simple') return await simpleRun()
-return routedResult(S, await tierRun(tier))
 
 // The flow of a tier above Simple.
 function tierRun(tier) {

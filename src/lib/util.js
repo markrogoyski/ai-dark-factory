@@ -15,7 +15,7 @@ function shq(s) { return `'${String(s).replace(/'/g, `'\\''`)}'` }
 
 // Models often return an ID with its text attached ("1B3: the suite passes", "[1B3] …").
 // Accept the first ledger-shaped token instead of requiring an exact string.
-const ID_RE = /\b(T\d+[A-F]\d+|TX[CDRT]\d+|\d+[A-F]\d+|[FGI][A-F]\d+|K\d+[A-F]\d+|X[CDGKRST]\d+|Q\d+|S\d+)\b/
+const ID_RE = /\b((?:repair|review)\d+[A-F]\d+|T\d+[A-F]\d+|TX[CDRT]\d+|\d+[A-F]\d+|[FGI][A-F]\d+|K\d+[A-F]\d+|X[CDGKRST]\d+|Q\d+|S\d+)\b/
 
 function idOf(s) {
   const str = String(s ?? '').trim()

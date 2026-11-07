@@ -29,7 +29,7 @@ Verdicts: verified (true as stated; for a finding, the defect exists in the vers
 ## [XR1] audit finding by the review auditor against A's final version, severity major
 Claim: logs the attempt index from 0, not the count
 Evidence cited: TXR1 fails
-Judge it against: A's final version (diff /tmp/proj/.council/test-ffind/room/r0/A.diff; any file: `git -C /tmp/proj show refs/council/test-ffind/A-r0:<path>`)
+Judge it against: A's reviewed snapshot (diff /tmp/proj/.council/test-ffind/room/r0/A.diff; git -C /tmp/proj show refs/council/test-ffind/A-r0:<path>)
 Earlier ruling: open
 Raised by an independent auditor of the final version; nobody has ruled on it yet.
 

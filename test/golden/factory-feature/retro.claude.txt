@@ -27,7 +27,7 @@ Return up to 3 things that worked and should be kept, and 3 to 5 changes, the mo
 1. **<change>** <why>. Evidence: <evidence>. Where: <where>.
 ```
 Don't copy the process notes or run facts into it; the next command attaches them exactly.
-2. Run this with the Bash tool, exactly as written: dark-factory retro --run-dir '/tmp/proj/.council/test-ffeat' --expect 2282-722e78e6
+2. Run this with the Bash tool, exactly as written: dark-factory retro --run-dir '/tmp/proj/.council/test-ffeat' --expect 3148-3ccdb680
    The last line it prints is JSON. "ok": set saved to its "path". "sandboxed": run the same command again with the sandbox disabled (dangerouslyDisableSandbox: true). "error", or "sandboxed" again: set saved to "" and error to what it printed.
 
 # The report
@@ -92,7 +92,7 @@ Auditors who never saw the debate reviewed the final change, each through one le
 
 # Process notes and run facts
 
-=====BEGIN PAYLOAD 2282-722e78e6=====
+=====BEGIN PAYLOAD 3148-3ccdb680=====
 ## Process notes
 
 - None: no turn reported anything in its way.
@@ -119,6 +119,48 @@ Auditors who never saw the debate reviewed the final change, each through one le
 
 ```json
 {
+  "metrics": {
+    "version": 1,
+    "taskId": null,
+    "variant": null,
+    "repetition": null,
+    "workflow": "factory",
+    "tier": "feature",
+    "strategy": "independent",
+    "host": "claude",
+    "elapsedMs": null,
+    "turns": 25,
+    "turnsByRole": {
+      "intake": 1,
+      "setup": 1,
+      "relay": 4,
+      "spec": 2,
+      "seat": 7,
+      "checker": 7,
+      "auditor": 3
+    },
+    "failedTurns": 0,
+    "findingsByStage": {
+      "debate": {
+        "found": 1,
+        "upheld": 1,
+        "refuted": 0,
+        "fixed": 0
+      }
+    },
+    "readiness": "ready",
+    "delivery": "not-recorded",
+    "escalated": false,
+    "requestedImplementation": true,
+    "deliveredImplementation": false,
+    "tokens": null,
+    "cost": null,
+    "limits": {
+      "maxTurns": null,
+      "maxRunMin": null
+    },
+    "scope": "before-retrospective"
+  },
   "runId": "test-ffeat",
   "repo": "/tmp/proj",
   "workflow": "factory",
@@ -160,4 +202,4 @@ Auditors who never saw the debate reviewed the final change, each through one le
   ]
 }
 ```
-=====END PAYLOAD 2282-722e78e6=====
+=====END PAYLOAD 3148-3ccdb680=====

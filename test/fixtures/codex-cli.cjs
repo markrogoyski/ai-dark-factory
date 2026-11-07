@@ -32,7 +32,7 @@ if ('signals' in schema.properties) {
 } else if ('runDir' in schema.properties) {
   kind = 'setup'
   const runId = prompt.match(/--run-id '?([\w.-]+)'?/)
-  const run = helper('init', '--repo', repo, '--seats', 'A', ...(runId ? ['--run-id', runId[1]] : []), ...(prompt.includes('--factory') ? ['--factory'] : []))
+  const run = helper('init', '--repo', repo, '--seats', prompt.match(/--seats ([A-F,]+)/)[1], ...(runId ? ['--run-id', runId[1]] : []), ...(prompt.includes('--factory') ? ['--factory'] : []))
   fs.writeFileSync(path.join(run.runDir, 'verify.sh'), 'node check.cjs\n')
   const baseline = helper('measure', '--run-dir', run.runDir, '--seat', 'A', '--label', 'base')
   Object.assign(result, { status: 'ok', mode: 'implement', runId: run.runId, runDir: run.runDir, repoRoot: repo,
@@ -64,6 +64,20 @@ if ('signals' in schema.properties) {
       if (n >= 2) result.resolutions = [{ id: `P${n - 1}`, status: 'fixed', evidence: 'Checked the implementation and tests.' }]
     }
   }
+} else if ('approach' in schema.properties) {
+  kind = 'ensemble-solve'
+  const post = prompt.match(/Write your complete result to (.+\.md)\./)[1]
+  fs.writeFileSync(path.join(process.cwd(), 'sum.cjs'), 'module.exports = (a, b) => a + b\n')
+  fs.mkdirSync(path.dirname(post), { recursive: true }); fs.writeFileSync(post, 'Corrected addition. Verified node check.cjs.\n')
+  Object.assign(result, { approach: 'Replace subtraction with addition.', worktreePath: process.cwd(), verification: 'node check.cjs passes', diff: 'See measured snapshot.', confidence: 5 })
+} else if ('defects' in schema.properties) {
+  kind = 'ensemble-review'
+  execFileSync(process.execPath, ['check.cjs'], { cwd: process.cwd() })
+  Object.assign(result, { complete: true, snapshotTree: prompt.match(/tree ([a-f0-9]{40,64})/)[1], verdict: 'sound', score: 9,
+    criteria: [{ criterion: 'C1', status: 'met', note: 'Ran the regression against the pinned snapshot.' }] })
+} else if ('ranking' in schema.properties) {
+  kind = 'ensemble-compare'
+  Object.assign(result, { ranking: [{ candidate: 1, rank: 1, why: 'Verified addition.' }], recommendation: 'adopt-one', mergePlan: 'Select one unchanged candidate.' })
 } else if ('tooBig' in schema.properties) {
   kind = 'solve'
   const runDir = fs.readFileSync(runPath, 'utf8')

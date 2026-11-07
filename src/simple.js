@@ -45,7 +45,7 @@ async function simpleRun() {
   const audit = await runAudit(W, { rereview: false, beforeFix: () => simpleTrigger(S, 'review') })
   if (audit.escalate) return escalate(audit.escalate)
 
-  const lastCheck = audit.fixPass ? 'I' : audit.checked ? 'H' : 0
+  const lastCheck = audit.lastCheck || (audit.fixPass ? 'I' : audit.checked ? 'H' : 0)
   const ready = readiness(S, W.L, lastCheck, [], [], audit.gaps)
   handUp = simpleTrigger(S, 'final', { ready })
   if (handUp) return escalate(handUp)

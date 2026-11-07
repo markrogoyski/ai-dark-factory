@@ -1,8 +1,8 @@
 Save this run's facts. Run this with the Bash tool, exactly as written:
-dark-factory retro --facts-only --run-dir '/tmp/proj/.council/test-fsimple' --expect 1768-54824802
+dark-factory retro --facts-only --run-dir '/tmp/proj/.council/test-fsimple' --expect 2504-ca88af16
 The last line it prints is JSON. "ok": set saved to its "path". "sandboxed": run the same command again with the sandbox disabled (dangerouslyDisableSandbox: true). "error", or "sandboxed" again: set saved to "" and error to what it printed. Do nothing else.
 
-=====BEGIN PAYLOAD 1768-54824802=====
+=====BEGIN PAYLOAD 2504-ca88af16=====
 ## Process notes
 
 - None: no turn reported anything in its way.
@@ -15,7 +15,7 @@ The last line it prints is JSON. "ok": set saved to its "path". "sandboxed": run
 - Seats: A=Claude Sonnet (high). Panel: Claude Opus, Codex Astra. Checkers: sonnet.
 - Outcome: the Simple change by A.
 - Claude agent turns: 5 (intake 1, setup 1, seat 1, checker 1, relay 1). Codex turns: 1 (auditor 1).
-- Codex and Gemini turn times: median 42s; slowest audit-review 42s.
+- Codex and Gemini turn times: median 42s; slowest review0-review 42s.
 - Ledger: 1 item (verified 1), 0 challenges, 0 ruled by the panel. Questions raised: 0.
 - Ledger by kind: verification 1 (verified 1).
 - Votes by round: none.
@@ -27,6 +27,40 @@ The last line it prints is JSON. "ok": set saved to its "path". "sandboxed": run
 
 ```json
 {
+  "metrics": {
+    "version": 1,
+    "taskId": null,
+    "variant": null,
+    "repetition": null,
+    "workflow": "factory",
+    "tier": "simple",
+    "strategy": "independent",
+    "host": "claude",
+    "elapsedMs": null,
+    "turns": 6,
+    "turnsByRole": {
+      "intake": 1,
+      "setup": 1,
+      "seat": 1,
+      "checker": 1,
+      "relay": 1,
+      "auditor": 1
+    },
+    "failedTurns": 0,
+    "findingsByStage": {},
+    "readiness": "ready",
+    "delivery": "not-recorded",
+    "escalated": false,
+    "requestedImplementation": true,
+    "deliveredImplementation": false,
+    "tokens": null,
+    "cost": null,
+    "limits": {
+      "maxTurns": null,
+      "maxRunMin": null
+    },
+    "scope": "before-retrospective"
+  },
   "runId": "test-fsimple",
   "repo": "/tmp/proj",
   "workflow": "factory",
@@ -64,4 +98,4 @@ The last line it prints is JSON. "ok": set saved to its "path". "sandboxed": run
   "overTierHints": []
 }
 ```
-=====END PAYLOAD 1768-54824802=====
+=====END PAYLOAD 2504-ca88af16=====

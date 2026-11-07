@@ -77,8 +77,8 @@ async function councilRun() {
 
   // ---- Report
 
-  const finalTag = audit.fixPass ? roundTag('I') : S.auditedTag
-  const lastCheck = audit.fixPass ? 'I' : audit.checked ? 'H' : fixPass ? 'G' : 'F'
+  const finalTag = audit.finalTag || (audit.fixPass ? roundTag('I') : S.auditedTag)
+  const lastCheck = audit.lastCheck || (audit.fixPass ? 'I' : audit.checked ? 'H' : fixPass ? 'G' : 'F')
   const remaining = S.ledger.filter(c => isStanding(S, c) && c.target === W.L)
   const unanswered = S.questions.filter(q => !answered(S, q.id))
   const ready = readiness(S, W.L, lastCheck, raters, reviews, audit.gaps)

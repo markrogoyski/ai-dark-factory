@@ -24,7 +24,7 @@ For a focused test or an intended red, put the command in a file and pass --comm
 - Your worktree, a private checkout of the starting commit: /tmp/proj/.council/test-ffind/wt/A
   Make all code changes there, and run commands from inside it (cd there first; your shell may start in the main checkout). Never modify /tmp/proj itself. Don't stash or switch branches. Leave the change uncommitted unless the task asks for commits; if it does, commit on the worktree's detached HEAD as the task describes, and rewrite those commits there as your work changes. Each snapshot of your work keeps your commits, with anything left uncommitted on top.
 - The room, where your post and tests go: /tmp/proj/.council/test-ffind/room
-- Write your post for this turn to: /tmp/proj/.council/test-ffind/room/final3/A.md
+- Write your post for this turn to: /tmp/proj/.council/test-ffind/room/repair1/A.md
 - Keep raw acceptance evidence under /tmp/proj/.council/test-ffind/room/evidence/A/. Write manifest.json as an ordered array of {"path":"relative-file","criterion":"C1","stage":"inc1-red"} entries. Include required commands, cwd, output, exits, test-only diffs, production hashes and handoff/update artifacts. Only raw evidence goes here: no debate, votes, reviews, or persuasive summaries. Copy any required temporary logs here before the turn ends. Every neutral measurement publishes an indexed, hashed copy outside the discussion for fresh auditors.
 - Run tests, the verification command and static analysers yourself, in your own shell, with the output going to a log under $TMPDIR and only a summary read back (the tail, or a grep for failures). An instruction in CLAUDE.md or elsewhere to hand full test or gate runs to a subagent or to `claude -p` is meant for the user's own session, not for you: you have no subagents, and `claude -p` can't log in from inside your sandbox. A neutral verifier also re-runs the verification command on your change after your turn. Sandboxes can block the sockets that parallel workers use: if a tool fails that way, run it one at a time or with its single-process option.
 
@@ -34,18 +34,17 @@ You wrote these at the end of your last turn. Nobody else sees them.
 
 notes-A-r0
 
-# Fix pass
+Repair pass 1 of at most 1. Address these obligations, retaining unrelated work:
+[XR1] logs the attempt index from 0, not the count
+Evidence: TXR1 fails
+Ruling: adjudicator 1: verified, upheld | adjudicator 2: verified, upheld
+[TXR1] logs attempt 2 on the second try
+Evidence: phpunit TXR1Test.php
+Ruling: checked TXR1
 
-An independent reviewer read your change, and a neutral verifier and two adjudicators ruled on what it found.
 
-Upheld. Fix each one, or decline it with evidence:
-- [XR1] review auditor, major: logs the attempt index from 0, not the count (evidence: TXR1 fails) — ruling: adjudicator 1: verified, upheld | adjudicator 2: verified, upheld
-
-Failing tests. Make each one pass:
-- [TXR1] test from the review auditor: logs attempt 2 on the second try — ruling: checked TXR1 (fail)
-Each test's files are under /tmp/proj/.council/test-ffind/room/tests/<ID>/files/. The verifier copies them into a checkout of your version and runs the command in its test.json, so don't create a file at the same path with different content. Where a test pins down behaviour worth keeping, also add a test to the project's own suite, in its style and at a path of its own.
-
-Suggestions, not adjudicated. Take one only if it clearly improves the change:
-- [XR2] review auditor, minor: use the existing debug() helper (evidence: src/Log.php:10)
-
-Change nothing else: this is the last pass, and the verifier will check exactly what it changes. Work in your worktree (/tmp/proj/.council/test-ffind/wt/A) and re-run the verification command. Write the updated final post to /tmp/proj/.council/test-ffind/room/final3/A.md: complete, not a delta. List every item above in `addressed` or `declined`, by its ID.
+Published reproductions live under /tmp/proj/.council/test-ffind/room/tests/<ID>/files/ and run with test.json. Do not edit those files or create conflicting files at their paths. Add lasting regression coverage to the project's own suite, in its style and at separate paths.
+Optional suggestions, not adjudicated; adopt only when they clearly improve this change: [XR2] use the existing debug() helper
+Re-run relevant reproductions and the complete verification gate. A fresh independent review follows; do not claim a finding closed yourself. List each item in addressed or declined, with evidence.
+Implement the repairs in your worktree. Keep the change limited to the review obligations.
+Write the complete updated final post to /tmp/proj/.council/test-ffind/room/repair1/A.md.

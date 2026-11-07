@@ -3,6 +3,34 @@
 // parallel() and log(), and the state object `S` from boot; the decisions they act on are computed
 // in lib/.
 
+function reserveTurn() {
+  const c = requestControl
+  if ((c.maxTurns && c.turns >= c.maxTurns) || (c.maxRunMin && (hostRuntime?.now ? hostRuntime.now() : Date.now()) - c.started >= c.maxRunMin * 60000)) {
+    const error = new Error(c.maxTurns && c.turns >= c.maxTurns ? `Run turn budget exhausted (${c.maxTurns}).` : `Run time budget exhausted (${c.maxRunMin} minutes).`)
+    c.stop = error.message
+    error.code = 'RUN_LIMIT'
+    throw error
+  }
+  c.turns++
+}
+
+async function controlledRun(work) {
+  let result
+  try { result = await work() } catch (error) {
+    if (error.code !== 'RUN_LIMIT') throw error
+    result = { status: 'blocked', stopReason: error.message, task: S.task, runDir: S.run?.runDir || null,
+      final: { readiness: { state: 'incomplete', blocked: [], incomplete: [error.message] } } }
+  }
+  if (requestControl.stop && result.final?.readiness?.state !== 'ready') {
+    result.status = 'blocked'
+    result.stopReason = requestControl.stop
+    result.final = { ...result.final, readiness: { state: 'incomplete', blocked: result.final?.readiness?.blocked || [], incomplete: [...(result.final?.readiness?.incomplete || []), requestControl.stop] } }
+  }
+  result.plan = result.plan || executionPlan(S)
+  result.metrics = evaluationFacts(S, result, requestControl.started ? (hostRuntime?.now ? hostRuntime.now() : Date.now()) - requestControl.started : null, requestControl.turns)
+  return result
+}
+
 function keepProcess(turn, role, who, res) {
   const text = res && typeof res.process === 'string' ? oneLine(res.process, 400) : ''
   if (S.retro && text && !/^(none|n\/a|nothing)\.?$/i.test(text)) S.processNotes.push({ turn, role, who, text })
@@ -17,6 +45,7 @@ function keepHostDiagnostics(label, result) {
 
 // Every agent call goes through here except the retro's own, so each can leave a process note.
 async function ask(prompt, opts, role, who) {
+  reserveTurn()
   const selected = roleAgent(S, role, opts)
   const res = hostRuntime
     ? await hostAgent(prompt, { ...opts, schema: withProcess(opts.schema) }, role, who)
@@ -54,6 +83,7 @@ function timeoutFor(kind) {
 }
 
 async function externalTurn(o, prompt, schema, label, ph) {
+  reserveTurn()
   const V = VENDOR_NAME[o.vendor]
   if (S.blocked[o.vendor]) { S.notes.push(`${V} turn ${o.key} skipped: the ${VENDOR_CLI[o.vendor]} can't run in this session's sandbox.`); return null }
   const tag = `${o.key}-${promptHash(prompt).split('-')[1]}`        // bound to this exact request
@@ -336,6 +366,7 @@ async function runSpecReview() {
 // The Architecture tier reuses it as the review of its milestone plan, with o = {fixSchema}: the
 // revision returns the milestones again, and audit.fixResult keeps what it returned.
 async function runAudit(W, o = {}) {
+  if (S.controls.repair || S.tier === 'simple') return boundedAudit(W, o)
   const audit = { ran: false, checked: false, reviews: {}, testsAtAudit: {}, fixPass: false, addressed: [], rereviews: {}, gaps: [], fixResult: null }
   if (!S.auditors.length || (S.mode !== 'implement' && S.tier !== 'architecture')) return audit
   phase('Audit')
@@ -443,6 +474,7 @@ async function runRetro(o) {
   const hash = promptHash(payload)
   let r = null
   try {
+    reserveTurn()
     const prompt = retroPrompt(S, o.reportMd, payload, hash)
     const opts = { label: 'retro', phase: 'Retro', schema: RETRO_SCHEMA, model: 'sonnet', effort: 'medium' }
     r = hostRuntime ? await hostAgent(prompt, opts, 'retro', null, { payload, payloadFile: `${S.run.runDir}/retro-data.md` }) : await agent(prompt, opts)
@@ -461,6 +493,7 @@ async function recordFacts(payload) {
   const hash = promptHash(payload)
   let r = null
   try {
+    reserveTurn()
     const prompt = recordPrompt(S, payload, hash)
     const opts = { label: 'record', phase: 'Record', schema: RECORD_SCHEMA, model: 'haiku', effort: 'low' }
     r = hostRuntime ? await hostAgent(prompt, opts, 'record', null, { payload, payloadFile: `${S.run.runDir}/retro-data.md` }) : await agent(prompt, opts)

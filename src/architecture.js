@@ -31,7 +31,7 @@ async function architectureRun() {
     else S.notes.push(`${W.L}'s revision listed no milestones; the plan keeps the ones it had.`)
   }
 
-  const lastCheck = audit.fixPass ? 'I' : audit.checked ? 'H' : 'F'
+  const lastCheck = audit.lastCheck || (audit.fixPass ? 'I' : audit.checked ? 'H' : 'F')
   const ready = readiness(S, W.L, lastCheck, [], [], [...audit.gaps, ...(S.milestones.length ? [] : ['the plan lists no milestones'])])
   const report = architectureReport(S, { outcome, W, rows: decisionRows, ready, audit })
   if (S.retro) phase('Retro')

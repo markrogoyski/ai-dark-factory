@@ -4,10 +4,18 @@
 // and for the factory with `--tier simple`, in either order.
 function parseArgs(a) {
   if (typeof a !== 'string') return a || {}
-  const out = {}
-  let rest = a, m
-  while ((m = rest.match(/^\s*--(seats|tier)[= ]\s*([\w:.,-]+)\s+([\s\S]*)$/))) { out[m[1]] = m[2]; rest = m[3] }
-  return { task: Object.keys(out).length ? rest : a, ...out }
+  const out = {}, names = { seats: 'seats', tier: 'tier', strategy: 'strategy', author: 'author', reviewer: 'reviewer',
+    'max-reviews': 'maxReviews', 'max-turns': 'maxTurns', 'max-run-min': 'maxRunMin', candidates: 'candidates', reviewers: 'reviewers', mode: 'mode' }
+  let rest = a, match
+  while (true) {
+    if (/^\s*--explain(?:\s|$)/.test(rest)) { out.explain = true; rest = rest.replace(/^\s*--explain(?:\s+|$)/, ''); continue }
+    match = rest.match(/^\s*--([\w-]+)[= ]\s*([^\s]+)(?:\s+([\s\S]*))?$/)
+    if (!match || (!names[match[1]] && match[1] !== 'repair-passes')) break
+    if (match[1] === 'repair-passes') out.repair = { maxPasses: match[2] }
+    else out[names[match[1]]] = match[2]
+    rest = match[3] || ''
+  }
+  return { task: rest, ...out }
 }
 
 const IMPLEMENT_RE =
@@ -160,7 +168,7 @@ function parseConfig(args, opts = {}) {
   const archLenses = host === 'codex' ? CODEX_ARCH_LENSES : ARCH_LENSES
   const spec = simple ? { reviewers: [], ask: false } : parseSpec(raw.spec, host === 'codex' ? { coverage: 'astra', intent: 'sol' } : SPEC_LENSES)
   return {
-    raw, host, roles, task, modeGiven, mode,
+    raw, host, roles, task, modeGiven, mode, controls: parseControls(raw),
     rounds: Math.max(1, Math.min(3, Number(raw.rounds) || 2)),
     context: String(raw.context || '').trim(),
     plan: (Array.isArray(raw.plan) ? raw.plan : raw.plan ? [raw.plan] : []).map(p => String(p).trim()).filter(Boolean),

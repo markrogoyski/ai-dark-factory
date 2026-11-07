@@ -215,6 +215,7 @@ function applyCheck(S, Y, k, r, items) {
     missingCriteria: S.criteria.map(c => c.id).filter(id => !judged.has(id)),
     missingItems: items.map(it => it.c.id).filter(id => !ruled.has(id)),
   }
+  if (S.controls.repair && S.mode !== 'implement') p.artifactHash = /^\d+-[0-9a-f]{8}$/.test(r.artifactHash || '') ? r.artifactHash : null
   if (Number.isInteger(r.postWords) && r.postWords > 0) p.postWords = r.postWords
   if (Number.isInteger(r.postWords) && r.postWords > S.postWords) S.longPosts.push({ turn: `${roundTag(k)}:${Y}`, words: r.postWords })
   if (S.mode === 'implement' && r.measured) {
@@ -558,11 +559,12 @@ function ingestAudit(S, a, round, W, res) {
       id: `${a.id}${n}`, round, author: a.id, kind: 'finding', target: W, severity: W8[f.severity] ? f.severity : 'minor',
       judgment: f.kind === 'judgment', statement: f.statement, evidence: f.evidence,
     })
+    if (/^review\d+$/.test(round)) { c.snapshotTag = S.reviewedSnapshot; c.artifactPost = S.pos[W]?.post }
     // The Architecture tier's reviewers say which milestone a finding is about (0: the whole plan).
     if (Number.isInteger(f.milestone) && f.milestone > 0) c.milestone = f.milestone
   }
   const re = new RegExp(`^T${a.id}\\d+$`)
-  for (const t of round === 'H' && S.mode === 'implement' ? (res.tests || []).slice(0, 10) : []) {
+  for (const t of (round === 'H' || /^review\d+$/.test(round)) && S.mode === 'implement' ? (res.tests || []).slice(0, 10) : []) {
     if (!t || !t.id) continue
     if (!re.test(t.id) || S.byId[t.id]) { S.notes.push(`Ignored test '${t.id}' from the ${a.lens} auditor: bad or duplicate ID.`); continue }
     addClaim(S, { id: t.id, round, author: a.id, kind: 'test', target: W, statement: t.purpose, evidence: t.command })
