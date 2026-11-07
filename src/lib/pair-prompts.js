@@ -7,7 +7,7 @@ ${taskBlock(S, 99)}
 
 Your worktree: ${S.seats[0].wt}. Work only there; never edit the main checkout or reviewer checkouts.
 Read the repository instructions and the relevant code. Do not delegate or launch other models.
-${design ? `Return a complete short design in design: the approach, affected files, assumptions, risks, and how every acceptance criterion will be tested. Cite existing code where the approach depends on it. Revise the entire design in response to feedback. Do not implement yet.`
+${design ? `Return a complete short design in design: the approach, affected files, assumptions, risks, and how every acceptance criterion will be tested. Cite existing code where the approach depends on it. Revise the entire design in response to feedback. Do not implement yet. ${pairBaseline(S)}`
     : `Implement the reviewed design, including the required tests and documentation. Run appropriate focused checks and the shared verification gate. Fix all open actionable findings and any failed verification. Return design as an empty string; the accepted design remains fixed until the reviewer requests design revision.`}
 
 # Current design
@@ -43,16 +43,23 @@ This checkout is separate from the author's worktree. Do not edit the author's w
 # Design
 ${p.design}
 
-${design ? 'Check the approach against the task and existing code: correctness, missing requirements, assumptions, alternatives that materially affect the outcome, scope, and planned test coverage. Each criterion is met only if the design explains how it will be satisfied and checked.'
+${design ? `Check the approach against the task and existing code: correctness, missing requirements, assumptions, alternatives that materially affect the outcome, scope, and planned test coverage. Each criterion is met only if the design explains how it will be satisfied and checked. ${pairBaseline(S)}`
     : `Review the implementation and tests against the task and approved design. Inspect the whole diff at ${p.measurement.snapshot.diff}, not only the latest fixes. Look for incorrect behavior, regressions, missing requirements, and tests that would miss the defect. The neutral helper measured this exact snapshot:
 ${JSON.stringify(p.measurement)}
-Passing tests do not replace code review. Treat a failing or missing required check as unresolved.`}
+Passing tests do not replace code review. Treat a failing or missing required check as unresolved.
+That measurement is the gate result for this snapshot: don't rerun the verification command or the checks in it. Run only targeted probes, such as one test or one analyser on the changed files. Sandboxes can block the sockets that parallel workers use: if a probe fails that way, run the tool single-process.`}
 
 # Findings and proposed responses
 ${JSON.stringify({ findings: p.findings, addressed: p.author.addressed })}
 
 Use resolutions to update existing IDs: open if still actionable, fixed only after inspecting the correction, refuted only with evidence that the finding was mistaken. Give concrete evidence for every resolution. Reopen an old ID when its defect recurs. Missing resolutions leave findings open. In design review, leave code findings open until the implementation is fixed; check that the revised design explains their correction. Add only genuinely new defects in findings; the engine assigns their IDs. Actionable minor findings count too. Put optional preferences and unrelated improvements in suggestions; do not manufacture findings to fill a quota.
 Return an evidenced met/partial/unmet assessment for every acceptance criterion. In code review, set requiresDesignRevision=true only if the implementation needs a materially different design; explain it in a finding. The engine will return the author to design review. In design review, keep that field false and express needed revisions as findings. Return complete=false if you cannot finish the review; an empty findings list is not approval in that case.`
+}
+
+// The design stage needs no gate run: setup measured the base revision.
+function pairBaseline(S) {
+  if (!S.verify) return ''
+  return `Setup ran the verification command on the base revision, and it ${S.baselineOk ? 'passed' : `failed: ${S.baselineNote}`}. Don't run it, or the checks in it, during the design stage; the design says which of them the implementation must pass and how the new tests are checked.`
 }
 
 function hostMaterializationNote(S, label, tag, checkout) {

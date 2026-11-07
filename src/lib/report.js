@@ -386,6 +386,16 @@ function interimReport(S, k) {
   }
 }
 
+// A pair run: one author, one reviewer, reviews of the design and then the code.
+function pairOutcomeFacts(S) {
+  const p = S.pair, o = S.pairOptions
+  const byStage = stage => p.reviews.filter(r => r.stage === stage).length
+  return `- Outcome: the pair strategy, ${o.author.name} authoring and ${o.reviewer.name} reviewing; ` +
+    `${p.reviews.length} of at most ${o.maxReviews} reviews (design ${byStage('design')}, code ${byStage('code')}), ended at the ${p.stage} stage` +
+    `${p.stop ? ` (${oneLine(p.stop, 200)})` : ''}. Findings: ${p.findings.length ? countsOf(p.findings, f => `${f.stage} ${f.severity} ${f.status}`) : 'none'}. ` +
+    `Verification command: ${S.verify ? `\`${oneLine(S.verify, 200)}\`` : 'none'}.`
+}
+
 function retroFacts(S, o) {
   const claude = S.turnLog.filter(t => t.vendor === 'claude')
   const others = ['codex', 'gemini'].map(v => [v, S.turnLog.filter(t => t.vendor === v)]).filter(([, ts]) => ts.length)
@@ -395,7 +405,7 @@ function retroFacts(S, o) {
     `- Run ${S.run.runId} in ${S.run.repoRoot}, ${S.mode} mode. Task: ${oneLine(S.task, 300)}`,
     factoryFacts(S),
     `- Seats: ${S.seats.map(s => `${s.L}=${s.name} (${s.effort})${s.active ? '' : ', dropped'}`).join(', ')}. Panel: ${S.panel.map(m => m.name).join(', ')}. Checkers: ${S.checkModel}.`,
-    !o.outcome ? `- Outcome: the Simple change by ${o.W.L}${o.audit && o.audit.fixPass ? ', with one fix pass' : ''}.` : S.build ? buildFacts(S, o) : S.tier === 'architecture' ? archFacts(S, o) : `- Outcome: ${o.outcome.kind === 'consensus' ? `consensus on ${o.outcome.W} in round ${o.outcome.round}${o.outcome.via === 'blind' ? `, before any debate, because ${o.outcome.same.join(', ')} were byte-identical` : o.outcome.via === 'identical' ? ` by pooling the votes for identical versions ${o.outcome.same.join(', ')}` : o.outcome.via === 'approval' ? ' by approval' : ''}` : `no consensus after ${plural(o.outcome.round, 'round')}; the scorecard picked ${o.outcome.W}`}, ` +
+    S.pair ? pairOutcomeFacts(S) : !o.outcome ? `- Outcome: the Simple change by ${o.W.L}${o.audit && o.audit.fixPass ? ', with one fix pass' : ''}.` : S.build ? buildFacts(S, o) : S.tier === 'architecture' ? archFacts(S, o) : `- Outcome: ${o.outcome.kind === 'consensus' ? `consensus on ${o.outcome.W} in round ${o.outcome.round}${o.outcome.via === 'blind' ? `, before any debate, because ${o.outcome.same.join(', ')} were byte-identical` : o.outcome.via === 'identical' ? ` by pooling the votes for identical versions ${o.outcome.same.join(', ')}` : o.outcome.via === 'approval' ? ' by approval' : ''}` : `no consensus after ${plural(o.outcome.round, 'round')}; the scorecard picked ${o.outcome.W}`}, ` +
       `with up to ${plural(S.rounds, 'round')} allowed. Endorsed at ratification by ${o.endorsements.length ? o.endorsements.join(', ') : 'nobody'}` +
       `${o.fixPass ? '; one fix pass for upheld objections' : ''}.`,
     S.dropped.length ? `- Left contention: ${S.dropped.map(d => `${d.seat} after round ${d.afterRound}`).join(', ')}.` : '',
@@ -457,7 +467,7 @@ function retroPayload(S, facts, data) {
 }
 
 function retroPrompt(S, reportMd, payload, hash) {
-  return `You are running a short retrospective on one run of ${S.factory ? `/factory, a workflow that routes a task to a tier of process (the run facts say which tier this run used and why) and runs it; its higher tiers run /council, in which several AI models solve one task independently, debate it on an evidence ledger, and converge on one result` : '/council, a workflow in which several AI models solve one task independently, debate it on an evidence ledger, and converge on one result'}. Its author is still tuning the workflow and wants to know what in its process to change. Your subject is the council's process, not the task: don't judge the solution, don't redo the work, and read the code under review only to confirm a point about the process.
+  return `You are running a short retrospective on one run of ${S.factory ? `/factory, a workflow that routes a task to a tier of process (the run facts say which tier this run used and why) and runs it; its higher tiers run /council, in which several AI models solve one task independently, debate it on an evidence ledger, and converge on one result${S.pair ? '; this run used the pair strategy instead, in which one author designs and implements and one independent reviewer reviews the design and then the code until no finding is open' : ''}` : '/council, a workflow in which several AI models solve one task independently, debate it on an evidence ledger, and converge on one result'}. Its author is still tuning the workflow and wants to know what in its process to change. Your subject is the council's process, not the task: don't judge the solution, don't redo the work, and read the code under review only to confirm a point about the process.
 
 # What you have
 - The process notes at the end. During the run, every agent could say in a line or two what in its turn's instructions, inputs or tools got in its way. Seats are the debating models; checkers verify claims and run the tests; the panel adjudicates disputed claims; auditors review the final version afterwards without seeing the debate; relays are small agents that pass prompts to the Codex CLI or the Gemini CLI (agy); setup creates the run.

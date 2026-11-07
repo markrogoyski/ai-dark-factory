@@ -270,6 +270,28 @@ sys.exit(int(os.environ.get('CLAUDE_TEST_EXIT', '0')))
         with self.assertRaisesRegex(council.CouncilError, 'does not match'):
             council.cmd_retro(args)
 
+    def test_retro_facts_fill_null_elapsed_and_tokens_from_the_run(self):
+        council.write_json(os.path.join(self.root, 'run.json'), {'runDir': self.root, 'runId': 'run-2', 'repoRoot': self.cwd})
+        council.write(os.path.join(self.root, 'usage.jsonl'), '\n'.join(json.dumps(r) for r in [
+            {'job': 'a', 'seat': 'a', 'model': 'gpt-6-astra', 'usage': {'input_tokens': 10, 'output_tokens': 2}},
+            {'job': 'b', 'seat': 'b', 'model': 'gpt-6-astra', 'usage': {'input_tokens': 5, 'output_tokens': 1}},
+        ]) + '\n')
+        facts = {'tier': 'simple', 'metrics': {'elapsedMs': None, 'tokens': None, 'cost': None}}
+        payload = '## Run facts (data)\n\n```json\n' + json.dumps(facts) + '\n```'
+        payload_file = os.path.join(self.root, 'payload2.md')
+        council.write(payload_file, payload)
+        out_dir = os.path.join(self.root, 'retros2')
+        args = argparse.Namespace(summary=False, run_dir=self.root, facts_only=True, payload_file=payload_file,
+                                  expect=council.prompt_hash(payload), transcript_wait=10, out_dir=out_dir)
+        with mock.patch.object(council, 'claude_usage', return_value={'byModel': {'claude-opus': {'messages': 3}}}), \
+                mock.patch.object(council, 'emit'):
+            council.cmd_retro(args)
+        saved = json.loads(council.read(os.path.join(out_dir, 'run-2-' + os.path.basename(self.cwd) + '.facts.json')))['metrics']
+        self.assertIsInstance(saved['elapsedMs'], int)
+        self.assertEqual(saved['tokens']['external']['gpt-6-astra'], {'turns': 2, 'input_tokens': 15, 'output_tokens': 3})
+        self.assertEqual(saved['tokens']['claude'], {'claude-opus': {'messages': 3}})
+        self.assertIsNone(saved['cost'])
+
     def test_seat_run_cli_completes_and_reuses_the_same_job(self):
         out = {'type': 'result', 'subtype': 'success', 'session_id': 'session-cli',
                'structured_output': {'answer': 'done', 'turn': 'r0-A'}}

@@ -22,7 +22,7 @@ It prints JSON with runId, runDir, repoRoot, refs (the snapshots it made of thos
 - If it fails, return status "error" with its message, and empty values elsewhere.
 
 ## Step 3 — the verification command
-Find the project's standard command for checking a change: its test suite, from CLAUDE.md or AGENTS.md, a Makefile, composer.json, package.json, pyproject.toml and so on. Prefer the normal test run. Avoid full static-analysis sweeps and very slow suites unless the task is about them. If the project has no tests, there is no command.
+If the task or a document from step 1 names commands the change must pass (a "Done when" section, acceptance criteria, a checklist), the verification command runs all of them, joined with &&, even when they include static analysis or coverage: every role is measured against this command, and one that leaves a required check out makes each of them run it separately. Otherwise, find the project's standard command for checking a change: its test suite, from CLAUDE.md or AGENTS.md, a Makefile, composer.json, package.json, pyproject.toml and so on. Prefer the normal test run. Avoid full static-analysis sweeps and very slow suites unless the task is about them. If the project has no tests, there is no command.
 Write it to <runDir>/verify.sh as just the command, with no shebang line; it is run as `bash verify.sh` from the root of a worktree. Write an empty file if there is no command.
 Set baselinePasses to false and baselineNote to "".
 

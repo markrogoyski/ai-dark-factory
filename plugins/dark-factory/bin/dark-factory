@@ -1911,6 +1911,43 @@ def facts_of(payload):
         return None
 
 
+def fill_metrics(run, facts):
+    """A workflow script has no clock and can't read logs, so its metrics leave elapsedMs and
+    tokens null. Fill them here from the run directory: elapsed from run.json's creation (setup;
+    intake ran before it), tokens from the vendor turns' usage.jsonl and the Claude transcripts."""
+    m = facts.get('metrics') if isinstance(facts, dict) else None
+    if not isinstance(m, dict):
+        return facts
+    if m.get('elapsedMs') is None:
+        try:
+            m['elapsedMs'] = int((time.time() - os.path.getmtime(os.path.join(run['runDir'], 'run.json'))) * 1000)
+            m['elapsedFrom'] = 'setup'
+        except OSError:
+            pass
+    if m.get('tokens') is None:
+        external = {}
+        path = os.path.join(run['runDir'], 'usage.jsonl')
+        if os.path.exists(path):
+            for line in read(path).split('\n'):
+                try:
+                    rec = json.loads(line) if line.strip() else None
+                except ValueError:
+                    continue
+                if not isinstance(rec, dict):
+                    continue
+                bucket = external.setdefault(rec.get('model') or '?', {'turns': 0})
+                bucket['turns'] += 1
+                for k, v in (rec.get('usage') or {}).items():
+                    if isinstance(v, (int, float)):
+                        bucket[k] = bucket.get(k, 0) + v
+        try:
+            claude = claude_usage(run)['byModel']
+        except OSError:
+            claude = {}
+        m['tokens'] = {'external': external, 'claude': claude}
+    return facts
+
+
 def retro_dir(a):
     return os.path.abspath(os.path.expanduser(a.out_dir or os.environ.get('COUNCIL_RETRO_DIR') or RETRO_DIR))
 
@@ -1949,7 +1986,7 @@ def cmd_retro(a):
         if not a.facts_only:
             write(base + '.md', read(path).rstrip('\n') + ('\n\n' + data if data is not None else '') + '\n')
         if facts is not None:
-            write_json(base + '.facts.json', facts)
+            write_json(base + '.facts.json', fill_metrics(run, facts))
     except PermissionError as e:
         emit({'status': 'sandboxed', 'error': f'cannot write to {out_dir} ({e.strerror}). This command is running '
               'inside a sandbox that only allows writes to the project.'})

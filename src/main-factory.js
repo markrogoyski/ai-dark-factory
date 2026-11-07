@@ -34,7 +34,14 @@ async function factoryRun() {
     Object.assign(S, carried, { pair: newPairState() })
     if (S.raw.explain) return explanation(S)
     const result = await pairRun()
-    return { ...result, workflow: 'factory', tier, strategy: 'pair', factory: carried.factory }
+    let retro = null
+    if (S.run) {
+      const ready = result.final.readiness
+      phase(retroWanted(S, { ready }) ? 'Retro' : 'Record')
+      retro = await runRetro({ outcome: null, W: null, endorsements: [], fixPass: false, ready, audit: null, reportMd: result.report.markdown })
+    }
+    return { ...result, workflow: 'factory', tier, strategy: 'pair', factory: carried.factory, retro,
+      forTheOrchestrator: result.forTheOrchestrator + (retro && retro.markdown ? ' Last, show retro.markdown as it is: notes on the workflow, not the user\'s project.' : '') }
   }
   if (S.raw.explain) return explanation(S)
   if (tier === 'simple') return await simpleRun()

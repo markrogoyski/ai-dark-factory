@@ -20,6 +20,8 @@ async function pairRun() {
   }
   S.criteria = setup.criteria || []
   S.verify = String(setup.verify || '').trim()
+  S.baselineOk = !S.verify || !!setup.baselinePasses
+  if (!S.baselineOk) S.baselineNote = oneLine(setup.baselineNote, 300) || 'no reason given'
   S.refs = (setup.refs || []).filter(r => r.path?.startsWith(`${S.run.runDir}/refs/`))
   if (!S.criteria.length || new Set(S.criteria.map(c => c.id)).size !== S.criteria.length || S.criteria.some(c => !c.id || !c.text) ||
       S.refs.length !== (setup.refs || []).length || S.refs.length < S.plan.length ||

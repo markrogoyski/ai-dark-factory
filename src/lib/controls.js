@@ -30,7 +30,11 @@ function factoryStrategy(S, intake) {
 function factoryPairConfig(S) {
   const raw = { ...S.raw, ...S.raw.pair }
   for (const key of ['tier', 'seats', 'simple', 'panel', 'spec', 'audit', 'roles', 'evidence', 'strategy', 'pair']) delete raw[key]
-  return parsePairConfig(raw)
+  // Unlike a standalone /pair run, a factory run keeps its retro: its facts are what the router is
+  // tuned from. The retro and record turns use the factory's roles in the Codex host.
+  const config = parsePairConfig(raw)
+  const keep = Object.fromEntries(['retro', 'record'].filter(r => S.roles && S.roles[r]).map(r => [r, S.roles[r]]))
+  return { ...config, retro: S.retro, roles: { ...keep, ...config.roles } }
 }
 
 function executionPlan(S) {

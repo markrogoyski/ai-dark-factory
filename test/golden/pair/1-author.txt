@@ -19,7 +19,7 @@ For a focused test or an intended red, put the command in a file and pass --comm
 
 Your worktree: /repo/.council/pair-test/wt/A. Work only there; never edit the main checkout or reviewer checkouts.
 Read the repository instructions and the relevant code. Do not delegate or launch other models.
-Return a complete short design in design: the approach, affected files, assumptions, risks, and how every acceptance criterion will be tested. Cite existing code where the approach depends on it. Revise the entire design in response to feedback. Do not implement yet.
+Return a complete short design in design: the approach, affected files, assumptions, risks, and how every acceptance criterion will be tested. Cite existing code where the approach depends on it. Revise the entire design in response to feedback. Do not implement yet. Setup ran the verification command on the base revision, and it passed. Don't run it, or the checks in it, during the design stage; the design says which of them the implementation must pass and how the new tests are checked.
 
 # Current design
 (none yet)

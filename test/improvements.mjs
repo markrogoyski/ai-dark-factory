@@ -67,6 +67,25 @@ test('factory can choose Pair independently of the complexity tier', async () =>
   assert.equal(result.metrics.strategy, 'pair')
 })
 
+test('a factory pair run records its facts with the factory roles and reuses the measured gate', async () => {
+  const { result, calls } = await simulate('factory', { retro: undefined }, { pair: true })
+  const record = calls.find(c => c.role === 'record')
+  assert.ok(record, 'the pair strategy records the run facts')
+  assert.ok(record.payload.includes('the pair strategy') && record.payload.includes('Verification command: `check`'))
+  assert.equal(result.strategy, 'pair'); assert.ok(result.retro && result.retro.recorded)
+  assert.ok(calls.some(c => c.role === 'author' && 'process' in c.schema.properties), 'pair turns can leave process notes')
+  const design = calls.find(c => c.role === 'author')
+  assert.ok(design.prompt.includes('Setup ran the verification command on the base revision, and it passed'))
+  const codeReview = calls.filter(c => c.role === 'reviewer').at(-1)
+  assert.ok(codeReview.prompt.includes("don't rerun the verification command"))
+})
+
+test('a standalone pair run still has no retro', async () => {
+  const { result, calls } = await simulate('pair', { retro: undefined })
+  assert.ok(!calls.some(c => ['record', 'retro'].includes(c.role)))
+  assert.equal(result.retro, undefined)
+})
+
 test('explain performs only intake for Factory and no turns for explicit Pair or Ensemble', async () => {
   for (const workflow of ['factory', 'pair', 'ensemble']) {
     const { result, calls } = await simulate(workflow, { explain: true })

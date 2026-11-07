@@ -1773,7 +1773,7 @@ It prints JSON with runId, runDir, repoRoot, refs (the snapshots it made of thos
 - If it fails, return status "error" with its message, and empty values elsewhere.
 ${S.allowDirty || (S.modeGiven && S.mode !== 'implement') ? '' : `- If ${S.modeGiven ? '' : 'the mode is implement and '}dirty is non-empty, stop and return status "dirty" with that list. The worktrees branch from HEAD, so uncommitted changes would be invisible to every seat.\n`}
 ## Step 3 — the verification command
-${S.raw.verify ? `Use exactly: ${S.raw.verify}` : 'Find the project\'s standard command for checking a change: its test suite, from CLAUDE.md or AGENTS.md, a Makefile, composer.json, package.json, pyproject.toml and so on. Prefer the normal test run. Avoid full static-analysis sweeps and very slow suites unless the task is about them. If the project has no tests, there is no command.'}
+${S.raw.verify ? `Use exactly: ${S.raw.verify}` : `${S.tier ? 'If the task or a document from step 1 names commands the change must pass (a "Done when" section, acceptance criteria, a checklist), the verification command runs all of them, joined with &&, even when they include static analysis or coverage: every role is measured against this command, and one that leaves a required check out makes each of them run it separately. Otherwise, find' : 'Find'}` + ' the project\'s standard command for checking a change: its test suite, from CLAUDE.md or AGENTS.md, a Makefile, composer.json, package.json, pyproject.toml and so on. Prefer the normal test run. Avoid full static-analysis sweeps and very slow suites unless the task is about them. If the project has no tests, there is no command.'}
 Write it to <runDir>/verify.sh as just the command, with no shebang line; it is run as \`bash verify.sh\` from the root of a worktree. Write an empty file if there is no command.${S.tier && S.tier !== 'architecture' ? `\nStore sandbox-compatible execution settings as explicit string overrides in <runDir>/verification.json: {"env": {"VARIABLE": "value"}}. Preserve all required checks. Prefer these run-owned overrides to changing project defaults. Preflight the exact command through neutral measurement below, including worker/socket/cache restrictions; shell-local exports are insufficient. Keep this configuration fixed for the run after specification review.` : ''}
 ${S.modeGiven && S.mode !== 'implement'
     ? 'Set baselinePasses to false and baselineNote to "".'
@@ -2925,6 +2925,16 @@ function interimReport(S, k) {
   }
 }
 
+// A pair run: one author, one reviewer, reviews of the design and then the code.
+function pairOutcomeFacts(S) {
+  const p = S.pair, o = S.pairOptions
+  const byStage = stage => p.reviews.filter(r => r.stage === stage).length
+  return `- Outcome: the pair strategy, ${o.author.name} authoring and ${o.reviewer.name} reviewing; ` +
+    `${p.reviews.length} of at most ${o.maxReviews} reviews (design ${byStage('design')}, code ${byStage('code')}), ended at the ${p.stage} stage` +
+    `${p.stop ? ` (${oneLine(p.stop, 200)})` : ''}. Findings: ${p.findings.length ? countsOf(p.findings, f => `${f.stage} ${f.severity} ${f.status}`) : 'none'}. ` +
+    `Verification command: ${S.verify ? `\`${oneLine(S.verify, 200)}\`` : 'none'}.`
+}
+
 function retroFacts(S, o) {
   const claude = S.turnLog.filter(t => t.vendor === 'claude')
   const others = ['codex', 'gemini'].map(v => [v, S.turnLog.filter(t => t.vendor === v)]).filter(([, ts]) => ts.length)
@@ -2934,7 +2944,7 @@ function retroFacts(S, o) {
     `- Run ${S.run.runId} in ${S.run.repoRoot}, ${S.mode} mode. Task: ${oneLine(S.task, 300)}`,
     factoryFacts(S),
     `- Seats: ${S.seats.map(s => `${s.L}=${s.name} (${s.effort})${s.active ? '' : ', dropped'}`).join(', ')}. Panel: ${S.panel.map(m => m.name).join(', ')}. Checkers: ${S.checkModel}.`,
-    !o.outcome ? `- Outcome: the Simple change by ${o.W.L}${o.audit && o.audit.fixPass ? ', with one fix pass' : ''}.` : S.build ? buildFacts(S, o) : S.tier === 'architecture' ? archFacts(S, o) : `- Outcome: ${o.outcome.kind === 'consensus' ? `consensus on ${o.outcome.W} in round ${o.outcome.round}${o.outcome.via === 'blind' ? `, before any debate, because ${o.outcome.same.join(', ')} were byte-identical` : o.outcome.via === 'identical' ? ` by pooling the votes for identical versions ${o.outcome.same.join(', ')}` : o.outcome.via === 'approval' ? ' by approval' : ''}` : `no consensus after ${plural(o.outcome.round, 'round')}; the scorecard picked ${o.outcome.W}`}, ` +
+    S.pair ? pairOutcomeFacts(S) : !o.outcome ? `- Outcome: the Simple change by ${o.W.L}${o.audit && o.audit.fixPass ? ', with one fix pass' : ''}.` : S.build ? buildFacts(S, o) : S.tier === 'architecture' ? archFacts(S, o) : `- Outcome: ${o.outcome.kind === 'consensus' ? `consensus on ${o.outcome.W} in round ${o.outcome.round}${o.outcome.via === 'blind' ? `, before any debate, because ${o.outcome.same.join(', ')} were byte-identical` : o.outcome.via === 'identical' ? ` by pooling the votes for identical versions ${o.outcome.same.join(', ')}` : o.outcome.via === 'approval' ? ' by approval' : ''}` : `no consensus after ${plural(o.outcome.round, 'round')}; the scorecard picked ${o.outcome.W}`}, ` +
       `with up to ${plural(S.rounds, 'round')} allowed. Endorsed at ratification by ${o.endorsements.length ? o.endorsements.join(', ') : 'nobody'}` +
       `${o.fixPass ? '; one fix pass for upheld objections' : ''}.`,
     S.dropped.length ? `- Left contention: ${S.dropped.map(d => `${d.seat} after round ${d.afterRound}`).join(', ')}.` : '',
@@ -2996,7 +3006,7 @@ function retroPayload(S, facts, data) {
 }
 
 function retroPrompt(S, reportMd, payload, hash) {
-  return `You are running a short retrospective on one run of ${S.factory ? `/factory, a workflow that routes a task to a tier of process (the run facts say which tier this run used and why) and runs it; its higher tiers run /council, in which several AI models solve one task independently, debate it on an evidence ledger, and converge on one result` : '/council, a workflow in which several AI models solve one task independently, debate it on an evidence ledger, and converge on one result'}. Its author is still tuning the workflow and wants to know what in its process to change. Your subject is the council's process, not the task: don't judge the solution, don't redo the work, and read the code under review only to confirm a point about the process.
+  return `You are running a short retrospective on one run of ${S.factory ? `/factory, a workflow that routes a task to a tier of process (the run facts say which tier this run used and why) and runs it; its higher tiers run /council, in which several AI models solve one task independently, debate it on an evidence ledger, and converge on one result${S.pair ? '; this run used the pair strategy instead, in which one author designs and implements and one independent reviewer reviews the design and then the code until no finding is open' : ''}` : '/council, a workflow in which several AI models solve one task independently, debate it on an evidence ledger, and converge on one result'}. Its author is still tuning the workflow and wants to know what in its process to change. Your subject is the council's process, not the task: don't judge the solution, don't redo the work, and read the code under review only to confirm a point about the process.
 
 # What you have
 - The process notes at the end. During the run, every agent could say in a line or two what in its turn's instructions, inputs or tools got in its way. Seats are the debating models; checkers verify claims and run the tests; the panel adjudicates disputed claims; auditors review the final version afterwards without seeing the debate; relays are small agents that pass prompts to the Codex CLI or the Gemini CLI (agy); setup creates the run.
@@ -3841,7 +3851,11 @@ function factoryStrategy(S, intake) {
 function factoryPairConfig(S) {
   const raw = { ...S.raw, ...S.raw.pair }
   for (const key of ['tier', 'seats', 'simple', 'panel', 'spec', 'audit', 'roles', 'evidence', 'strategy', 'pair']) delete raw[key]
-  return parsePairConfig(raw)
+  // Unlike a standalone /pair run, a factory run keeps its retro: its facts are what the router is
+  // tuned from. The retro and record turns use the factory's roles in the Codex host.
+  const config = parsePairConfig(raw)
+  const keep = Object.fromEntries(['retro', 'record'].filter(r => S.roles && S.roles[r]).map(r => [r, S.roles[r]]))
+  return { ...config, retro: S.retro, roles: { ...keep, ...config.roles } }
 }
 
 function executionPlan(S) {
@@ -4184,7 +4198,7 @@ ${taskBlock(S, 99)}
 
 Your worktree: ${S.seats[0].wt}. Work only there; never edit the main checkout or reviewer checkouts.
 Read the repository instructions and the relevant code. Do not delegate or launch other models.
-${design ? `Return a complete short design in design: the approach, affected files, assumptions, risks, and how every acceptance criterion will be tested. Cite existing code where the approach depends on it. Revise the entire design in response to feedback. Do not implement yet.`
+${design ? `Return a complete short design in design: the approach, affected files, assumptions, risks, and how every acceptance criterion will be tested. Cite existing code where the approach depends on it. Revise the entire design in response to feedback. Do not implement yet. ${pairBaseline(S)}`
     : `Implement the reviewed design, including the required tests and documentation. Run appropriate focused checks and the shared verification gate. Fix all open actionable findings and any failed verification. Return design as an empty string; the accepted design remains fixed until the reviewer requests design revision.`}
 
 # Current design
@@ -4220,16 +4234,23 @@ This checkout is separate from the author's worktree. Do not edit the author's w
 # Design
 ${p.design}
 
-${design ? 'Check the approach against the task and existing code: correctness, missing requirements, assumptions, alternatives that materially affect the outcome, scope, and planned test coverage. Each criterion is met only if the design explains how it will be satisfied and checked.'
+${design ? `Check the approach against the task and existing code: correctness, missing requirements, assumptions, alternatives that materially affect the outcome, scope, and planned test coverage. Each criterion is met only if the design explains how it will be satisfied and checked. ${pairBaseline(S)}`
     : `Review the implementation and tests against the task and approved design. Inspect the whole diff at ${p.measurement.snapshot.diff}, not only the latest fixes. Look for incorrect behavior, regressions, missing requirements, and tests that would miss the defect. The neutral helper measured this exact snapshot:
 ${JSON.stringify(p.measurement)}
-Passing tests do not replace code review. Treat a failing or missing required check as unresolved.`}
+Passing tests do not replace code review. Treat a failing or missing required check as unresolved.
+That measurement is the gate result for this snapshot: don't rerun the verification command or the checks in it. Run only targeted probes, such as one test or one analyser on the changed files. Sandboxes can block the sockets that parallel workers use: if a probe fails that way, run the tool single-process.`}
 
 # Findings and proposed responses
 ${JSON.stringify({ findings: p.findings, addressed: p.author.addressed })}
 
 Use resolutions to update existing IDs: open if still actionable, fixed only after inspecting the correction, refuted only with evidence that the finding was mistaken. Give concrete evidence for every resolution. Reopen an old ID when its defect recurs. Missing resolutions leave findings open. In design review, leave code findings open until the implementation is fixed; check that the revised design explains their correction. Add only genuinely new defects in findings; the engine assigns their IDs. Actionable minor findings count too. Put optional preferences and unrelated improvements in suggestions; do not manufacture findings to fill a quota.
 Return an evidenced met/partial/unmet assessment for every acceptance criterion. In code review, set requiresDesignRevision=true only if the implementation needs a materially different design; explain it in a finding. The engine will return the author to design review. In design review, keep that field false and express needed revisions as findings. Return complete=false if you cannot finish the review; an empty findings list is not approval in that case.`
+}
+
+// The design stage needs no gate run: setup measured the base revision.
+function pairBaseline(S) {
+  if (!S.verify) return ''
+  return `Setup ran the verification command on the base revision, and it ${S.baselineOk ? 'passed' : `failed: ${S.baselineNote}`}. Don't run it, or the checks in it, during the design stage; the design says which of them the implementation must pass and how the new tests are checked.`
 }
 
 function hostMaterializationNote(S, label, tag, checkout) {
@@ -5546,6 +5567,8 @@ async function pairRun() {
   }
   S.criteria = setup.criteria || []
   S.verify = String(setup.verify || '').trim()
+  S.baselineOk = !S.verify || !!setup.baselinePasses
+  if (!S.baselineOk) S.baselineNote = oneLine(setup.baselineNote, 300) || 'no reason given'
   S.refs = (setup.refs || []).filter(r => r.path?.startsWith(`${S.run.runDir}/refs/`))
   if (!S.criteria.length || new Set(S.criteria.map(c => c.id)).size !== S.criteria.length || S.criteria.some(c => !c.id || !c.text) ||
       S.refs.length !== (setup.refs || []).length || S.refs.length < S.plan.length ||
@@ -5837,7 +5860,14 @@ async function factoryRun() {
     Object.assign(S, carried, { pair: newPairState() })
     if (S.raw.explain) return explanation(S)
     const result = await pairRun()
-    return { ...result, workflow: 'factory', tier, strategy: 'pair', factory: carried.factory }
+    let retro = null
+    if (S.run) {
+      const ready = result.final.readiness
+      phase(retroWanted(S, { ready }) ? 'Retro' : 'Record')
+      retro = await runRetro({ outcome: null, W: null, endorsements: [], fixPass: false, ready, audit: null, reportMd: result.report.markdown })
+    }
+    return { ...result, workflow: 'factory', tier, strategy: 'pair', factory: carried.factory, retro,
+      forTheOrchestrator: result.forTheOrchestrator + (retro && retro.markdown ? ' Last, show retro.markdown as it is: notes on the workflow, not the user\'s project.' : '') }
   }
   if (S.raw.explain) return explanation(S)
   if (tier === 'simple') return await simpleRun()
