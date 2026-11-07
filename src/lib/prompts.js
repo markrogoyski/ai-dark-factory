@@ -307,7 +307,9 @@ function claimsAsk(S) {
 
 function lengthAsk(S) {
   return `Keep the post under about ${S.postWords} words${S.mode === 'implement' ? ': the diff carries the detail, and the post explains it' : ''}. ${S.tier === 'simple' ? 'The reviewer and the verifier read it' : S.build ? 'The verifier and the auditors read it' : 'Every seat reads it'}, so make each paragraph earn its place. ` +
-  'Only the post file counts toward the limit. Put long material the task asks for, such as exact edits, logs or data, in separate files in the room next to your post, named with your seat letter first, and point to them from the post.'
+  (S.mode === 'design' || S.mode === 'plan'
+    ? `The ${S.mode} itself belongs in the post, not in a side file: the post is what is verified, debated and handed on. Only supporting material, such as prototype output, logs or data, goes in separate files in the room next to your post, named with your seat letter first, and pointed to from the post.`
+    : 'Only the post file counts toward the limit. Put long material the task asks for, such as exact edits, logs or data, in separate files in the room next to your post, named with your seat letter first, and point to them from the post.')
 }
 
 function solvePrompt(S, s) {

@@ -153,7 +153,7 @@ const IMPLEMENT_RE =
 
 const DESIGN_RE = /\b(design|architect\w*|propos(e|al)|approach(es)?|trade-?offs?|strategy|plan)\b/i
 const MODES = ['implement', 'investigate', 'design']
-const WORDS_BY_MODE = { implement: 800, investigate: 1500, design: 2000, plan: 1500 }   // soft limit, flagged when exceeded
+const WORDS_BY_MODE = { implement: 800, investigate: 1500, design: 4000, plan: 1500 }   // soft limit, flagged when exceeded; a design post is the design itself
 // 'plan' is no mode a user picks: the factory's Feature tier debates plans in it before it builds.
 const LARGE_DIFF = 400                                                          // changed lines; readers start from the per-file summary
 const NOTES_CHARS = 4000                                                         // cap on private notes carried to the next turn
@@ -849,7 +849,9 @@ function claimsAsk(S) {
 
 function lengthAsk(S) {
   return `Keep the post under about ${S.postWords} words${S.mode === 'implement' ? ': the diff carries the detail, and the post explains it' : ''}. ${S.tier === 'simple' ? 'The reviewer and the verifier read it' : S.build ? 'The verifier and the auditors read it' : 'Every seat reads it'}, so make each paragraph earn its place. ` +
-  'Only the post file counts toward the limit. Put long material the task asks for, such as exact edits, logs or data, in separate files in the room next to your post, named with your seat letter first, and point to them from the post.'
+  (S.mode === 'design' || S.mode === 'plan'
+    ? `The ${S.mode} itself belongs in the post, not in a side file: the post is what is verified, debated and handed on. Only supporting material, such as prototype output, logs or data, goes in separate files in the room next to your post, named with your seat letter first, and pointed to from the post.`
+    : 'Only the post file counts toward the limit. Put long material the task asks for, such as exact edits, logs or data, in separate files in the room next to your post, named with your seat letter first, and point to them from the post.')
 }
 
 function solvePrompt(S, s) {

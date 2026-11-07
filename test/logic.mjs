@@ -887,7 +887,7 @@ describe('config', () => {
   })
   test('the post word limit follows the mode, and newState starts clean', () => {
     const s = lib.newState(lib.parseConfig({ task: 't', mode: 'design' }))
-    assert.deepEqual([s.postWords, s.ledger, s.inContention, s.lastRound, s.run], [2000, [], null, 0, null])
+    assert.deepEqual([s.postWords, s.ledger, s.inContention, s.lastRound, s.run], [4000, [], null, 0, null])
     const t = lib.newState(lib.parseConfig({ task: 't', mode: 'design' }))
     assert.notEqual(s.ledger, t.ledger, 'states do not share arrays')
   })

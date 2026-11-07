@@ -15,7 +15,7 @@ const IMPLEMENT_RE =
 
 const DESIGN_RE = /\b(design|architect\w*|propos(e|al)|approach(es)?|trade-?offs?|strategy|plan)\b/i
 const MODES = ['implement', 'investigate', 'design']
-const WORDS_BY_MODE = { implement: 800, investigate: 1500, design: 2000, plan: 1500 }   // soft limit, flagged when exceeded
+const WORDS_BY_MODE = { implement: 800, investigate: 1500, design: 4000, plan: 1500 }   // soft limit, flagged when exceeded; a design post is the design itself
 // 'plan' is no mode a user picks: the factory's Feature tier debates plans in it before it builds.
 const LARGE_DIFF = 400                                                          // changed lines; readers start from the per-file summary
 const NOTES_CHARS = 4000                                                         // cap on private notes carried to the next turn

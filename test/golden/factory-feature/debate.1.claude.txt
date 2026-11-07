@@ -94,7 +94,7 @@ Write your post to /tmp/proj/.council/test-ffeat/room/r1/A.md with these section
 ## Changes this round — what changed and why; other seats read this section first next round
 ## Vote
 
-Keep the post under about 1500 words. Every seat reads it, so make each paragraph earn its place. Only the post file counts toward the limit. Put long material the task asks for, such as exact edits, logs or data, in separate files in the room next to your post, named with your seat letter first, and point to them from the post.
+Keep the post under about 1500 words. Every seat reads it, so make each paragraph earn its place. The plan itself belongs in the post, not in a side file: the post is what is verified, debated and handed on. Only supporting material, such as prototype output, logs or data, goes in separate files in the room next to your post, named with your seat letter first, and pointed to from the post.
 
 `claims` are new claims about your revised position: at most 12: every verification claim, plus the facts your position rests on that bear on an acceptance criterion (name it in `criterion`; a fact claim without one is not recorded). Neutral verifiers check each one, so leave out incidental facts; they can stay in the post.
 Finally, fill `notes`: private notes for your next turn, under about 400 words. You start every turn with no memory except your post and these notes, and nobody else sees them. Record what you would otherwise have to rediscover: the key file:line locations, what you verified and how, your read on each other position, and what to check next.
