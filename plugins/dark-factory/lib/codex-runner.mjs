@@ -1,6 +1,6 @@
 // The same generated workflow runs in Claude's harness or here. Only the runtime changes.
 import { tokenUsage } from './evaluate.mjs'
-import { digest, fingerprint, loadCheckpoint, journalRuntime } from './checkpoint.mjs'
+import { digest, fingerprint, loadCheckpoint, journalRuntime, readEventLog, writeJsonAtomic } from './checkpoint.mjs'
 import { spawn, execFileSync } from 'node:child_process'
 import { appendFileSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync, realpathSync, existsSync, readdirSync, lstatSync, openSync, closeSync, unlinkSync } from 'node:fs'
 import { dirname, join, resolve, relative, isAbsolute } from 'node:path'
@@ -43,6 +43,7 @@ Progress goes to stderr; the final result is JSON on stdout. The host log and
 result are retained under <repo>/.council/host-*/. Exit codes: 0 ready, 2 needs
 input/blocked/incomplete, 1 failed. Results stay in their worktrees. This command
 does not apply, commit, or merge them into the main checkout.
+Resume retains concurrency and per-turn timeout settings unless explicitly overridden.
 `
 
 function positiveInteger(value, name) {
@@ -53,7 +54,7 @@ function positiveInteger(value, name) {
 }
 
 export function parseCLI(argv, cwd = process.cwd()) {
-  const out = { workflow: 'factory', cwd, concurrency: 3, timeoutMin: 90, args: {} }
+  const out = { workflow: 'factory', cwd, concurrency: 3, timeoutMin: 90, concurrencyGiven: false, timeoutMinGiven: false, args: {} }
   const task = []
   const values = new Set(['workflow', 'cwd', 'tier', 'seats', 'author', 'reviewer', 'max-reviews', 'args-file', 'output', 'concurrency', 'timeout-min', 'strategy', 'max-turns', 'max-run-min', 'repair-passes', 'resume', 'candidates', 'reviewers', 'mode'])
   for (let i = 0; i < argv.length; i++) {
@@ -74,8 +75,8 @@ export function parseCLI(argv, cwd = process.cwd()) {
     else if (name === 'resume') out.resume = resolve(cwd, value)
     else if (name === 'workflow') { out.workflow = value; out.workflowGiven = true }
     else if (name === 'max-reviews') out.args.maxReviews = positiveInteger(value, '--max-reviews')
-    else if (name === 'concurrency') out.concurrency = positiveInteger(value, '--concurrency')
-    else if (name === 'timeout-min') out.timeoutMin = positiveInteger(value, '--timeout-min')
+    else if (name === 'concurrency') { out.concurrency = positiveInteger(value, '--concurrency'); out.concurrencyGiven = true }
+    else if (name === 'timeout-min') { out.timeoutMin = positiveInteger(value, '--timeout-min'); out.timeoutMinGiven = true }
     else if (name === 'args-file') out.argsFile = resolve(cwd, value)
     else if (name === 'cwd' || name === 'output') out[name] = resolve(cwd, value)
     else out[name] = value
@@ -412,6 +413,12 @@ export async function runWorkflow(options, dependencies = {}) {
     if (options.workflowGiven && options.workflow !== resumeMeta.workflow) throw new Error('Cannot change workflow on resume.')
     options = { ...options, cwd: resumeMeta.repo, workflow: resumeMeta.workflow }
   }
+  const runtimeOptions = {}
+  for (const [key, fallback] of Object.entries({ concurrency: 3, timeoutMin: 90 })) {
+    // Direct API callers may supply values without the CLI's explicit-option markers.
+    const given = options[key + 'Given'] ?? (options[key] !== undefined)
+    runtimeOptions[key] = positiveInteger(given ? options[key] : resumeMeta?.runtimeOptions?.[key] ?? options[key] ?? fallback, key)
+  }
   const repo = realpathSync(gitRoot(resolve(options.cwd), '--show-toplevel'))
   const commonGit = resolve(repo, gitRoot(repo, '--git-common-dir'))
   const worktreeGit = resolve(repo, gitRoot(repo, '--git-dir'))
@@ -460,13 +467,14 @@ export async function runWorkflow(options, dependencies = {}) {
     }
     const saved = options.resume ? loadCheckpoint(hostRunDir, { repo, args, engine }) : null
     const elapsedBefore = Math.max(resumeMeta?.elapsedMs || 0, saved?.runtime.elapsedMs || 0)
-    const recordedTurns = existsSync(events) ? readFileSync(events, 'utf8').trim().split('\n').filter(Boolean).map(JSON.parse).filter(e => e.type === 'turn.started').length : 0
+    const recordedTurns = readEventLog(events, true).filter(e => e.type === 'turn.started').length
     const spentBefore = Math.max(resumeMeta?.spentTurns || 0, saved?.runtime.spentTurns || 0, recordedTurns)
     const attempt = (resumeMeta?.attempt || 0) + (options.resume ? 1 : 0)
-    writeFileSync(join(hostRunDir, 'host.json'), JSON.stringify({ repo, workflow: options.workflow, attempt, elapsedMs: elapsedBefore, spentTurns: spentBefore }))
-    writeFileSync(join(hostRunDir, 'args.json'), JSON.stringify(args, null, 2) + '\n')
+    const hostInfo = { repo, workflow: options.workflow, attempt, runtimeOptions }
+    writeJsonAtomic(join(hostRunDir, 'host.json'), { ...hostInfo, elapsedMs: elapsedBefore, spentTurns: spentBefore })
+    writeJsonAtomic(join(hostRunDir, 'args.json'), args, 2)
     const controller = new AbortController()
-    const rawRuntime = createRuntime({ repo, hostRunDir, concurrency: options.concurrency, timeoutMin: options.timeoutMin,
+    const rawRuntime = createRuntime({ repo, hostRunDir, ...runtimeOptions,
       initialSequence: saved?.runtime.sequence || 0, attempt, elapsedBefore, spentBefore, maxTurns: args.maxTurns, gitDirs: [...new Set([commonGit, worktreeGit])], emit, signal: controller.signal, ...dependencies.runtime })
     const runtime = journalRuntime(rawRuntime, { repo, hostRunDir, args, engine, saved, emit })
     let timedOut = false
@@ -491,7 +499,7 @@ export async function runWorkflow(options, dependencies = {}) {
       process.removeListener('SIGINT', interrupt); process.removeListener('SIGTERM', interrupt)
     }
     const runtimeStats = runtime.checkpointState()
-    writeFileSync(join(hostRunDir, 'host.json'), JSON.stringify({ repo, workflow: options.workflow, attempt, ...runtimeStats }))
+    writeJsonAtomic(join(hostRunDir, 'host.json'), { ...hostInfo, ...runtimeStats })
     if (runtime.budgetStop() && result.final?.readiness?.state !== 'ready') result = { ...result, status: 'blocked', stopReason: runtime.budgetStop(), final: { ...result.final, readiness: { state: 'incomplete', blocked: result.final?.readiness?.blocked || [], incomplete: [runtime.budgetStop()] } } }
     result = { ...result, host: 'codex', hostRunDir, hostEvents: events, checkpoint: existsSync(join(hostRunDir, 'checkpoint.json')) ? join(hostRunDir, 'checkpoint.json') : null }
     // An interruption may bypass the engine's final report. Keep measured effort, leaving
@@ -502,15 +510,15 @@ export async function runWorkflow(options, dependencies = {}) {
       readiness: result.final?.readiness?.state || 'incomplete', findingsByStage: null, escalated: null,
       detailIncomplete: true, tokens: null, cost: null, limits: { maxTurns: args.maxTurns || null, maxRunMin: args.maxRunMin || null } }
     try { result.metrics.tokens = tokenUsage(runtime.runDirectories()) } catch (error) { result.metrics.tokenError = error.message }
-    const history = readFileSync(events, 'utf8').trim().split('\n').map(JSON.parse)
+    const history = readEventLog(events)
     result.metrics.turnsByRole = history.filter(e => e.type === 'turn.started').reduce((roles, e) => { roles[e.role || 'agent'] = (roles[e.role || 'agent'] || 0) + 1; return roles }, {})
     result.metrics.failedTurns = history.filter(e => e.type === 'turn.failed' || (e.type === 'turn.completed' && e.status !== 'done')).length
     result.metrics.turns = runtimeStats.spentTurns
     result.metrics.elapsedMs = runtimeStats.elapsedMs
     result.metrics.repositoryHead = gitRoot(repo, 'HEAD')
     const json = JSON.stringify(result, null, 2) + '\n'
-    writeFileSync(join(hostRunDir, 'result.json'), json)
-    writeFileSync(join(hostRunDir, 'metrics.json'), JSON.stringify(result.metrics, null, 2) + '\n')
+    writeJsonAtomic(join(hostRunDir, 'result.json'), result, 2)
+    writeJsonAtomic(join(hostRunDir, 'metrics.json'), result.metrics, 2)
     if (options.output) writeFileSync(options.output, json)
     emit({ type: 'run.completed', status: result.status, exitCode: resultExitCode(result), result: join(hostRunDir, 'result.json') })
     return result

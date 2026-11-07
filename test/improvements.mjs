@@ -1,7 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
-import { loadLib } from './lib.mjs'
+import { loadLib, makeRun, addItem } from './lib.mjs'
 import { validateResult } from '../plugins/dark-factory/lib/codex-runner.mjs'
 import { summarize } from '../plugins/dark-factory/lib/evaluate.mjs'
 
@@ -98,6 +98,51 @@ test('stalled Simple repairs escalate with unresolved evidence and exhausted bud
   assert.equal(capped.calls.length, 2)
   assert.equal(capped.result.final.readiness.state, 'incomplete')
   assert.match(capped.result.stopReason, /budget exhausted/)
+})
+
+test('unchanged repairs stop despite fresh checker wording', async () => {
+  let checks = 0
+  const stalled = await simulate('factory', { repair: { maxPasses: 4 } }, {
+    findings: 1, stall: true,
+    modify: (v, r) => { if (r.role === 'checker') v.criteria = v.criteria.map(c => ({ ...c, note: `Rechecked the same behavior, observation ${++checks}.` })) },
+  })
+  assert.equal(stalled.repairs, 1, 'rephrased evidence must not spend the remaining repair budget')
+  assert.equal(stalled.result.factory.escalation.trigger, 'blocked')
+})
+
+test('repair progress ignores prose and order but detects changed artifacts and verification outcomes', () => {
+  const { L, S } = makeRun()
+  const p = S.pos.A
+  p.tree = { hash: 'a'.repeat(40) }
+  p.criteria = [{ criterion: 'C1', status: 'unmet', note: 'Wrong boundary.' }, { criterion: 'C2', status: 'met', note: 'Checked.' }]
+  p.suite = { ran: true, passed: false, tail: 'Failed once.' }
+  const finding = addItem(L, S, { author: 'XC', target: 'A', kind: 'finding', severity: 'major', status: 'verified' })
+  const other = addItem(L, S, { author: 'XD', target: 'A', kind: 'finding', severity: 'major', status: 'verified' })
+  const test = addItem(L, S, { id: 'TXC1', author: 'XC', target: 'A', kind: 'test', status: 'verified' })
+  S.testResults[test.id] = { A: 'fail' }
+  const signature = L.repairSignature(S, 'A')
+  p.summary = 'A different account of the same work.'; p.suite.tail = 'Still failed.'
+  p.criteria.reverse(); p.criteria.forEach(c => { c.note = 'Reworded evidence.' })
+  finding.statement = 'A clearer description.'; finding.evidence = 'Reworded reproduction.'; S.ledger.reverse()
+  assert.equal(L.repairSignature(S, 'A'), signature)
+  const changes = [
+    [() => { p.tree.hash = 'b'.repeat(40) }, () => { p.tree.hash = 'a'.repeat(40) }],
+    [() => { finding.fixed = true }, () => { finding.fixed = false }],
+    [() => { other.status = 'refuted' }, () => { other.status = 'verified' }],
+    [() => { p.criteria.find(c => c.criterion === 'C1').status = 'met' }, () => { p.criteria.find(c => c.criterion === 'C1').status = 'unmet' }],
+    [() => { p.suite.passed = true }, () => { p.suite.passed = false }],
+    [() => { S.testResults[test.id].A = 'pass' }, () => { S.testResults[test.id].A = 'fail' }],
+  ]
+  for (const [change, restore] of changes) {
+    change(); assert.notEqual(L.repairSignature(S, 'A'), signature); restore()
+    assert.equal(L.repairSignature(S, 'A'), signature)
+  }
+  delete p.tree; p.artifactHash = 'design-hash-1'
+  const design = L.repairSignature(S, 'A')
+  p.summary = 'New summary of unchanged design.'
+  assert.equal(L.repairSignature(S, 'A'), design)
+  p.artifactHash = 'design-hash-2'
+  assert.notEqual(L.repairSignature(S, 'A'), design)
 })
 
 test('Ensemble measures independent candidates and leaves choice and delivery explicit', async () => {

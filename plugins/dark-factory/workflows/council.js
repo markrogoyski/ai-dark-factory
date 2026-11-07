@@ -3893,9 +3893,14 @@ function repairTodo(S, W) {
 }
 
 function repairSignature(S, W) {
-  const p = S.pos[W]
-  return JSON.stringify([p.tree?.hash || p.artifactHash || p.summary, S.ledger.filter(c => c.target === W && c.kind === 'finding' && !c.fixed && !c.withdrawn)
-    .map(c => [c.statement, c.severity, c.status]).sort(), p.criteria, p.suite?.ran, p.suite?.passed])
+  const p = S.pos[W], todo = repairTodo(S, W)
+  // Prose and response order are not progress. Track measured bytes, stable obligations,
+  // and verification outcomes, including reproductions that change without a new tree.
+  return JSON.stringify([p.tree?.hash || p.artifactHash || null,
+    [...todo.upheld, ...todo.disputed].map(c => [c.id, c.severity, c.status]).sort(),
+    (p.criteria || []).map(c => [c.criterion, c.status]).sort(),
+    validTests(S).map(t => [t.id, S.testResults[t.id]?.[W] || 'missing']).sort(),
+    p.suite?.ran, p.suite?.passed])
 }
 
 function repairReviewPrompt(S, a, W, round, tag, checkout) {

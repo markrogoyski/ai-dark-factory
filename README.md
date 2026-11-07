@@ -188,6 +188,8 @@ per-turn deadline, and `--concurrency` bounds simultaneous turns in Codex. These
 not price forecasts. Exhausted required work remains incomplete. An optional retrospective
 that could not run does not erase a completed review. Codex retains spent turns and active
 elapsed time across resumes; time spent waiting between invocations is excluded.
+Codex also retains `--concurrency` and `--timeout-min` across resumes. Supply either flag on
+resume to override its saved value; that override becomes the default for subsequent resumes.
 
 For Council and Factory's independent tiers, opt into repeated repairs with:
 
@@ -197,7 +199,8 @@ For Council and Factory's independent tiers, opt into repeated repairs with:
 
 Each repair is measured, then reviewed in fresh contexts and separate checkouts. Existing
 findings retain stable IDs and evidence. The loop stops on readiness, unchanged artifacts and
-unresolved findings, missing review, or the repair limit (1–20 passes). The default minor policy
+verification outcomes, missing review, or the repair limit (1–20 passes). Reworded notes and
+reordered findings or criteria do not count as repair progress. The default minor policy
 requires actionable minor findings to close; `minor: "report"` retains them in the report without
 making them repair obligations. Preferences remain suggestions. Simple uses this fresh-review
 loop by default with one repair pass and retains its escalation rules. Council, Fix, Feature,
@@ -216,7 +219,12 @@ tracked and unignored worktree files, snapshot refs, and saved evidence before r
 operations replay without model calls; new reviews remain fresh. A lock prevents two hosts
 from continuing the same run. The same task and execution options must be retained. Allowed
 updates are appended answers to the paused run's question IDs, `tierConfirmed`, `noSplit`,
-`explain`, and run-wide budgets. For a debate question the host preserves its `afterRound`. Pair author questions are free text; incorporate those answers into `context` in a new run.
+`explain`, run-wide budgets, and explicit concurrency or per-turn timeout overrides. For a debate question the host preserves its `afterRound`. Pair author questions are free text; incorporate those answers into `context` in a new run.
+
+Host metadata and results use atomic file replacement. Resume recovers an unterminated final
+event record before appending more events, preserving all preceding records and their turn
+counts. A valid final record without a newline is retained; malformed completed records still
+stop resume with a diagnostic.
 
 If an interrupted write changed a worktree, or inputs/evidence changed, resume fails with the
 mismatch and leaves all files intact. Start a new run in that case; no checkpoint is silently

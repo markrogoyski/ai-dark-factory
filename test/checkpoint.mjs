@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { execFileSync } from 'node:child_process'
-import { journalRuntime, loadCheckpoint } from '../plugins/dark-factory/lib/checkpoint.mjs'
+import { journalRuntime, loadCheckpoint, readEventLog } from '../plugins/dark-factory/lib/checkpoint.mjs'
 import { runWorkflow, parseCLI } from '../plugins/dark-factory/lib/codex-runner.mjs'
 
 function fixture(t) {
@@ -64,6 +64,104 @@ test('parallel operations commit only at a completed barrier; failures keep the 
 })
 
 const empty = s => s.enum ? s.enum[0] : s.type === 'object' ? Object.fromEntries(Object.entries(s.properties).map(([k,v]) => [k,empty(v)])) : s.type === 'array' ? [] : s.type === 'string' ? '' : s.type === 'boolean' ? false : 0
+
+async function pausedRun(t, flags = []) {
+  const f = fixture(t), deadlines = []
+  const dependencies = { progress: () => {}, runtime: { execute: async argv => {
+    if (argv[0] === 'preflight') return { status: 'ok' }
+    assert.equal(argv[0], 'seat-run')
+    deadlines.push(argv[argv.indexOf('--timeout-min') + 1])
+    const prompt = readFileSync(argv[argv.indexOf('--prompt-file') + 1], 'utf8')
+    const schema = JSON.parse(prompt.split('<<<OUTPUT_SCHEMA\n')[1].split('\nOUTPUT_SCHEMA>>>')[0])
+    const result = empty(schema)
+    if ('tier' in result) Object.assign(result, { status: 'ok', tier: 'feature', mode: 'implement', strategy: 'independent' })
+    else Object.assign(result, { status: 'error', error: 'Test stops at setup.' })
+    return { status: 'done', result }
+  } } }
+  const first = await runWorkflow(parseCLI(['--cwd', f.repo, '--tier', 'simple', ...flags, 'Fix code']), dependencies)
+  assert.equal(first.status, 'needs-tier')
+  const resume = flags => runWorkflow({ ...parseCLI(['--resume', first.hostRunDir, ...(flags || [])]), args: { tierConfirmed: true } }, dependencies)
+  const metadata = () => JSON.parse(readFileSync(join(first.hostRunDir, 'host.json'), 'utf8'))
+  return { ...f, first, resume, metadata, deadlines }
+}
+
+test('resume preserves runtime limits and explicit overrides persist on subsequent resumes', async t => {
+  const f = await pausedRun(t, ['--concurrency', '1', '--timeout-min', '2'])
+  assert.deepEqual(f.metadata().runtimeOptions, { concurrency: 1, timeoutMin: 2 })
+  await f.resume()
+  assert.deepEqual(f.metadata().runtimeOptions, { concurrency: 1, timeoutMin: 2 })
+  // Explicitly selecting the ordinary defaults must also override saved values.
+  await f.resume(['--concurrency', '3'])
+  assert.deepEqual(f.metadata().runtimeOptions, { concurrency: 3, timeoutMin: 2 })
+  await f.resume(['--timeout-min', '90'])
+  await f.resume()
+  assert.deepEqual(f.metadata().runtimeOptions, { concurrency: 3, timeoutMin: 90 })
+  assert.deepEqual(f.deadlines, ['2', '2', '2', '90', '90'])
+})
+
+test('resume falls back to ordinary runtime defaults when no settings were saved', async t => {
+  const f = await pausedRun(t)
+  const metadata = f.metadata(); delete metadata.runtimeOptions
+  writeFileSync(join(f.first.hostRunDir, 'host.json'), JSON.stringify(metadata))
+  await f.resume()
+  assert.deepEqual(f.metadata().runtimeOptions, { concurrency: 3, timeoutMin: 90 })
+})
+
+test('resume recovers a torn event tail without losing prior turns or corrupting later appends', async t => {
+  const f = await pausedRun(t)
+  const extra = { type: 'turn.started', role: 'setup', job: 'interrupted', note: 'Unicode: é 🧪' }
+  appendFileSync(f.first.hostEvents, JSON.stringify(extra) + '\n')
+  const valid = readFileSync(f.first.hostEvents)
+  const partial = Buffer.from('{"type":"🧪').subarray(0, -1)
+  appendFileSync(f.first.hostEvents, partial)
+  // Interrupted temporary metadata writes must not replace the last complete documents.
+  for (const name of ['host', 'args', 'result', 'metrics']) writeFileSync(join(f.first.hostRunDir, `${name}.json.tmp`), '{"partial":')
+  const result = await f.resume()
+  assert.equal(result.metrics.turns, 3, 'completed intake, interrupted turn, new setup')
+  assert.equal(result.metrics.turnsByRole.setup, 2)
+  assert.deepEqual(f.deadlines, ['90', '90'], 'intake replays without a CLI call')
+  const bytes = readFileSync(f.first.hostEvents)
+  assert.ok(bytes.subarray(0, valid.length).equals(valid))
+  const events = bytes.toString('utf8').trim().split('\n').map(JSON.parse)
+  assert.ok(events.some(e => e.job === 'interrupted'))
+  assert.equal(events.at(-1).type, 'run.completed')
+})
+
+test('resume retains a valid final event lacking its newline', async t => {
+  const f = await pausedRun(t)
+  appendFileSync(f.first.hostEvents, JSON.stringify({ type: 'turn.started', role: 'setup', job: 'last-valid-record' }))
+  const result = await f.resume()
+  assert.equal(result.metrics.turns, 3)
+  assert.equal(readEventLog(f.first.hostEvents).filter(e => e.job === 'last-valid-record').length, 1)
+})
+
+test('resume rejects malformed completed event records without changing the log', async t => {
+  for (const suffix of ['{"type":\n', '{"type":\n{"type":"later"}']) {
+    const f = await pausedRun(t)
+    appendFileSync(f.first.hostEvents, suffix)
+    const before = readFileSync(f.first.hostEvents)
+    await assert.rejects(f.resume, /Invalid event log .* at line/)
+    assert.deepEqual(readFileSync(f.first.hostEvents), before)
+    assert.equal(f.deadlines.length, 1, 'no new CLI turns on corrupt history')
+  }
+})
+
+test('a failed metadata write leaves the previous JSON intact', t => {
+  const f = fixture(t), file = join(f.hostRunDir, 'host.json')
+  writeFileSync(file, '{"saved":true}\n')
+  // Inject an interrupted write in a separate process, so no other test's fs changes.
+  execFileSync(process.execPath, ['--input-type=module', '-e', `
+    import fs from 'node:fs';
+    import { syncBuiltinESMExports } from 'node:module';
+    import assert from 'node:assert/strict';
+    const write = fs.writeFileSync;
+    fs.writeFileSync = (path) => { write(path, '{"partial":'); throw new Error('Interrupted write'); };
+    syncBuiltinESMExports();
+    const { writeJsonAtomic } = await import(process.argv[1]);
+    assert.throws(() => writeJsonAtomic(process.argv[2], {saved:false}), /Interrupted write/);
+    assert.deepEqual(JSON.parse(fs.readFileSync(process.argv[2], 'utf8')), {saved:true});
+  `, new URL('../plugins/dark-factory/lib/checkpoint.mjs', import.meta.url).href, file])
+})
 
 test('runner resumes a tier decision using the saved intake and a new setup operation', async t => {
   const f = fixture(t), calls = []

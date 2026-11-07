@@ -1,7 +1,7 @@
 // Durable replay at quiescent operation boundaries. A checkpoint is reusable only while its
 // repository, reference inputs, snapshots and evidence still match. Never reset user work.
 import { createHash } from 'node:crypto'
-import { readFileSync, writeFileSync, renameSync, existsSync, lstatSync, readlinkSync, readdirSync, realpathSync } from 'node:fs'
+import { readFileSync, writeFileSync, renameSync, existsSync, lstatSync, readlinkSync, readdirSync, realpathSync, appendFileSync, truncateSync } from 'node:fs'
 import { join, resolve, relative, isAbsolute } from 'node:path'
 import { execFileSync } from 'node:child_process'
 
@@ -9,6 +9,29 @@ export const digest = value => createHash('sha256').update(value).digest('hex')
 const canonical = value => Array.isArray(value) ? value.map(canonical) : value && typeof value === 'object'
   ? Object.fromEntries(Object.keys(value).sort().filter(k => typeof value[k] !== 'function' && value[k] !== undefined).map(k => [k, canonical(value[k])])) : value
 export const fingerprint = value => digest(JSON.stringify(canonical(value)))
+
+export function writeJsonAtomic(path, value, space) {
+  writeFileSync(path + '.tmp', JSON.stringify(value, null, space) + '\n')
+  renameSync(path + '.tmp', path)
+}
+
+// A killed append may leave one unterminated record. Keep complete records strict, and
+// repair the tail under the host lock before appending again. Offsets are bytes, not chars.
+export function readEventLog(path, repairTail = false) {
+  if (!existsSync(path)) return []
+  const bytes = readFileSync(path), lines = bytes.toString('utf8').split('\n'), events = []
+  for (let i = 0; i < lines.length; i++) {
+    if (!lines[i].trim()) continue
+    try { events.push(JSON.parse(lines[i])) } catch (error) {
+      if (i !== lines.length - 1) throw new Error(`Invalid event log ${path} at line ${i + 1}: ${error.message}`)
+      if (repairTail) truncateSync(path, bytes.lastIndexOf(10) + 1)
+      return events
+    }
+  }
+  if (repairTail && bytes.length && bytes.at(-1) !== 10) appendFileSync(path, '\n')
+  return events
+}
+
 const git = (repo, ...args) => execFileSync('git', ['-C', repo, ...args], { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 })
 const fileHash = path => {
   try { return lstatSync(path).isSymbolicLink() ? `link:${readlinkSync(path)}` : digest(readFileSync(path)) } catch (error) { if (error.code === 'ENOENT') return 'absent'; throw error }
@@ -79,8 +102,7 @@ export function journalRuntime(runtime, { repo, hostRunDir, args, engine, saved,
     const data = { version: 1, engine, repository, runs: [...runs], entries,
       runtime: runtime.checkpointState(), artifacts: artifacts(repo, runs) }
     const file = join(hostRunDir, 'checkpoint.json')
-    writeFileSync(file + '.tmp', JSON.stringify(data))
-    renameSync(file + '.tmp', file)
+    writeJsonAtomic(file, data)
     emit({ type: 'checkpoint.saved', operations: entries.length, path: file })
   }
   for (const method of ['agent', 'turn', 'measure']) wrapped[method] = async request => {
