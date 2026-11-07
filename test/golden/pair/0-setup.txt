@@ -1,0 +1,38 @@
+You are setting up a pair run: one author will design and implement the task in its own git worktree, with independent review of the design and each implementation revision. Your job is only the setup. Don't attempt the task.
+
+# Task
+
+Implement the behavior
+
+Mode: implement. Return it as `mode`.
+
+## Step 0 — can the other vendors' CLIs run?
+Some seats run through the Codex CLI. Check that they can start from here before anything is created. Make one Bash call with the sandbox disabled (dangerouslyDisableSandbox: true), exactly as written:
+dark-factory preflight --vendors codex
+It prints JSON with a "status" and, under "vendors", an entry per vendor with "ok" and "error". Copy each entry into `preflight` (vendor, ok, error). If status is "ok", go on to step 1. Otherwise stop here: return status "preflight" with the entries, and empty values elsewhere. Don't try to fix it, and don't run anything else.
+
+## Step 1 — the documents the work follows
+The seats work in git worktrees checked out from HEAD, so they can't see uncommitted files. If the task follows a plan, a checklist, a spec or notes that aren't committed, the seats would never see them.
+Read the task for any other document it tells the seats to follow or read, for example "item 13 on BUG_CHECK_LIST.md" or "implement docs/plan.md". Resolve each named file against the repository root (and ~/.claude/plans/ for a plan named there), and check that it exists. Only documents, not source files the task merely mentions.
+- If the task depends on a plan or document you can't identify or find, don't guess and don't proceed: return status "needs-plan" with planMissing saying what is missing, and empty values elsewhere. That includes a task that refers to "the plan" without naming a file: only the session that started the council knows which plan is meant, so never pick one yourself.
+
+## Step 2 — create the run
+Run: dark-factory init --repo '/repo' --seats A --factory followed by --ref <path> for each other document from step 1
+It prints JSON with runId, runDir, repoRoot, refs (the snapshots it made of those documents) and dirty (tracked files with uncommitted changes).
+- If it fails, return status "error" with its message, and empty values elsewhere.
+- If dirty is non-empty, stop and return status "dirty" with that list. The worktrees branch from HEAD, so uncommitted changes would be invisible to every seat.
+
+## Step 3 — the verification command
+Find the project's standard command for checking a change: its test suite, from CLAUDE.md or AGENTS.md, a Makefile, composer.json, package.json, pyproject.toml and so on. Prefer the normal test run. Avoid full static-analysis sweeps and very slow suites unless the task is about them. If the project has no tests, there is no command.
+Write it to <runDir>/verify.sh as just the command, with no shebang line; it is run as `bash verify.sh` from the root of a worktree. Write an empty file if there is no command.
+Store sandbox-compatible execution settings as explicit string overrides in <runDir>/verification.json: {"env": {"VARIABLE": "value"}}. Preserve all required checks. Prefer these run-owned overrides to changing project defaults. Preflight the exact command through neutral measurement below, including worker/socket/cache restrictions; shell-local exports are insufficient. Keep this configuration fixed for the run after specification review.
+Then measure the baseline: dark-factory measure --run-dir <runDir> --seat A --label base (if it prints status "running", poll with dark-factory wait --run-dir <runDir> --job measure-A-base). Set baselinePasses to suite.passed. If the suite fails or doesn't run at baseline, put the reason and the failing tail in baselineNote.
+
+## Step 4 — acceptance criteria
+Write 3 to 7 acceptance criteria: concrete, checkable statements of what a complete and correct result must satisfy, derived from the task, the reference documents from step 1 (what they require for this task) and the codebase, not from any particular solution. They are the yardstick every position is judged against and they are fixed before anyone starts, so make them fair to different valid approaches. Read the relevant code before writing them. Number them C1, C2, ….
+Every criterion must be checkable by the route seats and verifiers actually have: reading files, and running commands from a worktree inside a sandbox, with no subagents, no `claude -p`, no network and no logins. Name the evidence in the criterion itself where it isn't obvious (a test, a command, a file to read). Don't write a criterion only a capability the seats lack could check.
+
+## Step 5 — the task file
+Write <runDir>/TASK.md with the task (verbatim), the mode and what it means the seats deliver (for implement: the integrated change in their worktree, including the tests and docs the criteria ask for), the paths of the reference-document snapshots, the context if any, the acceptance criteria, and the verification command.
+
+Return the values from these steps.

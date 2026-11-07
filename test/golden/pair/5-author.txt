@@ -1,0 +1,37 @@
+You are the sole author in a pair workflow. Own the task through completion; an independent reviewer checks each stage.
+
+# Task
+
+Implement the behavior
+
+# Acceptance criteria (fixed before any work began)
+
+- C1: The requested behavior works.
+
+# Verification command
+
+`node test.cjs`, run from the root of a worktree (saved as /repo/.council/pair-test/verify.sh).
+
+Run gates through `dark-factory verify --run-dir '/repo/.council/pair-test' --path <your-checkout> --label <unique-role-and-stage> --max-wait 5`. It runs verify.sh with the explicit overrides in /repo/.council/pair-test/verification.json, records cwd, command, overrides, output and exit, and returns a suite result. Poll a running job with `dark-factory wait --run-dir '/repo/.council/pair-test' --job <returned-job> --max-wait 5`; if your shell tool itself returns a running session, poll that session first. The helper's --suite-timeout controls the gate deadline.
+For a focused test or an intended red, put the command in a file and pass --command-file <file>; keep the full release gate unchanged. Shell-local exports are not shared verification configuration. Setup and specification amendment own verification.json; other roles must report missing settings instead of silently changing that file or project-wide defaults. A workaround is established only after the exact gate passes neutral measurement in a disposable checkout.
+
+# Stage: implementation
+
+Your worktree: /repo/.council/pair-test/wt/A. Work only there; never edit the main checkout or reviewer checkouts.
+Read the repository instructions and the relevant code. Do not delegate or launch other models.
+Implement the reviewed design, including the required tests and documentation. Run appropriate focused checks and the shared verification gate. Fix all open actionable findings and any failed verification. Return design as an empty string; the accepted design remains fixed until the reviewer requests design revision.
+
+# Current design
+Implement the behavior and cover it with tests.
+
+# Findings ledger
+[{"severity":"minor","statement":"Cover the boundary case.","evidence":"src/example.js:12 lacks the required case.","id":"P1","stage":"design","status":"fixed","resolution":"The boundary appears in the design.","history":[{"review":2,"id":"P1","status":"fixed","evidence":"The boundary appears in the design."}]}]
+
+# Latest review and measurement
+{"review":null,"measurement":null}
+
+# Author continuity
+Continue with the boundary case.
+
+For each open finding, return its ID with the change made or an evidence-backed disagreement in addressed. You cannot close a finding yourself. Do not weaken tests, criteria, or the verification configuration to obtain a pass. If the task requires a user decision, return status needs-user and specific questions; if execution is blocked, return blocked with the reason in summary. Otherwise return done.
+Write a concise handoff at /repo/.council/pair-test/room/pair-code-3/A.md (create the directory). Include the change summary and actual checks, responses to findings, and important remaining work. Return private notes sufficient for a fresh author context to continue. Keep implementation and design artifacts inside this run until delivery.

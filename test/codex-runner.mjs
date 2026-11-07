@@ -51,6 +51,10 @@ test('CLI merges full arguments and explicit options without parsing task text a
   assert.throws(() => parseCLI(['--workflow', '../../bad', 'task']), /factory or council/)
   assert.throws(() => parseCLI(['--unknown', 'task']), /Unknown option/)
   assert.equal(parseCLI(['--help']).help, true)
+  const pair = parseCLI(['--workflow', 'pair', '--author', 'opus', '--reviewer', 'astra', '--max-reviews', '6', 'Build it'])
+  assert.equal(pair.workflow, 'pair')
+  assert.deepEqual(pair.args, { author: 'opus', reviewer: 'astra', maxReviews: 6, task: 'Build it' })
+  assert.throws(() => parseCLI(['--author', 'opus', 'Build it']), /require --workflow pair/)
 })
 
 test('schema validation rejects malformed or stale model outputs', () => {
@@ -359,4 +363,43 @@ test('full CLI Simple run uses actual worktrees, helper jobs and verification wi
   assert.ok(calls.some(call => call.kind === 'record'))
   assert.equal(new Set(calls.map(call => call.thread)).size, calls.length, 'the Simple clean path uses independent contexts')
   assert.ok(result.retro.saved && existsSync(result.retro.saved), 'facts are recorded without Claude transcripts')
+})
+
+test('installed pair workflow runs both author/reviewer directions and repeated reviews with stub CLIs', t => {
+  for (const author of ['sol', 'opus']) {
+    const dir = temporary(t), repo = join(dir, 'repo'), bin = join(dir, 'bin')
+    initRepo(repo); mkdirSync(bin)
+    for (const cli of ['codex', 'claude']) writeFileSync(join(bin, cli), readFileSync(join(root, 'test/fixtures/codex-cli.cjs')), { mode: 0o755 })
+    execFileSync('bash', [join(root, 'install-codex.sh'), '--repo', repo], { encoding: 'utf8' })
+    const result = JSON.parse(execFileSync(process.execPath, [join(repo, '.agents/skills/dark-factory/scripts/run.mjs'),
+      '--cwd', repo, '--workflow', 'pair', '--author', author, 'Fix sum to add its operands'], {
+      encoding: 'utf8', timeout: 90_000, stdio: ['ignore', 'pipe', 'pipe'],
+      env: { ...process.env, PATH: `${bin}:${process.env.PATH}`, CODEX_HOME: join(dir, 'codex-home'), CLAUDE_CONFIG_DIR: join(dir, 'claude-home'),
+        FACTORY_TEST_REPO: repo, FACTORY_TEST_RUN_PATH: join(dir, 'run-path'), FACTORY_TEST_LOG: join(dir, 'calls.jsonl'),
+        PAIR_TEST_FIXES: '1', COUNCIL_JOB_POLL: '0.01' },
+    }))
+    assert.equal(result.status, 'done')
+    assert.equal(result.final.readiness.state, 'ready')
+    assert.deepEqual(result.reviews.map(r => r.stage), ['design', 'code', 'code', 'code'])
+    assert.ok(result.findings.every(f => f.status === 'fixed'))
+    assert.match(readFileSync(join(repo, 'sum.cjs'), 'utf8'), /a - b/, 'delivery stays separate')
+    assert.match(readFileSync(join(result.final.worktree, 'sum.cjs'), 'utf8'), /a \+ b/)
+    assert.equal(result.final.snapshotTree, execFileSync('git', ['-C', repo, 'rev-parse', `${result.final.snapshotRef}^{tree}`], { encoding: 'utf8' }).trim())
+    const calls = readFileSync(join(dir, 'calls.jsonl'), 'utf8').trim().split('\n').map(JSON.parse)
+    const authors = calls.filter(c => ['pair-design', 'pair-implement'].includes(c.kind))
+    const reviewers = calls.filter(c => c.kind === 'pair-review')
+    assert.equal(new Set(authors.map(c => c.thread)).size, 1, 'author keeps its session')
+    assert.equal(new Set(reviewers.map(c => c.thread)).size, 4, 'each review starts fresh')
+    assert.ok(reviewers.every(c => c.cwd.includes('/snap/pair-review-')))
+    assert.ok(authors.every(c => c.vendor === (author === 'sol' ? 'codex' : 'claude')))
+    assert.ok(reviewers.every(c => c.vendor === (author === 'sol' ? 'claude' : 'codex')))
+    assert.equal(new Set(calls.map(c => c.vendor)).size, 2)
+    execFileSync('git', ['-C', repo, 'apply', result.final.diff])
+    const helper = join(root, 'plugins/dark-factory/bin/dark-factory')
+    const invoke = args => JSON.parse(execFileSync(helper, args, { cwd: repo, encoding: 'utf8', timeout: 15_000 }).trim().split('\n').at(-1))
+    let delivery = invoke(['verify-delivery', '--run-dir', result.runDir, '--result', join(result.hostRunDir, 'result.json'), '--max-wait', '5'])
+    while (delivery.status === 'running') delivery = invoke(['wait', '--run-dir', result.runDir, '--job', delivery.job, '--max-wait', '5'])
+    assert.equal(delivery.status, 'delivered', JSON.stringify(delivery))
+    assert.equal(delivery.validation.passed, true)
+  }
 })

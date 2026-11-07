@@ -9,7 +9,7 @@ below are rules for changing this repo.
   `plugins/dark-factory/`. Only that directory ships to users; `src/`, `tools/` and `test/` are
   development only. A new workflow goes in `plugins/dark-factory/workflows/` and runs as
   `/dark-factory:<meta.name>`.
-- `plugins/dark-factory/workflows/council.js` and `factory.js` are generated from `src/` (the file
+- `plugins/dark-factory/workflows/council.js`, `factory.js`, and `pair.js` are generated from `src/` (the file
   lists are in `tools/sources.mjs`). Edit `src/`, then `make build`. Never edit a built file.
 - Agents call the helper by its bare name, `dark-factory`: the plugin's `bin/` is on their PATH.
   Never write an install path into a prompt; the plugin's directory changes between installs.

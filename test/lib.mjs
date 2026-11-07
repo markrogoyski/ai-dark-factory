@@ -7,12 +7,12 @@
 import { readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { LIB } from '../tools/sources.mjs'
+import { LIB, PAIR_LIB } from '../tools/sources.mjs'
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..')
 
 export function loadLib() {
-  const source = LIB.map(f => readFileSync(join(root, f), 'utf8')).join('\n')
+  const source = [...LIB, ...PAIR_LIB].map(f => readFileSync(join(root, f), 'utf8')).join('\n')
   const names = [...source.matchAll(/^(?:async )?function (\w+)|^const (\w+)/gm)].map(m => m[1] || m[2])
   return new Function(`'use strict';\n${source}\nreturn { ${[...new Set(names)].join(', ')} }`)()
 }

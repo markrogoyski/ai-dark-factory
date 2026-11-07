@@ -51,7 +51,7 @@ command -v python3 >/dev/null || echo "warning: python3 not on PATH; bin/dark-fa
 
 cat <<'EOF'
 
-New sessions pick up /dark-factory:factory, /dark-factory:council and /dark-factory:ensemble.
+New sessions pick up /dark-factory:pair, /dark-factory:factory, /dark-factory:council and /dark-factory:ensemble.
 The agents call the plugin's bin/dark-factory. Allow it in ~/.claude/settings.json: this stops
 them prompting mid-run, and Codex and Gemini seats need it, because neither CLI can run inside
 Claude Code's sandbox and the allow rule is what lets the relay rerun them outside:

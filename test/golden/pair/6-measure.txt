@@ -1,0 +1,4 @@
+You are transporting a deterministic verification result for the pair workflow. Do not review, change, or judge the implementation. Run exactly:
+dark-factory measure --run-dir '/repo/.council/pair-test' --seat A --label 'pair-code-3' --max-wait 5
+If status is running, poll dark-factory wait --run-dir '/repo/.council/pair-test' --job 'measure-A-pair-code-3' --max-wait 5 until it finishes. Poll an active shell session before launching another command. Do not use sleep polling.
+Return status done only for the helper's completed result. Copy snapshot.ref, snapshot.tree, snapshot.diff, and suite.ran, suite.passed, suite.command, and suite.tail exactly (empty command or tail if absent). On failure return error with the actual message and empty snapshot values. Do not substitute results from the live worktree or remove required checks.

@@ -20,7 +20,7 @@ function fixture(t) {
   mkdirSync(join(plugin, 'workflows'), { recursive: true })
   cpSync(join(root, 'plugins/dark-factory/skills/dark-factory'), skill, { recursive: true })
   cpSync(join(root, 'install-codex.sh'), join(checkout, 'install-codex.sh'))
-  for (const file of ['bin/dark-factory', 'bin/dark-factory-codex', 'workflows/factory.js', 'workflows/council.js']) {
+  for (const file of ['bin/dark-factory', 'bin/dark-factory-codex', 'workflows/factory.js', 'workflows/council.js', 'workflows/pair.js']) {
     writeFileSync(join(plugin, file), '')
   }
   const repo = join(dir, 'target repository')
@@ -90,7 +90,7 @@ test('a linked launcher forwards arguments, input, cwd, output, and result statu
     process.exitCode = 2
   `)
   assert.equal(f.install(['--repo', f.repo]).status, 0)
-  const args = ['--args-file', 'path with spaces/task.json', '--', 'Task with `literal` and $(literal) and "quotes"']
+  const args = ['--workflow', 'pair', '--args-file', 'path with spaces/task.json', '--', 'Task with `literal` and $(literal) and "quotes"']
   const result = spawnSync(process.execPath, [join(f.destination, 'scripts/run.mjs'), ...args], {
     cwd: f.repo, input: 'context on stdin\n', encoding: 'utf8',
   })

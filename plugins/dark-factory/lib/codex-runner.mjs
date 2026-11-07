@@ -7,7 +7,7 @@ import { fileURLToPath } from 'node:url'
 const plugin = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const helper = join(plugin, 'bin', 'dark-factory')
 const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor
-const workflows = new Set(['factory', 'council'])
+const workflows = new Set(['factory', 'council', 'pair'])
 const tiers = new Set(['simple', 'fix', 'feature', 'architecture'])
 
 export const HELP = `Usage: dark-factory-codex [options] [--] TASK
@@ -15,10 +15,13 @@ export const HELP = `Usage: dark-factory-codex [options] [--] TASK
 Run the shared dark-factory engine from Codex. Requires Node.js 20+, Python 3,
 Git, and authenticated CLIs for the selected models.
 
-  --workflow factory|council  Workflow to run (default: factory)
+  --workflow NAME            factory, council, or pair (default: factory)
   --cwd DIR                  Target Git repository (default: current directory)
   --tier TIER                simple, fix, feature, or architecture
   --seats a,b                Override the model seats (e.g. astra,sol or opus,astra)
+  --author MODEL             Pair author (default in Codex: sol)
+  --reviewer MODEL           Pair reviewer (default: other vendor)
+  --max-reviews N            Pair review budget across design and code (default: 8)
   --args-file FILE           Full workflow arguments as a JSON object
   --output FILE              Also write the final result JSON to this path
   --concurrency N            Maximum simultaneous model turns (default: 3)
@@ -41,7 +44,7 @@ function positiveInteger(value, name) {
 export function parseCLI(argv, cwd = process.cwd()) {
   const out = { workflow: 'factory', cwd, concurrency: 3, timeoutMin: 90, args: {} }
   const task = []
-  const values = new Set(['workflow', 'cwd', 'tier', 'seats', 'args-file', 'output', 'concurrency', 'timeout-min'])
+  const values = new Set(['workflow', 'cwd', 'tier', 'seats', 'author', 'reviewer', 'max-reviews', 'args-file', 'output', 'concurrency', 'timeout-min'])
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i]
     if (arg === '--') { task.push(...argv.slice(i + 1)); break }
@@ -51,20 +54,22 @@ export function parseCLI(argv, cwd = process.cwd()) {
     if (!match || !values.has(match[1])) throw new Error(`Unknown option: ${arg}`)
     const name = match[1], value = match[2] ?? argv[++i]
     if (value === undefined || value === '' || value.startsWith('--')) throw new Error(`Missing value for --${name}`)
-    if (name === 'tier' || name === 'seats') out.args[name] = value
+    if (['tier', 'seats', 'author', 'reviewer'].includes(name)) out.args[name] = value
+    else if (name === 'max-reviews') out.args.maxReviews = positiveInteger(value, '--max-reviews')
     else if (name === 'concurrency') out.concurrency = positiveInteger(value, '--concurrency')
     else if (name === 'timeout-min') out.timeoutMin = positiveInteger(value, '--timeout-min')
     else if (name === 'args-file') out.argsFile = resolve(cwd, value)
     else if (name === 'cwd' || name === 'output') out[name] = resolve(cwd, value)
     else out[name] = value
   }
-  if (!workflows.has(out.workflow)) throw new Error('--workflow must be factory or council')
+  if (!workflows.has(out.workflow)) throw new Error('--workflow must be factory or council or pair')
   if (out.argsFile && !out.help) {
     const args = JSON.parse(readFileSync(out.argsFile, 'utf8'))
     if (!args || typeof args !== 'object' || Array.isArray(args)) throw new Error('--args-file must contain a JSON object')
     out.args = { ...args, ...out.args }
   }
   if (task.length) out.args.task = task.join(' ')
+  if (out.workflow !== 'pair' && ['author', 'reviewer', 'maxReviews'].some(key => out.args[key] !== undefined)) throw new Error('author, reviewer, and maxReviews require --workflow pair')
   if (out.args.tier && !tiers.has(out.args.tier)) throw new Error('Unknown tier: ' + out.args.tier)
   if (!out.help && !String(out.args.task || out.args.prompt || out.args.question || '').trim()) throw new Error('Provide a task or an --args-file containing task')
   return out
@@ -315,6 +320,27 @@ export function createRuntime({ repo, hostRunDir, concurrency = 3, timeoutMin = 
     return value
   }
 
+  // Execute the shared engine's measurement request without another model turn.
+  async function measure({ run, seat, label }) {
+    if (cancelled || signal?.aborted) throw new Error('Run interrupted')
+    if (!/^[A-Z]$/.test(seat) || !/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(label)) throw new Error('Invalid measurement key')
+    const runDir = runDirectory(run), key = `measure-${seat}-${label}`
+    const jobDir = confined(runDir, join(runDir, 'jobs', key))
+    const options = { cwd: repo, env: childEnv, signal }
+    activeJobs.add(jobDir)
+    emit({ type: 'measurement.started', job: key, runDir })
+    try {
+      let result = await execute(['measure', '--run-dir', runDir, '--seat', seat, '--label', label, '--max-wait', '5'], options)
+      while (result.status === 'running') {
+        if (cancelled || signal?.aborted) throw new Error('Run interrupted')
+        result = await execute(['wait', '--run-dir', runDir, '--job', key, '--max-wait', '5'], options)
+      }
+      if (cancelled || signal?.aborted) throw new Error('Run interrupted')
+      emit({ type: 'measurement.completed', job: key, status: result.status, passed: result.suite?.passed })
+      return result
+    } finally { activeJobs.delete(jobDir) }
+  }
+
   function cancel() {
     cancelled = true
     // Include measurements launched by the setup/checker inside this workflow's runs.
@@ -352,7 +378,7 @@ export function createRuntime({ repo, hostRunDir, concurrency = 3, timeoutMin = 
       logs(join(runDir, 'logs'))
     }
   }
-  return { agent, turn, cancel }
+  return { agent, turn, measure, cancel }
 }
 
 export async function runWorkflow(options, dependencies = {}) {

@@ -17,8 +17,10 @@ const SHARED = [
   'src/turns.js',
   'src/council.js',
 ]
+export const PAIR_LIB = ['src/lib/pair.js', 'src/lib/pair-prompts.js']
 // meta first: the runtime reads `export const meta` from the top of the file.
 export const TARGETS = {
   council: { output: 'plugins/dark-factory/workflows/council.js', order: ['src/00-meta.js', ...LIB, ...SHARED, 'src/main-council.js'] },
   factory: { output: 'plugins/dark-factory/workflows/factory.js', order: ['src/00-meta-factory.js', ...LIB, ...SHARED, 'src/simple.js', 'src/feature.js', 'src/architecture.js', 'src/main-factory.js'] },
+  pair: { output: 'plugins/dark-factory/workflows/pair.js', order: ['src/00-meta-pair.js', ...LIB, ...PAIR_LIB, 'src/boot-pair.js', 'src/schemas.js', 'src/pair-schemas.js', 'src/turns.js', 'src/main-pair.js'] },
 }

@@ -1,7 +1,8 @@
 # dark-factory
 
-A workflow engine for Claude Code and Codex in which models solve one task independently,
-debate it on an evidence ledger, and converge on one result. The Claude entry point defaults to
+A workflow engine for Claude Code and Codex. Pair one author with one independent reviewer,
+or have a council solve one task independently, debate it on an evidence ledger, and converge
+on one result. The Claude council entry point defaults to
 Claude Opus, Claude Sonnet, Codex Astra and Gemini Flash. The Codex entry point defaults to
 Claude Opus, Codex Astra and Codex Sol seats with OpenAI reviewers, and also supports explicit
 Gemini seats.
@@ -15,7 +16,7 @@ The repo is a Claude Code plugin marketplace with one plugin, `dark-factory`:
     /plugin marketplace add markrogoyski/ai-dark-factory
     /plugin install dark-factory@ai-dark-factory
 
-That adds `/dark-factory:factory`, `/dark-factory:council` and `/dark-factory:ensemble`, and puts
+That adds `/dark-factory:pair`, `/dark-factory:factory`, `/dark-factory:council` and `/dark-factory:ensemble`, and puts
 the helper the agents run, `dark-factory`, on their PATH. A plugin can't grant permissions, so add
 this to `~/.claude/settings.json` yourself (see the permission note under Install and test):
 
@@ -43,6 +44,7 @@ Then, in Codex:
 ```text
 $dark-factory Add a debug log line with the retry count in Fetcher::retry
 $dark-factory --tier fix Find why the sync drops the last page
+$dark-factory --workflow pair Implement the retry policy
 ```
 
 The skill runs the same factory/council JavaScript through a local Node runner. Tier routing,
@@ -104,7 +106,67 @@ there is no workflow checkpoint resume. Seat sessions persist across their turns
 The reviewed change stays in its worktree until delivered to the main checkout. Architecture
 returns reviewed milestones and does not automatically build them.
 
-## Factory verification and delivery
+## Pair: one author, one reviewer
+
+Use Pair for a scoped change you want one agent to own through completion, with independent
+feedback before implementation and after every revision:
+
+```text
+/dark-factory:pair Implement the retry policy
+/dark-factory:pair --author astra --reviewer opus Add cancellation support
+```
+
+In Codex:
+
+```text
+$dark-factory --workflow pair Implement the retry policy
+$dark-factory --workflow pair --author opus --reviewer astra Add cancellation support
+```
+
+Pair defaults to Claude Opus author and Codex Astra reviewer in Claude Code, and Codex Sol
+author and Claude Opus reviewer in Codex. `author` and `reviewer` select the roles independently
+using the existing model names. An unspecified reviewer defaults to the other vendor. The
+default pair needs both authenticated CLIs. Explicit `--author sol --reviewer astra` uses only
+Codex models in the Codex host.
+
+1. The author establishes acceptance criteria, reference documents, and the verification gate.
+2. The author drafts a design; the reviewer checks it against the task and repository. The
+   author revises it until the design review passes.
+3. The author implements the reviewed design in its own worktree. The helper snapshots the
+   change and runs the verification gate in a disposable checkout.
+4. A fresh reviewer context inspects that snapshot, the tests, and every criterion. Findings
+   receive stable IDs. Only the reviewer can mark them fixed or refuted, with evidence.
+5. The author fixes findings and failed checks, then verification and review repeat. A material
+   approach problem can send the task back through design review before implementation continues.
+
+All actionable findings, including minor ones, must close. Optional preferences are reported
+separately. The author retains its CLI session across design and implementation; native Claude
+workflow turns carry an explicit handoff and private notes. Review contexts and checkouts are
+fresh each time. Codex's runner executes measurements directly; Claude's workflow uses a
+transport turn to run the same helper. Its existing CLI relay handles external participants.
+There is no council, panel, voting, or automatic escalation.
+
+`maxReviews` (CLI: `--max-reviews`) limits total reviews across both stages, default **8**.
+An unchanged artifact with the same unresolved review state on consecutive attempts stops as
+stalled. Budget exhaustion, incomplete reviews, failed required checks, or unresolved findings
+never report readiness. A ready result requires review of the exact measured final snapshot,
+all criteria met, and all required checks passing. When no automated gate exists, the result
+records that it was not run. Pair currently delivers implementations; use council or factory
+for standalone investigation and architecture work.
+
+Object arguments, or the Codex runner's `--args-file`, accept `task`, `author`, `reviewer`,
+`maxReviews`, `effort`, `context`, `plan`, `criteria`, `verify`, `repo`, `allowDirty`, and
+`timeoutMin`. The existing model catalog and effort mapping apply. Pass absolute reference
+paths in `plan`, including uncommitted documents. Worktrees start at HEAD; tracked local edits
+require explicit `allowDirty` or an already clean checkout. Factory tier, panel, audit, and
+historical-evidence options do not apply to Pair.
+
+Results include `design`, `reviews`, `findings`, `stopReason`, and `final.readiness`. Changes stay
+in `final.worktree`; a ready snapshot has `delivery.status: pending`. Apply it within the user's
+authorization, then use the delivery verification below. Reruns start new runs; Pair does not
+resume checkpoints or automatically launch a council when it stops.
+
+## Factory and Pair verification and delivery
 
 Factory setup stores the full gate in `<runDir>/verify.sh` and explicit execution overrides
 in `<runDir>/verification.json`, for example:
@@ -165,7 +227,7 @@ claiming a test pass.
     .claude-plugin/marketplace.json   the marketplace: lists the plugins in this repo
     plugins/dark-factory/             the plugin, and the only thing that ships
       .claude-plugin/plugin.json
-      workflows/                      factory.js, council.js (built from src/), ensemble.js
+      workflows/                      pair.js, factory.js, council.js (built from src/), ensemble.js
       bin/dark-factory                the helper CLI the agents call
       bin/dark-factory-codex          the Codex host runner
       skills/dark-factory/            the Codex skill and its relative launcher
@@ -695,7 +757,7 @@ The pieces of `make check`:
 
     node test/sim.mjs            # the real script against stub agents, and bin/dark-factory against a stub agy and real git; 27 scenarios
     SIM_ONLY=scenarioBallot,scenarioMeasure node test/sim.mjs   # just those
-    node --test test/logic.mjs   # the decision logic called directly: consensus, tallies, narrowing, ranking, readiness, rulings, ingestion, config
+    node --test test/logic.mjs test/pair.mjs # decision logic and Pair scenarios through both hosts
     node --test test/host-logic.mjs test/codex-runner.mjs test/codex-install.mjs # Codex routing, runner, and installation with stub CLIs
     python3 -B -m unittest discover -s test -p 'test_*.py'      # bin/dark-factory's pure functions
     node test/static.mjs         # scripts parse, `meta` is a plain literal, src/lib stays pure

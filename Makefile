@@ -17,7 +17,7 @@ build-check:
 	$(NODE) tools/build.mjs --check
 
 logic:
-	$(NODE) --test test/logic.mjs
+	$(NODE) --test test/logic.mjs test/pair.mjs
 
 test:
 	$(NODE) test/sim.mjs

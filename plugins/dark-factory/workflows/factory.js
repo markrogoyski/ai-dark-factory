@@ -1726,7 +1726,8 @@ function setupPrompt(S) {
   const letters = S.letters.join(',')
   const A = S.letters[0]
   const vendors = externalVendors(S)
-  const what = S.tier === 'simple' ? 'a factory run of a simple change: one AI model will make the change below in its own git worktree, and another will review it'
+  const what = S.workflowName === 'pair' ? 'a pair run: one author will design and implement the task in its own git worktree, with independent review of the design and each implementation revision'
+    : S.tier === 'simple' ? 'a factory run of a simple change: one AI model will make the change below in its own git worktree, and another will review it'
     : S.tier === 'feature' ? 'a factory run of a feature: several AI models will each plan the task below independently, in their own git worktrees, and debate the plans, and the author of the chosen plan will then build it'
     : S.tier === 'architecture' ? 'a factory run of an architecture: several AI models will each design the task below independently, in their own git worktrees, and debate the designs, and the author of the chosen design will then break it into milestones, each to be built later by a run of its own'
     : 'a council run: several AI models will each attempt the task below independently, in their own git worktrees, and then debate'

@@ -1,6 +1,6 @@
 ---
 name: dark-factory
-description: "Run dark-factory for implementation, investigation, or design with independent attempts, verification, and review. Use when the user asks for the factory or council process."
+description: "Run dark-factory for implementation, investigation, or design with independent verification and review. Use when the user asks for the pair, factory, or council process. Pair uses one author and one reviewer through design, implementation, and repeated fixes."
 ---
 
 # Dark Factory
@@ -23,7 +23,16 @@ arguments. The launcher finds the shipped runner and helper itself; neither need
 Node, Python 3, and an authenticated Codex CLI must be available. Mixed-vendor runs additionally
 need their selected CLIs and authentication.
 
-Use `--workflow council` for a requested council run; factory is the default. Preserve requested
+Use `--workflow pair` for one author with one reviewer and `--workflow council` for a requested
+council run; factory is the default. Pair owns design review, implementation, repeated fixes,
+and readiness. Its defaults are Codex Sol author and Claude Opus reviewer; preserve requested
+`--author`, `--reviewer`, and `--max-reviews`. The review budget defaults to 8 across design and
+code. A stalled or exhausted run remains unresolved; do not start a council automatically.
+For Pair, use `--args-file` for `task`, `author`, `reviewer`, `maxReviews`, `effort`, `context`,
+`plan`, `criteria`, `verify`, `repo`, `allowDirty`, and `timeoutMin`. Tier, seats, panel, roles,
+spec, audit, and historical-evidence options belong to other workflows.
+
+For factory and council, preserve requested
 `--tier` and `--seats`. Use `--args-file` with a JSON object for other factory options: `task`,
 `context`, `plan`, `simple`, `roles`, `panel`, `spec`, `audit`, or `clarifications`. Write the
 object as a file rather than interpolating it into a shell command. Pass absolute paths for
@@ -31,7 +40,7 @@ documents in `plan`, including uncommitted plans; seats start from HEAD and cann
 see those files. Never silently enable `allowDirty` or commit/stash the user's changes to get
 past a dirty-tree result.
 
-The Codex profile's default seats are Claude Opus, Codex Astra and Codex Sol, so it needs an
+The factory/council Codex profile's default seats are Claude Opus, Codex Astra and Codex Sol, so it needs an
 authenticated `claude` CLI; reviewers and roles default to OpenAI models. Explicit Claude or
 Gemini seats retain their vendors. Use `--concurrency` to bound simultaneous model turns and `--timeout-min` for turn
 deadlines. The engine supplies each seat's task and evidence; do not add the coordinator's
@@ -82,7 +91,7 @@ within the user's existing authorization, checking the main tree and patch appli
 Preserve unrelated edits and rerun project checks after application. Creating a factory result
 does not itself authorize publishing or deploying it.
 
-Factory results report delivery as pending. After application and required local-plan updates,
+Ready Factory and Pair results report delivery as pending. After application and required local-plan updates,
 use the shipped helper's `verify-delivery` command as described in
 [references/delivery.md](references/delivery.md). It compares the delivered bytes, records any
 reviewed adjustments and handoffs, and runs the shared gate in the main checkout. Report its
