@@ -18,6 +18,7 @@ async function simulate(workflow, args = {}, behavior = {}) {
   const criteria = [{ criterion: 'C1', status: 'met', note: 'Verified the boundary behavior.' }]
   const respond = async r => {
     calls.push(r)
+    if (behavior.error) throw behavior.error
     if (behavior.fail?.(r)) return null
     const v = empty(r.schema)
     if (r.role === 'intake') Object.assign(v, { status: 'ok', tier: 'simple', mode: 'implement', strategy: behavior.pair ? 'pair' : 'independent', reasons: 'Scoped implementation.' })
@@ -44,7 +45,10 @@ async function simulate(workflow, args = {}, behavior = {}) {
     ...(behavior.clock ? { now: behavior.clock } : {}),
     agent: respond,
     turn: async r => { const result = await respond(r); return result && { status: 'done', result } },
-    measure: async ({ label }) => ({ status: 'done', snapshot: { ref: `refs/council/demo/A-${label}`, tree: tree(), diff: `${run}/room/${label}/A.diff` }, suite: { ran: true, passed: true, tail: 'pass', command: 'check' } }),
+    measure: async ({ label }) => {
+      if (behavior.measureError) throw behavior.measureError
+      return { status: 'done', snapshot: { ref: `refs/council/demo/A-${label}`, tree: tree(), diff: `${run}/room/${label}/A.diff` }, suite: { ran: true, passed: true, tail: 'pass', command: 'check' } }
+    },
   }
   const nativeAgent = (prompt, opts) => {
     const role = opts.label === 'setup' ? 'setup' : opts.label.startsWith('check ') ? 'checker'
@@ -228,6 +232,53 @@ test('run time admission budget stops before another model turn', async () => {
   assert.equal(calls.length, 0)
   assert.equal(result.final.readiness.state, 'incomplete')
   assert.match(result.stopReason, /time budget/)
+})
+
+test('native workflows reject unsupported elapsed limits without reading the wall clock', async () => {
+  const saved = Date.now
+  Date.now = () => { throw new Error('Native workflows cannot read Date.now') }
+  try {
+    for (const workflow of ['factory', 'council', 'pair', 'ensemble']) {
+      await assert.rejects(() => simulate(workflow, { maxRunMin: 1 }, { native: true }), /maxRunMin requires the standalone.*replay-safe clock/)
+    }
+    assert.equal((await simulate('ensemble', { candidates: 2, maxTurns: 1 }, { native: true })).result.status, 'blocked')
+  } finally { Date.now = saved }
+})
+
+test('Pair measurements propagate checkpoint mismatches and host limits remain run limits', async () => {
+  const error = Object.assign(new Error('Checkpoint request changed'), { code: 'CHECKPOINT_MISMATCH' })
+  await assert.rejects(() => simulate('pair', {}, { measureError: error }), e => e === error)
+  const limit = Object.assign(new Error('Run turn budget exhausted (2).'), { code: 'RUN_LIMIT' })
+  const { result, calls } = await simulate('pair', {}, { error: limit })
+  assert.equal(calls.length, 1)
+  assert.equal(result.status, 'blocked')
+  assert.equal(result.stopReason, limit.message)
+})
+
+test('a new approach defect in the final Simple repair review escalates with its evidence', async () => {
+  let reviews = 0
+  const { result, repairs, calls } = await simulate('factory', {}, {
+    findings: 2,
+    modify: (v, r) => {
+      if (r.role === 'auditor' && ++reviews === 2) v.findings[0].kind = 'judgment'
+    },
+  })
+  assert.equal(repairs, 1)
+  assert.equal(result.factory.escalation.trigger, 'design-finding')
+  assert.equal(result.factory.escalation.to, 'feature')
+  assert.ok(calls.some(c => c.role === 'seat' && c.prompt.includes('Upheld finding: major: Defect 2')))
+})
+
+test('evaluation reads both native token formats and excludes legacy idle-inclusive timing', () => {
+  const metrics = { version: 1, host: 'claude', workflow: 'factory', strategy: 'independent', turns: 1, readiness: 'ready',
+    elapsedMs: 1000000, elapsedFrom: 'setup' }
+  const tokens = { external: { model: { turns: 1, input_tokens: 10 } }, claude: { model: { messages: 2, input_tokens: 5, output_tokens: 3 } } }
+  const rows = [tokens, { records: 3, byModel: { model: { input_tokens: 15, output_tokens: 3 } } }, { external: {}, claude: {} }]
+    .map((tokens, i) => ({ source: String(i), result: { metrics: { ...metrics, tokens } } }))
+  const group = Object.values(summarize(rows).groups)[0]
+  assert.equal(group.timedRuns, 0)
+  assert.equal(group.tokenMeasuredRuns, 2)
+  assert.deepEqual(group.tokensByModel, { model: { input_tokens: 30, output_tokens: 6 } })
 })
 
 test('offline evaluation distinguishes missing evidence, failed delivery and matched tasks', () => {

@@ -14,7 +14,7 @@ const schema = { type: 'object', properties: { summary: { type: 'string' } }, re
 function harness(runtime, args = { task: 'Fix the parser', host: 'codex' }) {
   const source = [...LIB, 'src/boot.js', 'src/schemas.js', 'src/turns.js'].map(f => readFileSync(join(root, f), 'utf8')).join('\n')
   const load = new Function('factoryRuntime', 'agent', 'parallel', 'log', 'phase', 'args', source +
-    '\nreturn { state: S, ask, seatTurn, externalTurn, panelRun, recordFacts, runRetro };')
+    '\nreturn { state: S, control: requestControl, ask, seatTurn, externalTurn, panelRun, recordFacts, runRetro };')
   return load(runtime, () => { throw new Error('unexpected Claude runtime call') }, jobs => Promise.all(jobs.map(f => f())), () => {}, () => {}, args)
 }
 
@@ -22,6 +22,30 @@ const run = { runId: 'test-host', runDir: '/repo/.council/test-host', room: '/re
 const turnOptions = { key: 'A-r0', threadKey: 'A', vendor: 'codex', model: 'gpt-6.1-sol', effort: 'high', role: 'seat',
   sandbox: 'workspace-write', cwd: `${run.runDir}/wt/A`, writable: [run.room], fresh: false }
 const done = request => ({ status: 'done', result: { summary: 'completed', turn: request.schema.properties.turn.enum[0] }, elapsedSec: 3 })
+
+test('host orchestration, seats, and optional retros propagate checkpoint mismatches', async () => {
+  const error = Object.assign(new Error('Checkpoint request changed'), { code: 'CHECKPOINT_MISMATCH' })
+  const fail = async () => { throw error }
+  const h = harness({ agent: fail, turn: fail })
+  h.state.run = run
+  await assert.rejects(() => h.ask('setup', { label: 'setup', schema, model: 'opus' }, 'setup'), e => e === error)
+  await assert.rejects(() => h.externalTurn(turnOptions, 'solve', schema, 'solve', 'Solve'), e => e === error)
+  await assert.rejects(() => h.recordFacts('facts'), e => e === error)
+})
+
+test('output recovery reserves a turn and cannot exceed the shared admission limit', async () => {
+  for (const maxTurns of [1, 2]) {
+    let calls = 0
+    const h = harness({ turn: async r => ++calls === 1
+      ? { status: 'error', errorClass: 'timeout', recoverySession: 'session' } : done(r) }, { task: 'Fix it', host: 'codex', maxTurns })
+    h.state.run = run
+    const turn = () => h.externalTurn({ ...turnOptions, recoveryPost: `${run.room}/r0/A.md` }, 'solve', schema, 'solve', 'Solve')
+    if (maxTurns === 1) await assert.rejects(turn, { code: 'RUN_LIMIT' })
+    else assert.equal((await turn()).summary, 'completed')
+    assert.equal(calls, maxTurns)
+    assert.equal(h.control.turns, maxTurns)
+  }
+})
 
 describe('Codex host configuration', () => {
   test('every tier defaults to an Opus seat beside Codex models, with Codex roles and reviewers', () => {

@@ -71,7 +71,7 @@ function runPlanNext(S) {
     if (state.status === 'pending' && state.attempts < S.plan.limits.maxAttempts && t.after.every(id => S.tasks[id].status === 'done')) return t
   }
   if (S.plan.tasks.every(t => S.tasks[t.id].status === 'done') && S.tasks.acceptance.status === 'pending' && S.tasks.acceptance.attempts < S.plan.limits.maxAttempts) {
-    return { id: 'acceptance', workflow: 'council', task: 'Independently verify that the complete run-plan is implemented on the current repository revision. Inspect the code and evidence for every criterion. Report defects and unmet requirements; do not implement changes.',
+    return { id: 'acceptance', workflow: 'council', task: 'Independently verify that the complete run-plan is implemented on the current repository revision. Inspect the code and evidence for every criterion. Report defects and unmet requirements; do not implement changes. Criteria describe the implemented repository: mark affected criteria unmet when defects remain. A complete investigation that finds defects is not successful acceptance.',
       criteria: [...S.plan.acceptance.criteria, ...S.plan.tasks.flatMap(t => t.criteria.map(c => `${t.id}: ${c}`))], args: S.plan.acceptance.args }
   }
   return null
@@ -86,7 +86,7 @@ function runPlanBrief(S, task) {
     `Read the settled decisions and accepted task evidence in ${S.active.decisionsFile}. Preserve global decisions and inspect relevant prior task artifacts before reopening an approach. Record new implementation decisions and their reasons in your final post.`,
     'Completed dependencies:', ...(task.after || []).map(id => `${id}: ${S.tasks[id].commit || S.head}`),
     'Task answers:', ...answers.map(d => d.answer)].filter(Boolean).join('\n')
-  const spec = options.spec && typeof options.spec === 'object' ? { ...options.spec, ask: true } : 'ask'
+  const spec = task.id === 'acceptance' ? false : options.spec && typeof options.spec === 'object' ? { ...options.spec, ask: true } : 'ask'
   const answer = answers.at(-1) || {}
   if (task.workflow === 'pair') {
     for (const key of ['tier', 'strategy', 'pair', 'seats', 'simple', 'roles', 'panel', 'spec', 'audit', 'repair', 'rounds', 'retro', 'evidence']) delete options[key]
@@ -102,11 +102,13 @@ function runPlanBrief(S, task) {
 
 function runPlanReady(S, result) {
   const ready = result?.final?.readiness
-  return result?.status === 'done' && ready?.state === 'ready' && !ready.blocked?.length && !ready.incomplete?.length
+  return ['done', 'converged', 'scorecard'].includes(result?.status) && ready?.state === 'ready' && !ready.blocked?.length && !ready.incomplete?.length
 }
 
 function runPlanOutcome(S, task, result) {
-  if (runPlanReady(S, result) && (task.id === 'acceptance' ? result.mode === 'investigate' : (result.final.snapshotRef && result.final.snapshotTree && result.delivery?.status === 'pending'))) return 'ready'
+  const accepted = task.id === 'acceptance' && result?.mode === 'investigate' && task.criteria.every((_, i) =>
+    result.final?.criteria?.filter(c => c.criterion === `C${i + 1}`).length === 1 && result.final.criteria.find(c => c.criterion === `C${i + 1}`).status === 'met')
+  if (runPlanReady(S, result) && (task.id === 'acceptance' ? accepted : (result.final.snapshotRef && result.final.snapshotTree && result.delivery?.status === 'pending'))) return 'ready'
   return ['failed', 'error', 'preflight'].includes(result?.status) && S.tasks[task.id].attempts < S.plan.limits.maxAttempts ? 'pending' : 'parked'
 }
 
@@ -121,9 +123,10 @@ function runPlanAnswer(S, answers) {
     if (previous && previous.answer === answer.answer.trim() && previous.tier === answer.tier && previous.noSplit === answer.noSplit) continue
     const state = S.tasks[id]
     if (!state || state.status !== 'parked') throw new Error(`run-plan: ${id} is not parked`)
+    if (state.attempts >= S.plan.limits.maxAttempts) throw new Error(`run-plan: ${id} exhausted its ${S.plan.limits.maxAttempts} attempts; use a new plan for further work`)
     S.decisions.push({ task: id, ...answer, answer: answer.answer.trim() })
     // Answers never reset attempts or budgets.
-    if (state.attempts < S.plan.limits.maxAttempts) state.status = 'pending'
+    state.status = 'pending'
   }
 }
 
@@ -159,7 +162,7 @@ if (typeof factoryRuntime !== 'undefined' && factoryRuntime.runPlan) return awai
 const input = typeof args === 'string' ? { planFile: args.trim() } : args
 if (!input || typeof input.planFile !== 'string') throw new Error('Pass {planFile: "/absolute/path/plan.json", repo: "/absolute/path/repo"}')
 phase('Run-plan')
-const relay = await agent(`Execute the authorized plan using the shipped CLI. Write this JSON verbatim to a temporary args file using your file tool:\n${JSON.stringify(input)}\nRun dark-factory-codex --workflow run-plan --args-file <that-file>${input.repo ? ' --cwd ' + "'" + input.repo.replace(/'/g, "'\\''") + "'" : ''}. Keep the foreground process alive and poll its active shell session until it exits. Do not use sleep polling. The runner commits verified tasks locally, retains budgets, and parks questions. Do not schedule tasks yourself, reset files, or interpret blocked as success. Return the exact final stdout JSON as the result string; on transport failure explain the failure in error.`, {
+const relay = await agent(`Execute the authorized plan using the shipped CLI. Write this JSON verbatim to a temporary args file using your file tool:\n${JSON.stringify(input)}\nRun dark-factory-codex --workflow run-plan --args-file <that-file>${input.repo ? ' --cwd ' + "'" + input.repo.replace(/'/g, "'\\''") + "'" : ''} using Bash with run_in_background=true. Retain the returned task_id and wait with TaskOutput(block=true, timeout=300000); repeat TaskOutput on that same task until it exits. The plan can take longer than Bash's foreground timeout. Do not restart the command while it is running or use sleep polling. The runner commits verified tasks locally, retains budgets, and parks questions. Do not schedule tasks yourself, reset files, or interpret blocked as success. Return the exact final stdout JSON as the result string; on transport failure explain the failure in error.`, {
   model: 'sonnet', label: 'run-plan transport', schema: { type: 'object', properties: { result: { type: 'string' }, error: { type: 'string' } }, required: ['result', 'error'], additionalProperties: false },
 })
 if (!relay?.result) return { status: 'failed', error: relay?.error || 'Run-plan transport returned no result; rerun with the same plan to recover.' }

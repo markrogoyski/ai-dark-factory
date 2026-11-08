@@ -3242,7 +3242,7 @@ function simpleTrigger(S, stage, o = {}) {
   }
   if (stage === 'review') {
     // A judgment finding the panel agreed on has become a fact (applyPanel), and is still about the approach.
-    const design = S.ledger.filter(c => (c.round === 'H' || c.round === 'review0') && c.kind === 'finding' && c.wasJudgment && W8[c.severity] >= 2 && c.status === 'verified' && !c.withdrawn)
+    const design = S.ledger.filter(c => (c.round === 'H' || /^review\d+$/.test(c.round)) && c.kind === 'finding' && c.wasJudgment && W8[c.severity] >= 2 && c.status === 'verified' && !c.withdrawn && !c.fixed)
     if (design.length) {
       return { trigger: 'design-finding', to: 'feature', why: `the panel upheld ${design.map(c => `${c.severity} ${c.id}`).join(', ')} against the approach itself`, findings: design.map(c => c.id) }
     }
@@ -3263,7 +3263,7 @@ function simpleTrigger(S, stage, o = {}) {
 function escalationBrief(S, esc) {
   const L = esc.L || S.letters[0]
   const p = S.pos[L] || {}
-  const upheld = S.ledger.filter(c => (c.round === 'H' || c.round === 'review0') && c.kind === 'finding' && !c.withdrawn && (c.status === 'verified' || (esc.findings || []).includes(c.id)))
+  const upheld = S.ledger.filter(c => (c.round === 'H' || /^review\d+$/.test(c.round)) && c.kind === 'finding' && !c.withdrawn && !c.fixed && (c.status === 'verified' || (esc.findings || []).includes(c.id)))
   const failing = validTests(S).filter(t => S.testResults[t.id] && S.testResults[t.id][L] && S.testResults[t.id][L] !== 'pass')
   return {
     from: S.tier || 'simple', to: esc.to, trigger: esc.trigger, why: esc.why, runDir: S.run ? S.run.runDir : '',
@@ -4239,7 +4239,7 @@ Return status done only for the helper's completed result. Copy snapshot.ref, sn
 let S = newState(parsePairConfig(args))
 const hostRuntime = typeof factoryRuntime === 'undefined' ? null : factoryRuntime
 S.pair = newPairState()
-const requestControl = { started: hostRuntime?.now ? hostRuntime.now() - (hostRuntime.elapsedBefore || 0) : S.controls.maxRunMin ? Date.now() : 0, turns: 0, ...S.controls }
+const requestControl = { started: requestClock(), turns: 0, ...S.controls }
 
 // Output schemas for every agent turn. Built from the config, so they sit after boot.
 
@@ -4620,9 +4620,18 @@ const PAIR_MEASURE_SCHEMA = strict({ type: 'object', properties: {
 // parallel() and log(), and the state object `S` from boot; the decisions they act on are computed
 // in lib/.
 
+function requestClock() {
+  if (S.controls.maxRunMin && !hostRuntime?.now) throw new Error('maxRunMin requires the standalone dark-factory-codex runner; the native workflow runtime has no replay-safe clock. Use maxTurns for native runs.')
+  return hostRuntime?.now ? hostRuntime.now() - (hostRuntime.elapsedBefore || 0) : null
+}
+
+function fatalTurnError(error) {
+  return error?.code === 'CHECKPOINT_MISMATCH' || error?.code === 'RUN_LIMIT'
+}
+
 function reserveTurn() {
   const c = requestControl
-  if ((c.maxTurns && c.turns >= c.maxTurns) || (c.maxRunMin && (hostRuntime?.now ? hostRuntime.now() : Date.now()) - c.started >= c.maxRunMin * 60000)) {
+  if ((c.maxTurns && c.turns >= c.maxTurns) || (c.maxRunMin && hostRuntime.now() - c.started >= c.maxRunMin * 60000)) {
     const error = new Error(c.maxTurns && c.turns >= c.maxTurns ? `Run turn budget exhausted (${c.maxTurns}).` : `Run time budget exhausted (${c.maxRunMin} minutes).`)
     c.stop = error.message
     error.code = 'RUN_LIMIT'
@@ -4644,7 +4653,7 @@ async function controlledRun(work) {
     result.final = { ...result.final, readiness: { state: 'incomplete', blocked: result.final?.readiness?.blocked || [], incomplete: [...(result.final?.readiness?.incomplete || []), requestControl.stop] } }
   }
   result.plan = result.plan || executionPlan(S)
-  result.metrics = evaluationFacts(S, result, requestControl.started ? (hostRuntime?.now ? hostRuntime.now() : Date.now()) - requestControl.started : null, requestControl.turns)
+  result.metrics = evaluationFacts(S, result, requestControl.started !== null ? hostRuntime.now() - requestControl.started : null, requestControl.turns)
   return result
 }
 
@@ -4685,6 +4694,7 @@ async function hostAgent(prompt, opts, role, who, extra = {}) {
       },
       timeoutMin: timeoutFor(role), ...(role === 'setup' ? { preflightVendors: externalVendors(S), setupRunId: setupRunId(S) } : {}), ...extra })
   } catch (e) {
+    if (fatalTurnError(e)) throw e
     S.notes.push(`${role} turn ${opts.label} failed: ${oneLine(e && e.message || e, 300)}`)
     return null
   }
@@ -4724,6 +4734,7 @@ async function externalTurn(o, prompt, schema, label, ph) {
         S.notes.push(`${V} turn ${o.key} failed: ${oneLine(r.error || r.status, 300)}. ` +
           'Its post exists; requesting structured output once from the same session.')
         const recovery = `${recoverSeatPrompt(S, o.recoveryPost)}\n\nSet \`turn\` in your output to exactly "${tag}".\n\n<<<OUTPUT_SCHEMA\n${JSON.stringify(full)}\nOUTPUT_SCHEMA>>>\n`
+        reserveTurn()
         r = await hostRuntime.turn({ ...o, key: `${o.key}-recover`, recoveryPost: undefined,
           resumeSession: r.recoverySession, fresh: false, sandbox: 'read-only', writable: [], effort: 'low',
           prompt: recovery, schema: full, label: `${label} (recover output)`, phase: ph,
@@ -4733,6 +4744,7 @@ async function externalTurn(o, prompt, schema, label, ph) {
         }
       }
     } catch (e) {
+      if (fatalTurnError(e)) throw e
       return fail(oneLine(e && e.message || e, 300))
     }
     if (r && r.status === 'done' && r.result && r.result.turn === tag) {
@@ -5096,6 +5108,7 @@ async function runRetro(o) {
     const opts = { label: 'retro', phase: 'Retro', schema: RETRO_SCHEMA, model: 'sonnet', effort: 'medium' }
     r = hostRuntime ? await hostAgent(prompt, opts, 'retro', null, { payload, payloadFile: `${S.run.runDir}/retro-data.md` }) : await agent(prompt, opts)
   } catch (e) {
+    if (e?.code === 'CHECKPOINT_MISMATCH') throw e
     r = null
   }
   if (hostRuntime) S.turnLog.push({ turn: 'retro', role: 'retro', vendor: S.roles.retro.vendor, ok: !!r })
@@ -5115,6 +5128,7 @@ async function recordFacts(payload) {
     const opts = { label: 'record', phase: 'Record', schema: RECORD_SCHEMA, model: 'haiku', effort: 'low' }
     r = hostRuntime ? await hostAgent(prompt, opts, 'record', null, { payload, payloadFile: `${S.run.runDir}/retro-data.md` }) : await agent(prompt, opts)
   } catch (e) {
+    if (e?.code === 'CHECKPOINT_MISMATCH') throw e
     r = null
   }
   S.turnLog.push({ turn: 'record', role: 'record', vendor: hostRuntime ? S.roles.record.vendor : 'claude', ok: !!r })
@@ -5175,7 +5189,10 @@ async function pairRun() {
         p.measurement = hostRuntime ? await hostRuntime.measure({ run: S.run, seat: 'A', label })
           : await ask(pairMeasurePrompt(S, label), { label: `measure ${label}`, phase: 'Verify', schema: PAIR_MEASURE_SCHEMA,
             model: transportModel, effort: 'low' }, 'checker')
-      } catch (error) { p.measurement = { status: 'error', error: String(error?.message || error) } }
+      } catch (error) {
+        if (fatalTurnError(error)) throw error
+        p.measurement = { status: 'error', error: String(error?.message || error) }
+      }
       const m = p.measurement
       if (!m || m.status !== 'done' || !/^[0-9a-f]{40,64}$/.test(m.snapshot?.tree || '') ||
           m.snapshot.ref !== `refs/council/${S.run.runId}/A-${label}` || m.snapshot.diff !== `${S.run.room}/${label}/A.diff` ||

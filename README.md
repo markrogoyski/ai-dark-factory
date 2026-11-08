@@ -201,8 +201,10 @@ tasks, use `--args-file` with:
 
 Answers may be strings or `{answer, tier?, noSplit?}`. A split proposal can be kept as one task
 with explicit `noSplit: true`; creating a different decomposition or changing requirements needs
-a revised plan with a new ID. Answers never reset attempts or budgets. The v1 plan definition
-and limits are immutable once started; budget exhaustion is reported, not silently extended.
+a revised plan with a new ID. Answers never reset attempts or budgets; new answers are rejected
+when the task has exhausted its attempts. The default two attempts allow one answered retry.
+The v1 plan definition and limits are immutable once started; budget exhaustion is reported,
+not silently extended.
 
 Completed code and the plan's controller-owned `progress` field share a commit, with
 `Factory-Plan` and `Factory-Task` trailers. `.council/run-plan-ID/state.json` also retains
@@ -210,14 +212,20 @@ unsuccessful attempts, questions, decisions, and budget accounting. Keep it and 
 Before launching, the controller reserves an attempt's allowed turns and time. A completed
 attempt settles to measured usage; an interrupted attempt conservatively retains its full
 reservation, so restarting cannot replenish its budget. Interrupted delivery reserves additional
-verification time before retrying. Time between completed invocations is not charged.
+verification time before retrying; if none remains, the task is rolled back and parked.
+Time between completed invocations is not charged.
 
-Recovery recognizes an exact prepared delivery or its completed commit and never resets files.
+Recovery recognizes an exact prepared delivery or its completed commit. A failed delivery check
+or rejected commit hook restores the recorded base and parks the task, charging that attempt once.
+Reinvoking leaves a parked task idle until an answer requests a retry within its remaining limits.
+Rollback only removes the recorded delivery bytes; unexpected edits are preserved.
 Unexpected edits, changed HEAD/branch/requirements, or a still-running child stop recovery with
 a diagnostic. Ordinary interrupted tasks are parked with their artifacts retained; an answer
 can retry them if attempts remain. Child checkpoints retain their existing strict validation.
 There is no background supervisor: an interrupted plan run is resumable, not guaranteed to keep
-running after its host closes. Final acceptance failures are parked for inspection; v1 does not
+running after its host closes. Final acceptance checks the settled criteria without a new specification
+review; its Council must return ready with every criterion met on the integrated repository.
+Final acceptance failures are parked for inspection; v1 does not
 invent repair scope or weaken acceptance criteria.
 
 ## Pair: one author, one reviewer
@@ -298,8 +306,10 @@ The same controls are available as object arguments in Claude Code.
 
 `maxTurns` (`--max-turns`) limits workflow model turns, including orchestration and explicit
 recovery turns. Provider transport retries within a turn remain governed by that CLI helper.
-`maxRunMin` (`--max-run-min`) limits run time; Codex cancels active jobs at the deadline, while
-native Claude checks the deadline before launching another turn. `--timeout-min` remains the
+`maxRunMin` (`--max-run-min`) requires the standalone runner, which cancels active jobs at the deadline.
+Native Claude workflows reject this option before launching work because they have no replay-safe
+clock; use `maxTurns` there, or launch through `dark-factory-codex` for a time limit. Run-plan uses
+that runner from both hosts and retains its time limits. `--timeout-min` remains the
 per-turn deadline, and `--concurrency` bounds simultaneous turns in Codex. These are limits,
 not price forecasts. Exhausted required work remains incomplete. An optional retrospective
 that could not run does not erase a completed review. Codex retains spent turns and active
@@ -383,7 +393,9 @@ Each Factory, Pair, Council, and Ensemble result includes versioned `metrics`; C
 It records workflow, tier, strategy, turns by role, failed turns, elapsed time when available,
 findings by stage, readiness, escalation, and recorded token usage. The runner also records
 repository HEAD. Factory retrospective facts include a metrics snapshot before the retrospective itself; the evaluator keeps that scope separate from completed-run metrics. Unknown measurements and dollar costs stay unknown. Native workflow results
-can be saved as JSON and passed to the same evaluator.
+can be saved as JSON and passed to the same evaluator. Native active elapsed time stays unknown;
+the evaluator excludes older estimates derived from `run.json` modification time. Token facts
+use the same `records`/`byModel` format in both hosts; older native facts are also accepted.
 
 Run-plan reports aggregate budget accounting separately. Its child results retain these metrics
 and can be passed to the evaluator individually; interrupted reservations are conservative limits,

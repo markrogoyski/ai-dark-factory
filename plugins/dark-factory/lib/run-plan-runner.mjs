@@ -1,7 +1,8 @@
 // Process/filesystem adapter for the shared run-plan policy. Child workflows keep their own
 // engine, independent seats, snapshots, reviews, and strict single-run checkpoints.
 import { spawn, execFileSync } from 'node:child_process'
-import { readFileSync, writeFileSync, existsSync, mkdirSync, realpathSync, lstatSync, readdirSync, openSync, closeSync, unlinkSync, appendFileSync } from 'node:fs'
+import { readFileSync, writeFileSync, existsSync, mkdirSync, realpathSync, lstatSync, readdirSync, linkSync, unlinkSync, appendFileSync } from 'node:fs'
+import { randomUUID } from 'node:crypto'
 import { dirname, join, resolve, relative, isAbsolute } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { fingerprint, digest, writeJsonAtomic } from './checkpoint.mjs'
@@ -88,7 +89,7 @@ export async function runPlan(options, dependencies = {}) {
     const measured = result?.metrics?.turns
     const spent = Number.isSafeInteger(measured) && measured >= 0 ? Math.min(measured, a.turns) : a.turns
     S.turns -= a.turns - spent
-    S.elapsedMs -= a.milliseconds - Math.max(0, now() - a.startedAt)
+    S.elapsedMs -= a.milliseconds - Math.max(0, (a.finishedAt ?? now()) - a.startedAt)
   }
 
   async function finish(S, task, result, status) {
@@ -96,7 +97,9 @@ export async function runPlan(options, dependencies = {}) {
     const record = S.tasks[task.id]
     const questions = [result.questions, result.items].find(value => Array.isArray(value) && value.length)
     Object.assign(record, { status, result: join(S.active.directory, 'result.json'),
-      question: status === 'parked' ? questions || result.error || result.stopReason || (result.tier === 'architecture' ? 'Task returned a design instead of an implementation; revise the plan run decomposition.' : result.final?.readiness) || 'Task needs a decision or exhausted its attempts.' : null })
+      question: status === 'parked' ? questions || result.error || result.stopReason || (task.id === 'acceptance'
+        ? { error: 'Final acceptance did not establish every criterion as met.', readiness: result.final?.readiness, criteria: result.final?.criteria }
+        : result.tier === 'architecture' ? 'Task returned a design instead of an implementation; revise the plan run decomposition.' : result.final?.readiness) || 'Task needs a decision or exhausted its attempts.' : null })
     if (task.id === 'acceptance' && status === 'done') record.head = S.head
     settle(S, result); S.active = null
     await save(S)
@@ -113,8 +116,42 @@ export async function runPlan(options, dependencies = {}) {
     return value
   }
 
+  async function parkDelivery(S, error) {
+    const a = S.active, d = a.delivery
+    if (!d.failure) {
+      d.failure = error.message
+      a.finishedAt ??= now()
+      await save(S)
+      await point('after-delivery-failure')
+    }
+    assertDeliveryStopped(S)
+    // Only undo bytes owned by this delivery. A hook, verifier, or user may have changed
+    // other files; retain those changes and the failure journal for manual recovery.
+    unchanged(S)
+    const known = [d.baseTree, d.snapshotTree, d.tree]
+    const indexTree = git(['write-tree']), currentTree = workspaceTree()
+    if (!known.includes(indexTree) || !known.includes(currentTree)) {
+      throw new Error(`${d.failure} Unexpected delivery changes were preserved; restore the recorded base or delivery bytes before resuming.`)
+    }
+    if (currentTree !== d.baseTree || indexTree !== d.baseTree) {
+      // Stage the known tree directly: a deletion already staged by commit has no path
+      // left for `git add <path>`, but restore can still recover it from the base.
+      git(['read-tree', currentTree])
+      git(['restore', '--source', d.base, '--staged', '--worktree', '--', ...d.paths, planRel])
+    }
+    await point('after-delivery-rollback')
+    await finish(S, { id: a.task }, { ...json(d.result), error: d.failure }, 'parked')
+  }
+
+  function assertDeliveryStopped(S) {
+    const job = assertLocation(join(S.active.delivery.runDir, 'jobs/verify-delivery'))
+    const status = existsSync(join(job, 'status.json')) ? json(join(job, 'status.json')).status : null
+    if ((!status || status === 'running') && existsSync(join(job, 'pid')) && alive(Number(readFileSync(join(job, 'pid'), 'utf8')))) throw new Error('An interrupted delivery verification is still running; wait before resuming')
+  }
+
   async function continueDelivery(S) {
     const a = S.active, d = a.delivery, currentHead = head()
+    if (d.failure) { await parkDelivery(S); return }
     if (currentHead !== d.base) {
       // A commit may have completed before the final journal write. Recognize the exact
       // expected parent, tree, and trailers, never just a task ID somewhere in git log.
@@ -140,18 +177,28 @@ export async function runPlan(options, dependencies = {}) {
     writeFileSync(planPath, d.planBytes)
     if (workspaceTree() !== d.tree) throw new Error('Delivery differs from the prepared tree')
     await point('before-verify-delivery')
-    const outcome = dependencies.verifyDelivery ? await dependencies.verifyDelivery(S, d) : await helperCall(S, [
-      'verify-delivery', '--run-dir', d.runDir, '--result', d.result, '--manifest', d.manifest, '--max-wait', '5',
-      '--suite-timeout', String(Math.max(1, Math.floor(millisecondsLeft(S) / 1000))),
-    ])
-    const delivered = json(join(d.runDir, 'delivery.json'))
-    if (outcome.status === 'error' || delivered.status !== 'delivered') throw new Error('Delivery verification did not pass; inspect delivery.json. Checkout preserved.')
+    try {
+      const outcome = dependencies.verifyDelivery ? await dependencies.verifyDelivery(S, d) : await helperCall(S, [
+        'verify-delivery', '--run-dir', d.runDir, '--result', d.result, '--manifest', d.manifest, '--max-wait', '5',
+        '--suite-timeout', String(Math.max(1, Math.floor(millisecondsLeft(S) / 1000))),
+      ])
+      const delivered = json(join(d.runDir, 'delivery.json'))
+      if (outcome.status === 'error' || delivered.status !== 'delivered') throw new Error(`Delivery verification did not pass; inspect ${join(d.runDir, 'delivery.json')}.`)
+    } catch (error) {
+      if (interrupted) throw error
+      await parkDelivery(S, error); return
+    }
     if (head() !== d.base || workspaceTree() !== d.tree) throw new Error('Delivery verification changed the checkout')
     // Stage only the reviewed files and deterministic run-plan progress. Hooks remain enabled.
     git(['add', '-A', '--', ...d.paths, planRel])
     if (git(['write-tree']) !== d.tree) throw new Error('The index differs from the verified delivery')
     await point('before-commit')
-    git(['commit', '-F', d.message], { timeout: Math.max(1, Math.floor(millisecondsLeft(S))) })
+    try {
+      git(['commit', '-F', d.message], { timeout: Math.max(1, Math.floor(millisecondsLeft(S))) })
+    } catch (error) {
+      if (head() !== d.base || interrupted) throw error
+      await parkDelivery(S, new Error(`Delivery commit failed: ${error.message}`)); return
+    }
     await point('after-commit')
     if (git(['rev-parse', 'HEAD^{tree}']) !== d.tree || git(['rev-parse', 'HEAD^']) !== d.base || workspaceTree() !== d.tree) throw new Error('Commit hooks changed the verified delivery; inspect the checkout before resuming')
     clean()
@@ -164,8 +211,10 @@ export async function runPlan(options, dependencies = {}) {
     async open(input, normalize) {
       for (const key of Object.keys(input)) if (!['planFile', 'repo', 'answers'].includes(key)) throw new Error(`Run-plan option ${key} belongs in the plan file, not runner arguments`)
       repo = realpathSync(git(['rev-parse', '--show-toplevel']))
-      planPath = resolve(repo, input.planFile)
-      if (!inside(repo, planPath) || !existsSync(planPath) || realpathSync(planPath) !== planPath || !lstatSync(planPath).isFile()) throw new Error('Run-plan file must be a regular file inside the repository')
+      const requestedPlan = resolve(repo, input.planFile)
+      if (!existsSync(requestedPlan) || !lstatSync(requestedPlan).isFile()) throw new Error('Run-plan file must be a regular file inside the repository')
+      planPath = realpathSync(requestedPlan)
+      if (!inside(repo, planPath)) throw new Error('Run-plan file must be a regular file inside the repository')
       planRel = relative(repo, planPath)
       if (planRel.startsWith('.council/') || planRel.startsWith('.git/')) throw new Error('Execution plan must be outside .git and .council')
       git(['ls-files', '--error-unmatch', '--', planRel])
@@ -173,11 +222,15 @@ export async function runPlan(options, dependencies = {}) {
       const common = resolve(repo, git(['rev-parse', '--git-common-dir']))
       lock = join(common, 'dark-factory-run-plan.lock')
       if (existsSync(lock)) {
-        if (alive(Number(readFileSync(lock, 'utf8')))) throw new Error('A run-plan is already running in this repository')
+        const pid = Number(readFileSync(lock, 'utf8'))
+        // An empty lock may still be being initialized by its owner. Never reclaim it.
+        if (!Number.isSafeInteger(pid) || pid < 2 || alive(pid)) throw new Error('A run-plan is already running in this repository (or its lock is incomplete)')
         unlinkSync(lock)
       }
-      const fd = openSync(lock, 'wx'); lockOwned = true
-      writeFileSync(fd, String(process.pid)); closeSync(fd)
+      // Publish initialized ownership atomically; contenders never see our lock empty.
+      const owner = `${lock}.${randomUUID()}`
+      writeFileSync(owner, String(process.pid), { flag: 'wx' })
+      try { linkSync(owner, lock); lockOwned = true } finally { unlinkSync(owner) }
       const base = join(repo, '.council')
       if (existsSync(base) && (lstatSync(base).isSymbolicLink() || !lstatSync(base).isDirectory())) throw new Error('.council must be a directory inside the repository')
       mkdirSync(base, { recursive: true })
@@ -227,12 +280,21 @@ export async function runPlan(options, dependencies = {}) {
         }
       }
       if (a.delivery) {
-        const job = assertLocation(join(a.delivery.runDir, 'jobs/verify-delivery'))
-        const status = existsSync(join(job, 'status.json')) ? json(join(job, 'status.json')).status : null
-        if ((!status || status === 'running') && existsSync(join(job, 'pid')) && alive(Number(readFileSync(join(job, 'pid'), 'utf8')))) throw new Error('An interrupted delivery verification is still running; wait before resuming')
+        assertDeliveryStopped(S)
+        if (a.delivery.failure) { await parkDelivery(S); return }
         if (head() !== a.delivery.base) { await continueDelivery(S); return }
+        const deliveryFile = join(a.delivery.runDir, 'delivery.json')
+        if (existsSync(deliveryFile) && ['incomplete', 'error'].includes(json(deliveryFile).status)) {
+          // Also recover failed deliveries written before failure journaling was added.
+          // Retain the existing reservation; idle time and a second verification cost nothing.
+          a.finishedAt = a.startedAt + a.milliseconds
+          await parkDelivery(S, new Error(`Delivery verification did not pass; inspect ${deliveryFile}.`)); return
+        }
         const available = Math.min(S.plan.limits.taskMaxRunMin * 60000, S.plan.limits.maxRunMin * 60000 - S.elapsedMs)
-        if (available <= 0) throw new Error('No run-plan time budget remains to recover delivery; checkout preserved')
+        if (available <= 0) {
+          a.finishedAt = a.startedAt + a.milliseconds
+          await parkDelivery(S, new Error('No run-plan time budget remains to verify the interrupted delivery.')); return
+        }
         // Lost work retains its full reservation. Reserve recovery separately before verifying.
         a.turns = 0; a.milliseconds = available; a.startedAt = now(); S.elapsedMs += available
         await save(S)

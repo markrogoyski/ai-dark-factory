@@ -52,7 +52,10 @@ async function pairRun() {
         p.measurement = hostRuntime ? await hostRuntime.measure({ run: S.run, seat: 'A', label })
           : await ask(pairMeasurePrompt(S, label), { label: `measure ${label}`, phase: 'Verify', schema: PAIR_MEASURE_SCHEMA,
             model: transportModel, effort: 'low' }, 'checker')
-      } catch (error) { p.measurement = { status: 'error', error: String(error?.message || error) } }
+      } catch (error) {
+        if (fatalTurnError(error)) throw error
+        p.measurement = { status: 'error', error: String(error?.message || error) }
+      }
       const m = p.measurement
       if (!m || m.status !== 'done' || !/^[0-9a-f]{40,64}$/.test(m.snapshot?.tree || '') ||
           m.snapshot.ref !== `refs/council/${S.run.runId}/A-${label}` || m.snapshot.diff !== `${S.run.room}/${label}/A.diff` ||

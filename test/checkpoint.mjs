@@ -33,7 +33,8 @@ test('checkpoint replays exact completed operations without another model call',
   const second = journalRuntime({ ...runtime, agent: async () => { invoked = true; return {} } }, { ...f.opts, saved })
   assert.deepEqual(await second.agent(request), { summary: 'reviewed' }); assert.equal(invoked, false)
   const third = journalRuntime(runtime, { ...f.opts, saved })
-  await assert.rejects(() => third.agent({ ...request, prompt: 'Changed task' }), /request changed/)
+  await assert.rejects(() => third.agent({ ...request, prompt: 'Changed task' }), { code: 'CHECKPOINT_MISMATCH' })
+  await assert.rejects(() => third.agent(request), { code: 'CHECKPOINT_MISMATCH' }, 'a mismatch poisons later replay too')
 })
 
 test('checkpoint rejects changed source, inputs, evidence, worktrees and engine before replay', async t => {
@@ -84,6 +85,20 @@ async function pausedRun(t, flags = []) {
   const metadata = () => JSON.parse(readFileSync(join(first.hostRunDir, 'host.json'), 'utf8'))
   return { ...f, first, resume, metadata, deadlines }
 }
+
+test('checkpoint request mismatch aborts the generated workflow instead of failing an ordinary turn', async t => {
+  const f = await pausedRun(t)
+  const path = join(f.first.hostRunDir, 'checkpoint.json')
+  const saved = JSON.parse(readFileSync(path, 'utf8'))
+  saved.entries[0].hash = 'changed-request'
+  writeFileSync(path, JSON.stringify(saved))
+  const before = readFileSync(path, 'utf8')
+  const result = await f.resume()
+  assert.equal(result.status, 'failed')
+  assert.match(result.error, /Checkpoint request changed at operation 1/)
+  assert.equal(f.deadlines.length, 1, 'no new turns after mismatch')
+  assert.equal(readFileSync(path, 'utf8'), before, 'the checkpoint is preserved')
+})
 
 test('resume preserves runtime limits and explicit overrides persist on subsequent resumes', async t => {
   const f = await pausedRun(t, ['--concurrency', '1', '--timeout-min', '2'])

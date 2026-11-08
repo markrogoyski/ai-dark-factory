@@ -51,8 +51,8 @@ async function boundedAudit(W, o) {
     const todo = repairTodo(S, W.L)
     const signature = repairSignature(S, W.L)
     audit.cycles.push({ review: round, snapshot: audit.finalTag, findings: S.ledger.slice(before).map(c => c.id), needed: todo.needed })
-    // A Simple approach defect still escalates before spending a repair turn.
-    if (pass === 0 && o.beforeFix) {
+    // An approach defect can first appear in any review, including the final repair review.
+    if (o.beforeFix) {
       const escalation = o.beforeFix()
       if (escalation) { audit.escalate = escalation; return audit }
     }

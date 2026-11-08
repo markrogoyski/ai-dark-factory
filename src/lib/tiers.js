@@ -116,7 +116,7 @@ function simpleTrigger(S, stage, o = {}) {
   }
   if (stage === 'review') {
     // A judgment finding the panel agreed on has become a fact (applyPanel), and is still about the approach.
-    const design = S.ledger.filter(c => (c.round === 'H' || c.round === 'review0') && c.kind === 'finding' && c.wasJudgment && W8[c.severity] >= 2 && c.status === 'verified' && !c.withdrawn)
+    const design = S.ledger.filter(c => (c.round === 'H' || /^review\d+$/.test(c.round)) && c.kind === 'finding' && c.wasJudgment && W8[c.severity] >= 2 && c.status === 'verified' && !c.withdrawn && !c.fixed)
     if (design.length) {
       return { trigger: 'design-finding', to: 'feature', why: `the panel upheld ${design.map(c => `${c.severity} ${c.id}`).join(', ')} against the approach itself`, findings: design.map(c => c.id) }
     }
@@ -137,7 +137,7 @@ function simpleTrigger(S, stage, o = {}) {
 function escalationBrief(S, esc) {
   const L = esc.L || S.letters[0]
   const p = S.pos[L] || {}
-  const upheld = S.ledger.filter(c => (c.round === 'H' || c.round === 'review0') && c.kind === 'finding' && !c.withdrawn && (c.status === 'verified' || (esc.findings || []).includes(c.id)))
+  const upheld = S.ledger.filter(c => (c.round === 'H' || /^review\d+$/.test(c.round)) && c.kind === 'finding' && !c.withdrawn && !c.fixed && (c.status === 'verified' || (esc.findings || []).includes(c.id)))
   const failing = validTests(S).filter(t => S.testResults[t.id] && S.testResults[t.id][L] && S.testResults[t.id][L] !== 'pass')
   return {
     from: S.tier || 'simple', to: esc.to, trigger: esc.trigger, why: esc.why, runDir: S.run ? S.run.runDir : '',

@@ -2,12 +2,12 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { execFileSync, spawnSync } from 'node:child_process'
-import { mkdtempSync, realpathSync, mkdirSync, writeFileSync, readFileSync, rmSync, existsSync, cpSync, chmodSync } from 'node:fs'
+import { mkdtempSync, realpathSync, mkdirSync, writeFileSync, readFileSync, rmSync, existsSync, cpSync, chmodSync, symlinkSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { runPlan } from '../plugins/dark-factory/lib/run-plan-runner.mjs'
-import { parseCLI, resultExitCode } from '../plugins/dark-factory/lib/codex-runner.mjs'
+import { parseCLI, resultExitCode, validateResult } from '../plugins/dark-factory/lib/codex-runner.mjs'
 import { build } from '../tools/build.mjs'
 
 const root = dirname(dirname(fileURLToPath(import.meta.url)))
@@ -38,7 +38,8 @@ function fixture(t, input = plan([task('one'), task('two', ['one'])])) {
   }
   const runTask = async (S, item, args) => {
     calls.push({ id: item.id, args, head: git('rev-parse', 'HEAD') })
-    if (item.id === 'acceptance') return { status: 'done', mode: 'investigate', final: { readiness: ready }, metrics: { turns: 2 } }
+    if (item.id === 'acceptance') return { status: 'converged', mode: 'investigate', final: { readiness: ready,
+      criteria: args.criteria.map((_,i) => ({ criterion: `C${i + 1}`, status: 'met' })) }, metrics: { turns: 2 } }
     const run = plumbing('init', '--repo', repo, '--seats', 'A', '--factory', '--run-id', `${item.id}-${S.tasks[item.id].attempts}`)
     writeFileSync(join(run.runDir, 'verify.sh'), 'true\n')
     writeFileSync(join(run.runDir, 'wt/A', `${item.id}.txt`), `implemented ${item.id}  \n`)
@@ -50,7 +51,7 @@ function fixture(t, input = plan([task('one'), task('two', ['one'])])) {
   }
   const options = { cwd: repo, workflow: 'run-plan', args: { planFile: file } }
   const invoke = (deps = {}, args = {}) => runPlan({ ...options, args: { ...options.args, ...args } }, { progress: () => {}, runTask, ...deps })
-  return { temp, repo, git, file, stateDir, calls, runTask, invoke, options, state: () => read(join(stateDir, 'state.json')) }
+  return { temp, repo, git, file, stateDir, calls, runTask, invoke, options, plumbing, state: () => read(join(stateDir, 'state.json')) }
 }
 
 test('plan validation rejects cycles, lost criteria, and execution overrides', () => {
@@ -81,6 +82,7 @@ test('sequential tasks commit code and progress together; final acceptance is fr
   assert.deepEqual(decisions.decisions, ['Preserve public behavior.'])
   assert.match(decisions.completed.one.post, /room\/final\/A.md/)
   assert.deepEqual(f.calls.at(-1).args.criteria, ['The complete plan works together.', 'one: one works', 'two: two works'])
+  assert.equal(f.calls.at(-1).args.spec, false, 'acceptance verifies the settled plan without reopening its specification')
   const again = await f.invoke({ runTask: () => { throw new Error('Completed run-plan must not rerun') } })
   assert.equal(again.final.readiness.state, 'ready')
 })
@@ -112,7 +114,9 @@ test('failed attempts and total turns persist without implementation commits', a
   const result = await f.invoke(deps)
   assert.equal(calls, 2); assert.equal(result.tasks.one.status, 'parked')
   assert.equal(result.budget.turns, 4); assert.equal(f.git('rev-list', '--count', 'HEAD'), '1')
-  await f.invoke(deps, { answers: { one: 'Retry if budget allows.' } })
+  const exhausted = await f.invoke(deps, { answers: { one: 'Retry if budget allows.' } })
+  assert.match(exhausted.error, /exhausted its 2 attempts/)
+  assert.deepEqual(f.state().decisions, [])
   assert.equal(calls, 2)
 })
 
@@ -197,21 +201,116 @@ test('changed reference documents invalidate completion and run-plan locks exclu
   const lock = join(f.repo, '.git/dark-factory-run-plan.lock')
   writeFileSync(lock, String(process.pid))
   assert.match((await f.invoke()).error, /already running/)
+  writeFileSync(lock, '')
+  assert.match((await f.invoke()).error, /lock is incomplete/)
+  assert.equal(readFileSync(lock, 'utf8'), '', 'a lock being initialized is never stolen')
   rmSync(lock)
   assert.equal((await f.invoke()).final.readiness.state, 'ready')
   writeFileSync(reference, 'Changed contract')
   assert.match((await f.invoke()).error, /references.*changed/)
 })
 
-test('failed delivery is retained and never committed', async t => {
+test('failed delivery rolls back and parks once; reinvocation is idle and an answer can retry', async t => {
   const f = fixture(t)
-  const result = await f.invoke({ verifyDelivery: async (S,d) => {
+  let checks = 0
+  const deps = { verifyDelivery: async (S,d) => {
+    checks++
     writeFileSync(join(d.runDir, 'delivery.json'), JSON.stringify({ status: 'incomplete' })); return { status: 'done' }
-  } })
-  assert.match(result.error, /Delivery verification did not pass/)
+  } }
+  const result = await f.invoke(deps)
+  assert.equal(result.tasks.one.status, 'parked')
+  assert.match(result.tasks.one.question, /Delivery verification did not pass/)
+  assert.equal(result.tasks.one.attempts, 1)
+  assert.equal(f.state().active, null)
   assert.equal(f.git('rev-list', '--count', 'HEAD'), '1')
   assert.equal(f.calls.length, 1)
-  assert.ok(existsSync(join(f.repo, 'one.txt')))
+  assert.equal(f.git('status', '--porcelain'), '')
+  assert.ok(!existsSync(join(f.repo, 'one.txt')))
+  assert.ok(existsSync(join(f.stateDir, 'one-1/delivery.patch')))
+  assert.deepEqual((await f.invoke(deps)).budget, result.budget)
+  assert.equal(checks, 1)
+  const done = await f.invoke({}, { answers: { one: 'Correct the verification failure and retry.' } })
+  assert.equal(done.status, 'done', JSON.stringify(done))
+  assert.equal(done.tasks.one.attempts, 2)
+})
+
+test('rejected commit hooks park and restore both the index and checkout', async t => {
+  const f = fixture(t, plan([task('one')]))
+  const hook = join(f.repo, '.git/hooks/pre-commit')
+  writeFileSync(hook, '#!/bin/sh\necho "hook rejects commit" >&2\nexit 1\n'); chmodSync(hook, 0o755)
+  const first = await f.invoke({ runTask: async (S, item, args) => {
+    const result = await f.runTask(S, item, args)
+    if (item.id === 'acceptance') return result
+    rmSync(join(result.runDir, 'wt/A/base.txt'))
+    const measured = f.plumbing('measure', '--run-dir', result.runDir, '--seat', 'A', '--label', 'deleted', '--max-wait', '5')
+    return { ...result, final: { ...result.final, snapshotRef: measured.snapshot.ref, snapshotTree: measured.snapshot.tree } }
+  } })
+  assert.match(first.tasks.one.question, /Delivery commit failed.*|hook rejects commit/s)
+  assert.equal(first.tasks.one.status, 'parked')
+  assert.equal(f.git('status', '--porcelain'), '')
+  assert.equal(readFileSync(join(f.repo, 'base.txt'), 'utf8'), 'original\n', 'staged deletions are restored')
+  assert.equal(f.git('rev-list', '--count', 'HEAD'), '1')
+  assert.deepEqual((await f.invoke()).budget, first.budget)
+  rmSync(hook)
+  assert.equal((await f.invoke({}, { answers: { one: 'The hook is fixed; retry.' } })).status, 'done')
+})
+
+for (const boundary of ['after-delivery-failure', 'after-delivery-rollback']) {
+  test(`interruption ${boundary} parks without rechecking or charging extra time`, async t => {
+    const f = fixture(t, plan([task('one')]))
+    let tick = 1000
+    await f.invoke({ now: () => tick, verifyDelivery: async () => { tick = 2000; throw new Error('Delivery failed') },
+      at: name => { if (name === boundary) throw new Error('crash') } })
+    const recovered = await f.invoke({ now: () => 1000000, verifyDelivery: () => { throw new Error('Must not verify again') } })
+    assert.equal(recovered.tasks.one.status, 'parked')
+    assert.equal(recovered.tasks.one.question, 'Delivery failed')
+    assert.equal(recovered.tasks.one.attempts, 1)
+    assert.equal(recovered.budget.elapsedMs, 1000)
+    assert.equal(recovered.budget.turns, 3)
+    assert.equal(f.git('status', '--porcelain'), '')
+  })
+}
+
+test('older failed deliveries and exhausted interrupted deliveries can park without another reservation', async t => {
+  for (const legacyFailure of [false, true]) {
+    const p = plan([task('one')]); p.limits = { maxRunMin: 1, taskMaxRunMin: 1 }
+    const f = fixture(t, p)
+    await f.invoke({ at: (name, S) => {
+      if (name !== 'after-apply') return
+      if (legacyFailure) writeFileSync(join(S.active.delivery.runDir, 'delivery.json'), JSON.stringify({ status: 'incomplete' }))
+      throw new Error('Old controller stopped')
+    } })
+    const recovered = await f.invoke({ verifyDelivery: () => { throw new Error('Must not reverify') } })
+    assert.equal(recovered.tasks.one.status, 'parked', JSON.stringify(recovered))
+    assert.equal(recovered.tasks.one.attempts, 1)
+    assert.equal(recovered.budget.elapsedMs, 60000)
+    assert.equal(f.git('status', '--porcelain'), '')
+    assert.deepEqual((await f.invoke()).budget, recovered.budget)
+  }
+})
+
+test('delivery failure preserves unexpected verifier changes until the user restores known bytes', async t => {
+  const f = fixture(t, plan([task('one')]))
+  const failed = await f.invoke({ verifyDelivery: async () => {
+    writeFileSync(join(f.repo, 'base.txt'), 'verifier change\n'); throw new Error('Failed check')
+  } })
+  assert.match(failed.error, /Unexpected delivery changes were preserved/)
+  assert.equal(readFileSync(join(f.repo, 'base.txt'), 'utf8'), 'verifier change\n')
+  writeFileSync(join(f.repo, 'base.txt'), 'original\n')
+  assert.equal((await f.invoke()).tasks.one.status, 'parked')
+  assert.equal(f.git('status', '--porcelain'), '')
+})
+
+test('symlinked repository paths resolve to the same plan journal; escaping plans are rejected', async t => {
+  const f = fixture(t, plan([task('one')]))
+  const alias = join(f.temp, 'repo-alias')
+  symlinkSync(f.repo, alias)
+  assert.equal((await f.invoke({}, { planFile: join(alias, 'plan.json') })).status, 'done')
+  assert.equal((await f.invoke()).status, 'done')
+  const outside = join(f.temp, 'outside'); mkdirSync(outside)
+  writeFileSync(join(outside, 'plan.json'), readFileSync(f.file))
+  symlinkSync(outside, join(f.repo, 'outside'))
+  assert.match((await f.invoke({}, { planFile: join(f.repo, 'outside/plan.json') })).error, /inside the repository/)
 })
 
 test('recovery does not race a detached delivery verification', async t => {
@@ -226,6 +325,24 @@ test('recovery does not race a detached delivery verification', async t => {
   assert.equal(f.calls.length, 1)
 })
 
+test('a failed delivery waits for its detached verifier before rolling back', async t => {
+  const f = fixture(t, plan([task('one')]))
+  let job
+  const failed = await f.invoke({ verifyDelivery: async (S, d) => {
+    job = join(d.runDir, 'jobs/verify-delivery')
+    mkdirSync(job, { recursive: true }); writeFileSync(join(job, 'pid'), String(process.pid))
+    throw new Error('The wait command timed out')
+  } })
+  assert.match(failed.error, /verification is still running/)
+  assert.ok(existsSync(join(f.repo, 'one.txt')), 'the verifier still owns the applied checkout')
+  assert.match(f.state().active.delivery.failure, /wait command timed out/)
+  writeFileSync(join(job, 'status.json'), JSON.stringify({ status: 'error' }))
+  const resumed = await f.invoke()
+  assert.equal(resumed.tasks.one.status, 'parked')
+  assert.equal(f.git('status', '--porcelain'), '')
+  assert.equal(f.calls.length, 1)
+})
+
 test('failed final gate and missing independent review cannot report completion', async t => {
   for (const stage of ['gate', 'review']) {
     const p = plan([task('one')]); if (stage === 'gate') p.acceptance.verify = 'exit 7'
@@ -235,6 +352,47 @@ test('failed final gate and missing independent review cannot report completion'
     assert.equal(result.final.readiness.state, 'incomplete')
     assert.equal(result.tasks.one.status, 'done')
     assert.equal(result.tasks.acceptance.status, 'parked')
+  }
+})
+
+test('final acceptance runs the generated Council and respects its real statuses and unmet criteria', async t => {
+  const empty = s => s.enum ? s.enum[0] : s.type === 'object' ? Object.fromEntries(Object.entries(s.properties).map(([k,v]) => [k, empty(v)])) : s.type === 'array' ? [] : s.type === 'string' ? '' : s.type === 'boolean' ? false : 0
+  const source = build('council').replace('export const meta', 'const meta')
+  const council = new (Object.getPrototypeOf(async function(){}).constructor)('args', 'factoryRuntime', 'parallel', 'phase', 'log', source)
+  for (const criterionStatus of ['met', 'unmet', 'partial']) {
+    const defect = criterionStatus !== 'met'
+    const p = plan([task('one')]); p.acceptance.args = { seats: ['astra', 'sol'], rounds: 1, retro: false }
+    const f = fixture(t, p), calls = []
+    let acceptance
+    const result = await f.invoke({ runTask: async (S, item, args) => {
+      if (item.id !== 'acceptance') return f.runTask(S, item, args)
+      const respond = async r => {
+        calls.push(r)
+        const value = empty(r.schema)
+        if (r.role === 'setup') Object.assign(value, { status: 'ok', mode: 'investigate', repoRoot: f.repo, runId: 'acceptance', runDir: join(f.repo, '.council/acceptance'),
+          criteria: args.criteria.map((text,i) => ({ id: `C${i+1}`, text })), verify: 'true', baselinePasses: true })
+        else if (r.role === 'checker') Object.assign(value, { postWords: 20,
+          criteria: args.criteria.map((_, i) => ({ criterion: `C${i+1}`, status: criterionStatus, note: defect ? 'Repository still fails the boundary case.' : 'Inspected the implementation.' })) })
+        else if (r.role === 'seat') {
+          if ('summary' in value) value.summary = defect ? 'The repository still has a boundary defect.' : 'The repository meets every criterion.'
+          if ('confidence' in value) value.confidence = 5
+          if ('vote' in value) value.vote = { ...value.vote, ship: 'A', reason: 'Verified the same evidence.' }
+          if ('endorse' in value) value.endorse = true
+        } else throw new Error(`Unexpected acceptance role: ${r.role}`)
+        validateResult(value, r.schema)
+        return value
+      }
+      const runtime = { now: () => 1000, agent: respond, turn: async r => ({ status: 'done', result: await respond(r) }) }
+      acceptance = await council({ ...args, host: 'codex' }, runtime, jobs => Promise.all(jobs.map(j => j())), () => {}, () => {})
+      return acceptance
+    } })
+    assert.ok(['converged', 'scorecard'].includes(acceptance.status), JSON.stringify(acceptance))
+    assert.equal(acceptance.mode, 'investigate')
+    assert.equal(result.tasks.acceptance.status, defect ? 'parked' : 'done', JSON.stringify(result))
+    assert.equal(result.status, defect ? 'blocked' : 'done')
+    assert.ok(calls.some(c => c.role === 'checker'))
+    assert.ok(calls.some(c => c.role === 'seat' && c.label.startsWith('ratify')))
+    assert.ok(calls.filter(c => c.role === 'checker').every(c => c.prompt.includes('A complete investigation that finds defects is not successful acceptance.')))
   }
 })
 

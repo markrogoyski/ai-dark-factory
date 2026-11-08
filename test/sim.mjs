@@ -2313,12 +2313,12 @@ async function scenarioFactsSave() {
   writeFileSync(join(dir, 'agent-record.jsonl'), JSON.stringify({ type: 'user', message: { role: 'user', content: `[Workflow harness — computed task] x\n${prompt.split('\n').map(l => `  ${l}`).join('\n')}` } }) + '\n')
   const r = last(exec(['retro', '--facts-only', '--run-dir', runDir, '--out-dir', out, '--expect', expect, '--transcript-wait', '0']))
   assert.deepEqual([r.status, r.path, r.facts], ['ok', join(out, '20261020-120000-proj.facts.json'), true])
-  // The workflow has no clock or logs, so the helper fills elapsedMs and tokens from the run.
+  // Without a host clock or usage evidence, missing measurements stay unknown.
   const saved = JSON.parse(readFileSync(r.path, 'utf8')), facts = factsIn(payload)
   assert.equal(facts.metrics.elapsedMs, null); assert.equal(facts.metrics.tokens, null)
-  assert.ok(Number.isInteger(saved.metrics.elapsedMs) && saved.metrics.elapsedFrom === 'setup')
-  assert.deepEqual(saved.metrics.tokens, { external: {}, claude: {} })
-  assert.deepEqual(saved, { ...facts, metrics: { ...facts.metrics, elapsedMs: saved.metrics.elapsedMs, elapsedFrom: 'setup', tokens: saved.metrics.tokens } })
+  assert.equal(saved.metrics.elapsedMs, null)
+  assert.equal(saved.metrics.tokens, null)
+  assert.deepEqual(saved, facts)
   assert.ok(!existsSync(join(out, '20261020-120000-proj.md')), 'facts only: no retro file')
   // A second run that escalated, so the tally has something to count.
   writeFileSync(join(out, 'x-proj.facts.json'), JSON.stringify({ tier: 'fix', chosenBy: 'overruled', recommended: 'fix', readiness: 'ready', turns: { claude: 30 },

@@ -1912,20 +1912,13 @@ def facts_of(payload):
 
 
 def fill_metrics(run, facts):
-    """A workflow script has no clock and can't read logs, so its metrics leave elapsedMs and
-    tokens null. Fill them here from the run directory: elapsed from run.json's creation (setup;
-    intake ran before it), tokens from the vendor turns' usage.jsonl and the Claude transcripts."""
+    """Fill token evidence from vendor logs and native transcripts. Native active elapsed time
+    is unknown: run.json mtime omits intake and includes idle time between resumes."""
     m = facts.get('metrics') if isinstance(facts, dict) else None
     if not isinstance(m, dict):
         return facts
-    if m.get('elapsedMs') is None:
-        try:
-            m['elapsedMs'] = int((time.time() - os.path.getmtime(os.path.join(run['runDir'], 'run.json'))) * 1000)
-            m['elapsedFrom'] = 'setup'
-        except OSError:
-            pass
     if m.get('tokens') is None:
-        external = {}
+        by_model, records = {}, 0
         path = os.path.join(run['runDir'], 'usage.jsonl')
         if os.path.exists(path):
             for line in read(path).split('\n'):
@@ -1935,16 +1928,22 @@ def fill_metrics(run, facts):
                     continue
                 if not isinstance(rec, dict):
                     continue
-                bucket = external.setdefault(rec.get('model') or '?', {'turns': 0})
-                bucket['turns'] += 1
+                bucket = by_model.setdefault(rec.get('model') or '?', {})
+                records += 1
                 for k, v in (rec.get('usage') or {}).items():
-                    if isinstance(v, (int, float)):
+                    if isinstance(v, (int, float)) and not isinstance(v, bool) and v >= 0:
                         bucket[k] = bucket.get(k, 0) + v
         try:
             claude = claude_usage(run)['byModel']
         except OSError:
             claude = {}
-        m['tokens'] = {'external': external, 'claude': claude}
+        for model, usage in claude.items():
+            records += usage.get('messages', 0)
+            bucket = by_model.setdefault(model, {})
+            for key, value in usage.items():
+                if key != 'messages' and isinstance(value, (int, float)) and not isinstance(value, bool) and value >= 0:
+                    bucket[key] = bucket.get(key, 0) + value
+        m['tokens'] = {'records': records, 'byModel': by_model} if records else None
     return facts
 
 

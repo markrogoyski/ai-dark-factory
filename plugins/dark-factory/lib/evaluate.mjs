@@ -32,7 +32,8 @@ export function summarize(results) {
     group.turns += m.turns || 0; group.failedTurns += m.failedTurns || 0; group.escalated += m.escalated ? 1 : 0
     group.candidates += m.candidates?.total || 0; group.readyCandidates += m.candidates?.ready || 0
     if (m.candidates?.ready > 0) group.runsWithReadyCandidate++
-    if (m.elapsedMs !== null && Number.isFinite(m.elapsedMs)) { group.timedRuns++; group.elapsedMs += m.elapsedMs }
+    // Older native facts estimated wall time from run.json mtime, including idle resumes.
+    if (m.elapsedFrom !== 'setup' && m.elapsedMs !== null && Number.isFinite(m.elapsedMs)) { group.timedRuns++; group.elapsedMs += m.elapsedMs }
     const deliveryState = delivery?.status || result.delivery?.status
     if (deliveryState === 'delivered') group.delivered++
     else if (delivery && deliveryState !== 'pending') group.deliveryFailed++
@@ -53,11 +54,12 @@ export function summarize(results) {
       const row = group.findingsByStage[stage] || (group.findingsByStage[stage] = {})
       for (const [field, value] of Object.entries(values)) row[field] = (row[field] || 0) + value
     }
-    if (m.tokens) {
+    const tokenGroups = m.tokens?.byModel ? [m.tokens.byModel] : [m.tokens?.external, m.tokens?.claude].filter(Boolean)
+    if (tokenGroups.some(models => Object.keys(models).length)) {
       group.tokenMeasuredRuns++
-      for (const [model, usage] of Object.entries(m.tokens.byModel || {})) {
+      for (const models of tokenGroups) for (const [model, usage] of Object.entries(models)) {
         const row = group.tokensByModel[model] || (group.tokensByModel[model] = {})
-        for (const [field, value] of Object.entries(usage)) row[field] = (row[field] || 0) + value
+        for (const [field, value] of Object.entries(usage)) if (!['turns', 'messages'].includes(field) && Number.isFinite(value) && value >= 0) row[field] = (row[field] || 0) + value
       }
     }
   }

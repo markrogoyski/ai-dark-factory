@@ -241,7 +241,7 @@ export function createRuntime({ repo, hostRunDir, concurrency = 3, timeoutMin = 
   async function turn(request) {
     return limit(async () => {
       if (cancelled || signal?.aborted) throw new Error('Run interrupted')
-      if (maxTurns && spentTurns >= maxTurns) { limitStop = `Run turn budget exhausted (${maxTurns}).`; throw new Error(limitStop) }
+      if (maxTurns && spentTurns >= maxTurns) { limitStop = `Run turn budget exhausted (${maxTurns}).`; throw Object.assign(new Error(limitStop), { code: 'RUN_LIMIT' }) }
       spentTurns++
       const runDir = runDirectory(request.run)
       const baseKey = jobKey(request.key || `host-${++sequence}-${String(request.role || 'agent').replace(/[^\w-]/g, '-')}`)

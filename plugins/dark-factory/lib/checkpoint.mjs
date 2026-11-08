@@ -93,7 +93,7 @@ export function loadCheckpoint(path, { repo, args, engine }) {
 export function journalRuntime(runtime, { repo, hostRunDir, args, engine, saved, emit }) {
   const entries = saved?.entries || [], runs = new Set(saved?.runs || [])
   const repository = saved?.repository || repositoryIdentity(repo, args)
-  let cursor = 0, active = 0, broken = false
+  let cursor = 0, active = 0, broken = false, fatal = null
   const remaining = new Set(entries.map((_, i) => i))
   const pending = []
   const wrapped = { ...runtime }
@@ -106,6 +106,7 @@ export function journalRuntime(runtime, { repo, hostRunDir, args, engine, saved,
     emit({ type: 'checkpoint.saved', operations: entries.length, path: file })
   }
   for (const method of ['agent', 'turn', 'measure']) wrapped[method] = async request => {
+    if (fatal) throw fatal
     const hash = fingerprint({ method, request })
     if (remaining.size) {
       const index = [...remaining].find(i => entries[i].method === method && entries[i].hash === hash)
@@ -119,9 +120,11 @@ export function journalRuntime(runtime, { repo, hostRunDir, args, engine, saved,
       // Independent pipelines can replay in a different completion order. Let their cached
       // continuations drain before deciding this request changed the dependency graph.
       await new Promise(resolve => setImmediate(resolve))
+      if (fatal) throw fatal
       if (remaining.size) {
         broken = true
-        throw new Error(`Checkpoint request changed at operation ${cursor + 1} (${method}); dependent reviews were not reused. Start a new run.`)
+        fatal = Object.assign(new Error(`Checkpoint request changed at operation ${cursor + 1} (${method}); dependent reviews were not reused. Start a new run.`), { code: 'CHECKPOINT_MISMATCH' })
+        throw fatal
       }
     }
     const slot = pending.length
