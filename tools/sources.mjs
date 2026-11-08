@@ -23,8 +23,10 @@ const SHARED = [
   'src/council.js',
 ]
 export const PAIR_LIB = ['src/lib/pair.js', 'src/lib/pair-prompts.js']
+export const RUN_PLAN_LIB = ['src/lib/run-plan.js']
 // meta first: the runtime reads `export const meta` from the top of the file.
 export const TARGETS = {
+  'run-plan': { output: 'plugins/dark-factory/workflows/run-plan.js', order: ['src/00-meta-run-plan.js', ...RUN_PLAN_LIB, 'src/main-run-plan.js'] },
   ensemble: { output: 'plugins/dark-factory/workflows/ensemble.js', order: ['src/00-meta-ensemble.js', ...LIB, 'src/boot-ensemble.js', 'src/schemas.js', 'src/ensemble-schemas.js', 'src/turns.js', 'src/repair.js', 'src/council.js', 'src/main-ensemble.js'] },
   council: { output: 'plugins/dark-factory/workflows/council.js', order: ['src/00-meta.js', ...LIB, ...SHARED, 'src/main-council.js'] },
   factory: { output: 'plugins/dark-factory/workflows/factory.js', order: ['src/00-meta-factory.js', ...LIB, ...PAIR_LIB, ...SHARED, 'src/pair-schemas.js', 'src/pair.js', 'src/simple.js', 'src/feature.js', 'src/architecture.js', 'src/main-factory.js'] },

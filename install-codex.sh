@@ -40,7 +40,9 @@ done
 for file in "$source_skill/SKILL.md" "$source_skill/scripts/run.mjs" \
   "$here/plugins/dark-factory/bin/dark-factory-codex" "$here/plugins/dark-factory/bin/dark-factory" \
   "$here/plugins/dark-factory/workflows/factory.js" "$here/plugins/dark-factory/workflows/council.js" \
-  "$here/plugins/dark-factory/workflows/pair.js"; do
+  "$here/plugins/dark-factory/workflows/pair.js" \
+  "$here/plugins/dark-factory/workflows/run-plan.js" \
+  "$here/plugins/dark-factory/lib/run-plan-runner.mjs"; do
   [ -f "$file" ] || { echo "error: incomplete dark-factory checkout: missing $file" >&2; exit 1; }
 done
 

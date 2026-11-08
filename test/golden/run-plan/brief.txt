@@ -1,0 +1,16 @@
+{
+  "task": "Implement two",
+  "context": "Run-plan policy: make routine reversible implementation choices within the stated requirements. Do not expand scope, weaken criteria, or settle conflicting requirements by assumption. Raise unresolved decisions as questions. Do not edit the execution plan or commit to the main checkout.\nRun-plan test; task two. Implement only this task.\nRead the settled decisions and accepted task evidence in /repo/.council/run-plan-test/two-1/decisions.json. Preserve global decisions and inspect relevant prior task artifacts before reopening an approach. Record new implementation decisions and their reasons in your final post.\nCompleted dependencies:\none: abc123\nTask answers:\nKeep the API.",
+  "criteria": [
+    "two works"
+  ],
+  "plan": [
+    "/repo/.council/run-plan-test/two-1/decisions.json"
+  ],
+  "spec": "ask",
+  "tier": "feature",
+  "tierConfirmed": true,
+  "maxTurns": 20,
+  "maxRunMin": 1,
+  "allowDirty": false
+}

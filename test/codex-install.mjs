@@ -18,9 +18,10 @@ function fixture(t) {
   const skill = join(plugin, 'skills/dark-factory')
   mkdirSync(join(plugin, 'bin'), { recursive: true })
   mkdirSync(join(plugin, 'workflows'), { recursive: true })
+  mkdirSync(join(plugin, 'lib'), { recursive: true })
   cpSync(join(root, 'plugins/dark-factory/skills/dark-factory'), skill, { recursive: true })
   cpSync(join(root, 'install-codex.sh'), join(checkout, 'install-codex.sh'))
-  for (const file of ['bin/dark-factory', 'bin/dark-factory-codex', 'workflows/factory.js', 'workflows/council.js', 'workflows/pair.js']) {
+  for (const file of ['bin/dark-factory', 'bin/dark-factory-codex', 'workflows/factory.js', 'workflows/council.js', 'workflows/pair.js', 'workflows/run-plan.js', 'lib/run-plan-runner.mjs']) {
     writeFileSync(join(plugin, file), '')
   }
   const repo = join(dir, 'target repository')

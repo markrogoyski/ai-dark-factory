@@ -32,10 +32,12 @@ if ('signals' in schema.properties) {
 } else if ('runDir' in schema.properties) {
   kind = 'setup'
   const runId = prompt.match(/--run-id '?([\w.-]+)'?/)
-  const run = helper('init', '--repo', repo, '--seats', prompt.match(/--seats ([A-F,]+)/)[1], ...(runId ? ['--run-id', runId[1]] : []), ...(prompt.includes('--factory') ? ['--factory'] : []))
+  const refs = [...prompt.matchAll(/--ref '([^']+)'/g)].flatMap(m => ['--ref', m[1]])
+  const run = helper('init', '--repo', repo, '--seats', prompt.match(/--seats ([A-F,]+)/)[1], ...(runId ? ['--run-id', runId[1]] : []), ...(prompt.includes('--factory') ? ['--factory'] : []), ...refs)
   fs.writeFileSync(path.join(run.runDir, 'verify.sh'), 'node check.cjs\n')
   const baseline = helper('measure', '--run-dir', run.runDir, '--seat', 'A', '--label', 'base')
   Object.assign(result, { status: 'ok', mode: 'implement', runId: run.runId, runDir: run.runDir, repoRoot: repo,
+    refs: run.refs.map(({ source, path, inWorktrees }) => ({ source, path, inWorktrees })),
     verify: 'node check.cjs', baselinePasses: baseline.suite.passed, baselineNote: 'Arithmetic test initially fails.',
     criteria: [{ id: 'C1', text: 'sum(2,3) returns 5; node check.cjs passes.' }] })
   fs.writeFileSync(runPath, run.runDir)

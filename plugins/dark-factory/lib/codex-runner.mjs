@@ -9,7 +9,7 @@ import { fileURLToPath } from 'node:url'
 const plugin = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const helper = join(plugin, 'bin', 'dark-factory')
 const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor
-const workflows = new Set(['factory', 'council', 'pair', 'ensemble'])
+const workflows = new Set(['factory', 'council', 'pair', 'ensemble', 'run-plan'])
 const tiers = new Set(['simple', 'fix', 'feature', 'architecture'])
 
 export const HELP = `Usage: dark-factory-codex [options] [--] TASK
@@ -17,7 +17,8 @@ export const HELP = `Usage: dark-factory-codex [options] [--] TASK
 Run the shared dark-factory engine from Codex. Requires Node.js 20+, Python 3,
 Git, and authenticated CLIs for the selected models.
 
-  --workflow NAME            factory, council, pair, or ensemble (default: factory)
+  --workflow NAME            factory, council, pair, ensemble, run-plan (default: factory)
+  --plan-file FILE           Tracked execution plan; repeat this invocation to resume
   --cwd DIR                  Target Git repository (default: current directory)
   --tier TIER                simple, fix, feature, or architecture
   --seats a,b                Override the model seats (e.g. astra,sol or opus,astra)
@@ -42,7 +43,8 @@ Git, and authenticated CLIs for the selected models.
 Progress goes to stderr; the final result is JSON on stdout. The host log and
 result are retained under <repo>/.council/host-*/. Exit codes: 0 ready, 2 needs
 input/blocked/incomplete, 1 failed. Results stay in their worktrees. This command
-does not apply, commit, or merge them into the main checkout.
+does not apply, commit, or merge them into the main checkout, except run-plan,
+which applies and commits verified tasks within its explicitly requested plan.
 Resume retains concurrency and per-turn timeout settings unless explicitly overridden.
 `
 
@@ -56,7 +58,7 @@ function positiveInteger(value, name) {
 export function parseCLI(argv, cwd = process.cwd()) {
   const out = { workflow: 'factory', cwd, concurrency: 3, timeoutMin: 90, concurrencyGiven: false, timeoutMinGiven: false, args: {} }
   const task = []
-  const values = new Set(['workflow', 'cwd', 'tier', 'seats', 'author', 'reviewer', 'max-reviews', 'args-file', 'output', 'concurrency', 'timeout-min', 'strategy', 'max-turns', 'max-run-min', 'repair-passes', 'resume', 'candidates', 'reviewers', 'mode'])
+  const values = new Set(['workflow', 'cwd', 'tier', 'seats', 'author', 'reviewer', 'max-reviews', 'args-file', 'output', 'concurrency', 'timeout-min', 'strategy', 'max-turns', 'max-run-min', 'repair-passes', 'resume', 'candidates', 'reviewers', 'mode', 'plan-file'])
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i]
     if (arg === '--') { task.push(...argv.slice(i + 1)); break }
@@ -73,6 +75,7 @@ export function parseCLI(argv, cwd = process.cwd()) {
     else if (name === 'max-run-min') out.args.maxRunMin = positiveInteger(value, '--max-run-min')
     else if (name === 'repair-passes') out.args.repair = { maxPasses: positiveInteger(value, '--repair-passes') }
     else if (name === 'resume') out.resume = resolve(cwd, value)
+    else if (name === 'plan-file') out.args.planFile = resolve(cwd, value)
     else if (name === 'workflow') { out.workflow = value; out.workflowGiven = true }
     else if (name === 'max-reviews') out.args.maxReviews = positiveInteger(value, '--max-reviews')
     else if (name === 'concurrency') { out.concurrency = positiveInteger(value, '--concurrency'); out.concurrencyGiven = true }
@@ -81,7 +84,7 @@ export function parseCLI(argv, cwd = process.cwd()) {
     else if (name === 'cwd' || name === 'output') out[name] = resolve(cwd, value)
     else out[name] = value
   }
-  if (!workflows.has(out.workflow)) throw new Error('--workflow must be factory or council or pair or ensemble')
+  if (!workflows.has(out.workflow)) throw new Error('--workflow must be factory or council or pair or ensemble or run-plan')
   if (out.argsFile && !out.help) {
     const args = JSON.parse(readFileSync(out.argsFile, 'utf8'))
     if (!args || typeof args !== 'object' || Array.isArray(args)) throw new Error('--args-file must contain a JSON object')
@@ -90,7 +93,8 @@ export function parseCLI(argv, cwd = process.cwd()) {
   if (task.length) out.args.task = task.join(' ')
   if (!out.resume && out.workflow !== 'pair' && ['author', 'reviewer', 'maxReviews'].some(key => out.args[key] !== undefined)) throw new Error('author, reviewer, and maxReviews require --workflow pair')
   if (out.args.tier && !tiers.has(out.args.tier)) throw new Error('Unknown tier: ' + out.args.tier)
-  if (!out.help && !out.resume && !String(out.args.task || out.args.prompt || out.args.question || '').trim()) throw new Error('Provide a task or an --args-file containing task')
+  if (!out.help && out.workflow === 'run-plan' && (out.resume || !out.args.planFile)) throw new Error('Run-plan requires --plan-file; repeat it to resume, without --resume')
+  if (!out.help && out.workflow !== 'run-plan' && !out.resume && !String(out.args.task || out.args.prompt || out.args.question || '').trim()) throw new Error('Provide a task or an --args-file containing task')
   return out
 }
 
@@ -407,6 +411,10 @@ export function createRuntime({ repo, hostRunDir, concurrency = 3, timeoutMin = 
 }
 
 export async function runWorkflow(options, dependencies = {}) {
+  if (options.workflow === 'run-plan') {
+    const { runPlan } = await import('./run-plan-runner.mjs')
+    return runPlan(options, dependencies.runPlan)
+  }
   let resumeMeta = null
   if (options.resume) {
     resumeMeta = JSON.parse(readFileSync(join(options.resume, 'host.json'), 'utf8'))

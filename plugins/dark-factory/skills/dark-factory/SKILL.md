@@ -36,6 +36,21 @@ For Pair, use `--args-file` for `task`, `author`, `reviewer`, `maxReviews`, `eff
 `plan`, `criteria`, `verify`, `repo`, `allowDirty`, and `timeoutMin`. Tier, seats, panel, roles,
 spec, audit, and historical-evidence options belong to other workflows.
 
+Use `--workflow run-plan --plan-file /absolute/path/plan.json` when the user requests
+implementation of an entire plan with local commits. Run-plan owns task scheduling,
+delivery, commits, budgets, and final acceptance; do not reproduce that loop in chat. The
+versioned JSON plan must be tracked and committed on the intended branch with a clean checkout.
+See the repository README's Run-plan section for its schema. Plan creation and committing it
+are within an authorized run-plan setup; preserve unrelated work. Model choices belong in
+the plan's defaults/task args. Both hosts use the standalone runtime's Codex profile for plan runs.
+Repeat the same command to resume, without `--resume`. For parked tasks, pass an args file with
+`planFile` and `answers: {taskId: "the user's answer"}`; structured answers can also select
+`tier` or `noSplit`. Existing authorization governs routine choices; scope changes and conflicting
+requirements remain parked. Answers do not reset attempts or budgets. Preserve `.council/run-plan-ID`
+and child runs. Never reset a dirty checkout or remove a journal to force resume. Run-plan output
+lists completed and parked tasks and remaining budgets. Required parked tasks or failed final
+acceptance mean incomplete work. Run-plan commits locally; publishing/deploying remains separate.
+
 For factory and council, preserve requested
 `--tier` and `--seats`. Use `--args-file` with a JSON object for other factory options: `task`,
 `context`, `plan`, `simple`, `roles`, `panel`, `spec`, `audit`, or `clarifications`. Write the

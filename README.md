@@ -16,7 +16,7 @@ The repo is a Claude Code plugin marketplace with one plugin, `dark-factory`:
     /plugin marketplace add markrogoyski/ai-dark-factory
     /plugin install dark-factory@ai-dark-factory
 
-That adds `/dark-factory:pair`, `/dark-factory:factory`, `/dark-factory:council` and `/dark-factory:ensemble`, and puts
+That adds `/dark-factory:pair`, `/dark-factory:factory`, `/dark-factory:council`, `/dark-factory:ensemble`, and `/dark-factory:run-plan`, and puts
 the helper the agents run, `dark-factory`, on their PATH. A plugin can't grant permissions, so add
 this to `~/.claude/settings.json` yourself (see the permission note under Install and test):
 
@@ -103,6 +103,122 @@ The skill handles `needs-plan`, `needs-tier`, `needs-split`, and `needs-user` us
 factory decisions described below. Reruns normally start a new host run. Use `--resume HOST_RUN_DIR` to replay validated completed operations and continue a saved checkpoint; see Process controls below. Seat sessions persist across turns within a run.
 The reviewed change stays in its worktree until delivered to the main checkout. Architecture
 returns reviewed milestones and does not automatically build them.
+
+## Run-plan: execute a plan across runs
+
+The `run-plan` workflow executes a suite of features or defects sequentially through Factory or Pair. Each task
+has fresh agent sessions, separate worktrees, and the existing independent review and readiness
+gates. A successful task is applied, checked with `verify-delivery`, and committed together with
+its progress record. Requesting a plan run authorizes those local commits. Use a clean checkout
+on the intended feature branch; the plan run does not publish, deploy, or switch branches.
+
+Create and commit a plan such as `plan.json`:
+
+```json
+{
+  "version": 1,
+  "id": "retry-policy",
+  "decisions": ["Preserve the existing public API."],
+  "limits": {
+    "maxTurns": 200,
+    "maxRunMin": 120,
+    "maxAttempts": 2,
+    "taskMaxTurns": 50,
+    "taskMaxRunMin": 30
+  },
+  "defaults": {"verify": "make check", "retro": false},
+  "tasks": [
+    {
+      "id": "policy",
+      "task": "Implement the retry policy with bounded exponential backoff.",
+      "criteria": ["Retries stop at the configured limit.", "Backoff is bounded."],
+      "workflow": "pair",
+      "args": {"author": "sol", "reviewer": "astra"}
+    },
+    {
+      "id": "integration",
+      "task": "Use the retry policy in the fetcher.",
+      "after": ["policy"],
+      "criteria": ["Transient fetch failures retry using the configured policy."]
+    }
+  ],
+  "acceptance": {
+    "verify": "make check",
+    "criteria": ["The fetcher and retry policy work together without API regressions."]
+  }
+}
+```
+
+`workflow` defaults to `factory`. Task IDs are stable; dependencies can appear in any order,
+but missing IDs and cycles are rejected. Each task and final acceptance need explicit criteria.
+The limits above are also the defaults. Turn limits count workflow model turns, including failed
+turns and explicit recovery turns; provider transport retries remain governed by the existing CLI
+helper. These are execution limits, not dollar forecasts. Final acceptance uses a fresh Council
+investigation after independently running `acceptance.verify`; both must pass on the integrated
+revision. Its model options go in `acceptance.args`.
+
+```text
+$dark-factory --workflow run-plan --plan-file /absolute/path/plan.json
+```
+
+Or run the shipped CLI directly:
+
+```sh
+node plugins/dark-factory/bin/dark-factory-codex --workflow run-plan --cwd /path/to/project --plan-file /path/to/project/plan.json
+```
+
+In Claude Code, invoke `/dark-factory:run-plan` with object arguments
+`{planFile: "/absolute/path/plan.json", repo: "/path/to/project"}`. A transport turn
+launches the same standalone controller. Plan runs use its Codex model profile on both hosts;
+explicit participants in task/default args override that profile. Existing native workflows
+retain their original behavior. Node, Python, Git, and the selected authenticated CLIs are required.
+
+Reference documents named in task/default `plan` options are frozen by hash for the plan run;
+changes invalidate resume. Keep the plan run's own changing JSON file out of those references.
+To use an Architecture result, map its milestones to task IDs and `after` dependencies, retain
+their criteria, and pass the reviewed design as a reference. Final acceptance covers the original
+requirements across all milestones.
+
+Each task gets a snapshot of settled decisions, answers, and pointers to accepted designs and
+final posts. It reads the relevant evidence instead of inheriting prior agent conversations.
+Routine implementation choices stay with the task agents; scope changes and conflicting
+requirements must become questions. Factory specification review uses `ask`. `needs-tier`,
+`needs-split`, `needs-user`, unresolved readiness, and exhausted attempts park the task with
+its result. Its dependents wait while independent tasks continue. Transport failures retry only
+within the attempt and run-plan limits. If no task is eligible, the result remains incomplete.
+
+Repeat the same invocation to resume; run-plan resume does not use `--resume`. To answer parked
+tasks, use `--args-file` with:
+
+```json
+{
+  "planFile": "/absolute/path/plan.json",
+  "answers": {
+    "integration": {"answer": "Keep the existing retry API and use the feature tier.", "tier": "feature"}
+  }
+}
+```
+
+Answers may be strings or `{answer, tier?, noSplit?}`. A split proposal can be kept as one task
+with explicit `noSplit: true`; creating a different decomposition or changing requirements needs
+a revised plan with a new ID. Answers never reset attempts or budgets. The v1 plan definition
+and limits are immutable once started; budget exhaustion is reported, not silently extended.
+
+Completed code and the plan's controller-owned `progress` field share a commit, with
+`Factory-Plan` and `Factory-Task` trailers. `.council/run-plan-ID/state.json` also retains
+unsuccessful attempts, questions, decisions, and budget accounting. Keep it and child-run evidence.
+Before launching, the controller reserves an attempt's allowed turns and time. A completed
+attempt settles to measured usage; an interrupted attempt conservatively retains its full
+reservation, so restarting cannot replenish its budget. Interrupted delivery reserves additional
+verification time before retrying. Time between completed invocations is not charged.
+
+Recovery recognizes an exact prepared delivery or its completed commit and never resets files.
+Unexpected edits, changed HEAD/branch/requirements, or a still-running child stop recovery with
+a diagnostic. Ordinary interrupted tasks are parked with their artifacts retained; an answer
+can retry them if attempts remain. Child checkpoints retain their existing strict validation.
+There is no background supervisor: an interrupted plan run is resumable, not guaranteed to keep
+running after its host closes. Final acceptance failures are parked for inspection; v1 does not
+invent repair scope or weaken acceptance criteria.
 
 ## Pair: one author, one reviewer
 
@@ -263,11 +379,15 @@ before external relay overhead or retries.
 
 ## Evaluate process value without model calls
 
-Every workflow result includes versioned `metrics`; Codex also saves `metrics.json` in `hostRunDir`.
+Each Factory, Pair, Council, and Ensemble result includes versioned `metrics`; Codex also saves `metrics.json` in `hostRunDir`.
 It records workflow, tier, strategy, turns by role, failed turns, elapsed time when available,
 findings by stage, readiness, escalation, and recorded token usage. The runner also records
 repository HEAD. Factory retrospective facts include a metrics snapshot before the retrospective itself; the evaluator keeps that scope separate from completed-run metrics. Unknown measurements and dollar costs stay unknown. Native workflow results
 can be saved as JSON and passed to the same evaluator.
+
+Run-plan reports aggregate budget accounting separately. Its child results retain these metrics
+and can be passed to the evaluator individually; interrupted reservations are conservative limits,
+not measured token usage or monetary spend.
 
 Give repeated evaluations stable identities in the workflow arguments:
 

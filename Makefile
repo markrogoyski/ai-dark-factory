@@ -23,7 +23,7 @@ test:
 	$(NODE) test/sim.mjs
 
 host-test:
-	$(NODE) --test test/host-logic.mjs test/codex-runner.mjs test/codex-install.mjs test/checkpoint.mjs
+	$(NODE) --test test/host-logic.mjs test/codex-runner.mjs test/codex-install.mjs test/checkpoint.mjs test/run-plan.mjs
 
 static:
 	$(NODE) test/static.mjs
