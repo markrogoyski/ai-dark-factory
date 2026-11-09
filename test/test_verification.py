@@ -20,7 +20,9 @@ class Verification(TmpDirCase):
         self.git('config', 'user.email', 'factory@example.invalid')
         self.put('value', 'broken\n')
         self.put('unchanged', 'preserve\n')
-        self.put('.gitignore', 'local-only\n')
+        self.put('tests/changed.py', 'from pathlib import Path\nassert Path("value").read_text() == "broken\\n"\n')
+        self.put('tests/preserved.py', 'from pathlib import Path\nassert Path("unchanged").read_text() == "preserve\\n"\nassert not Path("leaked").exists()\n')
+        self.put('.gitignore', 'local-only\nvendor/\n')
         self.put('gate.py', 'import os\nfrom pathlib import Path\n'
                  'assert os.environ.get("FACTORY_GATE") == "serial"\n'
                  'assert Path("value").read_text() == "fixed\\n"\n')
@@ -59,6 +61,169 @@ class Verification(TmpDirCase):
         report = os.path.join(self.rd, 'result.json')
         council.write_json(report, {'runDir': self.rd, 'final': final})
         return report
+
+    def replay_mapping(self):
+        return [{'file': 'tests/changed.py', 'command': 'python3 tests/changed.py', 'checkIds': ['T1'], 'fixtures': []},
+                {'file': 'tests/preserved.py', 'command': 'python3 tests/preserved.py', 'checkIds': ['T2'], 'fixtures': []}]
+
+    def replay_measure(self, mapping=None, roots=None, label='replay', timeout=5):
+        request = {'testRoots': ['tests'] if roots is None else roots,
+                   'mapping': self.replay_mapping() if mapping is None else mapping}
+        return self.cli('measure', '--run-dir', self.rd, '--seat', 'A', '--label', label,
+                        '--replay-json', json.dumps(request), '--test-timeout', str(timeout), '--max-wait', '20')
+
+    def test_replay_modified_tests_fixtures_preserved_signal_and_cache(self):
+        council.write(os.path.join(self.wt, 'tests/changed.py'),
+                      'from pathlib import Path\nimport os\nassert os.environ["FACTORY_GATE"] == "serial"\n'
+                      'assert Path("tests/fixture").read_bytes() == b"fixed\\n"\n'
+                      'assert Path("value").read_bytes() == Path("tests/fixture").read_bytes()\n')
+        council.write(os.path.join(self.wt, 'tests/fixture'), 'fixed\n')
+        mapping = self.replay_mapping()
+        mapping[0]['fixtures'] = ['tests/fixture']
+        result = self.replay_measure(mapping)
+        replay = result['replay']
+        self.assertEqual(replay['base'], self.run['head'])
+        self.assertEqual(replay['snapshotTree'], result['snapshot']['tree'])
+        self.assertEqual([(r['side'], r['passed']) for r in replay['records']],
+                         [('base', False), ('final', True), ('base', True), ('final', True)])
+        self.assertTrue(result['suite']['passed'])
+        for record in replay['records']:
+            self.assertTrue(os.path.isfile(record['log']))
+            self.assertFalse(os.path.exists(record['cwd']))
+            self.assertTrue(record['attempted'])
+        self.assertTrue(self.replay_measure(mapping)['reused'])
+        council.write(replay['records'][0]['log'], 'tampered')
+        self.assertFalse(self.replay_measure(mapping).get('reused', False))
+        roots = None
+        for change in ('command', 'mapping', 'roots', 'bytes', 'environment'):
+            if change == 'command': mapping[0]['command'] += ' # same command, different input'
+            if change == 'mapping': mapping[0]['checkIds'].append('T3')
+            if change == 'roots': roots = ['tests', 'missing-tests']
+            if change == 'bytes': council.write(os.path.join(self.wt, 'tests/fixture'), 'different\n')
+            if change == 'environment': self.config({'FACTORY_GATE': 'different'})
+            self.assertFalse(self.replay_measure(mapping, roots).get('reused', False), change)
+
+    def test_replay_uses_snapshot_bytes_and_original_base_after_author_commits(self):
+        council.write(os.path.join(self.wt, 'tests/changed.py'),
+                      'from pathlib import Path\nassert Path("value").read_text() == "fixed\\n"\n')
+        council.git('add', '.', cwd=self.wt)
+        council.git('commit', '-qm', 'Author implementation', cwd=self.wt)
+        original = council.snapshot
+
+        def capture(*args, **kwargs):
+            result = original(*args, **kwargs)
+            council.write(os.path.join(self.wt, 'tests/changed.py'), 'raise RuntimeError("mutable live bytes")\n')
+            return result
+
+        with mock.patch.object(council, 'snapshot', side_effect=capture):
+            result = council.run_measure_job('', {'runDir': self.rd, 'seat': 'A', 'label': 'frozen', 'job': 'frozen',
+                'suiteTimeout': 5, 'testTimeout': 5, 'tests': [], 'replay': {'testRoots': ['tests'], 'mapping': self.replay_mapping()}})
+        self.assertEqual(result['replay']['base'], self.run['head'])
+        self.assertFalse(result['replay']['records'][0]['passed'])
+        self.assertTrue(result['replay']['records'][1]['passed'])
+        self.assertNotIn('mutable live bytes', result['replay']['records'][1]['tail'])
+
+    def test_replay_fatal_and_timeout_do_not_suppress_later_files(self):
+        council.write(os.path.join(self.wt, 'api.py'), 'available = True\n')
+        council.write(os.path.join(self.wt, 'tests/api.py'),
+                      'from pathlib import Path\nif not Path("api.py").exists(): raise RuntimeError("new API missing during load")\n')
+        council.write(os.path.join(self.wt, 'tests/timeout.py'), 'import time\ntime.sleep(30)\n')
+        mapping = [{'file': 'tests/api.py', 'command': 'python3 tests/api.py', 'checkIds': ['NEW1', 'NEW2'], 'fixtures': []},
+                   {'file': 'tests/timeout.py', 'command': 'python3 tests/timeout.py', 'checkIds': ['SLOW'], 'fixtures': []},
+                   self.replay_mapping()[1]]
+        result = self.replay_measure(mapping, timeout=1)
+        records = result['replay']['records']
+        self.assertEqual(len(records), 6)
+        self.assertIn('new API missing during load', records[0]['tail'])
+        self.assertEqual(records[0]['checkIds'], ['NEW1', 'NEW2'])
+        self.assertNotIn('testResults', records[0], 'no invented individual outcomes')
+        self.assertTrue(records[1]['passed'])
+        self.assertTrue(records[2]['timedOut'])
+        self.assertEqual(records[2]['signal'], 9)
+        self.assertTrue(records[4]['passed'])
+        self.assertTrue(records[5]['passed'])
+        self.assertTrue(result['suite']['passed'])
+
+    def test_replay_mutations_cannot_contaminate_later_checks_or_author(self):
+        council.write(os.path.join(self.wt, 'tests/mutate.py'),
+                      'from pathlib import Path\nPath("unchanged").write_text("corrupt")\nPath("leaked").write_text("leaked")\n')
+        mapping = [{'file': 'tests/mutate.py', 'command': 'python3 tests/mutate.py', 'checkIds': ['M'], 'fixtures': []}, self.replay_mapping()[1]]
+        result = self.replay_measure(mapping)
+        records = result['replay']['records']
+        self.assertFalse(records[1]['passed'])
+        self.assertIn('unchanged', records[1]['mutated'])
+        self.assertTrue(all(r['passed'] for r in records[2:]))
+        self.assertTrue(result['suite']['passed'])
+        self.assertEqual(council.read(os.path.join(self.wt, 'unchanged')), 'preserve\n')
+        self.assertFalse(os.path.exists(os.path.join(self.wt, 'leaked')))
+
+    def test_replay_excludes_production_config_symlinks_and_traversal(self):
+        council.write(os.path.join(self.wt, 'config.json'), 'production configuration')
+        os.symlink('../value', os.path.join(self.wt, 'tests/link'))
+        os.symlink('..', os.path.join(self.wt, 'tests/escape'))
+        invalid = ['value', 'config.json', '../value', '/tmp/value', 'tests/../value', 'tests/link', 'tests/escape/value']
+        mapping = [{'file': p, 'command': 'touch MUST_NOT_RUN', 'checkIds': [f'T{i}'], 'fixtures': []} for i, p in enumerate(invalid)]
+        result = self.replay_measure(mapping)
+        self.assertEqual(result['replay']['records'], [])
+        paths = {e['path'] for e in result['replay']['exclusions']}
+        self.assertTrue(set(invalid) <= paths)
+        self.assertFalse(os.path.exists(os.path.join(self.wt, 'MUST_NOT_RUN')))
+        for roots in [['.'], ['../tests'], ['tests/escape'], ['new-tests']]:
+            self.assertEqual(self.replay_measure(roots=roots)['replay']['records'], [])
+        # A production fixture request must not drag the production fix onto base.
+        mapping = self.replay_mapping(); mapping[0]['fixtures'] = ['value']
+        records = self.replay_measure(mapping)['replay']['records']
+        self.assertTrue(all(r['checkIds'] == ['T2'] for r in records))
+
+    def test_replay_reports_renames_deletions_and_unchanged_files_explicitly(self):
+        council.git('mv', 'tests/changed.py', 'tests/renamed.py', cwd=self.wt)
+        os.remove(os.path.join(self.wt, 'tests/preserved.py'))
+        mapping = [{'file': 'tests/renamed.py', 'command': 'python3 tests/renamed.py', 'checkIds': ['T1'], 'fixtures': []}, self.replay_mapping()[1]]
+        replay = self.replay_measure(mapping)['replay']
+        self.assertTrue(any(c['status'].startswith('R') and c['previousPath'] == 'tests/changed.py' for c in replay['changes']))
+        self.assertTrue(any(c['status'] == 'D' for c in replay['changes']))
+        self.assertEqual([(r['side'], r['file']) for r in replay['records']], [('final', 'tests/renamed.py')])
+        self.assertTrue(any('unsupported overlay' in e['reason'] for e in replay['exclusions']))
+
+    def test_replay_launch_error_is_raw_evidence_and_does_not_stop_other_files(self):
+        original = council.run_shell
+        def launch(command, *args, **kwargs):
+            if command == 'unlaunchable': raise OSError('simulated launch failure')
+            return original(command, *args, **kwargs)
+        mapping = self.replay_mapping(); mapping[0]['command'] = 'unlaunchable'
+        with mock.patch.object(council, 'run_shell', side_effect=launch):
+            result = council.run_measure_job('', {'runDir': self.rd, 'seat': 'A', 'label': 'launch', 'job': 'launch',
+                'suiteTimeout': 5, 'testTimeout': 5, 'tests': [], 'replay': {'testRoots': ['tests'], 'mapping': mapping}})
+        records = result['replay']['records']
+        self.assertTrue(records[0]['attempted'])
+        self.assertFalse(records[0]['ran'])
+        self.assertFalse(records[0]['hasExitCode'])
+        self.assertEqual(records[0]['launchError'], 'simulated launch failure')
+        self.assertTrue(records[-1]['passed'])
+
+    def test_replay_accepts_reviewed_configured_roots_without_existing_test_files(self):
+        council.write(os.path.join(self.wt, 'spec/new.py'), 'print("configured test root")\n')
+        mapping = [{'file': 'spec/new.py', 'command': 'python3 spec/new.py', 'checkIds': ['T1'], 'fixtures': []}]
+        result = self.replay_measure(mapping, roots=['spec'])
+        self.assertEqual(len(result['replay']['records']), 2)
+        self.assertTrue(all(r['passed'] for r in result['replay']['records']))
+
+    def test_replay_uses_original_base_dependencies_and_author_final_dependencies(self):
+        self.put('vendor/marker', 'original dependency')
+        council.write(os.path.join(self.wt, 'vendor/marker'), 'author dependency change')
+        council.write(os.path.join(self.wt, 'tests/deps.py'),
+                      'from pathlib import Path\nassert Path("vendor/marker").read_text() == "author dependency change"\n'
+                      'Path("vendor/marker").write_text("mutation must not leak")\n')
+        council.write(os.path.join(self.wt, 'gate.py'),
+                      council.read(os.path.join(self.wt, 'gate.py')) +
+                      'assert Path("vendor/marker").read_text() == "author dependency change"\n')
+        mapping = [{'file': 'tests/deps.py', 'command': 'python3 tests/deps.py', 'checkIds': ['T1'], 'fixtures': []}]
+        result = self.replay_measure(mapping)
+        self.assertEqual([r['passed'] for r in result['replay']['records']], [False, True])
+        self.assertTrue(result['suite']['passed'])
+        self.assertTrue(any(e['path'] == 'vendor' for e in result['replay']['exclusions']))
+        self.assertEqual(council.read(os.path.join(self.wt, 'vendor/marker')), 'author dependency change')
+        self.assertEqual(council.read(os.path.join(self.repo, 'vendor/marker')), 'original dependency')
 
     def delivery(self, report, manifest=None):
         return self.cli('verify-delivery', '--run-dir', self.rd, '--result', report, '--max-wait', '20',

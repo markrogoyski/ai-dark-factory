@@ -4057,7 +4057,8 @@ Candidate's report (verify it yourself): ${JSON.stringify(solution)}`
 }
 
 function newPairState() {
-  return { stage: 'design', design: '', approvedDesign: '', findings: [], reviews: [], author: null, measurement: null, label: null, lastReview: null, signatures: [], stop: '', questions: [] }
+  return { stage: 'design', design: '', approvedDesign: '', testContract: null, approvedContract: null,
+    replayMapping: [], findings: [], reviews: [], author: null, measurement: null, label: null, lastReview: null, signatures: [], stop: '', questions: [] }
 }
 
 // Pair decisions are shared by both hosts. Only the reviewer can close findings.
@@ -4085,7 +4086,7 @@ function parsePairConfig(args) {
 }
 
 function pairVersion(S) {
-  return S.pair.stage === 'design' ? `design:${promptHash(S.pair.design)}:${S.pair.measurement?.snapshot?.tree || 'base'}`
+  return S.pair.stage === 'design' ? `design:${promptHash(JSON.stringify([S.pair.design, S.pair.testContract]))}:${S.pair.measurement?.snapshot?.tree || 'base'}`
     : `code:${S.pair.measurement?.snapshot?.tree || 'unmeasured'}`
 }
 
@@ -4097,9 +4098,88 @@ function pairOpen(S) {
   return S.pair.findings.filter(f => f.status === 'open')
 }
 
+function pairRelativePath(S, path) {
+  return typeof path === 'string' && !!path && !path.includes('\\') && !path.includes('\0') &&
+    !/^[A-Za-z]:/.test(path) && path.split('/').every(p => p && p !== '.' && p !== '..')
+}
+
+function pairContractError(S, contract) {
+  if (!contract || !Array.isArray(contract.testRoots) || !Array.isArray(contract.checks) || !contract.checks.length) return 'A concrete test contract is required.'
+  const roots = contract.testRoots.map(r => r.path)
+  if (new Set(roots).size !== roots.length || contract.testRoots.some(r => !pairRelativePath(S, r.path) || !String(r.evidence || '').trim())) return 'Test roots need distinct relative directories and repository evidence.'
+  const inside = path => pairRelativePath(S, path) && roots.some(root => path.startsWith(root + '/'))
+  const ids = new Set()
+  for (const c of contract.checks) {
+    if (!/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(c.id || '') || ids.has(c.id) ||
+        !Array.isArray(c.criteria) || !c.criteria.length || new Set(c.criteria).size !== c.criteria.length || c.criteria.some(id => !S.criteria.some(x => x.id === id)) ||
+        !String(c.scenario || '').trim() || !String(c.expected || '').trim() || !String(c.boundaries || '').trim()) return 'Contract checks need unique IDs, valid criteria, concrete scenarios, expected outcomes, and boundaries.'
+    ids.add(c.id)
+    if (c.kind === 'test') {
+      if (!['changed', 'preserved'].includes(c.purpose) || !inside(c.file) || !String(c.command || '').trim() ||
+          !Array.isArray(c.fixtures) || c.fixtures.some(f => !inside(f))) return `Executable check ${c.id} needs a purpose, test file, command, and fixtures under accepted test roots.`
+    } else if (c.kind !== 'inspection' || !String(c.inspection || '').trim() || !String(c.reason || '').trim()) return `Check ${c.id} needs a concrete alternative inspection and reason.`
+  }
+  if (S.criteria.some(c => !contract.checks.some(check => check.criteria.includes(c.id)))) return 'The contract must cover every acceptance criterion.'
+  return null
+}
+
+function pairChallengeError(S, review) {
+  const contract = S.pair.testContract, error = pairContractError(S, contract)
+  if (error) return error
+  const challenges = review.challenges
+  if (!Array.isArray(challenges) || challenges.length !== S.criteria.length ||
+      new Set(challenges.map(c => c.criterion)).size !== S.criteria.length) return 'Design review needs one unique challenge for every acceptance criterion.'
+  for (const c of challenges) {
+    const rejectsDesign = review.requiresDesignRevision === true ||
+      (review.findings || []).some(f => String(f.statement || '').trim() && String(f.evidence || '').trim() && ['blocker', 'major', 'minor'].includes(f.severity)) ||
+      (review.criteria || []).some(a => a.criterion === c.criterion && ['partial', 'unmet'].includes(a.status) && String(a.note || '').trim())
+    if (!S.criteria.some(x => x.id === c.criterion) || !String(c.wrongImplementation || '').trim() ||
+        !Array.isArray(c.rejectingCheckIds) || (!c.rejectingCheckIds.length && !rejectsDesign) || new Set(c.rejectingCheckIds).size !== c.rejectingCheckIds.length ||
+        c.rejectingCheckIds.some(id => !contract.checks.some(check => check.id === id && check.criteria.includes(c.criterion)))) return 'Design challenges need a plausible wrong implementation and valid rejecting checks covering that criterion.'
+  }
+  return null
+}
+
+function pairReplayRequest(S) {
+  return { testRoots: (S.pair.approvedContract?.testRoots || []).map(r => r.path), mapping: S.pair.replayMapping }
+}
+
+function pairReplayReadiness(S, blocked, incomplete) {
+  const p = S.pair, replay = p.measurement?.replay, request = pairReplayRequest(S)
+  const mappingIdentity = entries => JSON.stringify(entries?.map(e => [e.file, e.command, e.checkIds, e.fixtures]))
+  if (!replay || replay.snapshotTree !== p.measurement?.snapshot?.tree || !/^[0-9a-f]{40,64}$/.test(S.run?.head || '') || replay.base !== S.run.head ||
+      !/^[0-9a-f]{40,64}$/.test(replay.snapshot || '') || JSON.stringify(replay.testRoots) !== JSON.stringify(request.testRoots) ||
+      mappingIdentity(replay.mapping) !== mappingIdentity(request.mapping)) {
+    incomplete.push('No compatible replay evidence for the measured snapshot and current mapping.')
+    return
+  }
+  const checks = p.approvedContract?.checks || []
+  for (const entry of p.replayMapping) {
+    if (!Array.isArray(entry.checkIds) || !entry.checkIds.length || entry.checkIds.some(id => !checks.some(c => c.id === id && c.kind === 'test'))) incomplete.push('Replay mapping contains unknown or non-executable check IDs.')
+  }
+  for (const check of checks.filter(c => c.kind === 'test')) {
+    const mappings = p.replayMapping.filter(e => e.checkIds?.includes(check.id))
+    if (!mappings.length) { incomplete.push(`No replay mapping for ${check.id}.`); continue }
+    for (const entry of mappings) {
+      const records = side => (replay.records || []).filter(r => r.side === side && r.file === entry.file && r.command === entry.command &&
+        r.checkIds?.includes(check.id) && r.attempted === true && r.revision === (side === 'base' ? replay.base : replay.snapshot) &&
+        ((r.ran === true && r.hasExitCode === true && Number.isInteger(r.exitCode)) || String(r.launchError || '').trim()) &&
+        (side === 'base' || r.tree === replay.snapshotTree))
+      if (check.purpose === 'changed' && !records('base').length) incomplete.push(`No base execution result for ${check.id} (${entry.file}).`)
+      const final = records('final')
+      if (!final.length) incomplete.push(`No final execution result for ${check.id} (${entry.file}).`)
+      else if (final.some(r => !r.ran || !r.hasExitCode || r.exitCode !== 0 || r.signal || r.timedOut || r.launchError || r.mutated?.length || r.passed !== true)) blocked.push(`Final executable check ${check.id} failed (${entry.file}).`)
+    }
+  }
+}
+
 function pairIngestReview(S, review) {
   const p = S.pair
   if (!review || review.version !== pairVersion(S) || review.complete !== true) return 'The reviewer did not complete a review of the current version.'
+  if (p.stage === 'design') {
+    const error = pairChallengeError(S, review)
+    if (error) return error
+  }
   const resolutions = review.resolutions || []
   const seen = new Set()
   for (const r of resolutions) {
@@ -4144,10 +4224,12 @@ function pairReadiness(S) {
   }
   if (p.stage === 'code') {
     if (!p.approvedDesign) incomplete.push('The design has not passed review.')
+    if (!p.approvedContract) incomplete.push('The test contract has not passed review.')
     const m = p.measurement
     if (!m || m.status !== 'done' || !/^[0-9a-f]{40,64}$/.test(m.snapshot?.tree || '')) incomplete.push('No measured snapshot of the current implementation.')
     if (S.verify && !m?.suite?.ran) incomplete.push('Required verification did not run.')
     else if (S.verify && !m.suite.passed) blocked.push('Required verification failed on the reviewed snapshot.')
+    pairReplayReadiness(S, blocked, incomplete)
   }
   if (r?.requiresDesignRevision) blocked.push('The reviewer requires a revised design.')
   return { state: blocked.length ? 'blocked' : incomplete.length ? 'incomplete' : 'ready', blocked, incomplete }
@@ -4157,7 +4239,8 @@ function pairStalled(S) {
   const p = S.pair
   const signature = JSON.stringify([pairVersion(S), pairOpen(S).map(f => [f.id, f.statement]),
     p.lastReview?.criteria.map(c => [c.criterion, c.status]), p.lastReview?.requiresDesignRevision,
-    p.measurement?.suite?.ran, p.measurement?.suite?.passed])
+    p.measurement?.suite?.ran, p.measurement?.suite?.passed, pairReplayRequest(S),
+    p.measurement?.replay?.exclusions, p.measurement?.replay?.records?.map(r => [r.side, r.file, r.command, r.checkIds, r.attempted, r.ran, r.hasExitCode, r.exitCode, r.signal, r.timedOut, r.launchError, r.passed, r.mutated])])
   p.signatures.push(signature)
   return p.signatures.length >= 2 && p.signatures.at(-2) === signature
 }
@@ -4171,17 +4254,19 @@ function pairResult(S, status = 'blocked') {
   const report = [`Pair: ${S.pairOptions.author.name} authors; ${S.pairOptions.reviewer.name} reviews.`,
     `Readiness: ${ready.state}. Reviews: ${p.reviews.length}/${S.pairOptions.maxReviews}.`,
     `Verification: ${!S.verify ? 'no automated gate configured; no test pass claimed' : !m?.suite?.ran ? 'not run on a final snapshot' : m.suite.passed ? 'passed on the reviewed snapshot' : 'failed on the reviewed snapshot'}.`,
+    `Replay: ${m?.replay?.records?.length || 0} file/command records; ${m?.replay?.exclusions?.length || 0} overlay exclusions. Base outcomes require reviewer interpretation.`,
     ...ready.blocked, ...ready.incomplete,
     ...p.findings.map(f => `${f.id}: ${f.status} — ${f.statement}${f.resolution ? ` (${f.resolution})` : ''}`)].join('\n\n')
   return { status, workflow: 'pair', mode: 'implement', task: S.task, runDir: S.run?.runDir || null,
     room: S.run?.room || null, refs: S.refs, stage: p.stage, stopReason: p.stop,
-    design: p.design, author: S.pairOptions.author.name, reviewer: S.pairOptions.reviewer.name,
+    design: p.design, testContract: p.approvedContract || p.testContract, replayMapping: p.replayMapping,
+    author: S.pairOptions.author.name, reviewer: S.pairOptions.reviewer.name,
     reviews: p.reviews, findings: p.findings, questions: p.questions, notes: S.notes,
     report: { markdown: report },
     final: { author: 'A', model: S.pairOptions.author.name, summary: p.author?.summary || '',
       worktree: S.seats[0]?.wt || null, post: p.label && S.run ? `${S.run.room}/${p.label}/A.md` : null,
       snapshotRef: m?.snapshot?.ref || null, snapshotTree: m?.snapshot?.tree || null, diff: m?.snapshot?.diff || null,
-      suite: m?.suite || null, criteria: p.lastReview?.criteria || [], readiness: ready },
+      suite: m?.suite || null, replay: m?.replay || null, criteria: p.lastReview?.criteria || [], readiness: ready },
     delivery: { status: status === 'done' && ready.state === 'ready' ? 'pending' : 'not-ready' },
     forTheOrchestrator: 'Read final.readiness first. Report unresolved findings or missing evidence before any success summary. ' +
       'Spot-check the reviewed snapshot and report the design and implementation review outcomes. The change stays in final.worktree. ' +
@@ -4189,7 +4274,11 @@ function pairResult(S, status = 'blocked') {
       'Do not start a council automatically. The Codex host can resume a validated checkpoint with --resume hostRunDir; changed inputs or evidence require a new run.' }
 }
 
-function pairAuthorPrompt(S, label) {
+function pairSetupPrompt(S) {
+  return setupPrompt(S) + '\n\nPair also requires head: copy the full original commit from the helper init output (head), or run.json. Do not use a later author commit or snapshot. This identity will be checked against every baseline replay.'
+}
+
+function pairAuthorPrompt(S, label, correction = '') {
   const p = S.pair, design = p.stage === 'design'
   return `You are the sole author in a pair workflow. Own the task through completion; an independent reviewer checks each stage.
 
@@ -4198,11 +4287,19 @@ ${taskBlock(S, 99)}
 
 Your worktree: ${S.seats[0].wt}. Work only there; never edit the main checkout or reviewer checkouts.
 Read the repository instructions and the relevant code. Do not delegate or launch other models.
+${correction ? `\n# Correct the previous output\nThe engine could not accept your design output: ${correction}\nReturn a complete corrected design and contract. This is the one correction attempt for this turn, not approval to implement. Preserve the task and substantive requirements.\n` : ''}
 ${design ? `Return a complete short design in design: the approach, affected files, assumptions, risks, and how every acceptance criterion will be tested. Cite existing code where the approach depends on it. Revise the entire design in response to feedback. Do not implement yet. ${pairBaseline(S)}`
     : `Implement the reviewed design, including the required tests and documentation. Run appropriate focused checks and the shared verification gate. Fix all open actionable findings and any failed verification. Return design as an empty string; the accepted design remains fixed until the reviewer requests design revision.`}
 
+${design ? `Return testContract alongside the design. testRoots are repository-relative test directories, each with evidence from the base project's configuration or established layout. Never use '.' or designate a production directory as a test root. Each check needs a stable local id, criterion IDs in criteria, a concrete scenario (inputs/setup), expected observable outcome, and boundaries (or a reason none apply). For kind=test, supply purpose=changed or preserved, the planned file, a focused command run from repository root, and required fixtures, all files under those roots. For kind=inspection, give a concrete inspection and reason automation is unsuitable; leave test execution fields empty. Cover every criterion without inventing meaningless tests. Return replayMapping=[] during design.
+Tests depending on a new API must live in their own files, separate from preserved-behavior tests: a fatal while loading the new API must not erase the preserved signal.`
+    : `The approved test contract below remains an obligation. Return testContract with empty testRoots/checks; return replayMapping for the CURRENT implementation: one entry per test file/focused command, with file, command, checkIds from the approved executable checks, and fixtures. Isolate commands at least by file; never group multiple test files into a command. Include every executable check, including preserved behavior. Omissions do not remove obligations. Keep tests relying on new APIs in separate files from preserved tests. The helper replays added/modified test files and fixtures from the snapshot onto the ORIGINAL base; production/config/dependency changes are excluded. Report unsupported replay dependencies and justified differences from the design in the handoff. Ordinary assertion/path adjustments do not need a separate contract amendment; only a materially different approach returns to design.`}
+
 # Current design
 ${p.design || '(none yet)'}
+
+# Test contract
+${JSON.stringify(p.approvedContract || p.testContract)}
 
 # Findings ledger
 ${JSON.stringify(p.findings)}
@@ -4217,7 +4314,7 @@ For each open finding, return its ID with the change made or an evidence-backed 
 Write a concise handoff at ${S.run.room}/${label}/A.md (create the directory). Include the ${design ? 'full design' : 'change summary and actual checks'}, responses to findings, and important remaining work. Return private notes sufficient for a fresh author context to continue. Keep implementation and design artifacts inside this run until delivery.`
 }
 
-function pairReviewPrompt(S, label, checkout) {
+function pairReviewPrompt(S, label, checkout, correction = null) {
   const p = S.pair, design = p.stage === 'design'
   const tag = pairReviewTag(S)
   return `You are the independent reviewer in a pair workflow. This is a fresh review context. You did not author the work. Review the current artifact yourself, using repository evidence, and verify every proposed finding resolution.
@@ -4226,6 +4323,7 @@ ${taskBlock(S, 99)}
 # Review stage: ${p.stage}
 Version: ${pairVersion(S)}
 Return that exact version. Return complete=true only after examining the entire current artifact and every acceptance criterion, including regressions introduced by fixes.
+${correction ? `\n# Correct the previous structured review\n${correction.error}\nThis is one correction attempt for this artifact. Preserve substantive criticisms, findings, and resolutions; correct the invalid structured fields. Do not invent rejecting checks or convert rejection into approval. The prior submission was:\n${JSON.stringify(correction.review)}\n` : ''}
 
 Repository checkout to inspect: ${checkout}
 ${hostMaterializationNote(S, label, tag, checkout)}
@@ -4234,10 +4332,16 @@ This checkout is separate from the author's worktree. Do not edit the author's w
 # Design
 ${p.design}
 
-${design ? `Check the approach against the task and existing code: correctness, missing requirements, assumptions, alternatives that materially affect the outcome, scope, and planned test coverage. Each criterion is met only if the design explains how it will be satisfied and checked. ${pairBaseline(S)}`
+# Test contract
+${JSON.stringify(p.approvedContract || p.testContract)}
+
+${design ? `Check the approach against the task and existing code: correctness, missing requirements, assumptions, alternatives that materially affect the outcome, scope, and planned test coverage. Verify every proposed test root against the BASE repository configuration/layout and its cited evidence; naming a directory does not make it a test root. Reject production roots, missing concrete outcomes/boundaries, and new-API tests sharing files with preserved tests. Each criterion is met only if the design explains how it will be satisfied and checked.
+Return exactly one structured challenge per criterion in challenges: criterion, a substantive wrongImplementation, and rejectingCheckIds that resolve to contract checks covering that criterion. If no check rejects a plausible wrong implementation, return rejectingCheckIds=[] and raise an evidenced finding, assess that criterion partial/unmet, or request design revision with the reason in summary. Never cite a check you believe is ineffective just to fill the array. Approval requires a rejecting check for every challenge. Describe a plausible incorrect result and its rejecting inspection for non-code criteria. Judge whether the checks actually reject that implementation; valid IDs alone are insufficient. ${pairBaseline(S)}`
     : `Review the implementation and tests against the task and approved design. Inspect the whole diff at ${p.measurement.snapshot.diff}, not only the latest fixes. Look for incorrect behavior, regressions, missing requirements, and tests that would miss the defect. The neutral helper measured this exact snapshot:
 ${JSON.stringify(p.measurement)}
 Passing tests do not replace code review. Treat a failing or missing required check as unresolved.
+Interpret the raw replay records for each check, reading their logs when needed. A base fatal at file level (including a missing new API), pass, timeout, or tool error is evidence to interpret, not an automatic red/green verdict. Records cover files/commands and associated check IDs; an aborted file does not prove individual assertions ran. Preserved behavior should pass on base; changed behavior passing there needs investigation. Distinguish the intended missing behavior from infrastructure failure using actual output. If inconclusive, reflect that in criterion assessments/findings rather than approving solely because a record exists.
+Inspect every overlay exclusion and missing preserved-behavior signal. Compare actual assertions and coverage with the approved contract and report omissions or weakening through findings. Check that each mapped command really isolates its named file and executes its claimed checks. Attack the whole implementation for uncovered requirements, regressions, races, numeric mistakes, and defects introduced by fixes: the contract is a floor, not the review checklist. Return challenges=[] during code review.
 That measurement is the gate result for this snapshot: don't rerun the verification command or the checks in it. Run only targeted probes, such as one test or one analyser on the changed files. Sandboxes can block the sockets that parallel workers use: if a probe fails that way, run the tool single-process.`}
 
 # Findings and proposed responses
@@ -4259,9 +4363,9 @@ function hostMaterializationNote(S, label, tag, checkout) {
 
 function pairMeasurePrompt(S, label) {
   return `You are transporting a deterministic verification result for the pair workflow. Do not review, change, or judge the implementation. Run exactly:
-${S.cli} measure --run-dir ${shq(S.run.runDir)} --seat A --label ${shq(label)} --max-wait 5
+${S.cli} measure --run-dir ${shq(S.run.runDir)} --seat A --label ${shq(label)} --replay-json ${shq(JSON.stringify(pairReplayRequest(S)))} --max-wait 5
 If status is running, poll ${S.cli} wait --run-dir ${shq(S.run.runDir)} --job ${shq(`measure-A-${label}`)} --max-wait 5 until it finishes. Poll an active shell session before launching another command. Do not use sleep polling.
-Return status done only for the helper's completed result. Copy snapshot.ref, snapshot.tree, snapshot.diff, and suite.ran, suite.passed, suite.command, and suite.tail exactly (empty command or tail if absent). On failure return error with the actual message and empty snapshot values. Do not substitute results from the live worktree or remove required checks.`
+Return status done only for the helper's completed result. Copy snapshot.ref, snapshot.tree, snapshot.diff, and suite.ran, suite.passed, suite.command, and suite.tail exactly (empty command or tail if absent). Copy the ENTIRE replay object unchanged, including mapping, roots, identities, changes, exclusions, file/command records, launch errors, exit/signal/timeout fields, log paths, tails, and timings. Never summarize individual tests or interpret base failures. On failure return error with the actual message and empty snapshot/replay values. Do not substitute results from the live worktree or remove required checks.`
 }
 
 // From here the script runs. `S` is the one state object: the lib/ functions take it as their first
@@ -5531,9 +5635,52 @@ async function synthesize(W, outcome, schema) {
   return synth
 }
 
+const PAIR_STRINGS = { type: 'array', items: { type: 'string' } }
+const PAIR_SETUP_SCHEMA = strict({ type: 'object', properties: {
+  ...SETUP_SCHEMA.properties,
+  head: { type: 'string', description: 'The original full base commit from init.head / run.json; never a later snapshot.' },
+} })
+const PAIR_CONTRACT = { type: 'object', properties: {
+  testRoots: { type: 'array', items: { type: 'object', properties: {
+    path: { type: 'string' }, evidence: { type: 'string' },
+  } } },
+  checks: { type: 'array', items: { type: 'object', properties: {
+    id: { type: 'string' }, criteria: PAIR_STRINGS,
+    kind: { type: 'string', enum: ['test', 'inspection'] },
+    purpose: { type: 'string', enum: ['changed', 'preserved'] },
+    scenario: { type: 'string' }, expected: { type: 'string' }, boundaries: { type: 'string' },
+    file: { type: 'string' }, command: { type: 'string' }, fixtures: PAIR_STRINGS,
+    inspection: { type: 'string' }, reason: { type: 'string' },
+  } } },
+} }
+const PAIR_REPLAY_MAPPING = { type: 'array', items: { type: 'object', properties: {
+  file: { type: 'string' }, command: { type: 'string' }, checkIds: PAIR_STRINGS, fixtures: PAIR_STRINGS,
+} } }
+const PAIR_REPLAY_RESULT = { type: 'object', properties: {
+  base: { type: 'string' }, snapshot: { type: 'string' }, snapshotTree: { type: 'string' },
+  testRoots: PAIR_STRINGS, mapping: PAIR_REPLAY_MAPPING,
+  changes: { type: 'array', items: { type: 'object', properties: {
+    status: { type: 'string' }, path: { type: 'string' }, previousPath: { type: 'string' },
+  } } },
+  exclusions: { type: 'array', items: { type: 'object', properties: {
+    path: { type: 'string' }, reason: { type: 'string' },
+  } } },
+  records: { type: 'array', items: { type: 'object', properties: {
+    side: { type: 'string', enum: ['base', 'final'] }, revision: { type: 'string' }, tree: { type: 'string' },
+    file: { type: 'string' }, command: { type: 'string' }, checkIds: PAIR_STRINGS,
+    cwd: { type: 'string' }, attempted: { type: 'boolean' }, ran: { type: 'boolean' }, passed: { type: 'boolean' },
+    hasExitCode: { type: 'boolean' }, exitCode: { type: 'integer', description: 'Meaningful only when hasExitCode is true.' },
+    signal: { type: 'integer', description: 'Signal number, or zero if none.' }, timedOut: { type: 'boolean' },
+    seconds: { type: 'number' }, log: { type: 'string' }, logSha256: { type: 'string' }, tail: { type: 'string' }, launchError: { type: 'string' },
+    mutated: PAIR_STRINGS,
+  } } },
+  elapsedSec: { type: 'number' },
+} }
+
 const PAIR_AUTHOR_SCHEMA = strict({ type: 'object', properties: {
   status: { type: 'string', enum: ['done', 'needs-user', 'blocked'] },
   summary: { type: 'string' }, design: { type: 'string' }, notes: { type: 'string' },
+  testContract: PAIR_CONTRACT, replayMapping: PAIR_REPLAY_MAPPING,
   addressed: { type: 'array', items: { type: 'object', properties: {
     id: { type: 'string' }, response: { type: 'string' }, evidence: { type: 'string' },
   } } },
@@ -5543,6 +5690,9 @@ const PAIR_AUTHOR_SCHEMA = strict({ type: 'object', properties: {
 const PAIR_REVIEW_SCHEMA = strict({ type: 'object', properties: {
   version: { type: 'string' }, complete: { type: 'boolean' }, summary: { type: 'string' },
   requiresDesignRevision: { type: 'boolean' },
+  challenges: { type: 'array', items: { type: 'object', properties: {
+    criterion: { type: 'string' }, wrongImplementation: { type: 'string' }, rejectingCheckIds: PAIR_STRINGS,
+  } } },
   findings: { type: 'array', items: { type: 'object', properties: {
     severity: SEVERITY, statement: { type: 'string' }, evidence: { type: 'string' },
   } } },
@@ -5557,6 +5707,7 @@ const PAIR_MEASURE_SCHEMA = strict({ type: 'object', properties: {
   status: { type: 'string', enum: ['done', 'error'] }, error: { type: 'string' },
   snapshot: { type: 'object', properties: { ref: { type: 'string' }, tree: { type: 'string' }, diff: { type: 'string' } } },
   suite: { type: 'object', properties: { ...CHECK_SCHEMA.properties.suite.properties, command: { type: 'string' } } },
+  replay: PAIR_REPLAY_RESULT,
 } })
 
 async function pairRun() {
@@ -5565,15 +5716,15 @@ async function pairRun() {
   // of the two selected participants; CLI seats and all Codex-host turns use their adapters.
   const native = [S.pairOptions.author, S.pairOptions.reviewer].find(s => s.vendor === 'claude')
   const transportModel = native ? native.model : 'haiku'
-  const setup = await ask(setupPrompt(S), { label: 'setup', phase: 'Setup', schema: SETUP_SCHEMA,
+  const setup = await ask(pairSetupPrompt(S), { label: 'setup', phase: 'Setup', schema: PAIR_SETUP_SCHEMA,
     model: transportModel, effort: 'medium' }, 'setup')
   if (setup?.status === 'needs-plan') return needsPlan(S, setup.planMissing, setup.runDir)
   if (setup?.status === 'preflight') return preflightStop(S, setup.preflight)
-  if (!setup || setup.status === 'error' || !setup.runDir || !setup.runId || !setup.repoRoot) {
+  if (!setup || setup.status === 'error' || !setup.runDir || !setup.runId || !setup.repoRoot || !/^[0-9a-f]{40,64}$/.test(setup.head || '')) {
     S.pair.stop = setup?.error || 'Setup did not return a run.'
     return pairResult(S, 'failed')
   }
-  S.run = { runId: setup.runId, runDir: setup.runDir, repoRoot: setup.repoRoot, room: `${setup.runDir}/room` }
+  S.run = { runId: setup.runId, runDir: setup.runDir, repoRoot: setup.repoRoot, head: setup.head, room: `${setup.runDir}/room` }
   S.seats = [{ L: 'A', ...S.lineup[0], wt: `${S.run.runDir}/wt/A`, active: true }]
   if (((setup.dirty || []).length && !S.allowDirty) || setup.status === 'dirty') {
     S.pair.stop = 'Tracked working-tree changes are absent from worktrees based on HEAD. Commit or stash them, or explicitly set allowDirty.'
@@ -5593,10 +5744,22 @@ async function pairRun() {
   const p = S.pair
   log(`pair: ${S.pairOptions.author.name} authors; ${S.pairOptions.reviewer.name} reviews; budget ${S.pairOptions.maxReviews} reviews`)
   while (p.reviews.length < S.pairOptions.maxReviews) {
-    const label = `pair-${p.stage}-${p.reviews.length + 1}`
+    let label = `pair-${p.stage}-${p.reviews.length + 1}`
     p.label = label
     phase(p.stage === 'design' ? 'Design' : 'Implement')
-    const author = await pairAuthorTurn(label)
+    let author = await pairAuthorTurn(label)
+    if (p.stage === 'design' && author?.status === 'done') {
+      p.author = author
+      p.design = author.design
+      p.testContract = author.testContract
+      const error = !author.design?.trim() ? 'The author returned no design.' : pairContractError(S, p.testContract)
+      if (error) {
+        S.notes.push(`${label}: ${error} Requested one author correction; no design approval was recorded.`)
+        label += '-corrected'
+        p.label = label
+        author = await pairAuthorTurn(label, error)
+      }
+    }
     if (!author) { p.stop = 'The author turn failed.'; return pairResult(S, 'failed') }
     p.author = author
     if (author.status !== 'done') {
@@ -5607,10 +5770,14 @@ async function pairRun() {
     if (p.stage === 'design') {
       if (!author.design?.trim()) { p.stop = 'The author returned no design.'; return pairResult(S, 'failed') }
       p.design = author.design
+      p.testContract = author.testContract
+      const error = pairContractError(S, p.testContract)
+      if (error) { p.stop = error; return pairResult(S, 'blocked') }
     } else {
+      p.replayMapping = author.replayMapping || []
       phase('Verify')
       try {
-        p.measurement = hostRuntime ? await hostRuntime.measure({ run: S.run, seat: 'A', label })
+        p.measurement = hostRuntime ? await hostRuntime.measure({ run: S.run, seat: 'A', label, replay: pairReplayRequest(S) })
           : await ask(pairMeasurePrompt(S, label), { label: `measure ${label}`, phase: 'Verify', schema: PAIR_MEASURE_SCHEMA,
             model: transportModel, effort: 'low' }, 'checker')
       } catch (error) {
@@ -5626,14 +5793,20 @@ async function pairRun() {
       }
     }
     phase(p.stage === 'design' ? 'Review design' : 'Review code')
-    const review = await pairReviewTurn(label)
-    const error = pairIngestReview(S, review)
+    let review = await pairReviewTurn(label)
+    let error = pairIngestReview(S, review)
+    if (error && p.stage === 'design' && review?.complete === true && review.version === pairVersion(S) && pairChallengeError(S, review)) {
+      S.notes.push(`review ${label}: ${error} Requested one reviewer correction; the invalid review changed no findings.`)
+      review = await pairReviewTurn(`${label}-corrected`, { error, review })
+      error = pairIngestReview(S, review)
+    }
     if (error) { p.stop = error; return pairResult(S, review ? 'blocked' : 'failed') }
     const ready = pairReadiness(S)
     log(`pair: ${p.stage} review ${p.reviews.length}: ${ready.state}; ${pairOpen(S).length} open finding(s)`)
     if (ready.state === 'ready') {
       if (p.stage === 'code') return pairResult(S, 'done')
       p.approvedDesign = p.design
+      p.approvedContract = JSON.parse(JSON.stringify(p.testContract))
       p.stage = 'code'
       p.lastReview = null
       continue
@@ -5642,6 +5815,7 @@ async function pairRun() {
     if (p.stage === 'code' && review.requiresDesignRevision) {
       p.stage = 'design'
       p.approvedDesign = ''
+      p.approvedContract = null
       p.lastReview = null
     }
   }
@@ -5649,8 +5823,8 @@ async function pairRun() {
   return pairResult(S)
 }
 
-function pairAuthorTurn(label) {
-  const a = S.seats[0], prompt = pairAuthorPrompt(S, label)
+function pairAuthorTurn(label, correction = '') {
+  const a = S.seats[0], prompt = pairAuthorPrompt(S, label, correction)
   const ph = S.pair.stage === 'design' ? 'Design' : 'Implement'
   if (a.vendor === 'claude' && !hostRuntime) return ask(prompt, {
     label, phase: ph, schema: PAIR_AUTHOR_SCHEMA, model: a.model, effort: a.effort,
@@ -5661,10 +5835,10 @@ function pairAuthorTurn(label) {
   }, prompt, PAIR_AUTHOR_SCHEMA, label, ph)
 }
 
-function pairReviewTurn(label) {
+function pairReviewTurn(label, correction = null) {
   const a = S.auditors[0]
   const checkout = `${S.run.runDir}/snap/pair-review-${label}`
-  const prompt = pairReviewPrompt(S, label, checkout)
+  const prompt = pairReviewPrompt(S, label, checkout, correction)
   const ph = S.pair.stage === 'design' ? 'Review design' : 'Review code'
   if (a.vendor === 'claude' && !hostRuntime) return ask(prompt, {
     label: `review ${label}`, phase: ph, schema: PAIR_REVIEW_SCHEMA, model: a.model, effort: a.effort,

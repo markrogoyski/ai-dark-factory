@@ -1,0 +1,20 @@
+[
+  {
+    "task": "iterator-pad-left",
+    "pid": 32551,
+    "log": "/private/tmp/pair-test-contract-trial-20261108/iterator-pad-left-pair-control.log",
+    "launchedBeforeImplementation": true
+  },
+  {
+    "task": "algebra-coprime-api",
+    "pid": 32552,
+    "log": "/private/tmp/pair-test-contract-trial-20261108/algebra-coprime-api-pair-control.log",
+    "launchedBeforeImplementation": true
+  },
+  {
+    "task": "vector-pnorm-scale",
+    "pid": 32553,
+    "log": "/private/tmp/pair-test-contract-trial-20261108/vector-pnorm-scale-pair-control.log",
+    "launchedBeforeImplementation": true
+  }
+]

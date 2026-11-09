@@ -1439,6 +1439,184 @@ def tracked_changes(path):
     return [l[3:] for l in git('status', '--porcelain', '--untracked-files=no', cwd=path).split('\n') if l]
 
 
+def replay_request(value):
+    """Structural validation only; paths are independently checked against Git trees below."""
+    if not isinstance(value, dict) or set(value) != {'testRoots', 'mapping'}:
+        raise CouncilError('replay requires testRoots and mapping')
+    if not isinstance(value['testRoots'], list) or any(not isinstance(p, str) for p in value['testRoots']):
+        raise CouncilError('replay testRoots must be strings')
+    if not isinstance(value['mapping'], list):
+        raise CouncilError('replay mapping must be an array')
+    for entry in value['mapping']:
+        if not isinstance(entry, dict) or set(entry) != {'file', 'command', 'checkIds', 'fixtures'}:
+            raise CouncilError('replay entries require file, command, checkIds and fixtures')
+        if any(not isinstance(entry[k], str) or not entry[k].strip() or '\0' in entry[k] for k in ('file', 'command')):
+            raise CouncilError('replay requires a nonempty file and command without NUL')
+        for key in ('checkIds', 'fixtures'):
+            if not isinstance(entry[key], list) or any(not isinstance(v, str) for v in entry[key]):
+                raise CouncilError(f'replay {key} must be strings')
+        if not entry['checkIds'] or len(set(entry['checkIds'])) != len(entry['checkIds']):
+            raise CouncilError('replay requires distinct check IDs per command')
+    return value
+
+
+def replay_path(path):
+    return (isinstance(path, str) and bool(path) and '\\' not in path and '\0' not in path
+            and not re.match(r'^[A-Za-z]:', path)
+            and all(p not in ('', '.', '..') for p in path.split('/')))
+
+
+def replay_tree(run, revision):
+    entries = {}
+    for row in git('ls-tree', '-r', '-t', '-z', revision, cwd=run['repoRoot']).split('\0'):
+        if row:
+            meta, path = row.split('\t', 1)
+            mode, kind, oid = meta.split()
+            entries[path] = (mode, kind, oid)
+    return entries
+
+
+def replay_file_error(path, roots, tree):
+    if not replay_path(path):
+        return 'invalid relative path'
+    if not any(path.startswith(root + '/') for root in roots):
+        return 'outside accepted test roots'
+    parts = path.split('/')
+    for i in range(1, len(parts)):
+        parent = tree.get('/'.join(parts[:i]))
+        if parent and parent[1] != 'tree':
+            return 'ancestor is a symlink or non-directory'
+    entry = tree.get(path)
+    if not entry:
+        return 'file absent from revision'
+    if entry[0] not in ('100644', '100755'):
+        return 'not a regular file (symlink/submodule excluded)'
+    return None
+
+
+def run_replay(run, spec, snapshot_info, live, settings):
+    """Pair file-level raw evidence; no interpretation of red/green or test assertions."""
+    started = time.time()
+    request = spec['replay']
+    base, final = run['head'], snapshot_info['commit']
+    trees = {side: replay_tree(run, revision) for side, revision in [('base', base), ('final', final)]}
+    out = {'base': base, 'snapshot': final, 'snapshotTree': snapshot_info['tree'],
+           **request, 'changes': [], 'exclusions': [], 'records': []}
+
+    def exclude(path, reason):
+        item = {'path': path, 'reason': reason}
+        if item not in out['exclusions']:
+            out['exclusions'].append(item)
+
+    for dependency in DEPS:
+        if os.path.isdir(os.path.join(live, dependency)):
+            exclude(dependency, 'author dependency changes are not overlaid onto base; base uses the original run repository copy, final uses author dependencies like the full gate')
+    roots = []
+    for root in request['testRoots']:
+        # The reviewer checks base layout/configuration. A configured test directory may not
+        # exist yet; Git independently rejects non-directory roots and unsafe ancestors.
+        if not replay_path(root) or trees['base'].get(root, ('', 'tree'))[1] != 'tree':
+            exclude(root, 'test root is invalid or is not a regular base directory')
+        elif any(trees['base'].get('/'.join(root.split('/')[:i]), ('', 'tree'))[1] != 'tree'
+                 for i in range(1, len(root.split('/')))):
+            exclude(root, 'test root has a symlink/non-directory ancestor')
+        else:
+            roots.append(root)
+    raw = git('diff', '--name-status', '-z', '-M', base, final, cwd=run['repoRoot']).split('\0')
+    changes = {}
+    i = 0
+    while i < len(raw) and raw[i]:
+        status, path = raw[i:i + 2]
+        i += 2
+        previous = ''
+        if status[0] in ('R', 'C'):
+            previous, path = path, raw[i]
+            i += 1
+        changes[path] = status[0]
+        out['changes'].append({'status': status, 'path': path, 'previousPath': previous})
+        if previous:
+            exclude(previous, f'rename/copy source for {path}; no deletion or rename is overlaid')
+    requested = {path for e in request['mapping'] for path in [e['file'], *e['fixtures']]}
+    overlays = set()
+    for path in sorted(set(changes) | requested):
+        error = replay_file_error(path, roots, trees['final'])
+        status = changes.get(path)
+        if error:
+            exclude(path, error)
+        elif status not in ('A', 'M'):
+            exclude(path, 'unchanged; use original base file without overlay' if status is None
+                    else f'unsupported overlay change {status}; renames/deletions/type changes are not copied')
+        elif path not in requested:
+            exclude(path, 'changed test file not requested in current replay mapping')
+        else:
+            # Even a safe final file cannot overwrite a base symlink or cross one.
+            base_error = replay_file_error(path, roots, trees['base'])
+            if base_error and base_error != 'file absent from revision':
+                exclude(path, 'base destination: ' + base_error)
+            else:
+                overlays.add(path)
+    for n, entry in enumerate(request['mapping']):
+        paths = list(dict.fromkeys([entry['file'], *entry['fixtures']]))
+        for side, revision in [('base', base), ('final', final)]:
+            invalid = []
+            for path in paths:
+                error = replay_file_error(path, roots, trees['final'])
+                if not error and side == 'base' and path not in overlays:
+                    if path in changes:
+                        error = 'changed file cannot be overlaid'
+                    else:
+                        error = replay_file_error(path, roots, trees['base'])
+                if error:
+                    invalid.append(path)
+                    exclude(path, f'{side} execution not scheduled: {error}')
+            if invalid:
+                continue
+            label = f'{spec["label"]}-replay-{n}-{side}'
+            cwd, error = scratch_checkout(run, spec['seat'], label, revision, run['repoRoot'] if side == 'base' else live)
+            if error:
+                exclude(entry['file'], f'{side} checkout failed; execution not scheduled: {error}')
+                continue
+            log = os.path.join(run['runDir'], 'logs', f'replay-{spec["seat"]}-{label}.log')
+            record = {'side': side, 'revision': revision,
+                      'tree': git('rev-parse', f'{revision}^{{tree}}', cwd=run['repoRoot']).strip(),
+                      'file': entry['file'], 'command': entry['command'], 'checkIds': entry['checkIds'],
+                      'cwd': cwd, 'attempted': False, 'ran': False, 'passed': False,
+                      'hasExitCode': False, 'exitCode': 0, 'signal': 0, 'timedOut': False,
+                      'seconds': 0, 'log': log, 'logSha256': '', 'tail': '', 'launchError': '', 'mutated': []}
+            try:
+                if side == 'base':
+                    for path in paths:
+                        if path not in overlays:
+                            continue
+                        dst = safe_relative(cwd, path)
+                        os.makedirs(os.path.dirname(dst), exist_ok=True)
+                        mode, _, oid = trees['final'][path]
+                        data = subprocess.check_output(['git', 'cat-file', 'blob', oid], cwd=run['repoRoot'])
+                        with open(dst, 'wb') as f:
+                            f.write(data)
+                        os.chmod(dst, 0o755 if mode == '100755' else 0o644)
+                record['attempted'] = True
+                try:
+                    result = run_shell(entry['command'], cwd, spec['testTimeout'], log,
+                                       env=verification_environment(settings))
+                    record.update(result, ran=True, hasExitCode=True)
+                    record['signal'] = -result['exitCode'] if result['exitCode'] < 0 else 0
+                    record['mutated'] = tracked_changes(cwd) if side == 'final' else []
+                    record['passed'] = result['exitCode'] == 0 and not result['timedOut'] and not record['mutated']
+                except OSError as e:
+                    record['launchError'] = str(e)
+                    record['tail'] = str(e)
+                    write(log, str(e) + '\n')
+                record['logSha256'] = file_sha256(log)
+                out['records'].append(record)
+            except (CouncilError, OSError, subprocess.CalledProcessError) as e:
+                exclude(entry['file'], f'{side} preparation failed; execution not scheduled: {e}')
+            finally:
+                drop_checkout(run, cwd)
+    out['elapsedSec'] = round(time.time() - started, 1)
+    return out
+
+
 def run_measure_job(jd, spec):
     started = time.time()
     run = load_run(spec['runDir'])
@@ -1463,6 +1641,8 @@ def run_measure_job(jd, spec):
     post = os.path.join(run['room'], spec['label'], f'{spec["seat"]}.md')
     out['postWords'] = len(read(post).split()) if os.path.exists(post) else None
     try:
+        if spec.get('replay') is not None:
+            out['replay'] = run_replay(run, spec, out['snapshot'], live, settings)
         out['suite'] = suite(run, cwd, spec['label'], spec['seat'], spec['suiteTimeout'], settings)
         if scratch:
             # The suite must not change tracked files; reset them so cross-tests start from the snapshot.
@@ -1498,7 +1678,7 @@ def run_measure_job(jd, spec):
     return out
 
 
-def input_digest(run, seat, label, path, tests):
+def input_digest(run, seat, label, path, tests, replay=None):
     """Everything a measurement's result depends on: the seat's tree as it is now (written with a
     throwaway index, as snapshot does) and the commits under it, its post, the verification command
     and the published tests.
@@ -1518,6 +1698,7 @@ def input_digest(run, seat, label, path, tests):
             'post': digest_of(os.path.join(run['room'], label, f'{seat}.md')),
             'verify': digest_of(os.path.join(run['runDir'], 'verify.sh')),
             'verification': verification_settings(run),
+            **({'replay': replay, 'originalBase': run['head']} if replay is not None else {}),
             **({'evidence': evidence_inputs(run, seat)} if run.get('factory') else {}),
             'tests': {t: digest_of(os.path.join(run['room'], 'tests', t)) for t in tests}}
 
@@ -1528,10 +1709,14 @@ def cmd_measure(a):
     key = f'measure-{a.seat}-{a.label}'
     jd = job_dir(a.run_dir, key)
     path = os.path.abspath(a.path) if a.path else None
+    replay = replay_request(json.loads(a.replay_json)) if a.replay_json is not None else None
+    if replay is not None and a.no_snapshot:
+        raise CouncilError('replay requires a snapshot')
     spec = {'kind': 'measure', 'runDir': run['runDir'], 'seat': a.seat, 'label': a.label, 'job': key,
             'tests': tests, 'path': path, 'since': a.since,
             'snapshot': not a.no_snapshot, 'suiteTimeout': a.suite_timeout, 'testTimeout': a.test_timeout,
-            'inputs': input_digest(run, a.seat, a.label, path, tests), 'verification': verification_settings(run)}
+            'inputs': input_digest(run, a.seat, a.label, path, tests, replay), 'verification': verification_settings(run),
+            **({'replay': replay} if replay is not None else {})}
 
     def decide(old, state):
         status = state and state.get('status')
@@ -1540,6 +1725,13 @@ def cmd_measure(a):
                 raise CouncilError('measurement is running with different inputs; wait, then measure again')
             return 'wait'
         if old == spec and status == 'done':
+            if replay is not None:
+                for record in (state.get('replay') or {}).get('records', []):
+                    try:
+                        if file_sha256(record['log']) != record['logSha256']:
+                            return None
+                    except (OSError, KeyError):
+                        return None
             if run.get('factory') and spec['snapshot']:
                 try:
                     inspect_evidence(run, a.seat, a.label)
@@ -2154,6 +2346,7 @@ def main():
     p.add_argument('--label', required=True)
     p.add_argument('--since', help='label of the previous snapshot; also writes <seat>.delta.diff')
     p.add_argument('--tests')
+    p.add_argument('--replay-json', help='Pair accepted testRoots and current file/command mapping as JSON')
     p.add_argument('--path')
     p.add_argument('--no-snapshot', action='store_true')
     p.add_argument('--suite-timeout', type=int, default=1200)

@@ -1,0 +1,493 @@
+syntax: ok
+node tools/build.mjs --check
+build: ok
+node test/static.mjs
+ok   council.js: parses, meta is a plain literal
+ok   ensemble.js: parses, meta is a plain literal
+ok   factory.js: parses, meta is a plain literal
+ok   pair.js: parses, meta is a plain literal
+ok   run-plan.js: parses, meta is a plain literal
+ok   src/lib/util.js: pure (state passed in, no runtime calls)
+ok   src/lib/config.js: pure (state passed in, no runtime calls)
+ok   src/lib/state.js: pure (state passed in, no runtime calls)
+ok   src/lib/prompts.js: pure (state passed in, no runtime calls)
+ok   src/lib/ledger.js: pure (state passed in, no runtime calls)
+ok   src/lib/report.js: pure (state passed in, no runtime calls)
+ok   src/lib/tiers.js: pure (state passed in, no runtime calls)
+ok   src/lib/controls.js: pure (state passed in, no runtime calls)
+ok   src/lib/repair-prompts.js: pure (state passed in, no runtime calls)
+ok   src/lib/evaluation.js: pure (state passed in, no runtime calls)
+ok   src/lib/ensemble.js: pure (state passed in, no runtime calls)
+ok   src/lib/pair.js: pure (state passed in, no runtime calls)
+ok   src/lib/pair-prompts.js: pure (state passed in, no runtime calls)
+ok   src/lib/run-plan.js: pure (state passed in, no runtime calls)
+node test/hash-parity.mjs
+ok   case 0: js=11-69939bb0 py=11-69939bb0
+ok   case 1: js=28-d4437e0e py=28-d4437e0e
+ok   case 2: js=13-1acbcf20 py=13-1acbcf20
+ok   case 3: js=51-d37b6dc8 py=51-d37b6dc8
+ok   case 4: js=51-4afbab34 py=51-4afbab34
+ok   case 5: js=50005-72d9e875 py=50005-72d9e875
+python3 -B -m unittest discover -s test -p 'test_*.py'
+......................................................................................................
+----------------------------------------------------------------------
+Ran 102 tests in 20.761s
+
+OK
+node --test test/logic.mjs test/pair.mjs test/improvements.mjs
+✔ factory can choose Pair independently of the complexity tier (10.169167ms)
+✔ a factory pair run records its facts with the factory roles and reuses the measured gate (2.071333ms)
+✔ a standalone pair run still has no retro (7.037709ms)
+✔ explain performs only intake for Factory and no turns for explicit Pair or Ensemble (7.466667ms)
+✔ bounded repairs review every revision freshly and report the exact final snapshot (6.200334ms)
+✔ stalled Simple repairs escalate with unresolved evidence and exhausted budgets remain incomplete (13.987542ms)
+✔ unchanged repairs stop despite fresh checker wording (3.401292ms)
+✔ repair progress ignores prose and order but detects changed artifacts and verification outcomes (2.304ms)
+✔ Ensemble measures independent candidates and leaves choice and delivery explicit (4.36775ms)
+✔ Ensemble cannot hide a missing review, stale snapshot, or failed criterion (4.058916ms)
+✔ Ensemble runs through native Claude agents when the Codex adapter is absent (1.051041ms)
+✔ repair policy validates bounds and lets callers report minor suggestions explicitly (0.217625ms)
+✔ native string flags resolve controls without becoming part of the task (0.421333ms)
+✔ explicit independent model choices are never silently discarded by Pair routing (0.079625ms)
+✔ run time admission budget stops before another model turn (0.908708ms)
+✔ native workflows reject unsupported elapsed limits without reading the wall clock (7.271791ms)
+✔ Pair measurements propagate checkpoint mismatches and host limits remain run limits (2.317292ms)
+✔ a new approach defect in the final Simple repair review escalates with its evidence (6.174166ms)
+✔ evaluation reads both native token formats and excludes legacy idle-inclusive timing (0.274083ms)
+✔ offline evaluation distinguishes missing evidence, failed delivery and matched tasks (0.098ms)
+✔ evaluation counts specification amendments and advisory candidates separately from readiness (2.697709ms)
+▶ quorum
+  ✔ 2 seats need 2 (0.488625ms)
+  ✔ 3 seats need 2 (0.04575ms)
+  ✔ 4 seats need 3 (0.055167ms)
+  ✔ 5 seats need 4 (0.041625ms)
+  ✔ 6 seats need 4 (0.032291ms)
+  ✔ an override is clamped to 1..seats; 0 means the default (0.041ms)
+  ✔ dropped seats shrink the field (0.046792ms)
+✔ quorum (1.401791ms)
+▶ tally and consensus
+  ✔ three of four votes from two vendors carry (2.020917ms)
+  ✔ two votes of four are not enough (8.183ms)
+  ✔ votes from one vendor do not carry when there are several (1.569416ms)
+  ✔ one vendor is enough when there is only one (0.975959ms)
+  ✔ a disqualified position takes no votes (1.351583ms)
+  ✔ votes for a position out of contention, and from dropped seats, are not counted (1.170833ms)
+  ✔ a ballot is tallied from its own book (1.219041ms)
+  ▶ identical versions
+    ✔ votes for byte-identical versions count together, for the copy with the most votes (1.09575ms)
+    ✔ different trees are different positions (0.90025ms)
+    ✔ trees measured in an earlier round do not pool (0.951667ms)
+    ✔ a disqualified copy brings no votes (1.058459ms)
+    ✔ the vendor rule still applies to the pooled votes (1.020459ms)
+    ✔ a check records the tree only when it is a hash (1.4045ms)
+  ✔ identical versions (6.53625ms)
+  ▶ blind agreement in round 0
+    ✔ every seat byte-identical and passing: the copy highest on the scorecard ships (1.209333ms)
+    ✔ one seat different: the debate runs (0.922959ms)
+    ✔ a seat without a measured tree: the debate runs (1.039625ms)
+    ✔ a dropped seat does not block it (1.275583ms)
+    ✔ identical but failing verification: the debate runs, even when the baseline failed too (1.087375ms)
+    ✔ a disqualified copy: the debate runs (1.206584ms)
+    ✔ trees from a later round do not count (0.957625ms)
+    ✔ not in investigate or design mode (0.863583ms)
+  ✔ blind agreement in round 0 (8.685459ms)
+  ▶ approval (an experiment)
+    ✔ first-choice plus acceptable votes carry when no one reached the quorum (1.0505ms)
+    ✔ off by default (0.915083ms)
+    ✔ a standing verified blocker bars it (1.307125ms)
+    ✔ the position needs a first-choice vote from another seat (0.932917ms)
+  ✔ approval (an experiment) (4.266625ms)
+✔ tally and consensus (36.20525ms)
+▶ recordVote
+  ✔ a vote for a position out of contention is dropped, with a note (0.967292ms)
+  ✔ amendments are capped, and acceptable positions are de-duplicated and exclude the choice (0.906583ms)
+  ✔ without approval the acceptable list is not kept (0.917458ms)
+✔ recordVote (2.838916ms)
+▶ ranking
+  ✔ a tie is broken by seat letter (1.182042ms)
+  ✔ out: worse on it loses, even when better on everything after it (1.272042ms)
+  ✔ out: worse on it alone loses to a tie on the rest (0.933459ms)
+  ✔ gated: worse on it loses, even when better on everything after it (0.921291ms)
+  ✔ gated: worse on it alone loses to a tie on the rest (0.957333ms)
+  ✔ blockers: worse on it loses, even when better on everything after it (0.970833ms)
+  ✔ blockers: worse on it alone loses to a tie on the rest (1.390917ms)
+  ✔ majors: worse on it loses, even when better on everything after it (1.919ms)
+  ✔ majors: worse on it alone loses to a tie on the rest (1.016417ms)
+  ✔ crossRate: worse on it loses, even when better on everything after it (0.947333ms)
+  ✔ crossRate: worse on it alone loses to a tie on the rest (0.927667ms)
+  ✔ criteriaScore: worse on it loses, even when better on everything after it (0.938458ms)
+  ✔ criteriaScore: worse on it alone loses to a tie on the rest (1.028708ms)
+  ✔ minors: worse on it loses, even when better on everything after it (0.938417ms)
+  ✔ minors: worse on it alone loses to a tie on the rest (0.862291ms)
+  ✔ votesFromOthers: worse on it loses, even when better on everything after it (0.84975ms)
+  ✔ votesFromOthers: worse on it alone loses to a tie on the rest (0.839292ms)
+  ✔ authorHallucination: worse on it loses, even when better on everything after it (0.902041ms)
+  ✔ authorHallucination: worse on it alone loses to a tie on the rest (0.973709ms)
+  ✔ size: worse on it loses, even when better on everything after it (0.7995ms)
+  ✔ size: worse on it alone loses to a tie on the rest (0.790916ms)
+  ✔ separation names the first criterion that tells two positions apart (0.885125ms)
+  ✔ tied on everything (0.8675ms)
+  ✔ findings that were fixed, withdrawn, judgment or against dropped seats do not stand (1.1485ms)
+✔ ranking (24.552417ms)
+▶ narrowing
+  ✔ keeps the top two, and drops the rest with their rank (1.183625ms)
+  ✔ a position another seat voted for stays, even ranked outside the top two (0.920875ms)
+  ✔ a seat with a verified major finding against a position that stays, stays (0.912458ms)
+  ✔ a minor finding does not keep a seat (1.038708ms)
+  ✔ narrow: false leaves the field alone (1.172708ms)
+  ✔ two or fewer contenders are not narrowed (0.974666ms)
+  ✔ nothing leaves when everyone has a reason to stay (0.896375ms)
+  ✔ contenders() and contending() follow the narrowed field (0.912709ms)
+✔ narrowing (8.127667ms)
+▶ the gate
+  ✔ a failing suite disqualifies (0.940083ms)
+  ✔ not when the suite already failed at baseline (1.351167ms)
+  ✔ not when there is no suite, or it did not run (1.110458ms)
+  ✔ a fabricated verification claim in that round disqualifies, even in design mode (0.906ms)
+  ✔ a fabricated fact claim is not a verification claim (0.813375ms)
+✔ the gate (5.203083ms)
+▶ behaviour
+  ✔ changing with nothing verified behind it is a capitulation (0.908834ms)
+  ✔ a basis made only of refuted claims is still a capitulation (0.863666ms)
+  ✔ a verified basis, or an adopted idea, is not (0.825291ms)
+  ✔ ignoring a verified blocker is recorded; conceding, challenging, citing or fixing it is not (4.4535ms)
+  ✔ knownStanding lists verified blocker and major findings against contenders only (0.815334ms)
+  ✔ stable: no change and the same votes as the round before (0.847041ms)
+✔ behaviour (8.799625ms)
+▶ readiness
+  ✔ ready (1.014292ms)
+  ✔ blocked: the suite fails on the final version (0.784791ms)
+  ✔ blocked: an unmet criterion (0.779583ms)
+  ✔ blocked: a fabricated verification claim in the final round (0.821375ms)
+  ✔ blocked: a published test fails (0.829167ms)
+  ✔ blocked: an upheld blocker stands (0.811ms)
+  ✔ incomplete: never checked (0.781333ms)
+  ✔ incomplete: checked in an earlier round only (0.827625ms)
+  ✔ incomplete: the suite did not run (1.221042ms)
+  ✔ incomplete: a criterion was not judged (0.90775ms)
+  ✔ incomplete: an item has no ruling (0.846833ms)
+  ✔ incomplete: a major finding is unresolved (0.85725ms)
+  ✔ incomplete: a blocking objection was ruled by one adjudicator (0.824625ms)
+  ✔ incomplete: a rater returned no review (0.810583ms)
+  ✔ a failing suite that failed at baseline is incomplete, not blocked (0.805958ms)
+  ✔ design mode does not need the suite (0.788334ms)
+✔ readiness (13.874625ms)
+▶ rulings
+  ✔ verdicts become statuses, the checker is recorded, and unverifiable means unresolved (1.162834ms)
+  ✔ measurements land on the position: diff, delta (only when it is against the expected snapshot), suite, cross-tests (0.854083ms)
+  ✔ fixed is applied only to findings that were asked about (0.965666ms)
+  ✔ a failed check leaves everything unchecked, and says so (1.3455ms)
+  ✔ a long post is noted (0.886917ms)
+  ✔ criteria that do not exist are dropped (0.880375ms)
+  ▶ panel
+    ✔ agreement settles it, and says two adjudicators ruled (1.015292ms)
+    ✔ a split leaves it unresolved (0.812125ms)
+    ✔ one adjudicator is recorded as such (0.825708ms)
+    ✔ no one answering leaves earlier rulings and says so (0.795375ms)
+  ✔ panel (3.492333ms)
+✔ rulings (9.65725ms)
+▶ checker items
+  ✔ what each checker is asked (0.90825ms)
+  ✔ routed claims bring their challenges along (0.769292ms)
+✔ checker items (1.699791ms)
+▶ ingestion
+  ✔ fact claims that name no criterion are dropped; verification claims never are (0.926209ms)
+  ✔ without criteria every claim is kept (1.123125ms)
+  ✔ at most 12 claims per turn (1.012709ms)
+  ✔ claim IDs count up within a round and author (0.888542ms)
+  ✔ tests need an ID of their own round and seat, and only count in implement mode (1.601875ms)
+  ✔ questions are queued, at most five (0.854083ms)
+  ▶ a debate turn
+    ✔ findings against oneself, an unknown seat or a seat out of contention are dropped; severity is normalised (0.996125ms)
+    ✔ challenges: not to one's own claims, judgments, this round's claims, or twice (0.841042ms)
+    ✔ concessions apply only to findings against the conceder; withdrawals only to one's own claims (0.814291ms)
+    ✔ a reviewer (out of contention) keeps its position and claims, and adopts nothing (0.839833ms)
+    ✔ adoption: from another active seat only, with an idea (0.795042ms)
+    ✔ seconds attach to open questions, once, and not for the seat that raised it (0.996875ms)
+    ✔ the change is recorded with only the basis the ledger knows (0.819125ms)
+  ✔ a debate turn (6.161208ms)
+✔ ingestion (12.639708ms)
+▶ questions
+  ✔ a clarification counts only from the round after it arrived (0.82525ms)
+  ✔ a question escalates when enough seats raised or seconded it, and not once answered (0.806959ms)
+  ✔ seconds from dropped seats do not count (0.755ms)
+✔ questions (2.417166ms)
+▶ scorecard rows
+  ✔ refutation score: upheld findings and won challenges earn, refuted findings and lost challenges cost half again as much (0.885666ms)
+  ✔ hallucination rate counts fabricated claims among those the checkers ruled on (0.802125ms)
+  ✔ the same idea adopted twice by one seat counts once (0.8035ms)
+✔ scorecard rows (2.520708ms)
+▶ state queries
+  ✔ round tags and phases (0.87475ms)
+  ✔ crossVendor and its wording (0.764041ms)
+  ✔ externalVendors: the seats', the panel's, the spec reviewers' and the auditors' (2.530917ms)
+  ✔ postPath (0.784ms)
+✔ state queries (4.988166ms)
+▶ config
+  ✔ no task is an error (0.291667ms)
+  ✔ a string task, with or without a --seats prefix (0.267833ms)
+  ✔ the mode is guessed from the wording until given (0.207292ms)
+  ✔ the number of rounds is 1 to 3, defaulting to 2 (0.080375ms)
+  ✔ the lineup: default, count and unknown seats (0.12375ms)
+  ✔ efforts: per seat, validated per vendor, and mapped onto what Gemini has (0.072709ms)
+  ✔ slug seats are passed through (0.052042ms)
+  ✔ flags: narrow and retro default on; approval, ballot and allowDirty default off (0.046208ms)
+  ✔ plan: one path or several, trimmed (0.046792ms)
+  ✔ the post word limit follows the mode, and newState starts clean (0.055ms)
+✔ config (1.314042ms)
+▶ util
+  ✔ idOf takes the first ledger ID out of a decorated string (0.050958ms)
+  ✔ permutation is a seeded permutation (0.103083ms)
+  ✔ the prompt hash ignores trailing whitespace and CRLF (0.103ms)
+  ✔ strict makes every property required and closes objects, recursively (0.06725ms)
+  ✔ clip, oneLine and plural (0.040917ms)
+✔ util (0.402167ms)
+▶ debates in the report
+  ✔ ordered by severity, then contested, then the chosen position (0.904375ms)
+✔ debates in the report (0.920125ms)
+▶ every builder runs on a populated state
+  ✔ implement (5.028292ms)
+  ✔ design, narrowed, with approval (1.707042ms)
+✔ every builder runs on a populated state (6.767083ms)
+▶ the audit
+  ✔ config: on by default, Astra for correctness and Opus for design; swappable; false turns it off (3.574625ms)
+  ✔ IDs: audit findings and tests, and claims from the audit fix pass, are recognised with text attached (1.098333ms)
+  ✔ ingestAudit: findings and tests under the auditor's own IDs, against the final version (1.045708ms)
+  ✔ triage: blocker and major findings to the panel, judgment included; tests to the checker (0.876333ms)
+  ✔ the panel on a judgment finding: agreement makes it a fact, a split keeps it a judgment (0.830667ms)
+  ✔ the fix list: upheld, disputed and failing earn a fix pass; suggestions alone do not (0.879042ms)
+  ✔ readiness: an audit gap leaves the final version incomplete (0.788708ms)
+  ✔ who: an auditor is named by its lens and model (0.790625ms)
+✔ the audit (9.964125ms)
+▶ the spec review
+  ✔ config: on by default, Astra for coverage and Opus for intent; ask, swaps and false (3.013125ms)
+  ✔ ingestSpec: S-numbered across reviewers, severity and kind normalised, capped (1.212917ms)
+  ✔ applySpecPanel: amended only on agreement; any decision makes a question; accept against reject is disputed (0.966417ms)
+  ✔ applySpecPanel: a panel that failed leaves every finding unruled, and the criteria as they were (0.785792ms)
+  ✔ applyAmend: criteria replaced, a new verification command brings its baseline, assumptions only for unanswered decisions (0.981875ms)
+  ✔ applyAmend: no criteria back leaves setup's, and a missing assumption is noted (0.796667ms)
+  ✔ report: assumptions first, then each finding's fate; nothing when it did not run (0.794167ms)
+✔ the spec review (8.608583ms)
+▶ the factory
+  ✔ parseFactory: the tier, the confirmation and the Simple options (0.138417ms)
+  ✔ a string task may carry --tier and --seats, in either order (0.053041ms)
+  ✔ parseConfig for the Simple tier: one seat, one reviewer from another vendor, no spec review (0.103042ms)
+  ✔ tierArgs: each tier's seats and mode, the user's own args winning (0.078917ms)
+  ✔ intakeTier: Simple and Feature are for changes; anything unknown is a feature (0.058458ms)
+  ✔ tierPushback: only a pin intake would not pick, in either direction, until confirmed (0.067625ms)
+  ✔ simpleTrigger after the solve: the implementer's word, then the size budget (0.920042ms)
+  ✔ simpleTrigger after the review: only an agreed blocker or major about the approach (0.808833ms)
+  ✔ simpleTrigger at the end: a failing suite or a blocked result, never an incomplete one (0.793ms)
+  ✔ escalationBrief: the evidence, never the earlier change (0.930208ms)
+  ✔ retroWanted and runFacts: a clean Simple run only records; anything notable gets the retro (7.859083ms)
+  ✔ splitItems: two or more pieces, each building only on earlier ones; needsSplit asks once (1.024709ms)
+  ✔ overTierHints: a fix run whose seats agreed blind, or a clean audit on a small change (0.821625ms)
+  ✔ the factory's builders run, and the intake never sees a pinned tier (1.959584ms)
+✔ the factory (15.725708ms)
+▶ the Feature tier
+  ✔ planIncrements: the plan's list, one turn each; one turn when there is none (0.923791ms)
+  ✔ featureTrigger: a plan of more than four increments goes to architecture before the build (0.947875ms)
+  ✔ config: Opus and Astra, three auditors with the tests lens on Sonnet; audit swaps and false (0.868542ms)
+  ✔ rounds K1, K2: snapshot tags, phase, IDs and wording (1.564375ms)
+  ✔ the fix list mends a failing suite after the build, as in Simple, but not in the council (0.809042ms)
+  ✔ report, facts and result: the plan, the build and the audit; no ratification (1.400292ms)
+  ✔ prompts: plan mode for the debate, implement mode for the build, the build intro for the fix pass (0.982292ms)
+✔ the Feature tier (7.559084ms)
+▶ the Architecture tier
+  ✔ config: Opus, Astra and Sonnet; the plan's reviewers on Astra, Opus and Gemini; risk swaps (0.8655ms)
+  ✔ planMilestones: a task each, earlier-only dependencies, simple or feature, at most eight (0.879209ms)
+  ✔ report, facts and result: the milestones, with args for their own runs and the findings still open on each (2.109542ms)
+  ✔ prompts: design mode with milestones for the tier, unchanged for the council; the review reads, the revision returns milestones (1.957875ms)
+  ✔ preflight: the factory names the auditors that use the failing vendor; the council's advice is unchanged (1.6995ms)
+  ✔ escalation chain: Simple, then Feature, then Architecture, reported and tallied from where it started (0.965667ms)
+✔ the Architecture tier (8.550791ms)
+✔ pair selects the author and opposite-vendor reviewer without council roles (2.241917ms)
+✔ pair completes design and code review in both hosts with fresh independent reviews (6.086041ms)
+✔ pair repeatedly fixes both stages, retaining findings until reviewer closure (1.838167ms)
+✔ author claims and omission cannot close findings; unchanged work stalls (1.08325ms)
+✔ a clean review cannot hide failing or missing verification (2.282334ms)
+✔ failed, incomplete, stale and unsupported reviews cannot approve (2.775084ms)
+✔ measurement failure and a mismatched snapshot never reach code review (1.955458ms)
+✔ budget exhaustion after design approval cannot report unbuilt work as ready (0.496041ms)
+✔ code findings can reopen design review without being closed by a plan (0.983209ms)
+✔ dirty trees, absent references and missing criteria stop before author turns (0.92475ms)
+✔ author questions and failures return unresolved results without inventing review approval (0.915208ms)
+✔ pair prompts have reviewed golden coverage (1.172875ms)
+✔ design challenges must uniquely cover every criterion with substantive valid references (2.316917ms)
+✔ contract identity binds design review and malformed contracts cannot pass (1.244083ms)
+✔ base fatal, pass, timeout and tool errors remain raw evidence for both reviewers (4.611541ms)
+✔ missing replay obligations and failed final executions prevent readiness despite approval (12.80425ms)
+ℹ tests 226
+ℹ suites 28
+ℹ pass 226
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 297.274625
+node test/sim.mjs
+ok   scenarioConsensus: converged on B in round 1; relays, resumed prompts, finding routing, scorecards, report and retro ok
+ok   scenarioDeadlock: scorecard picked A; panel, fabricated gate, capitulation, stubbornness, fix pass and report all ok
+ok   scenarioEscalation: escalated at 3 seats after round 0; resume kept round-0 prompts identical and injected the answer
+ok   scenarioFailures: dropped a failed seat, survived a failed checker, quorum recomputed; a failed retro is reported
+ok   scenarioDirty: dirty tree blocked the run before any seat started
+ok   scenarioFocus: E left contention after round 1 and reviewed; deltas, notes, length flags, big-diff hints and report ok
+ok   scenarioSandbox: Codex seats dropped after one relay each; later Codex turns skipped; the report says how to allow it
+ok   scenarioPlan: the plan was snapshotted and every seat, checker and the final author was pointed at it
+ok   scenarioPlanMissing: stopped before any seat; told the launching session to find the plan and pass args.plan
+ok   scenarioRefs: init --ref copies documents byte for byte, flags what worktrees lack, refuses missing files
+ok   scenarioTranscript: seat-run recovers the exact payload from an indented transcript; need-file, hash-mismatch and sandboxed ok
+ok   scenarioRetroOff: no process fields, no retro agent
+ok   scenarioRetroSave: council retro keeps retro.md plus the exact notes from the transcript; refuses without retro.md; reports sandboxed
+ok   scenarioLineup: default lineup has Gemini; --seats prefix, comma string, gemini-pro, gemini:<slug> and effort mapping ok
+ok   scenarioAgy: agy turn ran from a neutral cwd with the repo grant; resume, per-turn usage, denial resumed once, lost conversation, capacity retry and sandbox caught
+ok   scenarioLateEscalation: escalated after round 1; the resume replayed rounds 0-1 unchanged and gave the answer to later turns
+ok   scenarioModeAndGuidance: setup chose implement for a checklist item; seats get gate, word-limit, claim and blind-round guidance; relays skip the sandbox
+ok   scenarioInitDocs: init copied the gitignored CLAUDE.md into every worktree, outside the diff
+ok   scenarioRelayErrors: a vendor error mentioning a sandbox no longer blocks the vendor; relay failures retry; stale turns refused; per-phase timeout
+ok   scenarioPreflight: a CLI that fails preflight stops the run before anything is created, naming the fix and the seat to swap
+ok   scenarioReadiness: readiness reports ready, blocked (unmet criterion) and incomplete (unrun suite, unjudged criterion, no check) without changing the choice
+ok   scenarioApproval: approval (opt-in) converges on first-choice plus acceptable votes, carries amendments, needs a first choice from another seat
+ok   scenarioBallot: the ballot (opt-in) re-votes after the checks when one vote short, converges without another round, and is skipped otherwise
+ok   scenarioSeatRunErrors: seat-run retries a vendor's malformed tool call, refuses a stale turn tag, classifies errors and caps reruns of a failed turn
+ok   scenarioMeasure: measure runs the suite and cross-tests in a scratch checkout, reports mutation, reuses only unchanged inputs; usage counts Claude agents
+ok   scenarioPreflightCli: preflight reports a missing agy setting, a working pair of CLIs, and a sandboxed one
+ok   scenarioBlind: identical round 0 skipped the debate (A finalised, 19 turns); a differing tree debated (27 turns)
+ok   scenarioAudit: audit on A: panel upheld XC1 and XD1, split XD3; one fix pass; the re-review's XC3 refuted; a failed auditor leaves it incomplete; audit: false skips it
+ok   scenarioSpec: S1 amended, S2 rejected, S3 assumed on the conservative reading, S4 split and left; ask mode stops and resumes to the answer; a failed amendment and spec: false leave setup's criteria
+ok   scenarioFactorySimple: intake → one Sonnet change, the neutral check, one Astra review; facts recorded, no model retro (6 turns)
+ok   scenarioFactoryFindings: the review's upheld finding and failing test go to one fix pass, checked again, with historical evidence reviewed; still Simple
+ok   scenarioFactoryEscalate: still failing after the fix pass → the Fix tier (Opus, Astra) in the same run, blind to the earlier change; one report and retro
+ok   scenarioFactoryHandUp: an upheld design finding and an over-budget change go to feature, the implementer's "not simple" to its tier
+ok   scenarioFactoryTier: a disputed pin stops before anything is created; kept (overruled, with a retro) or switched, intake replays
+ok   scenarioFactoryRoute: fix → Opus and Astra (or the user's seats); architecture → design mode, three seats; an investigation is never Simple; a missing plan stops at intake
+ok   scenarioFactorySplit: separate pieces stop at intake, listed in order with earlier-only dependencies; noSplit runs it whole and intake replays; one piece is no split
+ok   scenarioFactoryFeature: two blind plans, consensus, a merged final plan with two increments, each built and checked, a clean three-lens audit; no ratification
+ok   scenarioFactoryFeatureHard: four increments; a silent turn and a failing increment carried forward; scorecard pick; the tests lens's finding fixed and re-reviewed
+ok   scenarioFactoryArchitecture: three blind designs, consensus, a milestone plan; grounding upheld against milestone 2, revised and re-reviewed; milestones made safe, with args for their own runs
+ok   scenarioFactoryFeatureToArchitecture: a six-increment plan hands up to architecture before any build: a fresh, blind design run told why; the result says how it got there
+ok   scenarioFactsSave: council retro --facts-only saves the run facts from the record agent's transcript; --summary tallies them by starting tier
+ok   scenarioHeadlessPrompts: headless permission guidance and recovery prompt match reviewed goldens
+node --test test/host-logic.mjs test/codex-runner.mjs test/codex-install.mjs test/checkpoint.mjs test/run-plan.mjs
+✔ checkpoint replays exact completed operations without another model call (96.764375ms)
+✔ replay requests and raw logs obey existing checkpoint compatibility (105.81075ms)
+✔ checkpoint rejects changed source, inputs, evidence, worktrees and engine before replay (364.334459ms)
+✔ parallel operations commit only at a completed barrier; failures keep the prior checkpoint (58.051958ms)
+✔ checkpoint request mismatch aborts the generated workflow instead of failing an ordinary turn (99.240708ms)
+✔ resume preserves runtime limits and explicit overrides persist on subsequent resumes (160.930333ms)
+✔ resume falls back to ordinary runtime defaults when no settings were saved (100.164ms)
+✔ resume recovers a torn event tail without losing prior turns or corrupting later appends (88.586208ms)
+✔ resume retains a valid final event lacking its newline (89.323291ms)
+✔ resume rejects malformed completed event records without changing the log (170.93825ms)
+✔ a failed metadata write leaves the previous JSON intact (98.588208ms)
+✔ runner resumes a tier decision using the saved intake and a new setup operation (85.91225ms)
+✔ resume retains turns started after the last checkpoint even without a final result (89.382833ms)
+✔ resume reuses specification review but amends criteria with the new answer (272.947208ms)
+✔ default installation resolves the repository root and is idempotent (49.720167ms)
+✔ installation does not replace an existing skill directory (19.968709ms)
+✔ installation preserves broken links owned by another checkout (33.669583ms)
+✔ argument validation and help do not create an installation (23.078167ms)
+✔ installation rejects non-repositories and incomplete packages (22.403334ms)
+✔ a linked launcher forwards arguments, input, cwd, output, and result status (124.122541ms)
+✔ the launcher forwards termination to its child (117.158334ms)
+✔ an engine failure still records effort metrics without inventing phase findings (72.516291ms)
+✔ CLI merges full arguments and explicit options without parsing task text as code (1.460208ms)
+✔ schema validation rejects malformed or stale model outputs (0.174333ms)
+✔ exit codes distinguish readiness from execution and decision states (0.095208ms)
+✔ limiter bounds turns, preserves result order, and releases slots on failure (25.085375ms)
+✔ direct turns write exact payloads and preserve session, checkout and writable settings (1.35175ms)
+✔ recovery evidence requires a current nonempty post and a retained session (10.191083ms)
+✔ recovery passes the required session to the helper and keeps original job artifacts (1.005375ms)
+✔ shared seat recovery resumes the real helper job with a stub Claude CLI (392.145959ms)
+✔ native agent roles use fresh contexts and reject invalid provider output (2.896625ms)
+✔ preflight runs in the host and fails before launching the setup model (0.680042ms)
+✔ permission diagnostics survive validation, host events and native role unwrapping (1.427084ms)
+✔ custom model slugs get stable distinct filesystem-safe session and job keys (1.013167ms)
+✔ untrusted setup paths are rejected before host files can be created (0.703916ms)
+✔ cancellation stops detached measurement commands and prevents queued model launches (2.886417ms)
+✔ factory decisions stop before setup while preserving input and machine-readable results (64.531958ms)
+✔ full CLI Simple run uses actual worktrees, helper jobs and verification with a stub Codex (2165.573041ms)
+✔ installed pair workflow runs both author/reviewer directions and repeated reviews with stub CLIs (14221.255959ms)
+✔ Ensemble uses real isolated snapshots and fresh reviewers through stub CLIs (2194.1515ms)
+✔ host orchestration, seats, and optional retros propagate checkpoint mismatches (6.468042ms)
+✔ output recovery reserves a turn and cannot exceed the shared admission limit (3.262333ms)
+▶ Codex host configuration
+  ✔ every tier defaults to an Opus seat beside Codex models, with Codex roles and reviewers (1.054ms)
+  ✔ explicit providers, roles, and Simple limits survive intake rebuilding (0.15125ms)
+  ✔ escalation retains host/roles but adopts the higher tier seats (0.107667ms)
+  ✔ explicit seats, audits, spec, and panel members keep their selected providers (0.119ms)
+  ✔ invalid role and model choices fail before agents run (0.134375ms)
+  ✔ setup run IDs are optional for legacy hosts and validate their host-owned prefix (0.3405ms)
+  ✔ the absent-host configuration retains Claude defaults and prompts (0.316458ms)
+✔ Codex host configuration (2.458125ms)
+▶ runtime adapter boundary
+  ✔ orchestration roles use resolved models and fresh contexts (1.047459ms)
+  ✔ direct turns retain exact prompt, tag, worktree, and thread identity without a relay (1.128709ms)
+  ✔ Claude seats in Codex use their own CLI worktree and session (1.141708ms)
+  ✔ stale output is rejected and a failed model is never logged as successful (0.779875ms)
+  ✔ a posted seat gets one short read-only recovery with the original turn tag (1.137458ms)
+  ✔ recovery stays bounded and cannot accept stale output or bypass terminal errors (5.197ms)
+  ✔ native role diagnostics reach notes independently of model process feedback (0.865541ms)
+  ✔ sandbox failures block that vendor without adding a Claude permission instruction (0.802ms)
+  ✔ native and external adapter exceptions become failed turns (0.956667ms)
+  ✔ facts recording supplies the exact payload as a runtime-owned file (1.006417ms)
+✔ runtime adapter boundary (14.233166ms)
+✔ historical evidence gaps keep clean factory audits incomplete (28.982ms)
+▶ Codex factory phase routing
+  ✔ a posted timeout failure recovers before the two-seat check and still gets independent review (3.196209ms)
+  ✔ a posted schema failure recovers before the two-seat check and still gets independent review (2.237125ms)
+  ✔ failed recovery still stops a two-seat debate (1.196542ms)
+  ✔ recovery cannot make denied required verification ready (2.511291ms)
+  ✔ completed Claude design with denials reaches debate and independent review with two seats (1.852167ms)
+  ✔ a genuinely failed seat still stops a two-seat run with an accurate reason (1.299541ms)
+  ✔ accepting a submission with denials cannot make missing required verification ready (2.507875ms)
+  ✔ simple completes through the shared engine and direct adapter (1.133791ms)
+  ✔ fix completes through the shared engine and direct adapter (2.023291ms)
+  ✔ feature completes through the shared engine and direct adapter (2.445375ms)
+  ✔ architecture completes through the shared engine and direct adapter (3.199167ms)
+  ✔ Simple escalation starts fresh worktrees and keeps Codex role overrides (2.814792ms)
+  ✔ concurrent host runs and immediate escalations receive distinct setup IDs (4.316666ms)
+  ✔ an oversized feature plan escalates to architecture before any build (2.826375ms)
+  ✔ a failed independent review leaves an incomplete result and does not trigger escalation (1.800541ms)
+  ✔ hosted Claude seats receive continuation prompts without stateless notes instructions (1.75975ms)
+  ✔ milestones retain the original selected models and Simple overrides (1.656959ms)
+✔ Codex factory phase routing (39.049375ms)
+✔ plan validation rejects cycles, lost criteria, and execution overrides (1.178708ms)
+✔ sequential tasks commit code and progress together; final acceptance is fresh (5226.142667ms)
+✔ parked tasks block dependents but independent tasks continue; answers retain budgets (7713.518542ms)
+✔ failed attempts and total turns persist without implementation commits (137.743125ms)
+✔ interruption after-prepare resumes without duplicate implementation or commits (2649.799ms)
+✔ interruption after-apply resumes without duplicate implementation or commits (2624.232541ms)
+✔ interruption before-commit resumes without duplicate implementation or commits (4848.428084ms)
+✔ interruption after-commit resumes without duplicate implementation or commits (2610.194875ms)
+✔ interrupted attempts retain their reservation and park without resetting checkout (2666.416458ms)
+✔ unexpected dirty delivery stays intact and blocks other tasks (403.360209ms)
+✔ recovery preserves staged-only user changes (393.251042ms)
+✔ SIGKILL after commit recovers in a new process without duplicating the task (2664.562959ms)
+✔ interrupted reservations cannot replenish the plan run time cap (77.730833ms)
+✔ changed reference documents invalidate completion and run-plan locks exclude another runner (2636.101292ms)
+✔ failed delivery rolls back and parks once; reinvocation is idle and an answer can retry (5512.561625ms)
+✔ rejected commit hooks park and restore both the index and checkout (5454.113083ms)
+✔ interruption after-delivery-failure parks without rechecking or charging extra time (437.794209ms)
+✔ interruption after-delivery-rollback parks without rechecking or charging extra time (440.337375ms)
+✔ older failed deliveries and exhausted interrupted deliveries can park without another reservation (883.343708ms)
+✔ delivery failure preserves unexpected verifier changes until the user restores known bytes (448.875417ms)
+✔ symlinked repository paths resolve to the same plan journal; escaping plans are rejected (2625.870375ms)
+✔ recovery does not race a detached delivery verification (390.773541ms)
+✔ a failed delivery waits for its detached verifier before rolling back (423.789917ms)
+✔ failed final gate and missing independent review cannot report completion (5181.268917ms)
+✔ final acceptance runs the generated Council and respects its real statuses and unmet criteria (7846.9925ms)
+✔ HEAD and plan changes reject stale completion; untracked user files are preserved (2644.379ms)
+✔ shared controller runs through Claude transport and retains a prompt golden (0.459042ms)
+✔ task brief snapshots decisions without inheriting previous agent conversations (0.207875ms)
+✔ CLI routes run-plan inputs without a task and rejects checkpoint resume (0.307292ms)
+✔ packaged CLI runs a Pair task through stub model CLIs and real delivery (2895.560333ms)
+ℹ tests 107
+ℹ suites 3
+ℹ pass 107
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 69918.153541
+check: all passed

@@ -1,0 +1,48 @@
+{
+  "completedAt": "2026-11-09T00:03:07.161871+00:00",
+  "kind": "targeted native Claude Workflow measurement transport; not a new treatment trial",
+  "claudeCLI": "2.1.319",
+  "transportModel": "claude-opus-5-5",
+  "transportEffort": "low",
+  "hostRuntimeAdapter": false,
+  "nativeAgentCalls": 1,
+  "base": "e5e2d2f4d2fdd81477c20a861022a097c3f435dc",
+  "originalTrialTask": "vector-pnorm-scale",
+  "mappingEntries": 13,
+  "nativeWorkflow": {
+    "status": "completed",
+    "usage": {
+      "total_tokens": 52189,
+      "tool_uses": 10,
+      "duration_ms": 234887
+    },
+    "transcript": "/Users/mark/.claude/projects/-private-tmp-pair-review-native-20261108-repo/8b009bcb-dd1f-4795-a33e-bbb391cf90c6/subagents/workflows/wf_e21686f8-8ae",
+    "generatedScript": "/private/tmp/pair-review-native-20261108/plugin/workflows/pair-replay-smoke.js"
+  },
+  "helperElapsedSec": 49.0,
+  "replayElapsedSec": 47.0,
+  "permissionDenials": [
+    {
+      "type": "system",
+      "subtype": "permission_denied",
+      "tool_name": "Bash",
+      "tool_use_id": "toolu_01UjUkpCneirwRRdk71UgCmq",
+      "agent_id": "a9d237c755d4c7651",
+      "decision_reason_type": "asyncAgent",
+      "decision_reason": "no approval surface in this session; permission request denied automatically",
+      "message": "Permission for this tool use was denied. It requires approval, and this session has no approval surface \u2014 nobody can answer a permission prompt here \u2014 so it was denied automatically. The action was NOT performed; do not claim it succeeded, and do not retry it: this action, and anything else that requires approval, will be denied the same way for the rest of this session. Tell the user what was blocked and why you needed it, then continue with the parts of the task that do not require approval. What required approval: Contains brace with quote character (expansion obfuscation)",
+      "uuid": "5dddd654-82b5-4ece-b1fb-d1706f22d997",
+      "session_id": "8b009bcb-dd1f-4795-a33e-bbb391cf90c6"
+    }
+  ],
+  "permissionNote": "One optional combined shell polling loop was denied by Claude; the relay continued with permitted individual wait calls. Measurement execution and the final structured return succeeded.",
+  "artifactsRoot": "/private/tmp/pair-review-native-20261108",
+  "accountSettingsChanged": false,
+  "pluginInstalled": false,
+  "delivered": false,
+  "sourceHashes": {
+    "helper": "c6d4a5d4a63d2d550eb40de0018f4fb5454930dc1192a199b6086128037c6852",
+    "temporaryNativeWorkflow": "6a000b44e01c764480a2e284225e1ffb0cde73d39ee453cfca06a23d7b6e7bee",
+    "entrypoint": "2669aacf800ef7749b50a2d950f57ec07d6d8e78fa7d6542ff62c5f94444f951"
+  }
+}

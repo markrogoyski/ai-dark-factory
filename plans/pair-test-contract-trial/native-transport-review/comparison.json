@@ -1,0 +1,13 @@
+{
+  "nativeJournalMatchesReturned": true,
+  "helperProjectionEqual": true,
+  "entireReplayEqual": true,
+  "mappingAndRootsEqual": true,
+  "originalBaseEqual": true,
+  "rawLogHashesVerified": 26,
+  "baseRecords": 13,
+  "baseFailures": 3,
+  "finalRecordsPassed": 13,
+  "fullGatePassed": true,
+  "differences": []
+}

@@ -1,0 +1,284 @@
+{
+  "status": "done",
+  "workflow": "pair",
+  "mode": "implement",
+  "task": "Fix MathPHP\\LinearAlgebra\\Vector::pNorm for finite p >= 1 so finite components near 1e200 or 1e-200 do not overflow or underflow intermediate powers when the mathematical norm is representable. Preserve the existing public signature and ordinary results. Cover negative components, all-zero vectors, mixed scales, p=1, p=2, and larger finite p. Preserve NAN propagation and positive infinity for vectors containing an infinite component and no NAN. Do not change unrelated vector operations or define new behavior for p outside finite p >= 1.",
+  "runDir": "/private/tmp/pair-test-contract-trial-20261108/vector-pnorm-scale-pair-control/.council/host-D1Dlac-pair",
+  "room": "/private/tmp/pair-test-contract-trial-20261108/vector-pnorm-scale-pair-control/.council/host-D1Dlac-pair/room",
+  "refs": [],
+  "stage": "code",
+  "stopReason": "",
+  "design": "For finite p >= 1, evaluate s * (sum((abs(x) / s) ** p)) ** (1 / p), where s is the largest component magnitude. This follows the existing scaling approach in src/LinearAlgebra/Vector.php:668–687. The current direct-power expression at lines 698–700 causes the defect.\n\nScan components for NAN while finding s; return NAN immediately, but defer returning infinity until the scan finishes. Return zero when s is zero and positive infinity when s is infinite. Otherwise calculate normalized powers, take the root, and finally rescale. At least one normalized term equals 1, preventing a spurious zero norm. Preserve the exact public signature and retain the existing calculation for p outside finite p >= 1, without adding validation or documenting that domain.\n\nAffected files: only the pNorm body/docblock in src/LinearAlgebra/Vector.php and focused additions to tests/LinearAlgebra/Vector/VectorNormsTest.php. Follow its existing PHPUnit DataProvider and Given/When/Then style and .github/CONTRIBUTING.md guidance.\n\nC1/C4: add huge and tiny cases around 1e200 and 1e-200 with analytical expectations. Cover p=1, 2, 1.5, 3, 4, 10, and 1024. Examples include scaled 3–4–5 vectors, four equal components at p=4, and [−4s,9s] at p=1.5 with expected 35^(2/3)*s. Assert finite, positive results and use abs(expected)*1e-12 tolerances. Record representative huge/tiny failures against the original implementation before fixing it.\n\nC2: cover ordinary results, negative values, zeros, single components, mixed scales, and reordered inputs. Explicitly compare p=1 with the absolute-value sum and p=2 with known Euclidean values and l2Norm. Preserve existing tests.\n\nC3: add boundary providers covering NAN alone, among finite values, and before/after either sign of infinity; verify positive infinity without NAN and genuine finite-input overflow. Assert zero exactly.\n\nC5: document the scaled formula, stability for finite p >= 1, zero results, NAN precedence, and infinite or overflowing results.\n\nC6: inspect the final diff and signature to confirm changes remain scoped, with dependencies, checks, verification configuration, and unrelated operations unchanged.\n\nC7: during implementation, run dark-factory verify with the supplied run directory, author worktree, unique label, and --max-wait 5. It must execute exactly: php -d memory_limit=2G vendor/bin/phpunit --configuration=tests/phpunit.xml tests/LinearAlgebra/Vector. Preserve verification.json overrides and poll as instructed. Record the intended red using a filtered command file; the final gate remains unchanged.\n\nAssumptions and risks: vectors follow the documented numeric-component contract and are nonempty by construction (Vector.php:30–37). Scaling may change final rounding; negligible relative terms may underflow, while true out-of-range norms remain INF. NAN scanning and rescaling after the root require particular care.",
+  "author": "Codex Sol",
+  "reviewer": "Codex Astra",
+  "reviews": [
+    {
+      "stage": "design",
+      "label": "pair-design-1",
+      "version": "design:2889-f2afa852:base",
+      "complete": true,
+      "summary": "Design approved against the repository snapshot. All acceptance criteria have concrete implementation and verification plans. No files changed or tests run during design review.",
+      "requiresDesignRevision": false,
+      "findings": [],
+      "resolutions": [],
+      "criteria": [
+        {
+          "criterion": "C1",
+          "status": "met",
+          "note": "The proposed maximum-magnitude scaling follows Vector::l2Norm and bounds normalized powers by 1. A maximum component contributes 1, preventing spurious zero. Planned huge/tiny regressions directly target the current pNorm direct-power expression."
+        },
+        {
+          "criterion": "C2",
+          "status": "met",
+          "note": "The design covers ordinary values, negatives, zeros, single components, mixed scales, and reordered inputs, with explicit p=1 absolute-sum and p=2 Euclidean/l2Norm comparisons."
+        },
+        {
+          "criterion": "C3",
+          "status": "met",
+          "note": "Scanning for NAN before returning infinity ensures NAN precedence regardless of component order. Planned boundary providers cover both infinity signs, NAN ordering, exact zero, and genuine overflow."
+        },
+        {
+          "criterion": "C4",
+          "status": "met",
+          "note": "Planned additions follow VectorNormsTest.php's DataProvider and Given/When/Then style. Analytical expectations include scaled 3–4–5 vectors and the correct fractional-p value 35^(2/3)*s. Finite/positive assertions and relative tolerances reject spurious INF and zero; representative intended-red tests are planned."
+        },
+        {
+          "criterion": "C5",
+          "status": "met",
+          "note": "The planned docblock explains scaling, its finite p >= 1 domain, zero, NAN precedence, and infinite/overflowing results, consistent with the neighboring l2Norm documentation."
+        },
+        {
+          "criterion": "C6",
+          "status": "met",
+          "note": "The design preserves pNorm(int|float $p): int|float and the existing calculation outside the supported domain. Changes are restricted to pNorm documentation/body and VectorNormsTest.php additions, with final diff inspection planned."
+        },
+        {
+          "criterion": "C7",
+          "status": "met",
+          "note": "Inspected verify.sh: it contains the exact required scoped PHPUnit command. The design requires execution in the author worktree through dark-factory verify, preserving verification.json overrides and polling as instructed. Execution remains an implementation-stage requirement."
+        }
+      ],
+      "suggestions": []
+    },
+    {
+      "stage": "code",
+      "label": "pair-code-2",
+      "version": "code:98358478a45d6bbf1ea3a61076ad507875e29ecd",
+      "complete": true,
+      "summary": "Reviewed the complete diff and all acceptance criteria. No actionable findings. The supplied neutral gate passed 745 tests and 1369 assertions; an independent arithmetic probe also passed.",
+      "requiresDesignRevision": false,
+      "findings": [],
+      "resolutions": [],
+      "criteria": [
+        {
+          "criterion": "C1",
+          "status": "met",
+          "note": "Vector.php:709–726 normalizes before exponentiation and rescales after taking the root. Probe verify-reviewer-code2-arithmetic-probe confirmed original results INF/0 become 5e200/5e-200 for scaled 3–4–5 vectors."
+        },
+        {
+          "criterion": "C2",
+          "status": "met",
+          "note": "Tests cover ordinary values, negatives, zeros, mixed scales, reordered inputs and single components. p=1 is compared with the absolute-value sum; p=2 uses analytical expectations and l2Norm."
+        },
+        {
+          "criterion": "C3",
+          "status": "met",
+          "note": "The complete component scan detects NAN before returning infinity. Boundary providers test NAN before and after both infinity signs, infinity without NAN, and finite-input overflow."
+        },
+        {
+          "criterion": "C4",
+          "status": "met",
+          "note": "Added DataProvider tests follow existing Given/When/Then style and document analytical expectations. They cover scales 1, 1e200 and 1e-200 with p=1, 2, 1.5, 3, 4, 10 and 1024. Explicit finite/positive assertions and relative tolerances reject the original overflow and underflow defects."
+        },
+        {
+          "criterion": "C5",
+          "status": "met",
+          "note": "The pNorm docblock documents the scaled formula, finite p >= 1 domain, zero result, NAN precedence, and positive infinity for infinite components or overflowing norms."
+        },
+        {
+          "criterion": "C6",
+          "status": "met",
+          "note": "The complete A.diff changes only pNorm's body/docblock and adds focused tests. The public signature and original calculation outside the specified domain remain intact; existing checks, dependencies and unrelated operations are unchanged."
+        },
+        {
+          "criterion": "C7",
+          "status": "met",
+          "note": "Supplied neutral measurement identifies the exact reviewed tree and author worktree, and records the required command passing with fixed verification.json overrides: 745 tests, 1369 assertions, exit 0. The gate was not rerun. Review probes changed no tracked files."
+        }
+      ],
+      "suggestions": []
+    }
+  ],
+  "findings": [],
+  "questions": [],
+  "notes": [],
+  "report": {
+    "markdown": "Pair: Codex Sol authors; Codex Astra reviews.\n\nReadiness: ready. Reviews: 2/8.\n\nVerification: passed on the reviewed snapshot."
+  },
+  "final": {
+    "author": "A",
+    "model": "Codex Sol",
+    "summary": "Implemented stable pNorm scaling, API documentation, and 119 regression cases. The original implementation failed 28 new cases; the required scoped gate now passes all 745 tests and 1,369 assertions. Changes remain in the author worktree.",
+    "worktree": "/private/tmp/pair-test-contract-trial-20261108/vector-pnorm-scale-pair-control/.council/host-D1Dlac-pair/wt/A",
+    "post": "/private/tmp/pair-test-contract-trial-20261108/vector-pnorm-scale-pair-control/.council/host-D1Dlac-pair/room/pair-code-2/A.md",
+    "snapshotRef": "refs/council/host-D1Dlac-pair/A-pair-code-2",
+    "snapshotTree": "98358478a45d6bbf1ea3a61076ad507875e29ecd",
+    "diff": "/private/tmp/pair-test-contract-trial-20261108/vector-pnorm-scale-pair-control/.council/host-D1Dlac-pair/room/pair-code-2/A.diff",
+    "suite": {
+      "exitCode": 0,
+      "timedOut": false,
+      "seconds": 0.3,
+      "tail": "PHPUnit 10.5.63 by Sebastian Bergmann and contributors.\n\nRuntime:       PHP 8.5.3\nConfiguration: /private/tmp/pair-test-contract-trial-20261108/vector-pnorm-scale-pair-control/.council/host-D1Dlac-pair/scratch/A-pair-code-2-53683/tests/phpunit.xml\n\n...............................................................  63 / 745 (  8%)\n............................................................... 126 / 745 ( 16%)\n............................................................... 189 / 745 ( 25%)\n............................................................... 252 / 745 ( 33%)\n............................................................... 315 / 745 ( 42%)\n............................................................... 378 / 745 ( 50%)\n............................................................... 441 / 745 ( 59%)\n............................................................... 504 / 745 ( 67%)\n............................................................... 567 / 745 ( 76%)\n............................................................... 630 / 745 ( 84%)\n............................................................... 693 / 745 ( 93%)\n....................................................            745 / 745 (100%)\n\nTime: 00:00.094, Memory: 14.00 MB\n\nOK (745 tests, 1369 assertions)",
+      "log": "/private/tmp/pair-test-contract-trial-20261108/vector-pnorm-scale-pair-control/.council/host-D1Dlac-pair/logs/suite-A-pair-code-2.log",
+      "ran": true,
+      "passed": true,
+      "cwd": "/private/tmp/pair-test-contract-trial-20261108/vector-pnorm-scale-pair-control/.council/host-D1Dlac-pair/scratch/A-pair-code-2-53683",
+      "command": "php -d memory_limit=2G vendor/bin/phpunit --configuration=tests/phpunit.xml tests/LinearAlgebra/Vector",
+      "env": {
+        "TMPDIR": "/private/tmp/pair-test-contract-trial-20261108/vector-pnorm-scale-pair-control/.council/host-D1Dlac-pair/tmp",
+        "XDG_CACHE_HOME": "/private/tmp/pair-test-contract-trial-20261108/vector-pnorm-scale-pair-control/.council/host-D1Dlac-pair/tmp/cache"
+      }
+    },
+    "criteria": [
+      {
+        "criterion": "C1",
+        "status": "met",
+        "note": "Vector.php:709–726 normalizes before exponentiation and rescales after taking the root. Probe verify-reviewer-code2-arithmetic-probe confirmed original results INF/0 become 5e200/5e-200 for scaled 3–4–5 vectors."
+      },
+      {
+        "criterion": "C2",
+        "status": "met",
+        "note": "Tests cover ordinary values, negatives, zeros, mixed scales, reordered inputs and single components. p=1 is compared with the absolute-value sum; p=2 uses analytical expectations and l2Norm."
+      },
+      {
+        "criterion": "C3",
+        "status": "met",
+        "note": "The complete component scan detects NAN before returning infinity. Boundary providers test NAN before and after both infinity signs, infinity without NAN, and finite-input overflow."
+      },
+      {
+        "criterion": "C4",
+        "status": "met",
+        "note": "Added DataProvider tests follow existing Given/When/Then style and document analytical expectations. They cover scales 1, 1e200 and 1e-200 with p=1, 2, 1.5, 3, 4, 10 and 1024. Explicit finite/positive assertions and relative tolerances reject the original overflow and underflow defects."
+      },
+      {
+        "criterion": "C5",
+        "status": "met",
+        "note": "The pNorm docblock documents the scaled formula, finite p >= 1 domain, zero result, NAN precedence, and positive infinity for infinite components or overflowing norms."
+      },
+      {
+        "criterion": "C6",
+        "status": "met",
+        "note": "The complete A.diff changes only pNorm's body/docblock and adds focused tests. The public signature and original calculation outside the specified domain remain intact; existing checks, dependencies and unrelated operations are unchanged."
+      },
+      {
+        "criterion": "C7",
+        "status": "met",
+        "note": "Supplied neutral measurement identifies the exact reviewed tree and author worktree, and records the required command passing with fixed verification.json overrides: 745 tests, 1369 assertions, exit 0. The gate was not rerun. Review probes changed no tracked files."
+      }
+    ],
+    "readiness": {
+      "state": "ready",
+      "blocked": [],
+      "incomplete": []
+    }
+  },
+  "delivery": {
+    "status": "pending"
+  },
+  "forTheOrchestrator": "Read final.readiness first. Report unresolved findings or missing evidence before any success summary. Spot-check the reviewed snapshot and report the design and implementation review outcomes. The change stays in final.worktree. Deliver only within the user's authorization, preserving unrelated edits; use dark-factory verify-delivery afterward. Do not start a council automatically. The Codex host can resume a validated checkpoint with --resume hostRunDir; changed inputs or evidence require a new run.",
+  "plan": {
+    "workflow": "pair",
+    "tier": "pair",
+    "strategy": "pair",
+    "mode": "implement",
+    "output": "reviewed implementation in a worktree; delivery pending",
+    "participants": [
+      {
+        "model": "sol",
+        "vendor": "codex",
+        "effort": "high"
+      }
+    ],
+    "reviewers": [
+      {
+        "model": "astra",
+        "vendor": "codex",
+        "effort": "high"
+      }
+    ],
+    "panel": [],
+    "specification": [],
+    "roles": {
+      "setup": {
+        "model": "sol",
+        "vendor": "codex"
+      }
+    },
+    "requiredCLIs": [
+      "codex"
+    ],
+    "verification": "php -d memory_limit=2G vendor/bin/phpunit --configuration=tests/phpunit.xml tests/LinearAlgebra/Vector",
+    "limits": {
+      "maxTurns": 24,
+      "maxRunMin": 60,
+      "repair": null,
+      "maxReviews": 8,
+      "rounds": null
+    },
+    "effort": "Setup, design and code turns, up to the review budget; measurements between code revisions.",
+    "intake": null
+  },
+  "metrics": {
+    "version": 1,
+    "taskId": "vector-pnorm-scale",
+    "variant": "pair-control",
+    "repetition": 1,
+    "workflow": "pair",
+    "tier": "pair",
+    "strategy": "pair",
+    "host": "codex",
+    "elapsedMs": 427354,
+    "turns": 5,
+    "turnsByRole": {
+      "setup": 1,
+      "author": 2,
+      "reviewer": 2
+    },
+    "failedTurns": 0,
+    "findingsByStage": {},
+    "readiness": "ready",
+    "delivery": "pending",
+    "escalated": false,
+    "requestedImplementation": true,
+    "deliveredImplementation": false,
+    "tokens": {
+      "records": 5,
+      "byModel": {
+        "gpt-6.1-sol": {
+          "input_tokens": 1047153,
+          "cached_input_tokens": 917120,
+          "cache_write_input_tokens": 0,
+          "output_tokens": 13962,
+          "reasoning_output_tokens": 2063
+        },
+        "gpt-6-astra": {
+          "input_tokens": 182784,
+          "cached_input_tokens": 119040,
+          "cache_write_input_tokens": 0,
+          "output_tokens": 3293,
+          "reasoning_output_tokens": 582
+        }
+      }
+    },
+    "cost": null,
+    "limits": {
+      "maxTurns": 24,
+      "maxRunMin": 60
+    },
+    "repositoryHead": "e5e2d2f4d2fdd81477c20a861022a097c3f435dc"
+  },
+  "host": "codex",
+  "hostRunDir": "/private/tmp/pair-test-contract-trial-20261108/vector-pnorm-scale-pair-control/.council/host-D1Dlac",
+  "hostEvents": "/private/tmp/pair-test-contract-trial-20261108/vector-pnorm-scale-pair-control/.council/host-D1Dlac/events.jsonl",
+  "checkpoint": "/private/tmp/pair-test-contract-trial-20261108/vector-pnorm-scale-pair-control/.council/host-D1Dlac/checkpoint.json"
+}

@@ -1,0 +1,111 @@
+{
+  "testRoots": [
+    "tests/LinearAlgebra/Vector"
+  ],
+  "mapping": [
+    {
+      "file": "tests/LinearAlgebra/Vector/VectorNormsTest.php",
+      "command": "php -d memory_limit=2G vendor/bin/phpunit --configuration=tests/phpunit.xml --filter testPNormExtremeMagnitudes tests/LinearAlgebra/Vector/VectorNormsTest.php",
+      "checkIds": [
+        "PN-EXTREME"
+      ],
+      "fixtures": []
+    },
+    {
+      "file": "tests/LinearAlgebra/Vector/VectorNormsTest.php",
+      "command": "php -d memory_limit=2G vendor/bin/phpunit --configuration=tests/phpunit.xml --filter testPNormMixedScales tests/LinearAlgebra/Vector/VectorNormsTest.php",
+      "checkIds": [
+        "PN-MIXED"
+      ],
+      "fixtures": []
+    },
+    {
+      "file": "tests/LinearAlgebra/Vector/VectorNormsTest.php",
+      "command": "php -d memory_limit=2G vendor/bin/phpunit --configuration=tests/phpunit.xml --filter testPNormZeroVectors tests/LinearAlgebra/Vector/VectorNormsTest.php",
+      "checkIds": [
+        "PN-ZERO"
+      ],
+      "fixtures": []
+    },
+    {
+      "file": "tests/LinearAlgebra/Vector/VectorNormsTest.php",
+      "command": "php -d memory_limit=2G vendor/bin/phpunit --configuration=tests/phpunit.xml --filter testPNormNonFiniteComponents tests/LinearAlgebra/Vector/VectorNormsTest.php",
+      "checkIds": [
+        "PN-NONFINITE"
+      ],
+      "fixtures": []
+    },
+    {
+      "file": "tests/LinearAlgebra/Vector/VectorNormsTest.php",
+      "command": "php -d memory_limit=2G vendor/bin/phpunit --configuration=tests/phpunit.xml --filter '/::testPNorm\\b/' tests/LinearAlgebra/Vector/VectorNormsTest.php",
+      "checkIds": [
+        "PN-ORDINARY"
+      ],
+      "fixtures": []
+    },
+    {
+      "file": "tests/LinearAlgebra/Vector/VectorAxiomsTest.php",
+      "command": "php -d memory_limit=2G vendor/bin/phpunit --configuration=tests/phpunit.xml --filter testPNorm tests/LinearAlgebra/Vector/VectorAxiomsTest.php",
+      "checkIds": [
+        "PN-ORDINARY"
+      ],
+      "fixtures": []
+    },
+    {
+      "file": "tests/LinearAlgebra/Vector/VectorAxiomsTest.php",
+      "command": "php -d memory_limit=2G vendor/bin/phpunit --configuration=tests/phpunit.xml tests/LinearAlgebra/Vector/VectorAxiomsTest.php",
+      "checkIds": [
+        "PN-GATE"
+      ],
+      "fixtures": []
+    },
+    {
+      "file": "tests/LinearAlgebra/Vector/VectorTest.php",
+      "command": "php -d memory_limit=2G vendor/bin/phpunit --configuration=tests/phpunit.xml tests/LinearAlgebra/Vector/VectorTest.php",
+      "checkIds": [
+        "PN-GATE"
+      ],
+      "fixtures": []
+    },
+    {
+      "file": "tests/LinearAlgebra/Vector/VectorAngleTest.php",
+      "command": "php -d memory_limit=2G vendor/bin/phpunit --configuration=tests/phpunit.xml tests/LinearAlgebra/Vector/VectorAngleTest.php",
+      "checkIds": [
+        "PN-GATE"
+      ],
+      "fixtures": []
+    },
+    {
+      "file": "tests/LinearAlgebra/Vector/VectorDistanceTest.php",
+      "command": "php -d memory_limit=2G vendor/bin/phpunit --configuration=tests/phpunit.xml tests/LinearAlgebra/Vector/VectorDistanceTest.php",
+      "checkIds": [
+        "PN-GATE"
+      ],
+      "fixtures": []
+    },
+    {
+      "file": "tests/LinearAlgebra/Vector/VectorInterfaceTest.php",
+      "command": "php -d memory_limit=2G vendor/bin/phpunit --configuration=tests/phpunit.xml tests/LinearAlgebra/Vector/VectorInterfaceTest.php",
+      "checkIds": [
+        "PN-GATE"
+      ],
+      "fixtures": []
+    },
+    {
+      "file": "tests/LinearAlgebra/Vector/VectorNormsTest.php",
+      "command": "php -d memory_limit=2G vendor/bin/phpunit --configuration=tests/phpunit.xml tests/LinearAlgebra/Vector/VectorNormsTest.php",
+      "checkIds": [
+        "PN-GATE"
+      ],
+      "fixtures": []
+    },
+    {
+      "file": "tests/LinearAlgebra/Vector/VectorOperationsTest.php",
+      "command": "php -d memory_limit=2G vendor/bin/phpunit --configuration=tests/phpunit.xml tests/LinearAlgebra/Vector/VectorOperationsTest.php",
+      "checkIds": [
+        "PN-GATE"
+      ],
+      "fixtures": []
+    }
+  ]
+}

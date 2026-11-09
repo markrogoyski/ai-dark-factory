@@ -1,0 +1,58 @@
+[
+  {
+    "taskId": "iterator-pad-left",
+    "variant": "pair-control",
+    "verification": {
+      "env": {
+        "TMPDIR": "/private/tmp/pair-test-contract-trial-20261108/iterator-pad-left-pair-control/.council/host-gx20QP-pair/tmp"
+      }
+    }
+  },
+  {
+    "taskId": "iterator-pad-left",
+    "variant": "pair-contract-replay",
+    "verification": {
+      "env": {
+        "TMPDIR": "/private/tmp/pair-test-contract-trial-20261108/iterator-pad-left-pair-contract-replay/.council/host-b4UBKn-pair/tmp",
+        "XDG_CACHE_HOME": "/private/tmp/pair-test-contract-trial-20261108/iterator-pad-left-pair-contract-replay/.council/host-b4UBKn-pair/cache"
+      }
+    }
+  },
+  {
+    "taskId": "algebra-coprime-api",
+    "variant": "pair-control",
+    "verification": {
+      "env": {
+        "TMPDIR": "/private/tmp"
+      }
+    }
+  },
+  {
+    "taskId": "algebra-coprime-api",
+    "variant": "pair-contract-replay",
+    "verification": {
+      "env": {
+        "TMPDIR": "/private/tmp/pair-test-contract-trial-20261108/algebra-coprime-api-pair-contract-replay/.council/host-mCY1cs-pair/tmp"
+      }
+    }
+  },
+  {
+    "taskId": "vector-pnorm-scale",
+    "variant": "pair-control",
+    "verification": {
+      "env": {
+        "TMPDIR": "/private/tmp/pair-test-contract-trial-20261108/vector-pnorm-scale-pair-control/.council/host-D1Dlac-pair/tmp",
+        "XDG_CACHE_HOME": "/private/tmp/pair-test-contract-trial-20261108/vector-pnorm-scale-pair-control/.council/host-D1Dlac-pair/tmp/cache"
+      }
+    }
+  },
+  {
+    "taskId": "vector-pnorm-scale",
+    "variant": "pair-contract-replay",
+    "verification": {
+      "env": {
+        "TMPDIR": "/private/tmp/pair-test-contract-trial-20261108/vector-pnorm-scale-pair-contract-replay/.council/host-h6AZEK-pair/verification-tmp"
+      }
+    }
+  }
+]

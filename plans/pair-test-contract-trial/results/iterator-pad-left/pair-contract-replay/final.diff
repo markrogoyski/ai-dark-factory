@@ -1,0 +1,585 @@
+diff --git a/docs/single-iteration.md b/docs/single-iteration.md
+index dcbdd02..15578db 100644
+--- a/docs/single-iteration.md
++++ b/docs/single-iteration.md
+@@ -803,7 +803,9 @@ Pad an iterable on the left so its yielded length is at least `$length`.
+ 
+ * If the source is already `$length` or longer, all elements pass through unchanged (no truncation).
+ * Source keys are discarded; output keys are sequential 0-indexed.
+-* Throws `\InvalidArgumentException` if `$length` is negative.
++* Lazy: reads at most `max(1, $length)` source elements before the first output, buffering at most `$length` values.
++* Supports incremental consumption of infinite inputs. While an output is suspended, the source is not advanced.
++* Throws `\InvalidArgumentException` for a negative `$length` when iteration begins, before reading the source.
+ 
+ ```php
+ use IterTools\Single;
+diff --git a/docs/stream.md b/docs/stream.md
+index 001e659..5e5ad96 100644
+--- a/docs/stream.md
++++ b/docs/stream.md
+@@ -2118,7 +2118,10 @@ Pad the stream on the left so its length is at least `$length`.
+ 
+ * If the stream is already `$length` or longer, all elements pass through unchanged.
+ * Source keys are discarded; output keys are sequential 0-indexed.
+-* Throws `\InvalidArgumentException` if `$length` is negative.
++* Lazy: reads at most `max(1, $length)` source elements before the first output, buffering at most `$length` values.
++* Supports incremental consumption of infinite inputs. While an output is suspended, the source is not advanced.
++* Returns the same stream; execution and validation are deferred until iteration starts.
++* Throws `\InvalidArgumentException` for a negative `$length` when iteration begins, before reading the source.
+ 
+ ```php
+ use IterTools\Stream;
+diff --git a/src/Single.php b/src/Single.php
+index cd720e8..8856655 100644
+--- a/src/Single.php
++++ b/src/Single.php
+@@ -1053,6 +1053,11 @@ final class Single
+      * If the source is already $length or longer, all elements pass through unchanged.
+      * Source keys are discarded; output keys are sequential 0-indexed.
+      *
++     * Lazy: reads at most max(1, $length) source elements before the first output and
++     * buffers at most $length values, so infinite sources can be consumed incrementally.
++     * The source is not advanced while an output is suspended. Negative lengths are
++     * rejected when iteration begins, before reading the source.
++     *
+      * @param iterable<mixed> $data
+      * @param int             $length minimum final length (must be non-negative)
+      * @param mixed           $fill   value used to pad
+@@ -1072,8 +1077,21 @@ final class Single
+         $count = 0;
+ 
+         foreach ($data as $datum) {
++            if ($count >= $length) {
++                yield $datum;
++                continue;
++            }
++
+             $buffer[] = $datum;
+             ++$count;
++
++            if ($count === $length) {
++                // Flush before advancing the source beyond the lookahead boundary.
++                foreach ($buffer as $bufferedDatum) {
++                    yield $bufferedDatum;
++                }
++                $buffer = [];
++            }
+         }
+ 
+         $padding = $length - $count;
+diff --git a/src/Stream.php b/src/Stream.php
+index 968110a..f91b1b9 100644
+--- a/src/Stream.php
++++ b/src/Stream.php
+@@ -1042,6 +1042,11 @@ final class Stream implements \IteratorAggregate
+      * If the stream is already $length or longer, all elements pass through unchanged.
+      * Source keys are discarded; output keys are sequential 0-indexed.
+      *
++     * Returns this stream; execution and negative-length validation are deferred until
++     * iteration starts. Reads at most max(1, $length) source elements before the first
++     * output, allowing incremental consumption of infinite sources. The source is not
++     * advanced while an output is suspended; negative lengths fail before reading it.
++     *
+      * @param int   $length minimum final length (must be non-negative)
+      * @param mixed $fill   value used to pad
+      *
+diff --git a/tests/Single/PadLeftStreamingTest.php b/tests/Single/PadLeftStreamingTest.php
+new file mode 100644
+index 0000000..1a89cac
+--- /dev/null
++++ b/tests/Single/PadLeftStreamingTest.php
+@@ -0,0 +1,71 @@
++<?php
++
++declare(strict_types=1);
++
++namespace IterTools\Tests\Single;
++
++use IterTools\Single;
++
++class PadLeftStreamingTest extends \PHPUnit\Framework\TestCase
++{
++    /**
++     * @test         padLeft yields after bounded lookahead without advancing a suspended source
++     * @dataProvider dataProviderForStreaming
++     */
++    public function testBoundedLookaheadAndSuspension(int $length, bool $infinite): void
++    {
++        // Given a source that rejects every pull beyond the consumer's current budget
++        $initialLookahead = \max(1, $length);
++        $allowedPulls = $initialLookahead;
++        $pulled = [];
++        $source = (static function () use (&$allowedPulls, &$pulled, $infinite): \Generator {
++            for ($value = 0; $infinite || $value < PHP_INT_MAX; ++$value) {
++                if ($value >= $allowedPulls) {
++                    throw new \RuntimeException('Source requested beyond the permitted lookahead');
++                }
++                $pulled[] = $value;
++                yield "source-$value" => $value;
++            }
++        })();
++
++        // When
++        $output = Single::padLeft($source, $length, null);
++
++        // Then construction does not start the source
++        $this->assertSame([], $pulled);
++
++        // When the consumer requests the first output
++        $output->rewind();
++
++        // Then buffered output and the first two tail values obey the same pull boundary
++        for ($index = 0; $index < $initialLookahead + 2; ++$index) {
++            $expectedPulled = \range(0, \max($initialLookahead, $index + 1) - 1);
++            $this->assertSame($expectedPulled, $pulled);
++
++            // Repeated observations leave the output suspended without requesting another source value
++            for ($observation = 0; $observation < 2; ++$observation) {
++                $this->assertTrue($output->valid());
++                $this->assertSame($index, $output->key());
++                $this->assertSame($index, $output->current());
++                $this->assertSame($expectedPulled, $pulled);
++            }
++
++            if ($index + 1 < $initialLookahead + 2) {
++                $allowedPulls = \max($initialLookahead, $index + 2);
++                $output->next();
++            }
++        }
++    }
++
++    public static function dataProviderForStreaming(): array
++    {
++        return [
++            'zero infinite' => [0, true],
++            'one infinite' => [1, true],
++            'three infinite' => [3, true],
++            'zero long finite' => [0, false],
++            'one long finite' => [1, false],
++            'three long finite' => [3, false],
++        ];
++    }
++}
+diff --git a/tests/Single/PadLeftTest.php b/tests/Single/PadLeftTest.php
+index c9357da..be098ef 100644
+--- a/tests/Single/PadLeftTest.php
++++ b/tests/Single/PadLeftTest.php
+@@ -6,6 +6,7 @@ namespace IterTools\Tests\Single;
+ 
+ use IterTools\Single;
+ use IterTools\Tests\Fixture\ArrayIteratorFixture;
++use IterTools\Tests\Fixture\CountingIteratorAggregateFixture;
+ use IterTools\Tests\Fixture\DataProvider;
+ use IterTools\Tests\Fixture\GeneratorFixture;
+ use IterTools\Tests\Fixture\IteratorAggregateFixture;
+@@ -172,4 +173,155 @@ class PadLeftTest extends \PHPUnit\Framework\TestCase
+         // Then
+         $this->assertSame([0, 1, 2, 3], $keys);
+     }
++
++    /**
++     * @test         padLeft preserves mixed values and discards keys for every input form
++     * @dataProvider dataProviderForKeyedPadLeft
++     * @param array<mixed> $data
++     * @param array<mixed> $expected
++     */
++    public function testKeyedValues(
++        string $form,
++        array $data,
++        int $length,
++        mixed $fill,
++        array $expected
++    ): void {
++        // Given
++        $source = self::keyedSource($data, $form);
++
++        // When
++        $result = \iterator_to_array(Single::padLeft($source, $length, $fill));
++
++        // Then keys are retained by iterator_to_array, so reindexing cannot hide a regression
++        $this->assertSame($expected, $result);
++    }
++
++    public static function dataProviderForKeyedPadLeft(): \Generator
++    {
++        $data = ['null' => null, 9 => false, 'zero' => 0, -2 => ''];
++        foreach (['array', 'generator', 'iterator', 'aggregate'] as $form) {
++            foreach ([null, 'x'] as $fill) {
++                $cases = [
++                    [[], 0, []],
++                    [[], 1, [$fill]],
++                    [[], 3, [$fill, $fill, $fill]],
++                    [$data, 0, [null, false, 0, '']],
++                    [$data, 1, [null, false, 0, '']],
++                    [$data, 2, [null, false, 0, '']],
++                    [$data, 4, [null, false, 0, '']],
++                    [$data, 6, [$fill, $fill, null, false, 0, '']],
++                ];
++                foreach ($cases as [$source, $length, $expected]) {
++                    yield [$form, $source, $length, $fill, $expected];
++                }
++            }
++        }
++    }
++
++    /**
++     * @test         padLeft preserves object identity for source and fill values
++     * @dataProvider dataProviderForInputForm
++     */
++    public function testObjectIdentity(string $form): void
++    {
++        // Given
++        $value = new \stdClass();
++        $fill = new \stdClass();
++
++        // When
++        $padded = Single::padLeft(self::keyedSource(['source' => $value], $form), 3, $fill);
++        $longer = Single::padLeft(self::keyedSource(['x' => $value, 'y' => $fill], $form), 1, null);
++
++        // Then
++        $this->assertSame([$fill, $fill, $value], \iterator_to_array($padded));
++        $this->assertSame([$value, $fill], \iterator_to_array($longer));
++    }
++
++    public static function dataProviderForInputForm(): array
++    {
++        return [['array'], ['generator'], ['iterator'], ['aggregate']];
++    }
++
++    /**
++     * @test         padLeft construction is lazy even with a negative length
++     * @dataProvider dataProviderForLazyLengths
++     */
++    public function testCreationIsLazy(int $length): void
++    {
++        // Given
++        $pulled = [];
++        $source = GeneratorFixture::getRecordingGenerator([null, 1], $pulled);
++
++        // When
++        $output = Single::padLeft($source, $length, null);
++
++        // Then
++        $this->assertInstanceOf(\Generator::class, $output);
++        $this->assertSame([], $pulled);
++    }
++
++    public static function dataProviderForLazyLengths(): array
++    {
++        return [[-1], [0], [1], [3]];
++    }
++
++    /**
++     * @test padLeft defers negative validation until iteration and never consumes the source
++     */
++    public function testNegativeValidationIsDeferred(): void
++    {
++        // Given
++        $pulled = [];
++        $source = GeneratorFixture::getRecordingGenerator([null, 1], $pulled);
++        $output = Single::padLeft($source, -1, null);
++        $this->assertSame([], $pulled);
++
++        // When
++        try {
++            $output->rewind();
++            $this->fail('Expected negative length to fail when iteration begins');
++        } catch (\InvalidArgumentException $exception) {
++            // Then
++            $this->assertSame('Length cannot be negative: -1', $exception->getMessage());
++        }
++        $this->assertSame([], $pulled);
++    }
++
++    /**
++     * @test padLeft rejects a negative length before obtaining an aggregate's iterator
++     */
++    public function testNegativeLengthDoesNotAcquireIterator(): void
++    {
++        // Given
++        $source = new CountingIteratorAggregateFixture([null, 1]);
++        $output = Single::padLeft($source, -1, null);
++        $this->assertSame(0, $source->getIteratorCallCount());
++
++        // When
++        try {
++            $output->rewind();
++            $this->fail('Expected negative length to fail when iteration begins');
++        } catch (\InvalidArgumentException $exception) {
++            // Then
++            $this->assertSame('Length cannot be negative: -1', $exception->getMessage());
++        }
++        $this->assertSame(0, $source->getIteratorCallCount());
++    }
++
++    /**
++     * @param array<mixed> $data
++     *
++     * @return iterable<mixed>
++     */
++    private static function keyedSource(array $data, string $form): iterable
++    {
++        return match ($form) {
++            'array' => $data,
++            'generator' => GeneratorFixture::getKeyValueGenerator($data),
++            'iterator' => new \ArrayIterator($data),
++            'aggregate' => new IteratorAggregateFixture($data),
++            default => throw new \LogicException("Unknown input form: $form"),
++        };
++    }
+ }
+diff --git a/tests/Stream/StreamPadLeftStreamingTest.php b/tests/Stream/StreamPadLeftStreamingTest.php
+new file mode 100644
+index 0000000..8e3511b
+--- /dev/null
++++ b/tests/Stream/StreamPadLeftStreamingTest.php
+@@ -0,0 +1,102 @@
++<?php
++
++declare(strict_types=1);
++
++namespace IterTools\Tests\Stream;
++
++use IterTools\Stream;
++
++class StreamPadLeftStreamingTest extends \PHPUnit\Framework\TestCase
++{
++    /**
++     * @test         Stream::padLeft preserves the bounded lookahead and suspended source position
++     * @dataProvider dataProviderForStreaming
++     */
++    public function testBoundedLookaheadAndSuspension(int $length, bool $infinite): void
++    {
++        // Given
++        $initialLookahead = \max(1, $length);
++        $allowedPulls = $initialLookahead;
++        $pulled = [];
++        $source = self::guardedSource($allowedPulls, $pulled, $infinite);
++
++        // When
++        $stream = Stream::of($source)->padLeft($length, null);
++        $output = $stream->getIterator();
++
++        // Then neither creating the pipeline nor obtaining its iterator consumes the source
++        $this->assertSame([], $pulled);
++
++        // When
++        $output->rewind();
++
++        // Then
++        for ($index = 0; $index < $initialLookahead + 2; ++$index) {
++            $expectedPulled = \range(0, \max($initialLookahead, $index + 1) - 1);
++            $this->assertSame($expectedPulled, $pulled);
++
++            for ($observation = 0; $observation < 2; ++$observation) {
++                $this->assertTrue($output->valid());
++                $this->assertSame($index, $output->key());
++                $this->assertSame($index, $output->current());
++                $this->assertSame($expectedPulled, $pulled);
++            }
++
++            if ($index + 1 < $initialLookahead + 2) {
++                $allowedPulls = \max($initialLookahead, $index + 2);
++                $output->next();
++            }
++        }
++    }
++
++    /**
++     * @test         Stream::padLeft composes with limit without consuming beyond the requested prefix
++     * @dataProvider dataProviderForStreaming
++     */
++    public function testLimitedPrefix(int $length, bool $infinite): void
++    {
++        // Given
++        $prefixLength = \max(1, $length) + 2;
++        $allowedPulls = $prefixLength;
++        $pulled = [];
++        $source = self::guardedSource($allowedPulls, $pulled, $infinite);
++        $stream = Stream::of($source)->padLeft($length, null)->limit($prefixLength);
++        $this->assertSame([], $pulled);
++
++        // When
++        $result = $stream->toArray();
++
++        // Then
++        $expected = \range(0, $prefixLength - 1);
++        $this->assertSame($expected, $result);
++        $this->assertSame($expected, $pulled);
++    }
++
++    public static function dataProviderForStreaming(): array
++    {
++        return [
++            'zero infinite' => [0, true],
++            'one infinite' => [1, true],
++            'three infinite' => [3, true],
++            'zero long finite' => [0, false],
++            'one long finite' => [1, false],
++            'three long finite' => [3, false],
++        ];
++    }
++
++    /**
++     * @param array<int> $pulled
++     *
++     * @return \Generator<string, int>
++     */
++    private static function guardedSource(int &$allowedPulls, array &$pulled, bool $infinite): \Generator
++    {
++        for ($value = 0; $infinite || $value < PHP_INT_MAX; ++$value) {
++            if ($value >= $allowedPulls) {
++                throw new \RuntimeException('Source requested beyond the permitted lookahead');
++            }
++            $pulled[] = $value;
++            yield "source-$value" => $value;
++        }
++    }
++}
+diff --git a/tests/Stream/StreamPadLeftTest.php b/tests/Stream/StreamPadLeftTest.php
+new file mode 100644
+index 0000000..7c8d1ae
+--- /dev/null
++++ b/tests/Stream/StreamPadLeftTest.php
+@@ -0,0 +1,141 @@
++<?php
++
++declare(strict_types=1);
++
++namespace IterTools\Tests\Stream;
++
++use IterTools\Stream;
++use IterTools\Tests\Fixture\CountingIteratorAggregateFixture;
++use IterTools\Tests\Fixture\GeneratorFixture;
++use IterTools\Tests\Fixture\IteratorAggregateFixture;
++
++class StreamPadLeftTest extends \PHPUnit\Framework\TestCase
++{
++    /**
++     * @test         Stream::padLeft is fluent and preserves finite values with sequential keys
++     * @dataProvider dataProviderForFiniteSources
++     * @param array<mixed> $data
++     * @param array<mixed> $expected
++     */
++    public function testFluentPadding(
++        string $form,
++        array $data,
++        int $length,
++        mixed $fill,
++        array $expected
++    ): void {
++        // Given
++        $source = match ($form) {
++            'array' => $data,
++            'generator' => GeneratorFixture::getKeyValueGenerator($data),
++            'iterator' => new \ArrayIterator($data),
++            'aggregate' => new IteratorAggregateFixture($data),
++            default => throw new \LogicException("Unknown input form: $form"),
++        };
++        $stream = Stream::of($source);
++
++        // When
++        $returned = $stream->padLeft($length, $fill);
++
++        // Then direct iteration retains keys, exposing any key reset at the buffer boundary
++        $this->assertSame($stream, $returned);
++        $this->assertSame($expected, \iterator_to_array($stream));
++    }
++
++    public static function dataProviderForFiniteSources(): \Generator
++    {
++        $data = ['a' => null, 9 => false, 'z' => 0];
++        foreach (['array', 'generator', 'iterator', 'aggregate'] as $form) {
++            foreach ([null, 'x'] as $fill) {
++                $cases = [
++                    [[], 0, []],
++                    [[], 1, [$fill]],
++                    [[], 3, [$fill, $fill, $fill]],
++                    [$data, 0, [null, false, 0]],
++                    [$data, 1, [null, false, 0]],
++                    [$data, 3, [null, false, 0]],
++                    [$data, 5, [$fill, $fill, null, false, 0]],
++                ];
++                foreach ($cases as [$source, $length, $expected]) {
++                    yield [$form, $source, $length, $fill, $expected];
++                }
++            }
++        }
++    }
++
++    /**
++     * @test         Stream::padLeft defers execution and validation
++     * @dataProvider dataProviderForDeferredLengths
++     */
++    public function testDeferredExecutionAndValidation(int $length): void
++    {
++        // Given
++        $pulled = [];
++        $source = GeneratorFixture::getRecordingGenerator([null, false], $pulled);
++        $stream = Stream::of($source);
++
++        // When
++        $returned = $stream->padLeft($length, 'x');
++        $output = $stream->getIterator();
++
++        // Then
++        $this->assertSame($stream, $returned);
++        $this->assertSame([], $pulled);
++
++        // When
++        if ($length < 0) {
++            try {
++                $output->rewind();
++                $this->fail('Expected negative length to fail when iteration begins');
++            } catch (\InvalidArgumentException $exception) {
++                // Then
++                $this->assertSame('Length cannot be negative: -1', $exception->getMessage());
++            }
++            $this->assertSame([], $pulled);
++        } else {
++            $expected = $length === 3 ? ['x', null, false] : [null, false];
++            $this->assertSame($expected, \iterator_to_array($output));
++            $this->assertSame([null, false], $pulled);
++        }
++    }
++
++    /**
++     * @test         Stream::padLeft does not obtain an aggregate iterator before execution or validation
++     * @dataProvider dataProviderForDeferredLengths
++     */
++    public function testDeferredIteratorAcquisition(int $length): void
++    {
++        // Given
++        $source = new CountingIteratorAggregateFixture([null, false]);
++        $stream = Stream::of($source);
++
++        // When
++        $returned = $stream->padLeft($length, 'x');
++        $output = $stream->getIterator();
++
++        // Then
++        $this->assertSame($stream, $returned);
++        $this->assertSame(0, $source->getIteratorCallCount());
++
++        // When
++        if ($length < 0) {
++            try {
++                $output->rewind();
++                $this->fail('Expected negative length to fail when iteration begins');
++            } catch (\InvalidArgumentException $exception) {
++                // Then
++                $this->assertSame('Length cannot be negative: -1', $exception->getMessage());
++            }
++            $this->assertSame(0, $source->getIteratorCallCount());
++        } else {
++            $expected = $length === 3 ? ['x', null, false] : [null, false];
++            $this->assertSame($expected, \iterator_to_array($output));
++            $this->assertSame(1, $source->getIteratorCallCount());
++        }
++    }
++
++    public static function dataProviderForDeferredLengths(): array
++    {
++        return [[-1], [0], [1], [3]];
++    }
++}

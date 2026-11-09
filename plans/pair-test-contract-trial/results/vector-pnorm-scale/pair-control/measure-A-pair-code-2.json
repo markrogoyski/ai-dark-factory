@@ -1,0 +1,65 @@
+{
+  "status": "done",
+  "job": "measure-A-pair-code-2",
+  "seat": "A",
+  "label": "pair-code-2",
+  "tree": "/private/tmp/pair-test-contract-trial-20261108/vector-pnorm-scale-pair-control/.council/host-D1Dlac-pair/wt/A",
+  "verification": {
+    "command": "php -d memory_limit=2G vendor/bin/phpunit --configuration=tests/phpunit.xml tests/LinearAlgebra/Vector",
+    "env": {
+      "TMPDIR": "/private/tmp/pair-test-contract-trial-20261108/vector-pnorm-scale-pair-control/.council/host-D1Dlac-pair/tmp",
+      "XDG_CACHE_HOME": "/private/tmp/pair-test-contract-trial-20261108/vector-pnorm-scale-pair-control/.council/host-D1Dlac-pair/tmp/cache"
+    },
+    "baseEnv": {
+      "PATH": "/opt/homebrew/Caskroom/codex/0.167.0/codex-path:/Users/mark/.local/bin:/Users/mark/.local/bin:/Users/mark/.local/bin:/Library/Frameworks/Python.framework/Versions/3.12/bin:/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/System/Cryptexes/App/usr/bin:/usr/bin:/bin:/usr/sbin:/sbin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/local/bin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/bin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/appleinternal/bin:/opt/X11/bin:/Users/mark/.codex/tmp/arg0-macos/codex-arg0NImy1n:/opt/homebrew/Caskroom/codex/0.167.0/codex-path:/private/tmp/pair-test-contract-trial-20261108/control-engine/plugins/dark-factory/bin:/opt/homebrew/Caskroom/codex/0.166.0/codex-path:/Users/mark/.local/bin:/Library/Frameworks/Python.framework/Versions/3.12/bin:/opt/homebrew/bin:/opt/homebrew/sbin:/Users/mark/.codex/tmp/arg0-macos/codex-arg0BhigjN:/Users/mark/.cmuxterm/cmux-cli-shims/FFDD7431-F39E-4B37-A291-43524C287A38:/Applications/cmux.app/Contents/Resources/bin:/Users/mark/Library/Application Support/JetBrains/Toolbox/scripts:/Users/mark/.lmstudio/bin:/Users/mark/Library/Application Support/JetBrains/Toolbox/scripts:/Users/mark/.lmstudio/bin",
+      "HOME": "/Users/mark",
+      "USER": "mark",
+      "LOGNAME": "mark",
+      "SHELL": "/bin/zsh",
+      "TMPDIR": "/var/folders/vt/794vflbn1h71x6spk8dphrhh0000gn/T/",
+      "LANG": "en_US.UTF-8",
+      "LC_ALL": "C.UTF-8",
+      "LC_CTYPE": "C.UTF-8"
+    }
+  },
+  "snapshot": {
+    "ref": "refs/council/host-D1Dlac-pair/A-pair-code-2",
+    "commit": "244d20a9d4f00ef7d8f9f3f0e57ca4d5889d10c8",
+    "tree": "98358478a45d6bbf1ea3a61076ad507875e29ecd",
+    "diff": "/private/tmp/pair-test-contract-trial-20261108/vector-pnorm-scale-pair-control/.council/host-D1Dlac-pair/room/pair-code-2/A.diff",
+    "stat": "/private/tmp/pair-test-contract-trial-20261108/vector-pnorm-scale-pair-control/.council/host-D1Dlac-pair/room/pair-code-2/A.stat",
+    "files": 2,
+    "fileList": [
+      "src/LinearAlgebra/Vector.php",
+      "tests/LinearAlgebra/Vector/VectorNormsTest.php"
+    ],
+    "added": 150,
+    "removed": 1,
+    "delta": null,
+    "seatCommits": 0
+  },
+  "scratch": true,
+  "postWords": 403,
+  "suite": {
+    "exitCode": 0,
+    "timedOut": false,
+    "seconds": 0.3,
+    "tail": "PHPUnit 10.5.63 by Sebastian Bergmann and contributors.\n\nRuntime:       PHP 8.5.3\nConfiguration: /private/tmp/pair-test-contract-trial-20261108/vector-pnorm-scale-pair-control/.council/host-D1Dlac-pair/scratch/A-pair-code-2-53683/tests/phpunit.xml\n\n...............................................................  63 / 745 (  8%)\n............................................................... 126 / 745 ( 16%)\n............................................................... 189 / 745 ( 25%)\n............................................................... 252 / 745 ( 33%)\n............................................................... 315 / 745 ( 42%)\n............................................................... 378 / 745 ( 50%)\n............................................................... 441 / 745 ( 59%)\n............................................................... 504 / 745 ( 67%)\n............................................................... 567 / 745 ( 76%)\n............................................................... 630 / 745 ( 84%)\n............................................................... 693 / 745 ( 93%)\n....................................................            745 / 745 (100%)\n\nTime: 00:00.094, Memory: 14.00 MB\n\nOK (745 tests, 1369 assertions)",
+    "log": "/private/tmp/pair-test-contract-trial-20261108/vector-pnorm-scale-pair-control/.council/host-D1Dlac-pair/logs/suite-A-pair-code-2.log",
+    "ran": true,
+    "passed": true,
+    "cwd": "/private/tmp/pair-test-contract-trial-20261108/vector-pnorm-scale-pair-control/.council/host-D1Dlac-pair/scratch/A-pair-code-2-53683",
+    "command": "php -d memory_limit=2G vendor/bin/phpunit --configuration=tests/phpunit.xml tests/LinearAlgebra/Vector",
+    "env": {
+      "TMPDIR": "/private/tmp/pair-test-contract-trial-20261108/vector-pnorm-scale-pair-control/.council/host-D1Dlac-pair/tmp",
+      "XDG_CACHE_HOME": "/private/tmp/pair-test-contract-trial-20261108/vector-pnorm-scale-pair-control/.council/host-D1Dlac-pair/tmp/cache"
+    }
+  },
+  "crossTests": [],
+  "elapsedSec": 1.9,
+  "evidence": {
+    "status": "published",
+    "index": "/private/tmp/pair-test-contract-trial-20261108/vector-pnorm-scale-pair-control/.council/host-D1Dlac-pair/evidence/A-pair-code-2-25aad7e72a5f82a7ae33bb12f1c9319a65eed73755c8b43d2f53d214f55086f9/index.json",
+    "pointer": "/private/tmp/pair-test-contract-trial-20261108/vector-pnorm-scale-pair-control/.council/host-D1Dlac-pair/evidence/A-pair-code-2.json"
+  }
+}

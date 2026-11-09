@@ -1,0 +1,53 @@
+PHPUnit 10.5.63 by Sebastian Bergmann and contributors.
+
+Runtime:       PHP 8.5.3
+Configuration: /private/tmp/pair-test-contract-trial-20261108/vector-pnorm-scale-pair-contract-replay/.council/host-h6AZEK-pair/scratch/A-pair-code-2-replay-1-base-88930/tests/phpunit.xml
+
+..FFFFFFFF                                                        10 / 10 (100%)
+
+Time: 00:00.013, Memory: 10.00 MB
+
+There were 8 failures:
+
+1) MathPHP\Tests\LinearAlgebra\Vector\VectorNormsTest::testPNormMixedScales with data set "huge first p=2" ([-1.0E+200, 3, -1.0E-200, 0], 2, 1.0E+200)
+Failed asserting that false is true.
+
+/private/tmp/pair-test-contract-trial-20261108/vector-pnorm-scale-pair-contract-replay/.council/host-h6AZEK-pair/scratch/A-pair-code-2-replay-1-base-88930/tests/LinearAlgebra/Vector/VectorNormsTest.php:234
+
+2) MathPHP\Tests\LinearAlgebra\Vector\VectorNormsTest::testPNormMixedScales with data set "huge last p=2" ([0, -1.0E-200, 3, -1.0E+200], 2, 1.0E+200)
+Failed asserting that false is true.
+
+/private/tmp/pair-test-contract-trial-20261108/vector-pnorm-scale-pair-contract-replay/.council/host-h6AZEK-pair/scratch/A-pair-code-2-replay-1-base-88930/tests/LinearAlgebra/Vector/VectorNormsTest.php:234
+
+3) MathPHP\Tests\LinearAlgebra\Vector\VectorNormsTest::testPNormMixedScales with data set "huge first p=4" ([-1.0E+200, 3, -1.0E-200, 0], 4, 1.0E+200)
+Failed asserting that false is true.
+
+/private/tmp/pair-test-contract-trial-20261108/vector-pnorm-scale-pair-contract-replay/.council/host-h6AZEK-pair/scratch/A-pair-code-2-replay-1-base-88930/tests/LinearAlgebra/Vector/VectorNormsTest.php:234
+
+4) MathPHP\Tests\LinearAlgebra\Vector\VectorNormsTest::testPNormMixedScales with data set "huge last p=4" ([0, -1.0E-200, 3, -1.0E+200], 4, 1.0E+200)
+Failed asserting that false is true.
+
+/private/tmp/pair-test-contract-trial-20261108/vector-pnorm-scale-pair-contract-replay/.council/host-h6AZEK-pair/scratch/A-pair-code-2-replay-1-base-88930/tests/LinearAlgebra/Vector/VectorNormsTest.php:234
+
+5) MathPHP\Tests\LinearAlgebra\Vector\VectorNormsTest::testPNormMixedScales with data set "huge first p=2.5" ([-1.0E+200, 3, -1.0E-200, 0], 2.5, 1.0E+200)
+Failed asserting that false is true.
+
+/private/tmp/pair-test-contract-trial-20261108/vector-pnorm-scale-pair-contract-replay/.council/host-h6AZEK-pair/scratch/A-pair-code-2-replay-1-base-88930/tests/LinearAlgebra/Vector/VectorNormsTest.php:234
+
+6) MathPHP\Tests\LinearAlgebra\Vector\VectorNormsTest::testPNormMixedScales with data set "huge last p=2.5" ([0, -1.0E-200, 3, -1.0E+200], 2.5, 1.0E+200)
+Failed asserting that false is true.
+
+/private/tmp/pair-test-contract-trial-20261108/vector-pnorm-scale-pair-contract-replay/.council/host-h6AZEK-pair/scratch/A-pair-code-2-replay-1-base-88930/tests/LinearAlgebra/Vector/VectorNormsTest.php:234
+
+7) MathPHP\Tests\LinearAlgebra\Vector\VectorNormsTest::testPNormMixedScales with data set "huge first p=1000" ([-1.0E+200, 3, -1.0E-200, 0], 1000, 1.0E+200)
+Failed asserting that false is true.
+
+/private/tmp/pair-test-contract-trial-20261108/vector-pnorm-scale-pair-contract-replay/.council/host-h6AZEK-pair/scratch/A-pair-code-2-replay-1-base-88930/tests/LinearAlgebra/Vector/VectorNormsTest.php:234
+
+8) MathPHP\Tests\LinearAlgebra\Vector\VectorNormsTest::testPNormMixedScales with data set "huge last p=1000" ([0, -1.0E-200, 3, -1.0E+200], 1000, 1.0E+200)
+Failed asserting that false is true.
+
+/private/tmp/pair-test-contract-trial-20261108/vector-pnorm-scale-pair-contract-replay/.council/host-h6AZEK-pair/scratch/A-pair-code-2-replay-1-base-88930/tests/LinearAlgebra/Vector/VectorNormsTest.php:234
+
+FAILURES!
+Tests: 10, Assertions: 14, Failures: 8.

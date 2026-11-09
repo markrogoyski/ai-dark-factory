@@ -37,6 +37,29 @@ test('checkpoint replays exact completed operations without another model call',
   await assert.rejects(() => third.agent(request), { code: 'CHECKPOINT_MISMATCH' }, 'a mismatch poisons later replay too')
 })
 
+test('replay requests and raw logs obey existing checkpoint compatibility', async t => {
+  const f = fixture(t)
+  const log = join(f.run.runDir, 'logs/replay.log')
+  mkdirSync(join(f.run.runDir, 'logs'))
+  writeFileSync(log, 'fatal before individual tests ran\n')
+  const request = { run: f.run, seat: 'A', label: 'pair-code-2', replay: { testRoots: ['tests'],
+    mapping: [{ file: 'tests/new.cjs', command: 'node tests/new.cjs', checkIds: ['T1'], fixtures: [] }] } }
+  const result = { status: 'done', replay: { records: [{ side: 'base', exitCode: 255, log }] } }
+  const runtime = { measure: async () => result, checkpointState: () => ({ sequence: 1 }) }
+  await journalRuntime(runtime, f.opts).measure(request)
+  const saved = loadCheckpoint(f.hostRunDir, f.opts)
+  const resume = () => journalRuntime({ ...runtime, measure: () => { throw new Error('must reuse') } }, { ...f.opts, saved })
+  assert.deepEqual(await resume().measure(request), result)
+  for (const key of ['testRoots', 'command', 'checkIds', 'fixtures']) {
+    const changed = structuredClone(request)
+    if (key === 'testRoots') changed.replay.testRoots.push('spec')
+    else changed.replay.mapping[0][key] = key === 'command' ? 'true' : ['changed']
+    await assert.rejects(() => resume().measure(changed), { code: 'CHECKPOINT_MISMATCH' })
+  }
+  writeFileSync(log, 'tampered')
+  assert.throws(() => loadCheckpoint(f.hostRunDir, f.opts), /evidence changed/)
+})
+
 test('checkpoint rejects changed source, inputs, evidence, worktrees and engine before replay', async t => {
   for (const change of ['source', 'evidence', 'worktree', 'engine', 'reference']) {
     const f = fixture(t)

@@ -1,0 +1,29 @@
+{
+  "tasks": [
+    {
+      "taskId": "iterator-pad-left",
+      "identicalArgumentsExceptVariant": true,
+      "targetHeadsUnchanged": true,
+      "dependencyManifestMatchesFrozen": true
+    },
+    {
+      "taskId": "algebra-coprime-api",
+      "identicalArgumentsExceptVariant": true,
+      "targetHeadsUnchanged": true,
+      "dependencyManifestMatchesFrozen": true
+    },
+    {
+      "taskId": "vector-pnorm-scale",
+      "identicalArgumentsExceptVariant": true,
+      "targetHeadsUnchanged": true,
+      "dependencyManifestMatchesFrozen": true
+    }
+  ],
+  "modelBackendRevision": "not exposed; configured models and efforts unchanged",
+  "cli": "codex-cli 0.167.0",
+  "php": "8.5.3",
+  "node": "26.0.0",
+  "ordering": "controls first; treatment later; not randomized; cache/provider latency may differ",
+  "verificationEnvironmentsMatched": false,
+  "setupEnvironmentDrift": "Setup selected different TMPDIR paths and inconsistent XDG_CACHE_HOME overrides across arms. The frozen arguments and verification commands match, but generated cache/temp settings do not. This is a protocol limitation, not a measured treatment benefit; no post-outcome reruns were added."
+}

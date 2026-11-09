@@ -1,0 +1,40 @@
+{"at":"2026-11-08T22:34:50.206Z","type":"run.started","workflow":"pair","repo":"/private/tmp/pair-test-contract-trial-20261108/vector-pnorm-scale-pair-control","hostRunDir":"/private/tmp/pair-test-contract-trial-20261108/vector-pnorm-scale-pair-control/.council/host-D1Dlac","resumed":false}
+{"at":"2026-11-08T22:34:50.212Z","type":"phase","title":"Setup"}
+{"at":"2026-11-08T22:34:50.263Z","type":"preflight","status":"ok","vendors":{"codex":{"ok":true,"exe":"codex","version":"codex-cli 0.167.0"}}}
+{"at":"2026-11-08T22:34:50.266Z","type":"turn.started","label":"setup","role":"setup","vendor":"codex","model":"gpt-6.1-sol","job":"host-1-setup","runDir":"/private/tmp/pair-test-contract-trial-20261108/vector-pnorm-scale-pair-control/.council/host-D1Dlac"}
+{"at":"2026-11-08T22:35:26.686Z","type":"turn.running","label":"setup","job":"host-1-setup"}
+{"at":"2026-11-08T22:35:57.008Z","type":"turn.running","label":"setup","job":"host-1-setup"}
+{"at":"2026-11-08T22:36:27.345Z","type":"turn.running","label":"setup","job":"host-1-setup"}
+{"at":"2026-11-08T22:36:35.464Z","type":"turn.completed","label":"setup","job":"host-1-setup","status":"done"}
+{"at":"2026-11-08T22:36:35.499Z","type":"checkpoint.saved","operations":1,"path":"/private/tmp/pair-test-contract-trial-20261108/vector-pnorm-scale-pair-control/.council/host-D1Dlac/checkpoint.json"}
+{"at":"2026-11-08T22:36:35.499Z","type":"log","message":"pair: Codex Sol authors; Codex Astra reviews; budget 8 reviews"}
+{"at":"2026-11-08T22:36:35.499Z","type":"phase","title":"Design"}
+{"at":"2026-11-08T22:36:35.501Z","type":"turn.started","label":"pair-design-1","role":"author","vendor":"codex","model":"gpt-6.1-sol","job":"pair-design-1","runDir":"/private/tmp/pair-test-contract-trial-20261108/vector-pnorm-scale-pair-control/.council/host-D1Dlac-pair"}
+{"at":"2026-11-08T22:37:11.869Z","type":"turn.running","label":"pair-design-1","job":"pair-design-1"}
+{"at":"2026-11-08T22:37:42.183Z","type":"turn.running","label":"pair-design-1","job":"pair-design-1"}
+{"at":"2026-11-08T22:38:12.527Z","type":"turn.running","label":"pair-design-1","job":"pair-design-1"}
+{"at":"2026-11-08T22:38:30.719Z","type":"turn.completed","label":"pair-design-1","job":"pair-design-1","status":"done"}
+{"at":"2026-11-08T22:38:30.753Z","type":"checkpoint.saved","operations":2,"path":"/private/tmp/pair-test-contract-trial-20261108/vector-pnorm-scale-pair-control/.council/host-D1Dlac/checkpoint.json"}
+{"at":"2026-11-08T22:38:30.753Z","type":"phase","title":"Review design"}
+{"at":"2026-11-08T22:38:30.755Z","type":"turn.started","label":"review pair-design-1","role":"reviewer","vendor":"codex","model":"gpt-6-astra","job":"review-pair-design-1","runDir":"/private/tmp/pair-test-contract-trial-20261108/vector-pnorm-scale-pair-control/.council/host-D1Dlac-pair"}
+{"at":"2026-11-08T22:39:06.189Z","type":"turn.completed","label":"review pair-design-1","job":"review-pair-design-1","status":"done"}
+{"at":"2026-11-08T22:39:06.230Z","type":"checkpoint.saved","operations":3,"path":"/private/tmp/pair-test-contract-trial-20261108/vector-pnorm-scale-pair-control/.council/host-D1Dlac/checkpoint.json"}
+{"at":"2026-11-08T22:39:06.230Z","type":"log","message":"pair: design review 1: ready; 0 open finding(s)"}
+{"at":"2026-11-08T22:39:06.230Z","type":"phase","title":"Implement"}
+{"at":"2026-11-08T22:39:06.231Z","type":"turn.started","label":"pair-code-2","role":"author","vendor":"codex","model":"gpt-6.1-sol","job":"pair-code-2","runDir":"/private/tmp/pair-test-contract-trial-20261108/vector-pnorm-scale-pair-control/.council/host-D1Dlac-pair"}
+{"at":"2026-11-08T22:39:42.589Z","type":"turn.running","label":"pair-code-2","job":"pair-code-2"}
+{"at":"2026-11-08T22:40:12.890Z","type":"turn.running","label":"pair-code-2","job":"pair-code-2"}
+{"at":"2026-11-08T22:40:43.277Z","type":"turn.running","label":"pair-code-2","job":"pair-code-2"}
+{"at":"2026-11-08T22:41:03.544Z","type":"turn.completed","label":"pair-code-2","job":"pair-code-2","status":"done"}
+{"at":"2026-11-08T22:41:03.623Z","type":"checkpoint.saved","operations":4,"path":"/private/tmp/pair-test-contract-trial-20261108/vector-pnorm-scale-pair-control/.council/host-D1Dlac/checkpoint.json"}
+{"at":"2026-11-08T22:41:03.624Z","type":"phase","title":"Verify"}
+{"at":"2026-11-08T22:41:03.624Z","type":"measurement.started","job":"measure-A-pair-code-2","runDir":"/private/tmp/pair-test-contract-trial-20261108/vector-pnorm-scale-pair-control/.council/host-D1Dlac-pair"}
+{"at":"2026-11-08T22:41:05.753Z","type":"measurement.completed","job":"measure-A-pair-code-2","status":"done","passed":true}
+{"at":"2026-11-08T22:41:05.786Z","type":"checkpoint.saved","operations":5,"path":"/private/tmp/pair-test-contract-trial-20261108/vector-pnorm-scale-pair-control/.council/host-D1Dlac/checkpoint.json"}
+{"at":"2026-11-08T22:41:05.786Z","type":"phase","title":"Review code"}
+{"at":"2026-11-08T22:41:05.786Z","type":"turn.started","label":"review pair-code-2","role":"reviewer","vendor":"codex","model":"gpt-6-astra","job":"review-pair-code-2","runDir":"/private/tmp/pair-test-contract-trial-20261108/vector-pnorm-scale-pair-control/.council/host-D1Dlac-pair"}
+{"at":"2026-11-08T22:41:43.273Z","type":"turn.running","label":"review pair-code-2","job":"review-pair-code-2"}
+{"at":"2026-11-08T22:41:57.498Z","type":"turn.completed","label":"review pair-code-2","job":"review-pair-code-2","status":"done"}
+{"at":"2026-11-08T22:41:57.526Z","type":"checkpoint.saved","operations":6,"path":"/private/tmp/pair-test-contract-trial-20261108/vector-pnorm-scale-pair-control/.council/host-D1Dlac/checkpoint.json"}
+{"at":"2026-11-08T22:41:57.526Z","type":"log","message":"pair: code review 2: ready; 0 open finding(s)"}
+{"at":"2026-11-08T22:41:57.531Z","type":"run.completed","status":"done","exitCode":0,"result":"/private/tmp/pair-test-contract-trial-20261108/vector-pnorm-scale-pair-control/.council/host-D1Dlac/result.json"}

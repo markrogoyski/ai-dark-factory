@@ -1,0 +1,97 @@
+PHPUnit 10.5.63 by Sebastian Bergmann and contributors.
+
+Runtime:       PHP 8.5.3
+Configuration: /private/tmp/pair-test-contract-trial-20261108/algebra-coprime-api-pair-contract-replay/.council/host-mCY1cs-pair/scratch/A-pair-code-2-replay-2-base-85754/tests/phpunit.xml
+
+EEEEEEEEEEEEEE                                                    14 / 14 (100%)
+
+Time: 00:00.012, Memory: 10.00 MB
+
+There were 14 errors:
+
+1) MathPHP\Tests\Algebra\AreCoprimeTest::testAreCoprimeWithMostNegativeInteger with data set "minimum integer" (-9223372036854775807-1, false)
+Error: Call to undefined method MathPHP\Algebra::areCoprime()
+
+/private/tmp/pair-test-contract-trial-20261108/algebra-coprime-api-pair-contract-replay/.council/host-mCY1cs-pair/scratch/A-pair-code-2-replay-2-base-85754/tests/Algebra/AreCoprimeTest.php:123
+/private/tmp/pair-test-contract-trial-20261108/algebra-coprime-api-pair-contract-replay/.council/host-mCY1cs-pair/scratch/A-pair-code-2-replay-2-base-85754/tests/Algebra/AreCoprimeTest.php:85
+
+2) MathPHP\Tests\Algebra\AreCoprimeTest::testAreCoprimeWithMostNegativeInteger with data set "zero" (0, false)
+Error: Call to undefined method MathPHP\Algebra::areCoprime()
+
+/private/tmp/pair-test-contract-trial-20261108/algebra-coprime-api-pair-contract-replay/.council/host-mCY1cs-pair/scratch/A-pair-code-2-replay-2-base-85754/tests/Algebra/AreCoprimeTest.php:123
+/private/tmp/pair-test-contract-trial-20261108/algebra-coprime-api-pair-contract-replay/.council/host-mCY1cs-pair/scratch/A-pair-code-2-replay-2-base-85754/tests/Algebra/AreCoprimeTest.php:85
+
+3) MathPHP\Tests\Algebra\AreCoprimeTest::testAreCoprimeWithMostNegativeInteger with data set "two" (2, false)
+Error: Call to undefined method MathPHP\Algebra::areCoprime()
+
+/private/tmp/pair-test-contract-trial-20261108/algebra-coprime-api-pair-contract-replay/.council/host-mCY1cs-pair/scratch/A-pair-code-2-replay-2-base-85754/tests/Algebra/AreCoprimeTest.php:123
+/private/tmp/pair-test-contract-trial-20261108/algebra-coprime-api-pair-contract-replay/.council/host-mCY1cs-pair/scratch/A-pair-code-2-replay-2-base-85754/tests/Algebra/AreCoprimeTest.php:85
+
+4) MathPHP\Tests\Algebra\AreCoprimeTest::testAreCoprimeWithMostNegativeInteger with data set "negative two" (-2, false)
+Error: Call to undefined method MathPHP\Algebra::areCoprime()
+
+/private/tmp/pair-test-contract-trial-20261108/algebra-coprime-api-pair-contract-replay/.council/host-mCY1cs-pair/scratch/A-pair-code-2-replay-2-base-85754/tests/Algebra/AreCoprimeTest.php:123
+/private/tmp/pair-test-contract-trial-20261108/algebra-coprime-api-pair-contract-replay/.council/host-mCY1cs-pair/scratch/A-pair-code-2-replay-2-base-85754/tests/Algebra/AreCoprimeTest.php:85
+
+5) MathPHP\Tests\Algebra\AreCoprimeTest::testAreCoprimeWithMostNegativeInteger with data set "six" (6, false)
+Error: Call to undefined method MathPHP\Algebra::areCoprime()
+
+/private/tmp/pair-test-contract-trial-20261108/algebra-coprime-api-pair-contract-replay/.council/host-mCY1cs-pair/scratch/A-pair-code-2-replay-2-base-85754/tests/Algebra/AreCoprimeTest.php:123
+/private/tmp/pair-test-contract-trial-20261108/algebra-coprime-api-pair-contract-replay/.council/host-mCY1cs-pair/scratch/A-pair-code-2-replay-2-base-85754/tests/Algebra/AreCoprimeTest.php:85
+
+6) MathPHP\Tests\Algebra\AreCoprimeTest::testAreCoprimeWithMostNegativeInteger with data set "negative six" (-6, false)
+Error: Call to undefined method MathPHP\Algebra::areCoprime()
+
+/private/tmp/pair-test-contract-trial-20261108/algebra-coprime-api-pair-contract-replay/.council/host-mCY1cs-pair/scratch/A-pair-code-2-replay-2-base-85754/tests/Algebra/AreCoprimeTest.php:123
+/private/tmp/pair-test-contract-trial-20261108/algebra-coprime-api-pair-contract-replay/.council/host-mCY1cs-pair/scratch/A-pair-code-2-replay-2-base-85754/tests/Algebra/AreCoprimeTest.php:85
+
+7) MathPHP\Tests\Algebra\AreCoprimeTest::testAreCoprimeWithMostNegativeInteger with data set "positive unit" (1, true)
+Error: Call to undefined method MathPHP\Algebra::areCoprime()
+
+/private/tmp/pair-test-contract-trial-20261108/algebra-coprime-api-pair-contract-replay/.council/host-mCY1cs-pair/scratch/A-pair-code-2-replay-2-base-85754/tests/Algebra/AreCoprimeTest.php:123
+/private/tmp/pair-test-contract-trial-20261108/algebra-coprime-api-pair-contract-replay/.council/host-mCY1cs-pair/scratch/A-pair-code-2-replay-2-base-85754/tests/Algebra/AreCoprimeTest.php:85
+
+8) MathPHP\Tests\Algebra\AreCoprimeTest::testAreCoprimeWithMostNegativeInteger with data set "negative unit" (-1, true)
+Error: Call to undefined method MathPHP\Algebra::areCoprime()
+
+/private/tmp/pair-test-contract-trial-20261108/algebra-coprime-api-pair-contract-replay/.council/host-mCY1cs-pair/scratch/A-pair-code-2-replay-2-base-85754/tests/Algebra/AreCoprimeTest.php:123
+/private/tmp/pair-test-contract-trial-20261108/algebra-coprime-api-pair-contract-replay/.council/host-mCY1cs-pair/scratch/A-pair-code-2-replay-2-base-85754/tests/Algebra/AreCoprimeTest.php:85
+
+9) MathPHP\Tests\Algebra\AreCoprimeTest::testAreCoprimeWithMostNegativeInteger with data set "three" (3, true)
+Error: Call to undefined method MathPHP\Algebra::areCoprime()
+
+/private/tmp/pair-test-contract-trial-20261108/algebra-coprime-api-pair-contract-replay/.council/host-mCY1cs-pair/scratch/A-pair-code-2-replay-2-base-85754/tests/Algebra/AreCoprimeTest.php:123
+/private/tmp/pair-test-contract-trial-20261108/algebra-coprime-api-pair-contract-replay/.council/host-mCY1cs-pair/scratch/A-pair-code-2-replay-2-base-85754/tests/Algebra/AreCoprimeTest.php:85
+
+10) MathPHP\Tests\Algebra\AreCoprimeTest::testAreCoprimeWithMostNegativeInteger with data set "seven" (7, true)
+Error: Call to undefined method MathPHP\Algebra::areCoprime()
+
+/private/tmp/pair-test-contract-trial-20261108/algebra-coprime-api-pair-contract-replay/.council/host-mCY1cs-pair/scratch/A-pair-code-2-replay-2-base-85754/tests/Algebra/AreCoprimeTest.php:123
+/private/tmp/pair-test-contract-trial-20261108/algebra-coprime-api-pair-contract-replay/.council/host-mCY1cs-pair/scratch/A-pair-code-2-replay-2-base-85754/tests/Algebra/AreCoprimeTest.php:85
+
+11) MathPHP\Tests\Algebra\AreCoprimeTest::testAreCoprimeWithMostNegativeInteger with data set "negative seven" (-7, true)
+Error: Call to undefined method MathPHP\Algebra::areCoprime()
+
+/private/tmp/pair-test-contract-trial-20261108/algebra-coprime-api-pair-contract-replay/.council/host-mCY1cs-pair/scratch/A-pair-code-2-replay-2-base-85754/tests/Algebra/AreCoprimeTest.php:123
+/private/tmp/pair-test-contract-trial-20261108/algebra-coprime-api-pair-contract-replay/.council/host-mCY1cs-pair/scratch/A-pair-code-2-replay-2-base-85754/tests/Algebra/AreCoprimeTest.php:85
+
+12) MathPHP\Tests\Algebra\AreCoprimeTest::testAreCoprimeWithMostNegativeInteger with data set "maximum integer" (9223372036854775807, true)
+Error: Call to undefined method MathPHP\Algebra::areCoprime()
+
+/private/tmp/pair-test-contract-trial-20261108/algebra-coprime-api-pair-contract-replay/.council/host-mCY1cs-pair/scratch/A-pair-code-2-replay-2-base-85754/tests/Algebra/AreCoprimeTest.php:123
+/private/tmp/pair-test-contract-trial-20261108/algebra-coprime-api-pair-contract-replay/.council/host-mCY1cs-pair/scratch/A-pair-code-2-replay-2-base-85754/tests/Algebra/AreCoprimeTest.php:85
+
+13) MathPHP\Tests\Algebra\AreCoprimeTest::testAreCoprimeWithMostNegativeInteger with data set "negative maximum integer" (-9223372036854775807, true)
+Error: Call to undefined method MathPHP\Algebra::areCoprime()
+
+/private/tmp/pair-test-contract-trial-20261108/algebra-coprime-api-pair-contract-replay/.council/host-mCY1cs-pair/scratch/A-pair-code-2-replay-2-base-85754/tests/Algebra/AreCoprimeTest.php:123
+/private/tmp/pair-test-contract-trial-20261108/algebra-coprime-api-pair-contract-replay/.council/host-mCY1cs-pair/scratch/A-pair-code-2-replay-2-base-85754/tests/Algebra/AreCoprimeTest.php:85
+
+14) MathPHP\Tests\Algebra\AreCoprimeTest::testAreCoprimeWithMostNegativeInteger with data set "minimum plus one" (-9223372036854775807, true)
+Error: Call to undefined method MathPHP\Algebra::areCoprime()
+
+/private/tmp/pair-test-contract-trial-20261108/algebra-coprime-api-pair-contract-replay/.council/host-mCY1cs-pair/scratch/A-pair-code-2-replay-2-base-85754/tests/Algebra/AreCoprimeTest.php:123
+/private/tmp/pair-test-contract-trial-20261108/algebra-coprime-api-pair-contract-replay/.council/host-mCY1cs-pair/scratch/A-pair-code-2-replay-2-base-85754/tests/Algebra/AreCoprimeTest.php:85
+
+ERRORS!
+Tests: 14, Assertions: 0, Errors: 14.

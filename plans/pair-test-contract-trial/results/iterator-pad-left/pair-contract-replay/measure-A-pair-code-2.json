@@ -1,0 +1,466 @@
+{
+  "status": "done",
+  "job": "measure-A-pair-code-2",
+  "seat": "A",
+  "label": "pair-code-2",
+  "tree": "/private/tmp/pair-test-contract-trial-20261108/iterator-pad-left-pair-contract-replay/.council/host-b4UBKn-pair/wt/A",
+  "verification": {
+    "command": "php -d memory_limit=2G vendor/bin/phpunit --configuration=tests/phpunit.xml tests/Single && php -d memory_limit=2G vendor/bin/phpunit --configuration=tests/phpunit.xml tests/Stream",
+    "env": {
+      "TMPDIR": "/private/tmp/pair-test-contract-trial-20261108/iterator-pad-left-pair-contract-replay/.council/host-b4UBKn-pair/tmp",
+      "XDG_CACHE_HOME": "/private/tmp/pair-test-contract-trial-20261108/iterator-pad-left-pair-contract-replay/.council/host-b4UBKn-pair/cache"
+    },
+    "baseEnv": {
+      "PATH": "/opt/homebrew/Caskroom/codex/0.167.0/codex-path:/Users/mark/.local/bin:/Users/mark/.local/bin:/Users/mark/.local/bin:/Library/Frameworks/Python.framework/Versions/3.12/bin:/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/System/Cryptexes/App/usr/bin:/usr/bin:/bin:/usr/sbin:/sbin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/local/bin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/bin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/appleinternal/bin:/opt/X11/bin:/Users/mark/.codex/tmp/arg0-macos/codex-arg0OBpjr5:/opt/homebrew/Caskroom/codex/0.167.0/codex-path:/private/tmp/pair-test-contract-trial-20261108/candidate-engine/plugins/dark-factory/bin:/opt/homebrew/Caskroom/codex/0.166.0/codex-path:/Users/mark/.local/bin:/Library/Frameworks/Python.framework/Versions/3.12/bin:/opt/homebrew/bin:/opt/homebrew/sbin:/Users/mark/.codex/tmp/arg0-macos/codex-arg0BhigjN:/Users/mark/.cmuxterm/cmux-cli-shims/FFDD7431-F39E-4B37-A291-43524C287A38:/Applications/cmux.app/Contents/Resources/bin:/Users/mark/Library/Application Support/JetBrains/Toolbox/scripts:/Users/mark/.lmstudio/bin:/Users/mark/Library/Application Support/JetBrains/Toolbox/scripts:/Users/mark/.lmstudio/bin",
+      "HOME": "/Users/mark",
+      "USER": "mark",
+      "LOGNAME": "mark",
+      "SHELL": "/bin/zsh",
+      "TMPDIR": "/var/folders/vt/794vflbn1h71x6spk8dphrhh0000gn/T/",
+      "LANG": "en_US.UTF-8",
+      "LC_ALL": "C.UTF-8",
+      "LC_CTYPE": "C.UTF-8"
+    }
+  },
+  "snapshot": {
+    "ref": "refs/council/host-b4UBKn-pair/A-pair-code-2",
+    "commit": "65de019628da372b4446cc8a6f96eaed64389994",
+    "tree": "de06fa15e9d1861d9f08c25e82d12b721f09ec08",
+    "diff": "/private/tmp/pair-test-contract-trial-20261108/iterator-pad-left-pair-contract-replay/.council/host-b4UBKn-pair/room/pair-code-2/A.diff",
+    "stat": "/private/tmp/pair-test-contract-trial-20261108/iterator-pad-left-pair-contract-replay/.council/host-b4UBKn-pair/room/pair-code-2/A.stat",
+    "files": 8,
+    "fileList": [
+      "docs/single-iteration.md",
+      "docs/stream.md",
+      "src/Single.php",
+      "src/Stream.php",
+      "tests/Single/PadLeftStreamingTest.php",
+      "tests/Single/PadLeftTest.php",
+      "tests/Stream/StreamPadLeftStreamingTest.php",
+      "tests/Stream/StreamPadLeftTest.php"
+    ],
+    "added": 496,
+    "removed": 2,
+    "delta": null,
+    "seatCommits": 0
+  },
+  "scratch": true,
+  "postWords": 727,
+  "replay": {
+    "base": "f8ae71b11e508bf61a6233508b391262a5890454",
+    "snapshot": "65de019628da372b4446cc8a6f96eaed64389994",
+    "snapshotTree": "de06fa15e9d1861d9f08c25e82d12b721f09ec08",
+    "testRoots": [
+      "tests/Single",
+      "tests/Stream",
+      "tests/Fixture"
+    ],
+    "mapping": [
+      {
+        "file": "tests/Single/PadLeftStreamingTest.php",
+        "command": "php -d memory_limit=2G vendor/bin/phpunit --configuration=tests/phpunit.xml tests/Single/PadLeftStreamingTest.php",
+        "checkIds": [
+          "single-bounded-consumption"
+        ],
+        "fixtures": []
+      },
+      {
+        "file": "tests/Single/PadLeftTest.php",
+        "command": "php -d memory_limit=2G vendor/bin/phpunit --configuration=tests/phpunit.xml tests/Single/PadLeftTest.php",
+        "checkIds": [
+          "single-finite-values-keys"
+        ],
+        "fixtures": [
+          "tests/Fixture/ArrayIteratorFixture.php",
+          "tests/Fixture/CountingIteratorAggregateFixture.php",
+          "tests/Fixture/DataProvider.php",
+          "tests/Fixture/GeneratorFixture.php",
+          "tests/Fixture/IteratorAggregateFixture.php"
+        ]
+      },
+      {
+        "file": "tests/Single/PadLeftTest.php",
+        "command": "php -d memory_limit=2G vendor/bin/phpunit --configuration=tests/phpunit.xml tests/Single/PadLeftTest.php --filter 'Deferred|Negative|Lazy'",
+        "checkIds": [
+          "single-deferred-validation"
+        ],
+        "fixtures": [
+          "tests/Fixture/ArrayIteratorFixture.php",
+          "tests/Fixture/CountingIteratorAggregateFixture.php",
+          "tests/Fixture/DataProvider.php",
+          "tests/Fixture/GeneratorFixture.php",
+          "tests/Fixture/IteratorAggregateFixture.php"
+        ]
+      },
+      {
+        "file": "tests/Stream/StreamPadLeftTest.php",
+        "command": "php -d memory_limit=2G vendor/bin/phpunit --configuration=tests/phpunit.xml tests/Stream/StreamPadLeftTest.php",
+        "checkIds": [
+          "stream-preserved-contract"
+        ],
+        "fixtures": [
+          "tests/Fixture/CountingIteratorAggregateFixture.php",
+          "tests/Fixture/GeneratorFixture.php",
+          "tests/Fixture/IteratorAggregateFixture.php"
+        ]
+      },
+      {
+        "file": "tests/Stream/StreamPadLeftStreamingTest.php",
+        "command": "php -d memory_limit=2G vendor/bin/phpunit --configuration=tests/phpunit.xml tests/Stream/StreamPadLeftStreamingTest.php",
+        "checkIds": [
+          "stream-bounded-consumption"
+        ],
+        "fixtures": []
+      }
+    ],
+    "changes": [
+      {
+        "status": "M",
+        "path": "docs/single-iteration.md",
+        "previousPath": ""
+      },
+      {
+        "status": "M",
+        "path": "docs/stream.md",
+        "previousPath": ""
+      },
+      {
+        "status": "M",
+        "path": "src/Single.php",
+        "previousPath": ""
+      },
+      {
+        "status": "M",
+        "path": "src/Stream.php",
+        "previousPath": ""
+      },
+      {
+        "status": "A",
+        "path": "tests/Single/PadLeftStreamingTest.php",
+        "previousPath": ""
+      },
+      {
+        "status": "M",
+        "path": "tests/Single/PadLeftTest.php",
+        "previousPath": ""
+      },
+      {
+        "status": "A",
+        "path": "tests/Stream/StreamPadLeftStreamingTest.php",
+        "previousPath": ""
+      },
+      {
+        "status": "A",
+        "path": "tests/Stream/StreamPadLeftTest.php",
+        "previousPath": ""
+      }
+    ],
+    "exclusions": [
+      {
+        "path": "vendor",
+        "reason": "author dependency changes are not overlaid; focused replay uses the original run repository dependency copy"
+      },
+      {
+        "path": "docs/single-iteration.md",
+        "reason": "outside accepted test roots"
+      },
+      {
+        "path": "docs/stream.md",
+        "reason": "outside accepted test roots"
+      },
+      {
+        "path": "src/Single.php",
+        "reason": "outside accepted test roots"
+      },
+      {
+        "path": "src/Stream.php",
+        "reason": "outside accepted test roots"
+      },
+      {
+        "path": "tests/Fixture/ArrayIteratorFixture.php",
+        "reason": "unchanged; use original base file without overlay"
+      },
+      {
+        "path": "tests/Fixture/CountingIteratorAggregateFixture.php",
+        "reason": "unchanged; use original base file without overlay"
+      },
+      {
+        "path": "tests/Fixture/DataProvider.php",
+        "reason": "unchanged; use original base file without overlay"
+      },
+      {
+        "path": "tests/Fixture/GeneratorFixture.php",
+        "reason": "unchanged; use original base file without overlay"
+      },
+      {
+        "path": "tests/Fixture/IteratorAggregateFixture.php",
+        "reason": "unchanged; use original base file without overlay"
+      }
+    ],
+    "records": [
+      {
+        "side": "base",
+        "revision": "f8ae71b11e508bf61a6233508b391262a5890454",
+        "tree": "1f4bec2f7ee27d26726db9427a50ee298adaa023",
+        "file": "tests/Single/PadLeftStreamingTest.php",
+        "command": "php -d memory_limit=2G vendor/bin/phpunit --configuration=tests/phpunit.xml tests/Single/PadLeftStreamingTest.php",
+        "checkIds": [
+          "single-bounded-consumption"
+        ],
+        "cwd": "/private/tmp/pair-test-contract-trial-20261108/iterator-pad-left-pair-contract-replay/.council/host-b4UBKn-pair/scratch/A-pair-code-2-replay-0-base-93327",
+        "attempted": true,
+        "ran": true,
+        "passed": false,
+        "hasExitCode": true,
+        "exitCode": 2,
+        "signal": 0,
+        "timedOut": false,
+        "seconds": 0.4,
+        "log": "/private/tmp/pair-test-contract-trial-20261108/iterator-pad-left-pair-contract-replay/.council/host-b4UBKn-pair/logs/replay-A-pair-code-2-replay-0-base.log",
+        "logSha256": "642408af85e4e98c1b43ba084c93cb874a3ce3f1ff28734507d05b7276a1f414",
+        "tail": "/private/tmp/pair-test-contract-trial-20261108/iterator-pad-left-pair-contract-replay/.council/host-b4UBKn-pair/scratch/A-pair-code-2-replay-0-base-93327/src/Single.php:1074\n/private/tmp/pair-test-contract-trial-20261108/iterator-pad-left-pair-contract-replay/.council/host-b4UBKn-pair/scratch/A-pair-code-2-replay-0-base-93327/tests/Single/PadLeftStreamingTest.php:38\n\n2) IterTools\\Tests\\Single\\PadLeftStreamingTest::testBoundedLookaheadAndSuspension with data set \"one infinite\" (1, true)\nRuntimeException: Source requested beyond the permitted lookahead\n\n/private/tmp/pair-test-contract-trial-20261108/iterator-pad-left-pair-contract-replay/.council/host-b4UBKn-pair/scratch/A-pair-code-2-replay-0-base-93327/tests/Single/PadLeftStreamingTest.php:24\n/private/tmp/pair-test-contract-trial-20261108/iterator-pad-left-pair-contract-replay/.council/host-b4UBKn-pair/scratch/A-pair-code-2-replay-0-base-93327/src/Single.php:1074\n/private/tmp/pair-test-contract-trial-20261108/iterator-pad-left-pair-contract-replay/.council/host-b4UBKn-pair/scratch/A-pair-code-2-replay-0-base-93327/tests/Single/PadLeftStreamingTest.php:38\n\n3) IterTools\\Tests\\Single\\PadLeftStreamingTest::testBoundedLookaheadAndSuspension with data set \"three infinite\" (3, true)\nRuntimeException: Source requested beyond the permitted lookahead\n\n/private/tmp/pair-test-contract-trial-20261108/iterator-pad-left-pair-contract-replay/.council/host-b4UBKn-pair/scratch/A-pair-code-2-replay-0-base-93327/tests/Single/PadLeftStreamingTest.php:24\n/private/tmp/pair-test-contract-trial-20261108/iterator-pad-left-pair-contract-replay/.council/host-b4UBKn-pair/scratch/A-pair-code-2-replay-0-base-93327/src/Single.php:1074\n/private/tmp/pair-test-contract-trial-20261108/iterator-pad-left-pair-contract-replay/.council/host-b4UBKn-pair/scratch/A-pair-code-2-replay-0-base-93327/tests/Single/PadLeftStreamingTest.php:38\n\n4) IterTools\\Tests\\Single\\PadLeftStreamingTest::testBoundedLookaheadAndSuspension with data set \"zero long finite\" (0, false)\nRuntimeException: Source requested beyond the permitted lookahead\n\n/private/tmp/pair-test-contract-trial-20261108/iterator-pad-left-pair-contract-replay/.council/host-b4UBKn-pair/scratch/A-pair-code-2-replay-0-base-93327/tests/Single/PadLeftStreamingTest.php:24\n/private/tmp/pair-test-contract-trial-20261108/iterator-pad-left-pair-contract-replay/.council/host-b4UBKn-pair/scratch/A-pair-code-2-replay-0-base-93327/src/Single.php:1074\n/private/tmp/pair-test-contract-trial-20261108/iterator-pad-left-pair-contract-replay/.council/host-b4UBKn-pair/scratch/A-pair-code-2-replay-0-base-93327/tests/Single/PadLeftStreamingTest.php:38\n\n5) IterTools\\Tests\\Single\\PadLeftStreamingTest::testBoundedLookaheadAndSuspension with data set \"one long finite\" (1, false)\nRuntimeException: Source requested beyond the permitted lookahead\n\n/private/tmp/pair-test-contract-trial-20261108/iterator-pad-left-pair-contract-replay/.council/host-b4UBKn-pair/scratch/A-pair-code-2-replay-0-base-93327/tests/Single/PadLeftStreamingTest.php:24\n/private/tmp/pair-test-contract-trial-20261108/iterator-pad-left-pair-contract-replay/.council/host-b4UBKn-pair/scratch/A-pair-code-2-replay-0-base-93327/src/Single.php:1074\n/private/tmp/pair-test-contract-trial-20261108/iterator-pad-left-pair-contract-replay/.council/host-b4UBKn-pair/scratch/A-pair-code-2-replay-0-base-93327/tests/Single/PadLeftStreamingTest.php:38\n\n6) IterTools\\Tests\\Single\\PadLeftStreamingTest::testBoundedLookaheadAndSuspension with data set \"three long finite\" (3, false)\nRuntimeException: Source requested beyond the permitted lookahead\n\n/private/tmp/pair-test-contract-trial-20261108/iterator-pad-left-pair-contract-replay/.council/host-b4UBKn-pair/scratch/A-pair-code-2-replay-0-base-93327/tests/Single/PadLeftStreamingTest.php:24\n/private/tmp/pair-test-contract-trial-20261108/iterator-pad-left-pair-contract-replay/.council/host-b4UBKn-pair/scratch/A-pair-code-2-replay-0-base-93327/src/Single.php:1074\n/private/tmp/pair-test-contract-trial-20261108/iterator-pad-left-pair-contract-replay/.council/host-b4UBKn-pair/scratch/A-pair-code-2-replay-0-base-93327/tests/Single/PadLeftStreamingTest.php:38\n\nERRORS!\nTests: 6, Assertions: 6, Errors: 6.",
+        "launchError": "",
+        "mutated": []
+      },
+      {
+        "side": "final",
+        "revision": "65de019628da372b4446cc8a6f96eaed64389994",
+        "tree": "de06fa15e9d1861d9f08c25e82d12b721f09ec08",
+        "file": "tests/Single/PadLeftStreamingTest.php",
+        "command": "php -d memory_limit=2G vendor/bin/phpunit --configuration=tests/phpunit.xml tests/Single/PadLeftStreamingTest.php",
+        "checkIds": [
+          "single-bounded-consumption"
+        ],
+        "cwd": "/private/tmp/pair-test-contract-trial-20261108/iterator-pad-left-pair-contract-replay/.council/host-b4UBKn-pair/scratch/A-pair-code-2-replay-0-final-93327",
+        "attempted": true,
+        "ran": true,
+        "passed": true,
+        "hasExitCode": true,
+        "exitCode": 0,
+        "signal": 0,
+        "timedOut": false,
+        "seconds": 0.1,
+        "log": "/private/tmp/pair-test-contract-trial-20261108/iterator-pad-left-pair-contract-replay/.council/host-b4UBKn-pair/logs/replay-A-pair-code-2-replay-0-final.log",
+        "logSha256": "42456badb5273742bef1e497c97eade0673d1f674bb3481ebc6258b2ca47901a",
+        "tail": "PHPUnit 10.5.63 by Sebastian Bergmann and contributors.\n\nRuntime:       PHP 8.5.3\nConfiguration: /private/tmp/pair-test-contract-trial-20261108/iterator-pad-left-pair-contract-replay/.council/host-b4UBKn-pair/scratch/A-pair-code-2-replay-0-final-93327/tests/phpunit.xml\n\n......                                                              6 / 6 (100%)\n\nTime: 00:00.006, Memory: 10.00 MB\n\nOK (6 tests, 204 assertions)",
+        "launchError": "",
+        "mutated": []
+      },
+      {
+        "side": "base",
+        "revision": "f8ae71b11e508bf61a6233508b391262a5890454",
+        "tree": "1f4bec2f7ee27d26726db9427a50ee298adaa023",
+        "file": "tests/Single/PadLeftTest.php",
+        "command": "php -d memory_limit=2G vendor/bin/phpunit --configuration=tests/phpunit.xml tests/Single/PadLeftTest.php",
+        "checkIds": [
+          "single-finite-values-keys"
+        ],
+        "cwd": "/private/tmp/pair-test-contract-trial-20261108/iterator-pad-left-pair-contract-replay/.council/host-b4UBKn-pair/scratch/A-pair-code-2-replay-1-base-93327",
+        "attempted": true,
+        "ran": true,
+        "passed": true,
+        "hasExitCode": true,
+        "exitCode": 0,
+        "signal": 0,
+        "timedOut": false,
+        "seconds": 0.1,
+        "log": "/private/tmp/pair-test-contract-trial-20261108/iterator-pad-left-pair-contract-replay/.council/host-b4UBKn-pair/logs/replay-A-pair-code-2-replay-1-base.log",
+        "logSha256": "07c8dcf7f9453e130f5e81e195fde91a4d5980950a77d2f02fc530a92aa1fc60",
+        "tail": "PHPUnit 10.5.63 by Sebastian Bergmann and contributors.\n\nRuntime:       PHP 8.5.3\nConfiguration: /private/tmp/pair-test-contract-trial-20261108/iterator-pad-left-pair-contract-replay/.council/host-b4UBKn-pair/scratch/A-pair-code-2-replay-1-base-93327/tests/phpunit.xml\n\n...............................................................  63 / 109 ( 57%)\n..............................................                  109 / 109 (100%)\n\nTime: 00:00.016, Memory: 10.00 MB\n\nOK (109 tests, 121 assertions)",
+        "launchError": "",
+        "mutated": []
+      },
+      {
+        "side": "final",
+        "revision": "65de019628da372b4446cc8a6f96eaed64389994",
+        "tree": "de06fa15e9d1861d9f08c25e82d12b721f09ec08",
+        "file": "tests/Single/PadLeftTest.php",
+        "command": "php -d memory_limit=2G vendor/bin/phpunit --configuration=tests/phpunit.xml tests/Single/PadLeftTest.php",
+        "checkIds": [
+          "single-finite-values-keys"
+        ],
+        "cwd": "/private/tmp/pair-test-contract-trial-20261108/iterator-pad-left-pair-contract-replay/.council/host-b4UBKn-pair/scratch/A-pair-code-2-replay-1-final-93327",
+        "attempted": true,
+        "ran": true,
+        "passed": true,
+        "hasExitCode": true,
+        "exitCode": 0,
+        "signal": 0,
+        "timedOut": false,
+        "seconds": 0.1,
+        "log": "/private/tmp/pair-test-contract-trial-20261108/iterator-pad-left-pair-contract-replay/.council/host-b4UBKn-pair/logs/replay-A-pair-code-2-replay-1-final.log",
+        "logSha256": "fc644427baecd09a89739799ede7a93078e7e0af956c6aed3cf979b8c0bf5b6f",
+        "tail": "PHPUnit 10.5.63 by Sebastian Bergmann and contributors.\n\nRuntime:       PHP 8.5.3\nConfiguration: /private/tmp/pair-test-contract-trial-20261108/iterator-pad-left-pair-contract-replay/.council/host-b4UBKn-pair/scratch/A-pair-code-2-replay-1-final-93327/tests/phpunit.xml\n\n...............................................................  63 / 109 ( 57%)\n..............................................                  109 / 109 (100%)\n\nTime: 00:00.016, Memory: 10.00 MB\n\nOK (109 tests, 121 assertions)",
+        "launchError": "",
+        "mutated": []
+      },
+      {
+        "side": "base",
+        "revision": "f8ae71b11e508bf61a6233508b391262a5890454",
+        "tree": "1f4bec2f7ee27d26726db9427a50ee298adaa023",
+        "file": "tests/Single/PadLeftTest.php",
+        "command": "php -d memory_limit=2G vendor/bin/phpunit --configuration=tests/phpunit.xml tests/Single/PadLeftTest.php --filter 'Deferred|Negative|Lazy'",
+        "checkIds": [
+          "single-deferred-validation"
+        ],
+        "cwd": "/private/tmp/pair-test-contract-trial-20261108/iterator-pad-left-pair-contract-replay/.council/host-b4UBKn-pair/scratch/A-pair-code-2-replay-2-base-93327",
+        "attempted": true,
+        "ran": true,
+        "passed": true,
+        "hasExitCode": true,
+        "exitCode": 0,
+        "signal": 0,
+        "timedOut": false,
+        "seconds": 0.1,
+        "log": "/private/tmp/pair-test-contract-trial-20261108/iterator-pad-left-pair-contract-replay/.council/host-b4UBKn-pair/logs/replay-A-pair-code-2-replay-2-base.log",
+        "logSha256": "b3bbb1f2bb1620cbbf1e5b21d8f24a69256967d08a4d5b397a1e0eb725349979",
+        "tail": "PHPUnit 10.5.63 by Sebastian Bergmann and contributors.\n\nRuntime:       PHP 8.5.3\nConfiguration: /private/tmp/pair-test-contract-trial-20261108/iterator-pad-left-pair-contract-replay/.council/host-b4UBKn-pair/scratch/A-pair-code-2-replay-2-base-93327/tests/phpunit.xml\n\n.......                                                             7 / 7 (100%)\n\nTime: 00:00.007, Memory: 10.00 MB\n\nOK (7 tests, 15 assertions)",
+        "launchError": "",
+        "mutated": []
+      },
+      {
+        "side": "final",
+        "revision": "65de019628da372b4446cc8a6f96eaed64389994",
+        "tree": "de06fa15e9d1861d9f08c25e82d12b721f09ec08",
+        "file": "tests/Single/PadLeftTest.php",
+        "command": "php -d memory_limit=2G vendor/bin/phpunit --configuration=tests/phpunit.xml tests/Single/PadLeftTest.php --filter 'Deferred|Negative|Lazy'",
+        "checkIds": [
+          "single-deferred-validation"
+        ],
+        "cwd": "/private/tmp/pair-test-contract-trial-20261108/iterator-pad-left-pair-contract-replay/.council/host-b4UBKn-pair/scratch/A-pair-code-2-replay-2-final-93327",
+        "attempted": true,
+        "ran": true,
+        "passed": true,
+        "hasExitCode": true,
+        "exitCode": 0,
+        "signal": 0,
+        "timedOut": false,
+        "seconds": 0.1,
+        "log": "/private/tmp/pair-test-contract-trial-20261108/iterator-pad-left-pair-contract-replay/.council/host-b4UBKn-pair/logs/replay-A-pair-code-2-replay-2-final.log",
+        "logSha256": "3c023c50344685703bc6421ea38d2cc48655808d7da44af48baa5846bf7a4649",
+        "tail": "PHPUnit 10.5.63 by Sebastian Bergmann and contributors.\n\nRuntime:       PHP 8.5.3\nConfiguration: /private/tmp/pair-test-contract-trial-20261108/iterator-pad-left-pair-contract-replay/.council/host-b4UBKn-pair/scratch/A-pair-code-2-replay-2-final-93327/tests/phpunit.xml\n\n.......                                                             7 / 7 (100%)\n\nTime: 00:00.008, Memory: 10.00 MB\n\nOK (7 tests, 15 assertions)",
+        "launchError": "",
+        "mutated": []
+      },
+      {
+        "side": "base",
+        "revision": "f8ae71b11e508bf61a6233508b391262a5890454",
+        "tree": "1f4bec2f7ee27d26726db9427a50ee298adaa023",
+        "file": "tests/Stream/StreamPadLeftTest.php",
+        "command": "php -d memory_limit=2G vendor/bin/phpunit --configuration=tests/phpunit.xml tests/Stream/StreamPadLeftTest.php",
+        "checkIds": [
+          "stream-preserved-contract"
+        ],
+        "cwd": "/private/tmp/pair-test-contract-trial-20261108/iterator-pad-left-pair-contract-replay/.council/host-b4UBKn-pair/scratch/A-pair-code-2-replay-3-base-93327",
+        "attempted": true,
+        "ran": true,
+        "passed": true,
+        "hasExitCode": true,
+        "exitCode": 0,
+        "signal": 0,
+        "timedOut": false,
+        "seconds": 0.1,
+        "log": "/private/tmp/pair-test-contract-trial-20261108/iterator-pad-left-pair-contract-replay/.council/host-b4UBKn-pair/logs/replay-A-pair-code-2-replay-3-base.log",
+        "logSha256": "30eb9c32909307f92f8d57219dcce6bf562aba573655d302720a08ac5a7ed8e2",
+        "tail": "PHPUnit 10.5.63 by Sebastian Bergmann and contributors.\n\nRuntime:       PHP 8.5.3\nConfiguration: /private/tmp/pair-test-contract-trial-20261108/iterator-pad-left-pair-contract-replay/.council/host-b4UBKn-pair/scratch/A-pair-code-2-replay-3-base-93327/tests/phpunit.xml\n\n................................................................  64 / 64 (100%)\n\nTime: 00:00.012, Memory: 10.00 MB\n\nOK (64 tests, 144 assertions)",
+        "launchError": "",
+        "mutated": []
+      },
+      {
+        "side": "final",
+        "revision": "65de019628da372b4446cc8a6f96eaed64389994",
+        "tree": "de06fa15e9d1861d9f08c25e82d12b721f09ec08",
+        "file": "tests/Stream/StreamPadLeftTest.php",
+        "command": "php -d memory_limit=2G vendor/bin/phpunit --configuration=tests/phpunit.xml tests/Stream/StreamPadLeftTest.php",
+        "checkIds": [
+          "stream-preserved-contract"
+        ],
+        "cwd": "/private/tmp/pair-test-contract-trial-20261108/iterator-pad-left-pair-contract-replay/.council/host-b4UBKn-pair/scratch/A-pair-code-2-replay-3-final-93327",
+        "attempted": true,
+        "ran": true,
+        "passed": true,
+        "hasExitCode": true,
+        "exitCode": 0,
+        "signal": 0,
+        "timedOut": false,
+        "seconds": 0.1,
+        "log": "/private/tmp/pair-test-contract-trial-20261108/iterator-pad-left-pair-contract-replay/.council/host-b4UBKn-pair/logs/replay-A-pair-code-2-replay-3-final.log",
+        "logSha256": "60b497cd10c2aad455ed19514d1c398c3c985fe3da3f8d13f60a62e9067e3903",
+        "tail": "PHPUnit 10.5.63 by Sebastian Bergmann and contributors.\n\nRuntime:       PHP 8.5.3\nConfiguration: /private/tmp/pair-test-contract-trial-20261108/iterator-pad-left-pair-contract-replay/.council/host-b4UBKn-pair/scratch/A-pair-code-2-replay-3-final-93327/tests/phpunit.xml\n\n................................................................  64 / 64 (100%)\n\nTime: 00:00.012, Memory: 10.00 MB\n\nOK (64 tests, 144 assertions)",
+        "launchError": "",
+        "mutated": []
+      },
+      {
+        "side": "base",
+        "revision": "f8ae71b11e508bf61a6233508b391262a5890454",
+        "tree": "1f4bec2f7ee27d26726db9427a50ee298adaa023",
+        "file": "tests/Stream/StreamPadLeftStreamingTest.php",
+        "command": "php -d memory_limit=2G vendor/bin/phpunit --configuration=tests/phpunit.xml tests/Stream/StreamPadLeftStreamingTest.php",
+        "checkIds": [
+          "stream-bounded-consumption"
+        ],
+        "cwd": "/private/tmp/pair-test-contract-trial-20261108/iterator-pad-left-pair-contract-replay/.council/host-b4UBKn-pair/scratch/A-pair-code-2-replay-4-base-93327",
+        "attempted": true,
+        "ran": true,
+        "passed": false,
+        "hasExitCode": true,
+        "exitCode": 2,
+        "signal": 0,
+        "timedOut": false,
+        "seconds": 0.1,
+        "log": "/private/tmp/pair-test-contract-trial-20261108/iterator-pad-left-pair-contract-replay/.council/host-b4UBKn-pair/logs/replay-A-pair-code-2-replay-4-base.log",
+        "logSha256": "441a69a28b7c2b3d44f514347ab56959814153c0de660d74e9c328c8014173b3",
+        "tail": "\n/private/tmp/pair-test-contract-trial-20261108/iterator-pad-left-pair-contract-replay/.council/host-b4UBKn-pair/scratch/A-pair-code-2-replay-4-base-93327/tests/Stream/StreamPadLeftStreamingTest.php:96\n/private/tmp/pair-test-contract-trial-20261108/iterator-pad-left-pair-contract-replay/.council/host-b4UBKn-pair/scratch/A-pair-code-2-replay-4-base-93327/src/Single.php:1074\n/private/tmp/pair-test-contract-trial-20261108/iterator-pad-left-pair-contract-replay/.council/host-b4UBKn-pair/scratch/A-pair-code-2-replay-4-base-93327/src/Single.php:605\n/private/tmp/pair-test-contract-trial-20261108/iterator-pad-left-pair-contract-replay/.council/host-b4UBKn-pair/scratch/A-pair-code-2-replay-4-base-93327/src/Transform.php:25\n/private/tmp/pair-test-contract-trial-20261108/iterator-pad-left-pair-contract-replay/.council/host-b4UBKn-pair/scratch/A-pair-code-2-replay-4-base-93327/src/Stream.php:2314\n/private/tmp/pair-test-contract-trial-20261108/iterator-pad-left-pair-contract-replay/.council/host-b4UBKn-pair/scratch/A-pair-code-2-replay-4-base-93327/tests/Stream/StreamPadLeftStreamingTest.php:67\n\n10) IterTools\\Tests\\Stream\\StreamPadLeftStreamingTest::testLimitedPrefix with data set \"zero long finite\" (0, false)\nRuntimeException: Source requested beyond the permitted lookahead\n\n/private/tmp/pair-test-contract-trial-20261108/iterator-pad-left-pair-contract-replay/.council/host-b4UBKn-pair/scratch/A-pair-code-2-replay-4-base-93327/tests/Stream/StreamPadLeftStreamingTest.php:96\n/private/tmp/pair-test-contract-trial-20261108/iterator-pad-left-pair-contract-replay/.council/host-b4UBKn-pair/scratch/A-pair-code-2-replay-4-base-93327/src/Single.php:1074\n/private/tmp/pair-test-contract-trial-20261108/iterator-pad-left-pair-contract-replay/.council/host-b4UBKn-pair/scratch/A-pair-code-2-replay-4-base-93327/src/Single.php:605\n/private/tmp/pair-test-contract-trial-20261108/iterator-pad-left-pair-contract-replay/.council/host-b4UBKn-pair/scratch/A-pair-code-2-replay-4-base-93327/src/Transform.php:25\n/private/tmp/pair-test-contract-trial-20261108/iterator-pad-left-pair-contract-replay/.council/host-b4UBKn-pair/scratch/A-pair-code-2-replay-4-base-93327/src/Stream.php:2314\n/private/tmp/pair-test-contract-trial-20261108/iterator-pad-left-pair-contract-replay/.council/host-b4UBKn-pair/scratch/A-pair-code-2-replay-4-base-93327/tests/Stream/StreamPadLeftStreamingTest.php:67\n\n11) IterTools\\Tests\\Stream\\StreamPadLeftStreamingTest::testLimitedPrefix with data set \"one long finite\" (1, false)\nRuntimeException: Source requested beyond the permitted lookahead\n\n/private/tmp/pair-test-contract-trial-20261108/iterator-pad-left-pair-contract-replay/.council/host-b4UBKn-pair/scratch/A-pair-code-2-replay-4-base-93327/tests/Stream/StreamPadLeftStreamingTest.php:96\n/private/tmp/pair-test-contract-trial-20261108/iterator-pad-left-pair-contract-replay/.council/host-b4UBKn-pair/scratch/A-pair-code-2-replay-4-base-93327/src/Single.php:1074\n/private/tmp/pair-test-contract-trial-20261108/iterator-pad-left-pair-contract-replay/.council/host-b4UBKn-pair/scratch/A-pair-code-2-replay-4-base-93327/src/Single.php:605\n/private/tmp/pair-test-contract-trial-20261108/iterator-pad-left-pair-contract-replay/.council/host-b4UBKn-pair/scratch/A-pair-code-2-replay-4-base-93327/src/Transform.php:25\n/private/tmp/pair-test-contract-trial-20261108/iterator-pad-left-pair-contract-replay/.council/host-b4UBKn-pair/scratch/A-pair-code-2-replay-4-base-93327/src/Stream.php:2314\n/private/tmp/pair-test-contract-trial-20261108/iterator-pad-left-pair-contract-replay/.council/host-b4UBKn-pair/scratch/A-pair-code-2-replay-4-base-93327/tests/Stream/StreamPadLeftStreamingTest.php:67\n\n12) IterTools\\Tests\\Stream\\StreamPadLeftStreamingTest::testLimitedPrefix with data set \"three long finite\" (3, false)\nRuntimeException: Source requested beyond the permitted lookahead\n\n/private/tmp/pair-test-contract-trial-20261108/iterator-pad-left-pair-contract-replay/.council/host-b4UBKn-pair/scratch/A-pair-code-2-replay-4-base-93327/tests/Stream/StreamPadLeftStreamingTest.php:96\n/private/tmp/pair-test-contract-trial-20261108/iterator-pad-left-pair-contract-replay/.council/host-b4UBKn-pair/scratch/A-pair-code-2-replay-4-base-93327/src/Single.php:1074\n/private/tmp/pair-test-contract-trial-20261108/iterator-pad-left-pair-contract-replay/.council/host-b4UBKn-pair/scratch/A-pair-code-2-replay-4-base-93327/src/Single.php:605\n/private/tmp/pair-test-contract-trial-20261108/iterator-pad-left-pair-contract-replay/.council/host-b4UBKn-pair/scratch/A-pair-code-2-replay-4-base-93327/src/Transform.php:25\n/private/tmp/pair-test-contract-trial-20261108/iterator-pad-left-pair-contract-replay/.council/host-b4UBKn-pair/scratch/A-pair-code-2-replay-4-base-93327/src/Stream.php:2314\n/private/tmp/pair-test-contract-trial-20261108/iterator-pad-left-pair-contract-replay/.council/host-b4UBKn-pair/scratch/A-pair-code-2-replay-4-base-93327/tests/Stream/StreamPadLeftStreamingTest.php:67\n\nERRORS!\nTests: 12, Assertions: 12, Errors: 12.",
+        "launchError": "",
+        "mutated": []
+      },
+      {
+        "side": "final",
+        "revision": "65de019628da372b4446cc8a6f96eaed64389994",
+        "tree": "de06fa15e9d1861d9f08c25e82d12b721f09ec08",
+        "file": "tests/Stream/StreamPadLeftStreamingTest.php",
+        "command": "php -d memory_limit=2G vendor/bin/phpunit --configuration=tests/phpunit.xml tests/Stream/StreamPadLeftStreamingTest.php",
+        "checkIds": [
+          "stream-bounded-consumption"
+        ],
+        "cwd": "/private/tmp/pair-test-contract-trial-20261108/iterator-pad-left-pair-contract-replay/.council/host-b4UBKn-pair/scratch/A-pair-code-2-replay-4-final-93327",
+        "attempted": true,
+        "ran": true,
+        "passed": true,
+        "hasExitCode": true,
+        "exitCode": 0,
+        "signal": 0,
+        "timedOut": false,
+        "seconds": 0.1,
+        "log": "/private/tmp/pair-test-contract-trial-20261108/iterator-pad-left-pair-contract-replay/.council/host-b4UBKn-pair/logs/replay-A-pair-code-2-replay-4-final.log",
+        "logSha256": "8a585f1a9e1efce512dc61ebdb871b63e88934ba994a8e6080908507fa830542",
+        "tail": "PHPUnit 10.5.63 by Sebastian Bergmann and contributors.\n\nRuntime:       PHP 8.5.3\nConfiguration: /private/tmp/pair-test-contract-trial-20261108/iterator-pad-left-pair-contract-replay/.council/host-b4UBKn-pair/scratch/A-pair-code-2-replay-4-final-93327/tests/phpunit.xml\n\n............                                                      12 / 12 (100%)\n\nTime: 00:00.008, Memory: 10.00 MB\n\nOK (12 tests, 222 assertions)",
+        "launchError": "",
+        "mutated": []
+      }
+    ],
+    "elapsedSec": 16.8
+  },
+  "suite": {
+    "exitCode": 0,
+    "timedOut": false,
+    "seconds": 2.2,
+    "tail": "............................................................. 1769 / 3852 ( 45%)\n............................................................. 1830 / 3852 ( 47%)\n............................................................. 1891 / 3852 ( 49%)\n............................................................. 1952 / 3852 ( 50%)\n............................................................. 2013 / 3852 ( 52%)\n............................................................. 2074 / 3852 ( 53%)\n............................................................. 2135 / 3852 ( 55%)\n............................................................. 2196 / 3852 ( 57%)\n............................................................. 2257 / 3852 ( 58%)\n............................................................. 2318 / 3852 ( 60%)\n............................................................. 2379 / 3852 ( 61%)\n............................................................. 2440 / 3852 ( 63%)\n............................................................. 2501 / 3852 ( 64%)\n............................................................. 2562 / 3852 ( 66%)\n............................................................. 2623 / 3852 ( 68%)\n............................................................. 2684 / 3852 ( 69%)\n............................................................. 2745 / 3852 ( 71%)\n............................................................. 2806 / 3852 ( 72%)\n............................................................. 2867 / 3852 ( 74%)\n............................................................. 2928 / 3852 ( 76%)\n............................................................. 2989 / 3852 ( 77%)\n............................................................. 3050 / 3852 ( 79%)\n............................................................. 3111 / 3852 ( 80%)\n............................................................. 3172 / 3852 ( 82%)\n............................................................. 3233 / 3852 ( 83%)\n............................................................. 3294 / 3852 ( 85%)\n............................................................. 3355 / 3852 ( 87%)\n............................................................. 3416 / 3852 ( 88%)\n............................................................. 3477 / 3852 ( 90%)\n............................................................. 3538 / 3852 ( 91%)\n............................................................. 3599 / 3852 ( 93%)\n............................................................. 3660 / 3852 ( 95%)\n............................................................. 3721 / 3852 ( 96%)\n............................................................. 3782 / 3852 ( 98%)\n............................................................. 3843 / 3852 ( 99%)\n.........                                                     3852 / 3852 (100%)\n\nTime: 00:01.189, Memory: 50.05 MB\n\nOK (3852 tests, 162846 assertions)",
+    "log": "/private/tmp/pair-test-contract-trial-20261108/iterator-pad-left-pair-contract-replay/.council/host-b4UBKn-pair/logs/suite-A-pair-code-2.log",
+    "ran": true,
+    "passed": true,
+    "cwd": "/private/tmp/pair-test-contract-trial-20261108/iterator-pad-left-pair-contract-replay/.council/host-b4UBKn-pair/scratch/A-pair-code-2-93327",
+    "command": "php -d memory_limit=2G vendor/bin/phpunit --configuration=tests/phpunit.xml tests/Single && php -d memory_limit=2G vendor/bin/phpunit --configuration=tests/phpunit.xml tests/Stream",
+    "env": {
+      "TMPDIR": "/private/tmp/pair-test-contract-trial-20261108/iterator-pad-left-pair-contract-replay/.council/host-b4UBKn-pair/tmp",
+      "XDG_CACHE_HOME": "/private/tmp/pair-test-contract-trial-20261108/iterator-pad-left-pair-contract-replay/.council/host-b4UBKn-pair/cache"
+    }
+  },
+  "crossTests": [],
+  "elapsedSec": 20.9,
+  "evidence": {
+    "status": "published",
+    "index": "/private/tmp/pair-test-contract-trial-20261108/iterator-pad-left-pair-contract-replay/.council/host-b4UBKn-pair/evidence/A-pair-code-2-2a3d7b8d144fd4e740b0c25173425c224f4b2697e7e4d200caabcb65548edd7a/index.json",
+    "pointer": "/private/tmp/pair-test-contract-trial-20261108/iterator-pad-left-pair-contract-replay/.council/host-b4UBKn-pair/evidence/A-pair-code-2.json"
+  }
+}

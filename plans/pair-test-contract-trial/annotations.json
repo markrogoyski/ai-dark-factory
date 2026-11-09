@@ -1,0 +1,40 @@
+{
+  "reviewFindings": [],
+  "missedDefectsDetectedByFrozenProbes": [],
+  "interpretation": "No reported findings in either arm, so no severity/origin assignments are supported. All 38 frozen probes pass per arm; this does not establish general defect-detection equivalence.",
+  "evidenceAssessments": [
+    {
+      "taskId": "iterator-pad-left",
+      "usable": true,
+      "observations": "Two base streaming files exit 2 on guarded over-consumption; three preserved file/filtered commands pass. All five final commands pass. Original fixture files are reused without overlay."
+    },
+    {
+      "taskId": "algebra-coprime-api",
+      "usable": true,
+      "observations": "Four base new-API commands exit 2 with undefined-method errors; PHPUnit completes with errors and zero assertions in those checks. Three separate preserved files pass. All seven final commands pass. This is not a file-loading fatal; the fatal-before-discovery case is exercised by the local-script regression."
+    },
+    {
+      "taskId": "vector-pnorm-scale",
+      "usable": true,
+      "observations": "Extreme/mixed cases fail on base and pass on final. p=1 cases passing on base are expected and explicitly interpreted by the reviewer. Zero/nonfinite preserved filters pass on base. The aggregate preserved gate file includes changed tests and fails on base; separate preserved commands retain the intended signal. All 13 final commands pass."
+    }
+  ],
+  "unusableEvidence": [],
+  "interruptedFileExecutions": 0,
+  "timeouts": 0,
+  "launchErrors": 0,
+  "exclusionSummary": {
+    "productionOrDocumentation": 8,
+    "unchangedTestsOrFixtures": 14,
+    "authorDependencyInstallation": 3,
+    "unsafePathsInLiveTrial": 0
+  },
+  "limitations": [
+    "One repetition per task and variant; no final-review findings in controls, so no observed late-findings burden to reduce.",
+    "Configured models and CLI/toolchain versions match; backend model revision is not exposed.",
+    "Controls precede treatments; provider load and cache state can differ.",
+    "Setup-generated temp/cache overrides differ; see verification-environments.json.",
+    "Ignored dependency trees/toolchains are not fully frozen by existing checkpointing; installed dependency manifests match.",
+    "Combined contract/replay change does not isolate component effects. Dollar costs remain unknown."
+  ]
+}

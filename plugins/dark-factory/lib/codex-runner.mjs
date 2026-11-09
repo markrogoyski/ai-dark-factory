@@ -344,13 +344,16 @@ export function createRuntime({ repo, hostRunDir, concurrency = 3, timeoutMin = 
     if (returnedTag !== tag) return null
     if (setup && value.runDir) {
       runDirectory(value)
+      if (Object.hasOwn(request.schema.properties, 'head') && value.head !== JSON.parse(readFileSync(join(value.runDir, 'run.json'), 'utf8')).head) {
+        throw new Error('Setup returned a different original base commit than the helper recorded')
+      }
       if (request.setupRunId && value.runId !== request.setupRunId) throw new Error('Setup returned a different run ID than the host assigned')
     }
     return value
   }
 
   // Execute the shared engine's measurement request without another model turn.
-  async function measure({ run, seat, label }) {
+  async function measure({ run, seat, label, replay }) {
     if (cancelled || signal?.aborted) throw new Error('Run interrupted')
     if (!/^[A-Z]$/.test(seat) || !/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(label)) throw new Error('Invalid measurement key')
     const runDir = runDirectory(run), key = `measure-${seat}-${label}`
@@ -359,7 +362,8 @@ export function createRuntime({ repo, hostRunDir, concurrency = 3, timeoutMin = 
     activeJobs.add(jobDir)
     emit({ type: 'measurement.started', job: key, runDir })
     try {
-      let result = await execute(['measure', '--run-dir', runDir, '--seat', seat, '--label', label, '--max-wait', '5'], options)
+      let result = await execute(['measure', '--run-dir', runDir, '--seat', seat, '--label', label,
+        ...(replay ? ['--replay-json', JSON.stringify(replay)] : []), '--max-wait', '5'], options)
       while (result.status === 'running') {
         if (cancelled || signal?.aborted) throw new Error('Run interrupted')
         result = await execute(['wait', '--run-dir', runDir, '--job', key, '--max-wait', '5'], options)

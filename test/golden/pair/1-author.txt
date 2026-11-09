@@ -19,10 +19,17 @@ For a focused test or an intended red, put the command in a file and pass --comm
 
 Your worktree: /repo/.council/pair-test/wt/A. Work only there; never edit the main checkout or reviewer checkouts.
 Read the repository instructions and the relevant code. Do not delegate or launch other models.
+
 Return a complete short design in design: the approach, affected files, assumptions, risks, and how every acceptance criterion will be tested. Cite existing code where the approach depends on it. Revise the entire design in response to feedback. Do not implement yet. Setup ran the verification command on the base revision, and it passed. Don't run it, or the checks in it, during the design stage; the design says which of them the implementation must pass and how the new tests are checked.
+
+Return testContract alongside the design. testRoots are repository-relative test directories, each with evidence from the base project's configuration or established layout. Never use '.' or designate a production directory as a test root. Each check needs a stable local id, criterion IDs in criteria, a concrete scenario (inputs/setup), expected observable outcome, and boundaries (or a reason none apply). For kind=test, supply purpose=changed or preserved, the planned file, a focused command run from repository root, and required fixtures, all files under those roots. For kind=inspection, give a concrete inspection and reason automation is unsuitable; leave test execution fields empty. Cover every criterion without inventing meaningless tests. Return replayMapping=[] during design.
+Tests depending on a new API must live in their own files, separate from preserved-behavior tests: a fatal while loading the new API must not erase the preserved signal.
 
 # Current design
 (none yet)
+
+# Test contract
+null
 
 # Findings ledger
 []

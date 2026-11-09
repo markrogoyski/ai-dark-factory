@@ -1,0 +1,44 @@
+{
+    "coprime-8-15": {
+        "passed": true
+    },
+    "coprime-8-12": {
+        "passed": true
+    },
+    "coprime--8-15": {
+        "passed": true
+    },
+    "coprime-0-0": {
+        "passed": true
+    },
+    "coprime-0-1": {
+        "passed": true
+    },
+    "coprime-0--1": {
+        "passed": true
+    },
+    "coprime-0-2": {
+        "passed": true
+    },
+    "coprime--9223372036854775808-0": {
+        "passed": true
+    },
+    "coprime--9223372036854775808--9223372036854775808": {
+        "passed": true
+    },
+    "coprime--9223372036854775808-1": {
+        "passed": true
+    },
+    "coprime--9223372036854775808--1": {
+        "passed": true
+    },
+    "coprime--9223372036854775808-2": {
+        "passed": true
+    },
+    "coprime--9223372036854775808-9223372036854775807": {
+        "passed": true
+    },
+    "preserved-gcd": {
+        "passed": true
+    }
+}

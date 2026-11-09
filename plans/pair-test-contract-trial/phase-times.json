@@ -1,0 +1,50 @@
+{
+  "iterator-pad-left/pair-control": {
+    "Setup": 99.229,
+    "Design": 127.375,
+    "Review design": 39.707,
+    "Implement": 174.163,
+    "Verify": 4.141,
+    "Review code": 41.611
+  },
+  "iterator-pad-left/pair-contract-replay": {
+    "Setup": 97.553,
+    "Design": 273.745,
+    "Review design": 59.983,
+    "Implement": 297.884,
+    "Verify": 22.374,
+    "Review code": 47.823
+  },
+  "algebra-coprime-api/pair-control": {
+    "Setup": 83.089,
+    "Design": 95.131,
+    "Review design": 39.568,
+    "Implement": 111.303,
+    "Verify": 4.205,
+    "Review code": 37.539
+  },
+  "algebra-coprime-api/pair-contract-replay": {
+    "Setup": 91.517,
+    "Design": 204.757,
+    "Review design": 58.001,
+    "Implement": 206.659,
+    "Verify": 28.49,
+    "Review code": 45.706
+  },
+  "vector-pnorm-scale/pair-control": {
+    "Setup": 105.287,
+    "Design": 115.254,
+    "Review design": 35.477,
+    "Implement": 117.394,
+    "Verify": 2.162,
+    "Review code": 51.745
+  },
+  "vector-pnorm-scale/pair-contract-replay": {
+    "Setup": 99.643,
+    "Design": 255.618,
+    "Review design": 53.94,
+    "Implement": 221.029,
+    "Verify": 46.678,
+    "Review code": 54.384
+  }
+}

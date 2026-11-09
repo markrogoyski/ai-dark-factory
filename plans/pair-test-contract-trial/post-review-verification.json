@@ -1,0 +1,15 @@
+{
+  "completedAt": "2026-11-09T00:03:07.162907+00:00",
+  "makeCheck": "passed",
+  "pythonTests": 102,
+  "sharedPolicyTests": 229,
+  "hostIntegrationTests": 108,
+  "simulationScenarios": 42,
+  "regressionModelCalls": 0,
+  "nativeLiveMeasurements": 1,
+  "sourceCheckoutCommitted": false,
+  "councilAndEnsembleUnchanged": true,
+  "trackedPatchSha256": "2e595cd00fdf2732787ec442ea782ecd1c7d5996f6251d76879d2b9458a8fe70",
+  "originalTrialCandidateUnchanged": "28f359b15106f707b1863227401559ce34c3976d",
+  "sourceCheckoutHead": "e915be937ff53b9c7eca54257258a9a9a1583372"
+}

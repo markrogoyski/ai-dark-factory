@@ -1,0 +1,42 @@
+ok   scenarioConsensus: converged on B in round 1; relays, resumed prompts, finding routing, scorecards, report and retro ok
+ok   scenarioDeadlock: scorecard picked A; panel, fabricated gate, capitulation, stubbornness, fix pass and report all ok
+ok   scenarioEscalation: escalated at 3 seats after round 0; resume kept round-0 prompts identical and injected the answer
+ok   scenarioFailures: dropped a failed seat, survived a failed checker, quorum recomputed; a failed retro is reported
+ok   scenarioDirty: dirty tree blocked the run before any seat started
+ok   scenarioFocus: E left contention after round 1 and reviewed; deltas, notes, length flags, big-diff hints and report ok
+ok   scenarioSandbox: Codex seats dropped after one relay each; later Codex turns skipped; the report says how to allow it
+ok   scenarioPlan: the plan was snapshotted and every seat, checker and the final author was pointed at it
+ok   scenarioPlanMissing: stopped before any seat; told the launching session to find the plan and pass args.plan
+ok   scenarioRefs: init --ref copies documents byte for byte, flags what worktrees lack, refuses missing files
+ok   scenarioTranscript: seat-run recovers the exact payload from an indented transcript; need-file, hash-mismatch and sandboxed ok
+ok   scenarioRetroOff: no process fields, no retro agent
+ok   scenarioRetroSave: council retro keeps retro.md plus the exact notes from the transcript; refuses without retro.md; reports sandboxed
+ok   scenarioLineup: default lineup has Gemini; --seats prefix, comma string, gemini-pro, gemini:<slug> and effort mapping ok
+ok   scenarioAgy: agy turn ran from a neutral cwd with the repo grant; resume, per-turn usage, denial resumed once, lost conversation, capacity retry and sandbox caught
+ok   scenarioLateEscalation: escalated after round 1; the resume replayed rounds 0-1 unchanged and gave the answer to later turns
+ok   scenarioModeAndGuidance: setup chose implement for a checklist item; seats get gate, word-limit, claim and blind-round guidance; relays skip the sandbox
+ok   scenarioInitDocs: init copied the gitignored CLAUDE.md into every worktree, outside the diff
+ok   scenarioRelayErrors: a vendor error mentioning a sandbox no longer blocks the vendor; relay failures retry; stale turns refused; per-phase timeout
+ok   scenarioPreflight: a CLI that fails preflight stops the run before anything is created, naming the fix and the seat to swap
+ok   scenarioReadiness: readiness reports ready, blocked (unmet criterion) and incomplete (unrun suite, unjudged criterion, no check) without changing the choice
+ok   scenarioApproval: approval (opt-in) converges on first-choice plus acceptable votes, carries amendments, needs a first choice from another seat
+ok   scenarioBallot: the ballot (opt-in) re-votes after the checks when one vote short, converges without another round, and is skipped otherwise
+ok   scenarioSeatRunErrors: seat-run retries a vendor's malformed tool call, refuses a stale turn tag, classifies errors and caps reruns of a failed turn
+ok   scenarioMeasure: measure runs the suite and cross-tests in a scratch checkout, reports mutation, reuses only unchanged inputs; usage counts Claude agents
+ok   scenarioPreflightCli: preflight reports a missing agy setting, a working pair of CLIs, and a sandboxed one
+ok   scenarioBlind: identical round 0 skipped the debate (A finalised, 19 turns); a differing tree debated (27 turns)
+ok   scenarioAudit: audit on A: panel upheld XC1 and XD1, split XD3; one fix pass; the re-review's XC3 refuted; a failed auditor leaves it incomplete; audit: false skips it
+ok   scenarioSpec: S1 amended, S2 rejected, S3 assumed on the conservative reading, S4 split and left; ask mode stops and resumes to the answer; a failed amendment and spec: false leave setup's criteria
+ok   scenarioFactorySimple: intake → one Sonnet change, the neutral check, one Astra review; facts recorded, no model retro (6 turns)
+ok   scenarioFactoryFindings: the review's upheld finding and failing test go to one fix pass, checked again, with historical evidence reviewed; still Simple
+ok   scenarioFactoryEscalate: still failing after the fix pass → the Fix tier (Opus, Astra) in the same run, blind to the earlier change; one report and retro
+ok   scenarioFactoryHandUp: an upheld design finding and an over-budget change go to feature, the implementer's "not simple" to its tier
+ok   scenarioFactoryTier: a disputed pin stops before anything is created; kept (overruled, with a retro) or switched, intake replays
+ok   scenarioFactoryRoute: fix → Opus and Astra (or the user's seats); architecture → design mode, three seats; an investigation is never Simple; a missing plan stops at intake
+ok   scenarioFactorySplit: separate pieces stop at intake, listed in order with earlier-only dependencies; noSplit runs it whole and intake replays; one piece is no split
+ok   scenarioFactoryFeature: two blind plans, consensus, a merged final plan with two increments, each built and checked, a clean three-lens audit; no ratification
+ok   scenarioFactoryFeatureHard: four increments; a silent turn and a failing increment carried forward; scorecard pick; the tests lens's finding fixed and re-reviewed
+ok   scenarioFactoryArchitecture: three blind designs, consensus, a milestone plan; grounding upheld against milestone 2, revised and re-reviewed; milestones made safe, with args for their own runs
+ok   scenarioFactoryFeatureToArchitecture: a six-increment plan hands up to architecture before any build: a fresh, blind design run told why; the result says how it got there
+ok   scenarioFactsSave: council retro --facts-only saves the run facts from the record agent's transcript; --summary tallies them by starting tier
+ok   scenarioHeadlessPrompts: headless permission guidance and recovery prompt match reviewed goldens

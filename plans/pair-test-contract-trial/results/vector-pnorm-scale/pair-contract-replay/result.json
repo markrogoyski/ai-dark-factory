@@ -1,0 +1,1391 @@
+{
+  "status": "done",
+  "workflow": "pair",
+  "mode": "implement",
+  "task": "Fix MathPHP\\LinearAlgebra\\Vector::pNorm for finite p >= 1 so finite components near 1e200 or 1e-200 do not overflow or underflow intermediate powers when the mathematical norm is representable. Preserve the existing public signature and ordinary results. Cover negative components, all-zero vectors, mixed scales, p=1, p=2, and larger finite p. Preserve NAN propagation and positive infinity for vectors containing an infinite component and no NAN. Do not change unrelated vector operations or define new behavior for p outside finite p >= 1.",
+  "runDir": "/private/tmp/pair-test-contract-trial-20261108/vector-pnorm-scale-pair-contract-replay/.council/host-h6AZEK-pair",
+  "room": "/private/tmp/pair-test-contract-trial-20261108/vector-pnorm-scale-pair-contract-replay/.council/host-h6AZEK-pair/room",
+  "refs": [],
+  "stage": "code",
+  "stopReason": "",
+  "design": "For finite p >= 1, compute s = max(abs(x_i)), then return s * (sum((abs(x_i)/s) ** p)) ** (1/p). Follow the existing two-pass l2Norm pattern in src/LinearAlgebra/Vector.php:668–687: scan for NAN while finding s; only after the complete scan return zero or positive infinity if s is zero or infinite. Otherwise, powered ratios lie in [0,1], with at least one equal to 1, avoiding spurious infinity or zero from intermediate powers. Preserve pNorm(int|float $p): int|float at :698. Retain the exact existing expression at :700 behind a guard for p outside finite p >= 1, adding no validation or newly specified behavior.\n\nChange three files: src/LinearAlgebra/Vector.php (pNorm and docblock), tests/LinearAlgebra/Vector/VectorNormsTest.php (focused regressions), and README.md (Vector norm documentation). Follow the existing #[DataProvider] and Given/When/Then style at VectorNormsTest.php:155–177, relative tolerance at :73–84, and analytic data-source documentation required by .github/CONTRIBUTING.md. No new API, dependencies, fixtures, or unrelated norm refactoring.\n\nC1/C2/C4: test s=1e200 and 1e-200. For [-3s,4s], expect 7s at p=1 and 5s at p=2. For [-s,s], expect 2^(1/p)*s at p=4,2.5,1000, justified by the equal-magnitude identity using safe unit-scale factors. Test [-1e200,3,-1e-200,0] and reversed ordering at each p; expect 1e200 within floating-point rounding. Assert finite, positive results and error <= abs(expected)*1e-12. Before changing production code, capture intended-red failures for both huge and tiny p=2 cases; then run green.\n\nC2/C3: provider-based preservation tests at all five p values cover integer and signed floating zeros; NAN alone and among finite components; NAN before and after either sign of infinity; and positive/negative infinity without NAN in both component orders. Assert numeric zero, assertNan, or assertSame(INF), respectively.\n\nC5: extend the pNorm docblock in the neighboring l2Norm style, documenting finite p >= 1, scaling and numerical stability, zero vectors, NAN precedence, and positive infinity for infinite components without NAN or a truly overflowing final norm. Fix README.md:770 to pNorm($p = 2) and add matching concise prose. Inspect documentation and changed examples against the implementation.\n\nC6/C7: preserve ordinary testPNorm cases and existing p-norm/l2 equivalence, homogeneity, and triangle-inequality tests at VectorAxiomsTest.php:852,972,1095. Run focused p-norm tests and the unchanged scoped gate: php -d memory_limit=2G vendor/bin/phpunit --configuration=tests/phpunit.xml tests/LinearAlgebra/Vector. Inspect the final diff for the exact signature, unchanged unsupported-domain path, independent test expectations, and three-file scope. No make-all campaign is required.\n\nRun implementation measurements through dark-factory verify using the supplied run directory, author checkout, unique stage label, and --max-wait 5. Put focused/red commands in run-local files supplied through --command-file; run the full gate through unchanged verify.sh and verification.json, preserving its TMPDIR override. Poll any shell session first, then helper jobs with dark-factory wait --max-wait 5. Retain exit status and PHPUnit summary. No checks run during design; setup reports the base gate passed.\n\nAssumptions/risks: vectors contain existing int|float components and are nonempty (Vector.php:26–34). The implementation takes two O(n) passes and O(1) auxiliary storage. Floating-point rounding may change within existing tolerances; identical bit patterns or int/float representations are not promised. Negligible normalized terms may underflow without compromising tested accuracy. An early infinity return before scanning later NAN would violate C3.",
+  "testContract": {
+    "testRoots": [
+      {
+        "path": "tests/LinearAlgebra/Vector",
+        "evidence": "tests/phpunit.xml includes LinearAlgebra with suffix Test.php in the LinearAlgebra and All suites; composer.json maps MathPHP\\Tests\\ to tests/. The established directory contains VectorNormsTest.php and VectorAxiomsTest.php. .github/CONTRIBUTING.md prescribes provider-based PHPUnit tests with documented expected data."
+      }
+    ],
+    "checks": [
+      {
+        "id": "PN-EXTREME",
+        "criteria": [
+          "C1",
+          "C2",
+          "C4"
+        ],
+        "kind": "test",
+        "purpose": "changed",
+        "scenario": "Named cases at s=1e200 and 1e-200: [-3s,4s] at p=1,2; [-s,s] at p=4,2.5,1000. Run before changing production code, then after the fix.",
+        "expected": "Finite positive norms within abs(expected)*1e-12: 7s, 5s, and 2^(1/p)*s respectively. Original code fails at least the p=2 huge and tiny rows; fixed code passes all rows.",
+        "boundaries": "Representable nonzero norms, negative components, integer and fractional finite p >= 1. Expected values use elementary identities and safe unit-scale factors. Explicit finite/positive assertions reject infinity, NAN, and zero.",
+        "file": "tests/LinearAlgebra/Vector/VectorNormsTest.php",
+        "command": "php -d memory_limit=2G vendor/bin/phpunit --configuration=tests/phpunit.xml --filter testPNormExtremeMagnitudes tests/LinearAlgebra/Vector/VectorNormsTest.php",
+        "fixtures": [],
+        "inspection": "",
+        "reason": ""
+      },
+      {
+        "id": "PN-MIXED",
+        "criteria": [
+          "C1",
+          "C2",
+          "C4"
+        ],
+        "kind": "test",
+        "purpose": "changed",
+        "scenario": "Provider cases for [-1e200,3,-1e-200,0] and reversed ordering at p=1,2,4,2.5,1000.",
+        "expected": "Finite positive result 1e200 within relative tolerance 1e-12; smaller contributions are below floating-point resolution relative to 1e200.",
+        "boundaries": "Huge, ordinary, tiny, zero, mixed signs, and both component orders across all covered p values. Assert finite and positive before the scale-aware comparison.",
+        "file": "tests/LinearAlgebra/Vector/VectorNormsTest.php",
+        "command": "php -d memory_limit=2G vendor/bin/phpunit --configuration=tests/phpunit.xml --filter testPNormMixedScales tests/LinearAlgebra/Vector/VectorNormsTest.php",
+        "fixtures": [],
+        "inspection": "",
+        "reason": ""
+      },
+      {
+        "id": "PN-ZERO",
+        "criteria": [
+          "C2"
+        ],
+        "kind": "test",
+        "purpose": "preserved",
+        "scenario": "Provider cases for [0,0] and [0.0,-0.0] at p=1,2,4,2.5,1000.",
+        "expected": "Numeric zero without division by zero or NAN.",
+        "boundaries": "All-zero nonempty vectors; no requirement for a particular int/float zero representation. Empty input is already rejected by the constructor.",
+        "file": "tests/LinearAlgebra/Vector/VectorNormsTest.php",
+        "command": "php -d memory_limit=2G vendor/bin/phpunit --configuration=tests/phpunit.xml --filter testPNormZeroVectors tests/LinearAlgebra/Vector/VectorNormsTest.php",
+        "fixtures": [],
+        "inspection": "",
+        "reason": ""
+      },
+      {
+        "id": "PN-NONFINITE",
+        "criteria": [
+          "C3"
+        ],
+        "kind": "test",
+        "purpose": "preserved",
+        "scenario": "At p=1,2,4,2.5,1000, test [NAN], [NAN,1], [1,NAN], [NAN,INF], [INF,NAN], [NAN,-INF], [-INF,NAN], [INF,1], [1,INF], [-INF,1], [1,-INF], [INF,-INF], and [-INF,INF].",
+        "expected": "assertNan for every vector containing NAN; assertSame(INF, actual) for every vector containing infinity without NAN, explicitly checking positive infinity.",
+        "boundaries": "NAN precedence in both component orders and with both infinity signs. All p values remain finite and >= 1.",
+        "file": "tests/LinearAlgebra/Vector/VectorNormsTest.php",
+        "command": "php -d memory_limit=2G vendor/bin/phpunit --configuration=tests/phpunit.xml --filter testPNormNonFiniteComponents tests/LinearAlgebra/Vector/VectorNormsTest.php",
+        "fixtures": [],
+        "inspection": "",
+        "reason": ""
+      },
+      {
+        "id": "PN-ORDINARY",
+        "criteria": [
+          "C6"
+        ],
+        "kind": "test",
+        "purpose": "preserved",
+        "scenario": "Run unchanged ordinary testPNorm cases and existing testPNorm2EqualsL2Norm, testPNormAbsoluteHomogeneity, and testPNormTriangleInequality alongside the new p-norm regressions.",
+        "expected": "Ordinary values and existing p-norm axioms pass with unchanged assertions and providers.",
+        "boundaries": "Numeric compatibility in the supported domain. No new API or associated loading hazard; no unsupported-p behavior assertions.",
+        "file": "tests/LinearAlgebra/Vector/VectorAxiomsTest.php",
+        "command": "php -d memory_limit=2G vendor/bin/phpunit --configuration=tests/phpunit.xml --filter testPNorm tests/LinearAlgebra/Vector",
+        "fixtures": [],
+        "inspection": "",
+        "reason": ""
+      },
+      {
+        "id": "PN-GATE",
+        "criteria": [
+          "C6",
+          "C7"
+        ],
+        "kind": "test",
+        "purpose": "preserved",
+        "scenario": "Run the exact scoped Vector directory gate from the author worktree through dark-factory verify using fixed verification.json and unchanged verify.sh.",
+        "expected": "Exit 0 and a passing PHPUnit summary for the complete Vector directory, with cwd, command, overrides, output, and exit recorded.",
+        "boundaries": "The exact scoped gate is required. No make-all campaign, dependency changes, check changes, or verification.json edits. Focused commands do not replace this gate.",
+        "file": "tests/LinearAlgebra/Vector/VectorNormsTest.php",
+        "command": "php -d memory_limit=2G vendor/bin/phpunit --configuration=tests/phpunit.xml tests/LinearAlgebra/Vector",
+        "fixtures": [],
+        "inspection": "",
+        "reason": ""
+      },
+      {
+        "id": "PN-DOCS",
+        "criteria": [
+          "C5"
+        ],
+        "kind": "inspection",
+        "purpose": "changed",
+        "scenario": "Inspect the pNorm docblock and README Vector norm documentation diff.",
+        "expected": "Supported finite p >= 1, scaled evaluation, extreme finite magnitudes, zero, NAN precedence, and positive infinity documented. Changed usage examples supply p.",
+        "boundaries": "Relevant API documentation only; no new guarantees for unsupported p.",
+        "file": "",
+        "command": "",
+        "fixtures": [],
+        "inspection": "Read the updated pNorm docblock beside l2Norm. Compare README usage and prose with implementation and provider expectations; verify each changed pNorm example includes its required argument.",
+        "reason": "Semantic documentation accuracy requires review; text-presence assertions would not establish correctness."
+      },
+      {
+        "id": "PN-SCOPE-AND-ORACLES",
+        "criteria": [
+          "C1",
+          "C3",
+          "C4",
+          "C6"
+        ],
+        "kind": "inspection",
+        "purpose": "changed",
+        "scenario": "Inspect the final worktree diff and mathematical justification of new expected values.",
+        "expected": "Exact public signature; bounded scaled powers; NAN checked before infinity return; unchanged legacy unsupported-p expression; changes limited to the three planned files; independent expected values and scale-aware assertions.",
+        "boundaries": "No unrelated operations, dependencies, weakened checks, new public API, or newly specified unsupported-p behavior.",
+        "file": "",
+        "command": "",
+        "fixtures": [],
+        "inspection": "Review the domain guard, maximum-magnitude scan, zero/infinity return, and normalized-power sum. Verify bounded ratios and a unit contribution for nonzero finite vectors. Inspect provider style, analytic oracle comments, finite/positive assertions, relative tolerances, and intended-red evidence for huge and tiny failures.",
+        "reason": "Scope, oracle independence, and preservation of unsupported-domain execution require code/diff review alongside runtime tests."
+      }
+    ]
+  },
+  "replayMapping": [
+    {
+      "file": "tests/LinearAlgebra/Vector/VectorNormsTest.php",
+      "command": "php -d memory_limit=2G vendor/bin/phpunit --configuration=tests/phpunit.xml --filter testPNormExtremeMagnitudes tests/LinearAlgebra/Vector/VectorNormsTest.php",
+      "checkIds": [
+        "PN-EXTREME"
+      ],
+      "fixtures": []
+    },
+    {
+      "file": "tests/LinearAlgebra/Vector/VectorNormsTest.php",
+      "command": "php -d memory_limit=2G vendor/bin/phpunit --configuration=tests/phpunit.xml --filter testPNormMixedScales tests/LinearAlgebra/Vector/VectorNormsTest.php",
+      "checkIds": [
+        "PN-MIXED"
+      ],
+      "fixtures": []
+    },
+    {
+      "file": "tests/LinearAlgebra/Vector/VectorNormsTest.php",
+      "command": "php -d memory_limit=2G vendor/bin/phpunit --configuration=tests/phpunit.xml --filter testPNormZeroVectors tests/LinearAlgebra/Vector/VectorNormsTest.php",
+      "checkIds": [
+        "PN-ZERO"
+      ],
+      "fixtures": []
+    },
+    {
+      "file": "tests/LinearAlgebra/Vector/VectorNormsTest.php",
+      "command": "php -d memory_limit=2G vendor/bin/phpunit --configuration=tests/phpunit.xml --filter testPNormNonFiniteComponents tests/LinearAlgebra/Vector/VectorNormsTest.php",
+      "checkIds": [
+        "PN-NONFINITE"
+      ],
+      "fixtures": []
+    },
+    {
+      "file": "tests/LinearAlgebra/Vector/VectorNormsTest.php",
+      "command": "php -d memory_limit=2G vendor/bin/phpunit --configuration=tests/phpunit.xml --filter '/::testPNorm\\b/' tests/LinearAlgebra/Vector/VectorNormsTest.php",
+      "checkIds": [
+        "PN-ORDINARY"
+      ],
+      "fixtures": []
+    },
+    {
+      "file": "tests/LinearAlgebra/Vector/VectorAxiomsTest.php",
+      "command": "php -d memory_limit=2G vendor/bin/phpunit --configuration=tests/phpunit.xml --filter testPNorm tests/LinearAlgebra/Vector/VectorAxiomsTest.php",
+      "checkIds": [
+        "PN-ORDINARY"
+      ],
+      "fixtures": []
+    },
+    {
+      "file": "tests/LinearAlgebra/Vector/VectorAxiomsTest.php",
+      "command": "php -d memory_limit=2G vendor/bin/phpunit --configuration=tests/phpunit.xml tests/LinearAlgebra/Vector/VectorAxiomsTest.php",
+      "checkIds": [
+        "PN-GATE"
+      ],
+      "fixtures": []
+    },
+    {
+      "file": "tests/LinearAlgebra/Vector/VectorTest.php",
+      "command": "php -d memory_limit=2G vendor/bin/phpunit --configuration=tests/phpunit.xml tests/LinearAlgebra/Vector/VectorTest.php",
+      "checkIds": [
+        "PN-GATE"
+      ],
+      "fixtures": []
+    },
+    {
+      "file": "tests/LinearAlgebra/Vector/VectorAngleTest.php",
+      "command": "php -d memory_limit=2G vendor/bin/phpunit --configuration=tests/phpunit.xml tests/LinearAlgebra/Vector/VectorAngleTest.php",
+      "checkIds": [
+        "PN-GATE"
+      ],
+      "fixtures": []
+    },
+    {
+      "file": "tests/LinearAlgebra/Vector/VectorDistanceTest.php",
+      "command": "php -d memory_limit=2G vendor/bin/phpunit --configuration=tests/phpunit.xml tests/LinearAlgebra/Vector/VectorDistanceTest.php",
+      "checkIds": [
+        "PN-GATE"
+      ],
+      "fixtures": []
+    },
+    {
+      "file": "tests/LinearAlgebra/Vector/VectorInterfaceTest.php",
+      "command": "php -d memory_limit=2G vendor/bin/phpunit --configuration=tests/phpunit.xml tests/LinearAlgebra/Vector/VectorInterfaceTest.php",
+      "checkIds": [
+        "PN-GATE"
+      ],
+      "fixtures": []
+    },
+    {
+      "file": "tests/LinearAlgebra/Vector/VectorNormsTest.php",
+      "command": "php -d memory_limit=2G vendor/bin/phpunit --configuration=tests/phpunit.xml tests/LinearAlgebra/Vector/VectorNormsTest.php",
+      "checkIds": [
+        "PN-GATE"
+      ],
+      "fixtures": []
+    },
+    {
+      "file": "tests/LinearAlgebra/Vector/VectorOperationsTest.php",
+      "command": "php -d memory_limit=2G vendor/bin/phpunit --configuration=tests/phpunit.xml tests/LinearAlgebra/Vector/VectorOperationsTest.php",
+      "checkIds": [
+        "PN-GATE"
+      ],
+      "fixtures": []
+    }
+  ],
+  "author": "Codex Sol",
+  "reviewer": "Codex Astra",
+  "reviews": [
+    {
+      "stage": "design",
+      "label": "pair-design-1",
+      "version": "design:10644-f7b0025a:base",
+      "complete": true,
+      "summary": "The design satisfies all seven criteria at the design stage. Repository evidence supports the algorithm, test placement, existing-test preservation, documentation changes, and verification procedure. No actionable defects found. No tests were run and no files were changed; implementation results remain to be verified.",
+      "requiresDesignRevision": false,
+      "challenges": [
+        {
+          "criterion": "C1",
+          "wrongImplementation": "Continue powering unscaled components, producing infinity for huge p=2 inputs and zero for tiny p=2 inputs, or stabilize only integer p. PN-EXTREME requires finite positive results with relative accuracy at both scales, including p=2.5.",
+          "rejectingCheckIds": [
+            "PN-EXTREME",
+            "PN-SCOPE-AND-ORACLES"
+          ]
+        },
+        {
+          "criterion": "C2",
+          "wrongImplementation": "Normalize signed components without taking absolute values, or divide by the maximum magnitude when it is zero. Negative fractional-power cases would yield NAN or incorrect values; zero-vector cases would fail. Mixed-scale cases also reject incorrect scale selection.",
+          "rejectingCheckIds": [
+            "PN-EXTREME",
+            "PN-MIXED",
+            "PN-ZERO"
+          ]
+        },
+        {
+          "criterion": "C3",
+          "wrongImplementation": "Return immediately upon finding infinity, hiding a later NAN, or return negative infinity for a negative infinite component. PN-NONFINITE explicitly checks both orders, both infinity signs, NAN results, and strictly positive infinity.",
+          "rejectingCheckIds": [
+            "PN-NONFINITE",
+            "PN-SCOPE-AND-ORACLES"
+          ]
+        },
+        {
+          "criterion": "C4",
+          "wrongImplementation": "Use a fixed absolute tolerance that accepts zero for tiny expected norms, or derive expected values from pNorm itself. The required relative tolerance and positivity assertions reject zero; oracle inspection rejects circular expectations, and intended-red evidence establishes detection of the original failure.",
+          "rejectingCheckIds": [
+            "PN-EXTREME",
+            "PN-MIXED",
+            "PN-SCOPE-AND-ORACLES"
+          ]
+        },
+        {
+          "criterion": "C5",
+          "wrongImplementation": "Leave the required p argument absent from the README example, or document infinity as taking precedence over NAN. PN-DOCS compares changed examples and semantic claims against the signature, supported domain, and component-scanning behavior.",
+          "rejectingCheckIds": [
+            "PN-DOCS"
+          ]
+        },
+        {
+          "criterion": "C6",
+          "wrongImplementation": "Change the signature, reject unsupported p values with new validation, or refactor unrelated norm methods while making the new cases pass. Diff inspection rejects those changes, while unchanged ordinary and axiom tests check numerical compatibility.",
+          "rejectingCheckIds": [
+            "PN-SCOPE-AND-ORACLES",
+            "PN-ORDINARY",
+            "PN-GATE"
+          ]
+        },
+        {
+          "criterion": "C7",
+          "wrongImplementation": "Claim completion using only filtered tests or a passing run from another checkout with different environment settings. PN-GATE requires the exact scoped command from the author worktree, fixed verification configuration, recorded execution context, exit zero, and passing PHPUnit summary.",
+          "rejectingCheckIds": [
+            "PN-GATE"
+          ]
+        }
+      ],
+      "findings": [],
+      "resolutions": [],
+      "criteria": [
+        {
+          "criterion": "C1",
+          "status": "met",
+          "note": "Design coverage is sufficient. Vector.php:700 currently powers raw magnitudes; the proposed scaling follows the existing l2Norm implementation at :668–687. Bounded normalized powers and a unit contribution prevent the targeted intermediate overflow and total underflow. PN-EXTREME covers p=1,2,4,2.5,1000 at both requested scales."
+        },
+        {
+          "criterion": "C2",
+          "status": "met",
+          "note": "The design uses absolute magnitudes, handles zero before division, and tests negative components and mixed scales in both orders across all five p values. The constructor at Vector.php:30–34 confirms that empty vectors are rejected."
+        },
+        {
+          "criterion": "C3",
+          "status": "met",
+          "note": "The complete magnitude scan checks NAN before any infinity return, matching the neighboring l2Norm pattern. PN-NONFINITE explicitly covers NAN before and after either infinity sign and asserts positive infinity when NAN is absent."
+        },
+        {
+          "criterion": "C4",
+          "status": "met",
+          "note": "The sole test root is verified: tests/phpunit.xml:28–29 and :73 include LinearAlgebra/*Test.php recursively; composer.json maps MathPHP\\Tests\\ to tests/, and tests/bootstrap.php loads Composer. Existing VectorNormsTest methods establish DataProvider and Given/When/Then style. Analytic identities, finite/positive assertions, relative tolerance, and planned huge/tiny intended-red runs meet the oracle requirements. No new API is introduced."
+        },
+        {
+          "criterion": "C5",
+          "status": "met",
+          "note": "The planned docblock covers the supported domain, scaling, zero, NAN precedence, and infinity, consistent with the neighboring l2Norm documentation. README.md:770 demonstrably omits the required p argument; the proposed correction and PN-DOCS inspection address it."
+        },
+        {
+          "criterion": "C6",
+          "status": "met",
+          "note": "The design preserves the exact signature at Vector.php:698 and the legacy expression for unsupported p, with changes limited to three relevant files. Existing ordinary cases and the cited equivalence, homogeneity, and triangle-inequality tests are present and will remain unchanged."
+        },
+        {
+          "criterion": "C7",
+          "status": "met",
+          "note": "The verification plan is sufficient for this stage. Inspected verify.sh contains the exact required scoped command, and verification.json supplies the stated TMPDIR override. PN-GATE requires execution from the author worktree through the helper with recorded output and exit status. Runtime success remains an implementation-stage obligation."
+        }
+      ],
+      "suggestions": []
+    },
+    {
+      "stage": "code",
+      "label": "pair-code-2",
+      "version": "code:8f092ceef8c9ab811ddaf6b44eb26b4772a276fb",
+      "complete": true,
+      "summary": "Reviewed the entire three-file diff and confirmed the checkout matches the specified tree. No actionable defects found. Supplied neutral verification passes with 721 tests and 1263 assertions; the gate was not rerun.",
+      "requiresDesignRevision": false,
+      "challenges": [],
+      "findings": [],
+      "resolutions": [],
+      "criteria": [
+        {
+          "criterion": "C1",
+          "status": "met",
+          "note": "Vector::pNorm uses maximum-magnitude scaling, bounded powered ratios, and final rescaling. PN-EXTREME passes all 10 cases covering huge and tiny components at p=1,2,4,2.5,1000."
+        },
+        {
+          "criterion": "C2",
+          "status": "met",
+          "note": "Both passes use absolute magnitudes. Zero is returned before division. Providers cover negative components, integer and signed floating zeros, and mixed huge/ordinary/tiny/zero components in both orders. PN-MIXED and PN-ZERO each pass 10 cases."
+        },
+        {
+          "criterion": "C3",
+          "status": "met",
+          "note": "The scan checks NAN before any infinity return. All 65 PN-NONFINITE cases pass on base and final, explicitly checking NAN precedence and positive infinity across both signs and component orders."
+        },
+        {
+          "criterion": "C4",
+          "status": "met",
+          "note": "Tests follow DataProvider and Given/When/Then conventions, document analytic expectations, and assert finite positive results before relative comparisons. The base replay log confirms huge p=2 fails the finite assertion and tiny p=2 fails positivity; final passes. Base p=1 passes are expected because first powers did not cause the original defect."
+        },
+        {
+          "criterion": "C5",
+          "status": "met",
+          "note": "The pNorm docblock and README describe the supported domain, scaled evaluation, extreme magnitudes, zero vectors, NAN precedence, and positive infinity. The README example now supplies p=2."
+        },
+        {
+          "criterion": "C6",
+          "status": "met",
+          "note": "The exact public signature and unsupported-domain expression remain intact. Only the three planned files changed. Ordinary cases and existing p-norm axioms pass on base and final. Replay exclusions appropriately retain original dependencies and unchanged tests while excluding production/documentation files from test overlays; no preserved-behavior signal is missing."
+        },
+        {
+          "criterion": "C7",
+          "status": "met",
+          "note": "The supplied neutral measurement for this exact snapshot records the required scoped command, fixed TMPDIR override, exit 0, and OK (721 tests, 1263 assertions). The corresponding suite log confirms the summary."
+        }
+      ],
+      "suggestions": []
+    }
+  ],
+  "findings": [],
+  "questions": [],
+  "notes": [],
+  "report": {
+    "markdown": "Pair: Codex Sol authors; Codex Astra reviews.\n\nReadiness: ready. Reviews: 2/8.\n\nVerification: passed on the reviewed snapshot.\n\nReplay: 26 file/command records; 9 overlay exclusions. Base outcomes require reviewer interpretation."
+  },
+  "final": {
+    "author": "A",
+    "model": "Codex Sol",
+    "summary": "Implemented stable pNorm scaling, focused regressions, and API documentation. Required Vector gate passed: 721 tests, 1263 assertions. Changes remain in the author worktree.",
+    "worktree": "/private/tmp/pair-test-contract-trial-20261108/vector-pnorm-scale-pair-contract-replay/.council/host-h6AZEK-pair/wt/A",
+    "post": "/private/tmp/pair-test-contract-trial-20261108/vector-pnorm-scale-pair-contract-replay/.council/host-h6AZEK-pair/room/pair-code-2/A.md",
+    "snapshotRef": "refs/council/host-h6AZEK-pair/A-pair-code-2",
+    "snapshotTree": "8f092ceef8c9ab811ddaf6b44eb26b4772a276fb",
+    "diff": "/private/tmp/pair-test-contract-trial-20261108/vector-pnorm-scale-pair-contract-replay/.council/host-h6AZEK-pair/room/pair-code-2/A.diff",
+    "suite": {
+      "exitCode": 0,
+      "timedOut": false,
+      "seconds": 0.3,
+      "tail": "PHPUnit 10.5.63 by Sebastian Bergmann and contributors.\n\nRuntime:       PHP 8.5.3\nConfiguration: /private/tmp/pair-test-contract-trial-20261108/vector-pnorm-scale-pair-contract-replay/.council/host-h6AZEK-pair/scratch/A-pair-code-2-88930/tests/phpunit.xml\n\n...............................................................  63 / 721 (  8%)\n............................................................... 126 / 721 ( 17%)\n............................................................... 189 / 721 ( 26%)\n............................................................... 252 / 721 ( 34%)\n............................................................... 315 / 721 ( 43%)\n............................................................... 378 / 721 ( 52%)\n............................................................... 441 / 721 ( 61%)\n............................................................... 504 / 721 ( 69%)\n............................................................... 567 / 721 ( 78%)\n............................................................... 630 / 721 ( 87%)\n............................................................... 693 / 721 ( 96%)\n............................                                    721 / 721 (100%)\n\nTime: 00:00.090, Memory: 14.00 MB\n\nOK (721 tests, 1263 assertions)",
+      "log": "/private/tmp/pair-test-contract-trial-20261108/vector-pnorm-scale-pair-contract-replay/.council/host-h6AZEK-pair/logs/suite-A-pair-code-2.log",
+      "ran": true,
+      "passed": true,
+      "cwd": "/private/tmp/pair-test-contract-trial-20261108/vector-pnorm-scale-pair-contract-replay/.council/host-h6AZEK-pair/scratch/A-pair-code-2-88930",
+      "command": "php -d memory_limit=2G vendor/bin/phpunit --configuration=tests/phpunit.xml tests/LinearAlgebra/Vector",
+      "env": {
+        "TMPDIR": "/private/tmp/pair-test-contract-trial-20261108/vector-pnorm-scale-pair-contract-replay/.council/host-h6AZEK-pair/verification-tmp"
+      }
+    },
+    "replay": {
+      "base": "e5e2d2f4d2fdd81477c20a861022a097c3f435dc",
+      "snapshot": "2ae17b1cead5a8f970d29d6869aa4dc462c24ee3",
+      "snapshotTree": "8f092ceef8c9ab811ddaf6b44eb26b4772a276fb",
+      "testRoots": [
+        "tests/LinearAlgebra/Vector"
+      ],
+      "mapping": [
+        {
+          "file": "tests/LinearAlgebra/Vector/VectorNormsTest.php",
+          "command": "php -d memory_limit=2G vendor/bin/phpunit --configuration=tests/phpunit.xml --filter testPNormExtremeMagnitudes tests/LinearAlgebra/Vector/VectorNormsTest.php",
+          "checkIds": [
+            "PN-EXTREME"
+          ],
+          "fixtures": []
+        },
+        {
+          "file": "tests/LinearAlgebra/Vector/VectorNormsTest.php",
+          "command": "php -d memory_limit=2G vendor/bin/phpunit --configuration=tests/phpunit.xml --filter testPNormMixedScales tests/LinearAlgebra/Vector/VectorNormsTest.php",
+          "checkIds": [
+            "PN-MIXED"
+          ],
+          "fixtures": []
+        },
+        {
+          "file": "tests/LinearAlgebra/Vector/VectorNormsTest.php",
+          "command": "php -d memory_limit=2G vendor/bin/phpunit --configuration=tests/phpunit.xml --filter testPNormZeroVectors tests/LinearAlgebra/Vector/VectorNormsTest.php",
+          "checkIds": [
+            "PN-ZERO"
+          ],
+          "fixtures": []
+        },
+        {
+          "file": "tests/LinearAlgebra/Vector/VectorNormsTest.php",
+          "command": "php -d memory_limit=2G vendor/bin/phpunit --configuration=tests/phpunit.xml --filter testPNormNonFiniteComponents tests/LinearAlgebra/Vector/VectorNormsTest.php",
+          "checkIds": [
+            "PN-NONFINITE"
+          ],
+          "fixtures": []
+        },
+        {
+          "file": "tests/LinearAlgebra/Vector/VectorNormsTest.php",
+          "command": "php -d memory_limit=2G vendor/bin/phpunit --configuration=tests/phpunit.xml --filter '/::testPNorm\\b/' tests/LinearAlgebra/Vector/VectorNormsTest.php",
+          "checkIds": [
+            "PN-ORDINARY"
+          ],
+          "fixtures": []
+        },
+        {
+          "file": "tests/LinearAlgebra/Vector/VectorAxiomsTest.php",
+          "command": "php -d memory_limit=2G vendor/bin/phpunit --configuration=tests/phpunit.xml --filter testPNorm tests/LinearAlgebra/Vector/VectorAxiomsTest.php",
+          "checkIds": [
+            "PN-ORDINARY"
+          ],
+          "fixtures": []
+        },
+        {
+          "file": "tests/LinearAlgebra/Vector/VectorAxiomsTest.php",
+          "command": "php -d memory_limit=2G vendor/bin/phpunit --configuration=tests/phpunit.xml tests/LinearAlgebra/Vector/VectorAxiomsTest.php",
+          "checkIds": [
+            "PN-GATE"
+          ],
+          "fixtures": []
+        },
+        {
+          "file": "tests/LinearAlgebra/Vector/VectorTest.php",
+          "command": "php -d memory_limit=2G vendor/bin/phpunit --configuration=tests/phpunit.xml tests/LinearAlgebra/Vector/VectorTest.php",
+          "checkIds": [
+            "PN-GATE"
+          ],
+          "fixtures": []
+        },
+        {
+          "file": "tests/LinearAlgebra/Vector/VectorAngleTest.php",
+          "command": "php -d memory_limit=2G vendor/bin/phpunit --configuration=tests/phpunit.xml tests/LinearAlgebra/Vector/VectorAngleTest.php",
+          "checkIds": [
+            "PN-GATE"
+          ],
+          "fixtures": []
+        },
+        {
+          "file": "tests/LinearAlgebra/Vector/VectorDistanceTest.php",
+          "command": "php -d memory_limit=2G vendor/bin/phpunit --configuration=tests/phpunit.xml tests/LinearAlgebra/Vector/VectorDistanceTest.php",
+          "checkIds": [
+            "PN-GATE"
+          ],
+          "fixtures": []
+        },
+        {
+          "file": "tests/LinearAlgebra/Vector/VectorInterfaceTest.php",
+          "command": "php -d memory_limit=2G vendor/bin/phpunit --configuration=tests/phpunit.xml tests/LinearAlgebra/Vector/VectorInterfaceTest.php",
+          "checkIds": [
+            "PN-GATE"
+          ],
+          "fixtures": []
+        },
+        {
+          "file": "tests/LinearAlgebra/Vector/VectorNormsTest.php",
+          "command": "php -d memory_limit=2G vendor/bin/phpunit --configuration=tests/phpunit.xml tests/LinearAlgebra/Vector/VectorNormsTest.php",
+          "checkIds": [
+            "PN-GATE"
+          ],
+          "fixtures": []
+        },
+        {
+          "file": "tests/LinearAlgebra/Vector/VectorOperationsTest.php",
+          "command": "php -d memory_limit=2G vendor/bin/phpunit --configuration=tests/phpunit.xml tests/LinearAlgebra/Vector/VectorOperationsTest.php",
+          "checkIds": [
+            "PN-GATE"
+          ],
+          "fixtures": []
+        }
+      ],
+      "changes": [
+        {
+          "status": "M",
+          "path": "README.md",
+          "previousPath": ""
+        },
+        {
+          "status": "M",
+          "path": "src/LinearAlgebra/Vector.php",
+          "previousPath": ""
+        },
+        {
+          "status": "M",
+          "path": "tests/LinearAlgebra/Vector/VectorNormsTest.php",
+          "previousPath": ""
+        }
+      ],
+      "exclusions": [
+        {
+          "path": "vendor",
+          "reason": "author dependency changes are not overlaid; focused replay uses the original run repository dependency copy"
+        },
+        {
+          "path": "README.md",
+          "reason": "outside accepted test roots"
+        },
+        {
+          "path": "src/LinearAlgebra/Vector.php",
+          "reason": "outside accepted test roots"
+        },
+        {
+          "path": "tests/LinearAlgebra/Vector/VectorAngleTest.php",
+          "reason": "unchanged; use original base file without overlay"
+        },
+        {
+          "path": "tests/LinearAlgebra/Vector/VectorAxiomsTest.php",
+          "reason": "unchanged; use original base file without overlay"
+        },
+        {
+          "path": "tests/LinearAlgebra/Vector/VectorDistanceTest.php",
+          "reason": "unchanged; use original base file without overlay"
+        },
+        {
+          "path": "tests/LinearAlgebra/Vector/VectorInterfaceTest.php",
+          "reason": "unchanged; use original base file without overlay"
+        },
+        {
+          "path": "tests/LinearAlgebra/Vector/VectorOperationsTest.php",
+          "reason": "unchanged; use original base file without overlay"
+        },
+        {
+          "path": "tests/LinearAlgebra/Vector/VectorTest.php",
+          "reason": "unchanged; use original base file without overlay"
+        }
+      ],
+      "records": [
+        {
+          "side": "base",
+          "revision": "e5e2d2f4d2fdd81477c20a861022a097c3f435dc",
+          "tree": "5c370673d0090e561b51875ea961002aa8d8aedb",
+          "file": "tests/LinearAlgebra/Vector/VectorNormsTest.php",
+          "command": "php -d memory_limit=2G vendor/bin/phpunit --configuration=tests/phpunit.xml --filter testPNormExtremeMagnitudes tests/LinearAlgebra/Vector/VectorNormsTest.php",
+          "checkIds": [
+            "PN-EXTREME"
+          ],
+          "cwd": "/private/tmp/pair-test-contract-trial-20261108/vector-pnorm-scale-pair-contract-replay/.council/host-h6AZEK-pair/scratch/A-pair-code-2-replay-0-base-88930",
+          "attempted": true,
+          "ran": true,
+          "passed": false,
+          "hasExitCode": true,
+          "exitCode": 1,
+          "signal": 0,
+          "timedOut": false,
+          "seconds": 0.2,
+          "log": "/private/tmp/pair-test-contract-trial-20261108/vector-pnorm-scale-pair-contract-replay/.council/host-h6AZEK-pair/logs/replay-A-pair-code-2-replay-0-base.log",
+          "logSha256": "f34cc954dd362309044fdbf17cd83ef18ba77604402254ac2fec5669e34eb749",
+          "tail": "\n/private/tmp/pair-test-contract-trial-20261108/vector-pnorm-scale-pair-contract-replay/.council/host-h6AZEK-pair/scratch/A-pair-code-2-replay-0-base-88930/tests/LinearAlgebra/Vector/VectorNormsTest.php:194\n\n2) MathPHP\\Tests\\LinearAlgebra\\Vector\\VectorNormsTest::testPNormExtremeMagnitudes with data set \"huge p=4\" ([-1.0E+200, 1.0E+200], 4, 1.189207115002721E+200)\nFailed asserting that false is true.\n\n/private/tmp/pair-test-contract-trial-20261108/vector-pnorm-scale-pair-contract-replay/.council/host-h6AZEK-pair/scratch/A-pair-code-2-replay-0-base-88930/tests/LinearAlgebra/Vector/VectorNormsTest.php:194\n\n3) MathPHP\\Tests\\LinearAlgebra\\Vector\\VectorNormsTest::testPNormExtremeMagnitudes with data set \"huge p=2.5\" ([-1.0E+200, 1.0E+200], 2.5, 1.3195079107728941E+200)\nFailed asserting that false is true.\n\n/private/tmp/pair-test-contract-trial-20261108/vector-pnorm-scale-pair-contract-replay/.council/host-h6AZEK-pair/scratch/A-pair-code-2-replay-0-base-88930/tests/LinearAlgebra/Vector/VectorNormsTest.php:194\n\n4) MathPHP\\Tests\\LinearAlgebra\\Vector\\VectorNormsTest::testPNormExtremeMagnitudes with data set \"huge p=1000\" ([-1.0E+200, 1.0E+200], 1000, 1.0006933874625807E+200)\nFailed asserting that false is true.\n\n/private/tmp/pair-test-contract-trial-20261108/vector-pnorm-scale-pair-contract-replay/.council/host-h6AZEK-pair/scratch/A-pair-code-2-replay-0-base-88930/tests/LinearAlgebra/Vector/VectorNormsTest.php:194\n\n5) MathPHP\\Tests\\LinearAlgebra\\Vector\\VectorNormsTest::testPNormExtremeMagnitudes with data set \"tiny p=2\" ([-3.0E-200, 4.0E-200], 2, 5.0E-200)\nFailed asserting that 0.0 is greater than 0.0.\n\n/private/tmp/pair-test-contract-trial-20261108/vector-pnorm-scale-pair-contract-replay/.council/host-h6AZEK-pair/scratch/A-pair-code-2-replay-0-base-88930/tests/LinearAlgebra/Vector/VectorNormsTest.php:195\n\n6) MathPHP\\Tests\\LinearAlgebra\\Vector\\VectorNormsTest::testPNormExtremeMagnitudes with data set \"tiny p=4\" ([-1.0E-200, 1.0E-200], 4, 1.189207115002721E-200)\nFailed asserting that 0.0 is greater than 0.0.\n\n/private/tmp/pair-test-contract-trial-20261108/vector-pnorm-scale-pair-contract-replay/.council/host-h6AZEK-pair/scratch/A-pair-code-2-replay-0-base-88930/tests/LinearAlgebra/Vector/VectorNormsTest.php:195\n\n7) MathPHP\\Tests\\LinearAlgebra\\Vector\\VectorNormsTest::testPNormExtremeMagnitudes with data set \"tiny p=2.5\" ([-1.0E-200, 1.0E-200], 2.5, 1.3195079107728943E-200)\nFailed asserting that 0.0 is greater than 0.0.\n\n/private/tmp/pair-test-contract-trial-20261108/vector-pnorm-scale-pair-contract-replay/.council/host-h6AZEK-pair/scratch/A-pair-code-2-replay-0-base-88930/tests/LinearAlgebra/Vector/VectorNormsTest.php:195\n\n8) MathPHP\\Tests\\LinearAlgebra\\Vector\\VectorNormsTest::testPNormExtremeMagnitudes with data set \"tiny p=1000\" ([-1.0E-200, 1.0E-200], 1000, 1.0006933874625808E-200)\nFailed asserting that 0.0 is greater than 0.0.\n\n/private/tmp/pair-test-contract-trial-20261108/vector-pnorm-scale-pair-contract-replay/.council/host-h6AZEK-pair/scratch/A-pair-code-2-replay-0-base-88930/tests/LinearAlgebra/Vector/VectorNormsTest.php:195\n\nFAILURES!\nTests: 10, Assertions: 18, Failures: 8.",
+          "launchError": "",
+          "mutated": []
+        },
+        {
+          "side": "final",
+          "revision": "2ae17b1cead5a8f970d29d6869aa4dc462c24ee3",
+          "tree": "8f092ceef8c9ab811ddaf6b44eb26b4772a276fb",
+          "file": "tests/LinearAlgebra/Vector/VectorNormsTest.php",
+          "command": "php -d memory_limit=2G vendor/bin/phpunit --configuration=tests/phpunit.xml --filter testPNormExtremeMagnitudes tests/LinearAlgebra/Vector/VectorNormsTest.php",
+          "checkIds": [
+            "PN-EXTREME"
+          ],
+          "cwd": "/private/tmp/pair-test-contract-trial-20261108/vector-pnorm-scale-pair-contract-replay/.council/host-h6AZEK-pair/scratch/A-pair-code-2-replay-0-final-88930",
+          "attempted": true,
+          "ran": true,
+          "passed": true,
+          "hasExitCode": true,
+          "exitCode": 0,
+          "signal": 0,
+          "timedOut": false,
+          "seconds": 0.2,
+          "log": "/private/tmp/pair-test-contract-trial-20261108/vector-pnorm-scale-pair-contract-replay/.council/host-h6AZEK-pair/logs/replay-A-pair-code-2-replay-0-final.log",
+          "logSha256": "f02ab7fc52fe151d0f311faac5f504f53d983bd7880c6464f2a4f8508a36edab",
+          "tail": "PHPUnit 10.5.63 by Sebastian Bergmann and contributors.\n\nRuntime:       PHP 8.5.3\nConfiguration: /private/tmp/pair-test-contract-trial-20261108/vector-pnorm-scale-pair-contract-replay/.council/host-h6AZEK-pair/scratch/A-pair-code-2-replay-0-final-88930/tests/phpunit.xml\n\n..........                                                        10 / 10 (100%)\n\nTime: 00:00.010, Memory: 10.00 MB\n\nOK (10 tests, 30 assertions)",
+          "launchError": "",
+          "mutated": []
+        },
+        {
+          "side": "base",
+          "revision": "e5e2d2f4d2fdd81477c20a861022a097c3f435dc",
+          "tree": "5c370673d0090e561b51875ea961002aa8d8aedb",
+          "file": "tests/LinearAlgebra/Vector/VectorNormsTest.php",
+          "command": "php -d memory_limit=2G vendor/bin/phpunit --configuration=tests/phpunit.xml --filter testPNormMixedScales tests/LinearAlgebra/Vector/VectorNormsTest.php",
+          "checkIds": [
+            "PN-MIXED"
+          ],
+          "cwd": "/private/tmp/pair-test-contract-trial-20261108/vector-pnorm-scale-pair-contract-replay/.council/host-h6AZEK-pair/scratch/A-pair-code-2-replay-1-base-88930",
+          "attempted": true,
+          "ran": true,
+          "passed": false,
+          "hasExitCode": true,
+          "exitCode": 1,
+          "signal": 0,
+          "timedOut": false,
+          "seconds": 0.2,
+          "log": "/private/tmp/pair-test-contract-trial-20261108/vector-pnorm-scale-pair-contract-replay/.council/host-h6AZEK-pair/logs/replay-A-pair-code-2-replay-1-base.log",
+          "logSha256": "4e687d62e8060bcf0770beb022757841ca483c69ca30aa9a14cced59a9199416",
+          "tail": "\n/private/tmp/pair-test-contract-trial-20261108/vector-pnorm-scale-pair-contract-replay/.council/host-h6AZEK-pair/scratch/A-pair-code-2-replay-1-base-88930/tests/LinearAlgebra/Vector/VectorNormsTest.php:234\n\n2) MathPHP\\Tests\\LinearAlgebra\\Vector\\VectorNormsTest::testPNormMixedScales with data set \"huge last p=2\" ([0, -1.0E-200, 3, -1.0E+200], 2, 1.0E+200)\nFailed asserting that false is true.\n\n/private/tmp/pair-test-contract-trial-20261108/vector-pnorm-scale-pair-contract-replay/.council/host-h6AZEK-pair/scratch/A-pair-code-2-replay-1-base-88930/tests/LinearAlgebra/Vector/VectorNormsTest.php:234\n\n3) MathPHP\\Tests\\LinearAlgebra\\Vector\\VectorNormsTest::testPNormMixedScales with data set \"huge first p=4\" ([-1.0E+200, 3, -1.0E-200, 0], 4, 1.0E+200)\nFailed asserting that false is true.\n\n/private/tmp/pair-test-contract-trial-20261108/vector-pnorm-scale-pair-contract-replay/.council/host-h6AZEK-pair/scratch/A-pair-code-2-replay-1-base-88930/tests/LinearAlgebra/Vector/VectorNormsTest.php:234\n\n4) MathPHP\\Tests\\LinearAlgebra\\Vector\\VectorNormsTest::testPNormMixedScales with data set \"huge last p=4\" ([0, -1.0E-200, 3, -1.0E+200], 4, 1.0E+200)\nFailed asserting that false is true.\n\n/private/tmp/pair-test-contract-trial-20261108/vector-pnorm-scale-pair-contract-replay/.council/host-h6AZEK-pair/scratch/A-pair-code-2-replay-1-base-88930/tests/LinearAlgebra/Vector/VectorNormsTest.php:234\n\n5) MathPHP\\Tests\\LinearAlgebra\\Vector\\VectorNormsTest::testPNormMixedScales with data set \"huge first p=2.5\" ([-1.0E+200, 3, -1.0E-200, 0], 2.5, 1.0E+200)\nFailed asserting that false is true.\n\n/private/tmp/pair-test-contract-trial-20261108/vector-pnorm-scale-pair-contract-replay/.council/host-h6AZEK-pair/scratch/A-pair-code-2-replay-1-base-88930/tests/LinearAlgebra/Vector/VectorNormsTest.php:234\n\n6) MathPHP\\Tests\\LinearAlgebra\\Vector\\VectorNormsTest::testPNormMixedScales with data set \"huge last p=2.5\" ([0, -1.0E-200, 3, -1.0E+200], 2.5, 1.0E+200)\nFailed asserting that false is true.\n\n/private/tmp/pair-test-contract-trial-20261108/vector-pnorm-scale-pair-contract-replay/.council/host-h6AZEK-pair/scratch/A-pair-code-2-replay-1-base-88930/tests/LinearAlgebra/Vector/VectorNormsTest.php:234\n\n7) MathPHP\\Tests\\LinearAlgebra\\Vector\\VectorNormsTest::testPNormMixedScales with data set \"huge first p=1000\" ([-1.0E+200, 3, -1.0E-200, 0], 1000, 1.0E+200)\nFailed asserting that false is true.\n\n/private/tmp/pair-test-contract-trial-20261108/vector-pnorm-scale-pair-contract-replay/.council/host-h6AZEK-pair/scratch/A-pair-code-2-replay-1-base-88930/tests/LinearAlgebra/Vector/VectorNormsTest.php:234\n\n8) MathPHP\\Tests\\LinearAlgebra\\Vector\\VectorNormsTest::testPNormMixedScales with data set \"huge last p=1000\" ([0, -1.0E-200, 3, -1.0E+200], 1000, 1.0E+200)\nFailed asserting that false is true.\n\n/private/tmp/pair-test-contract-trial-20261108/vector-pnorm-scale-pair-contract-replay/.council/host-h6AZEK-pair/scratch/A-pair-code-2-replay-1-base-88930/tests/LinearAlgebra/Vector/VectorNormsTest.php:234\n\nFAILURES!\nTests: 10, Assertions: 14, Failures: 8.",
+          "launchError": "",
+          "mutated": []
+        },
+        {
+          "side": "final",
+          "revision": "2ae17b1cead5a8f970d29d6869aa4dc462c24ee3",
+          "tree": "8f092ceef8c9ab811ddaf6b44eb26b4772a276fb",
+          "file": "tests/LinearAlgebra/Vector/VectorNormsTest.php",
+          "command": "php -d memory_limit=2G vendor/bin/phpunit --configuration=tests/phpunit.xml --filter testPNormMixedScales tests/LinearAlgebra/Vector/VectorNormsTest.php",
+          "checkIds": [
+            "PN-MIXED"
+          ],
+          "cwd": "/private/tmp/pair-test-contract-trial-20261108/vector-pnorm-scale-pair-contract-replay/.council/host-h6AZEK-pair/scratch/A-pair-code-2-replay-1-final-88930",
+          "attempted": true,
+          "ran": true,
+          "passed": true,
+          "hasExitCode": true,
+          "exitCode": 0,
+          "signal": 0,
+          "timedOut": false,
+          "seconds": 0.2,
+          "log": "/private/tmp/pair-test-contract-trial-20261108/vector-pnorm-scale-pair-contract-replay/.council/host-h6AZEK-pair/logs/replay-A-pair-code-2-replay-1-final.log",
+          "logSha256": "e8250486034b5a66aac0f4f05779b6fe2c3385bdf6e4423115f44cfe06d0a7fc",
+          "tail": "PHPUnit 10.5.63 by Sebastian Bergmann and contributors.\n\nRuntime:       PHP 8.5.3\nConfiguration: /private/tmp/pair-test-contract-trial-20261108/vector-pnorm-scale-pair-contract-replay/.council/host-h6AZEK-pair/scratch/A-pair-code-2-replay-1-final-88930/tests/phpunit.xml\n\n..........                                                        10 / 10 (100%)\n\nTime: 00:00.011, Memory: 10.00 MB\n\nOK (10 tests, 30 assertions)",
+          "launchError": "",
+          "mutated": []
+        },
+        {
+          "side": "base",
+          "revision": "e5e2d2f4d2fdd81477c20a861022a097c3f435dc",
+          "tree": "5c370673d0090e561b51875ea961002aa8d8aedb",
+          "file": "tests/LinearAlgebra/Vector/VectorNormsTest.php",
+          "command": "php -d memory_limit=2G vendor/bin/phpunit --configuration=tests/phpunit.xml --filter testPNormZeroVectors tests/LinearAlgebra/Vector/VectorNormsTest.php",
+          "checkIds": [
+            "PN-ZERO"
+          ],
+          "cwd": "/private/tmp/pair-test-contract-trial-20261108/vector-pnorm-scale-pair-contract-replay/.council/host-h6AZEK-pair/scratch/A-pair-code-2-replay-2-base-88930",
+          "attempted": true,
+          "ran": true,
+          "passed": true,
+          "hasExitCode": true,
+          "exitCode": 0,
+          "signal": 0,
+          "timedOut": false,
+          "seconds": 0.2,
+          "log": "/private/tmp/pair-test-contract-trial-20261108/vector-pnorm-scale-pair-contract-replay/.council/host-h6AZEK-pair/logs/replay-A-pair-code-2-replay-2-base.log",
+          "logSha256": "12e2480ca359ce82f1adb164641ef42e902032889683c1bad7c9be881815e4df",
+          "tail": "PHPUnit 10.5.63 by Sebastian Bergmann and contributors.\n\nRuntime:       PHP 8.5.3\nConfiguration: /private/tmp/pair-test-contract-trial-20261108/vector-pnorm-scale-pair-contract-replay/.council/host-h6AZEK-pair/scratch/A-pair-code-2-replay-2-base-88930/tests/phpunit.xml\n\n..........                                                        10 / 10 (100%)\n\nTime: 00:00.007, Memory: 10.00 MB\n\nOK (10 tests, 10 assertions)",
+          "launchError": "",
+          "mutated": []
+        },
+        {
+          "side": "final",
+          "revision": "2ae17b1cead5a8f970d29d6869aa4dc462c24ee3",
+          "tree": "8f092ceef8c9ab811ddaf6b44eb26b4772a276fb",
+          "file": "tests/LinearAlgebra/Vector/VectorNormsTest.php",
+          "command": "php -d memory_limit=2G vendor/bin/phpunit --configuration=tests/phpunit.xml --filter testPNormZeroVectors tests/LinearAlgebra/Vector/VectorNormsTest.php",
+          "checkIds": [
+            "PN-ZERO"
+          ],
+          "cwd": "/private/tmp/pair-test-contract-trial-20261108/vector-pnorm-scale-pair-contract-replay/.council/host-h6AZEK-pair/scratch/A-pair-code-2-replay-2-final-88930",
+          "attempted": true,
+          "ran": true,
+          "passed": true,
+          "hasExitCode": true,
+          "exitCode": 0,
+          "signal": 0,
+          "timedOut": false,
+          "seconds": 0.2,
+          "log": "/private/tmp/pair-test-contract-trial-20261108/vector-pnorm-scale-pair-contract-replay/.council/host-h6AZEK-pair/logs/replay-A-pair-code-2-replay-2-final.log",
+          "logSha256": "6639441827c04e7024a06479cc2069a62183499a51ea293b7c9b520aa583ddf1",
+          "tail": "PHPUnit 10.5.63 by Sebastian Bergmann and contributors.\n\nRuntime:       PHP 8.5.3\nConfiguration: /private/tmp/pair-test-contract-trial-20261108/vector-pnorm-scale-pair-contract-replay/.council/host-h6AZEK-pair/scratch/A-pair-code-2-replay-2-final-88930/tests/phpunit.xml\n\n..........                                                        10 / 10 (100%)\n\nTime: 00:00.007, Memory: 10.00 MB\n\nOK (10 tests, 10 assertions)",
+          "launchError": "",
+          "mutated": []
+        },
+        {
+          "side": "base",
+          "revision": "e5e2d2f4d2fdd81477c20a861022a097c3f435dc",
+          "tree": "5c370673d0090e561b51875ea961002aa8d8aedb",
+          "file": "tests/LinearAlgebra/Vector/VectorNormsTest.php",
+          "command": "php -d memory_limit=2G vendor/bin/phpunit --configuration=tests/phpunit.xml --filter testPNormNonFiniteComponents tests/LinearAlgebra/Vector/VectorNormsTest.php",
+          "checkIds": [
+            "PN-NONFINITE"
+          ],
+          "cwd": "/private/tmp/pair-test-contract-trial-20261108/vector-pnorm-scale-pair-contract-replay/.council/host-h6AZEK-pair/scratch/A-pair-code-2-replay-3-base-88930",
+          "attempted": true,
+          "ran": true,
+          "passed": true,
+          "hasExitCode": true,
+          "exitCode": 0,
+          "signal": 0,
+          "timedOut": false,
+          "seconds": 0.2,
+          "log": "/private/tmp/pair-test-contract-trial-20261108/vector-pnorm-scale-pair-contract-replay/.council/host-h6AZEK-pair/logs/replay-A-pair-code-2-replay-3-base.log",
+          "logSha256": "eb8ff94c25eb9d5089b85b8348013c9bb327a60407cc421e9f3a9c49ee200e6f",
+          "tail": "PHPUnit 10.5.63 by Sebastian Bergmann and contributors.\n\nRuntime:       PHP 8.5.3\nConfiguration: /private/tmp/pair-test-contract-trial-20261108/vector-pnorm-scale-pair-contract-replay/.council/host-h6AZEK-pair/scratch/A-pair-code-2-replay-3-base-88930/tests/phpunit.xml\n\n................................................................. 65 / 65 (100%)\n\n\nTime: 00:00.016, Memory: 10.00 MB\n\nOK (65 tests, 65 assertions)",
+          "launchError": "",
+          "mutated": []
+        },
+        {
+          "side": "final",
+          "revision": "2ae17b1cead5a8f970d29d6869aa4dc462c24ee3",
+          "tree": "8f092ceef8c9ab811ddaf6b44eb26b4772a276fb",
+          "file": "tests/LinearAlgebra/Vector/VectorNormsTest.php",
+          "command": "php -d memory_limit=2G vendor/bin/phpunit --configuration=tests/phpunit.xml --filter testPNormNonFiniteComponents tests/LinearAlgebra/Vector/VectorNormsTest.php",
+          "checkIds": [
+            "PN-NONFINITE"
+          ],
+          "cwd": "/private/tmp/pair-test-contract-trial-20261108/vector-pnorm-scale-pair-contract-replay/.council/host-h6AZEK-pair/scratch/A-pair-code-2-replay-3-final-88930",
+          "attempted": true,
+          "ran": true,
+          "passed": true,
+          "hasExitCode": true,
+          "exitCode": 0,
+          "signal": 0,
+          "timedOut": false,
+          "seconds": 0.2,
+          "log": "/private/tmp/pair-test-contract-trial-20261108/vector-pnorm-scale-pair-contract-replay/.council/host-h6AZEK-pair/logs/replay-A-pair-code-2-replay-3-final.log",
+          "logSha256": "bd36a03c4ff17c4c1d08c7996cb6d45066363b30c9a8c5ce60117e0f8b74676d",
+          "tail": "PHPUnit 10.5.63 by Sebastian Bergmann and contributors.\n\nRuntime:       PHP 8.5.3\nConfiguration: /private/tmp/pair-test-contract-trial-20261108/vector-pnorm-scale-pair-contract-replay/.council/host-h6AZEK-pair/scratch/A-pair-code-2-replay-3-final-88930/tests/phpunit.xml\n\n................................................................. 65 / 65 (100%)\n\n\nTime: 00:00.015, Memory: 10.00 MB\n\nOK (65 tests, 65 assertions)",
+          "launchError": "",
+          "mutated": []
+        },
+        {
+          "side": "base",
+          "revision": "e5e2d2f4d2fdd81477c20a861022a097c3f435dc",
+          "tree": "5c370673d0090e561b51875ea961002aa8d8aedb",
+          "file": "tests/LinearAlgebra/Vector/VectorNormsTest.php",
+          "command": "php -d memory_limit=2G vendor/bin/phpunit --configuration=tests/phpunit.xml --filter '/::testPNorm\\b/' tests/LinearAlgebra/Vector/VectorNormsTest.php",
+          "checkIds": [
+            "PN-ORDINARY"
+          ],
+          "cwd": "/private/tmp/pair-test-contract-trial-20261108/vector-pnorm-scale-pair-contract-replay/.council/host-h6AZEK-pair/scratch/A-pair-code-2-replay-4-base-88930",
+          "attempted": true,
+          "ran": true,
+          "passed": true,
+          "hasExitCode": true,
+          "exitCode": 0,
+          "signal": 0,
+          "timedOut": false,
+          "seconds": 0.2,
+          "log": "/private/tmp/pair-test-contract-trial-20261108/vector-pnorm-scale-pair-contract-replay/.council/host-h6AZEK-pair/logs/replay-A-pair-code-2-replay-4-base.log",
+          "logSha256": "ecc4555cbc00e7a3b946dcf72791f22600042e0c0f1c686e53f44c33dd23e705",
+          "tail": "PHPUnit 10.5.63 by Sebastian Bergmann and contributors.\n\nRuntime:       PHP 8.5.3\nConfiguration: /private/tmp/pair-test-contract-trial-20261108/vector-pnorm-scale-pair-contract-replay/.council/host-h6AZEK-pair/scratch/A-pair-code-2-replay-4-base-88930/tests/phpunit.xml\n\n....                                                                4 / 4 (100%)\n\nTime: 00:00.006, Memory: 10.00 MB\n\nOK (4 tests, 4 assertions)",
+          "launchError": "",
+          "mutated": []
+        },
+        {
+          "side": "final",
+          "revision": "2ae17b1cead5a8f970d29d6869aa4dc462c24ee3",
+          "tree": "8f092ceef8c9ab811ddaf6b44eb26b4772a276fb",
+          "file": "tests/LinearAlgebra/Vector/VectorNormsTest.php",
+          "command": "php -d memory_limit=2G vendor/bin/phpunit --configuration=tests/phpunit.xml --filter '/::testPNorm\\b/' tests/LinearAlgebra/Vector/VectorNormsTest.php",
+          "checkIds": [
+            "PN-ORDINARY"
+          ],
+          "cwd": "/private/tmp/pair-test-contract-trial-20261108/vector-pnorm-scale-pair-contract-replay/.council/host-h6AZEK-pair/scratch/A-pair-code-2-replay-4-final-88930",
+          "attempted": true,
+          "ran": true,
+          "passed": true,
+          "hasExitCode": true,
+          "exitCode": 0,
+          "signal": 0,
+          "timedOut": false,
+          "seconds": 0.2,
+          "log": "/private/tmp/pair-test-contract-trial-20261108/vector-pnorm-scale-pair-contract-replay/.council/host-h6AZEK-pair/logs/replay-A-pair-code-2-replay-4-final.log",
+          "logSha256": "a344ab7af901f102c7471bb9d19acf37ab97efb5b495b9ce825866ee099ef221",
+          "tail": "PHPUnit 10.5.63 by Sebastian Bergmann and contributors.\n\nRuntime:       PHP 8.5.3\nConfiguration: /private/tmp/pair-test-contract-trial-20261108/vector-pnorm-scale-pair-contract-replay/.council/host-h6AZEK-pair/scratch/A-pair-code-2-replay-4-final-88930/tests/phpunit.xml\n\n....                                                                4 / 4 (100%)\n\nTime: 00:00.006, Memory: 10.00 MB\n\nOK (4 tests, 4 assertions)",
+          "launchError": "",
+          "mutated": []
+        },
+        {
+          "side": "base",
+          "revision": "e5e2d2f4d2fdd81477c20a861022a097c3f435dc",
+          "tree": "5c370673d0090e561b51875ea961002aa8d8aedb",
+          "file": "tests/LinearAlgebra/Vector/VectorAxiomsTest.php",
+          "command": "php -d memory_limit=2G vendor/bin/phpunit --configuration=tests/phpunit.xml --filter testPNorm tests/LinearAlgebra/Vector/VectorAxiomsTest.php",
+          "checkIds": [
+            "PN-ORDINARY"
+          ],
+          "cwd": "/private/tmp/pair-test-contract-trial-20261108/vector-pnorm-scale-pair-contract-replay/.council/host-h6AZEK-pair/scratch/A-pair-code-2-replay-5-base-88930",
+          "attempted": true,
+          "ran": true,
+          "passed": true,
+          "hasExitCode": true,
+          "exitCode": 0,
+          "signal": 0,
+          "timedOut": false,
+          "seconds": 0.2,
+          "log": "/private/tmp/pair-test-contract-trial-20261108/vector-pnorm-scale-pair-contract-replay/.council/host-h6AZEK-pair/logs/replay-A-pair-code-2-replay-5-base.log",
+          "logSha256": "549a9e2e9b002bcc813adc06dad87a2a86acd1f6549b9795b4f79a3d7ae3345b",
+          "tail": "PHPUnit 10.5.63 by Sebastian Bergmann and contributors.\n\nRuntime:       PHP 8.5.3\nConfiguration: /private/tmp/pair-test-contract-trial-20261108/vector-pnorm-scale-pair-contract-replay/.council/host-h6AZEK-pair/scratch/A-pair-code-2-replay-5-base-88930/tests/phpunit.xml\n\n.......................                                           23 / 23 (100%)\n\nTime: 00:00.010, Memory: 12.00 MB\n\nOK (23 tests, 39 assertions)",
+          "launchError": "",
+          "mutated": []
+        },
+        {
+          "side": "final",
+          "revision": "2ae17b1cead5a8f970d29d6869aa4dc462c24ee3",
+          "tree": "8f092ceef8c9ab811ddaf6b44eb26b4772a276fb",
+          "file": "tests/LinearAlgebra/Vector/VectorAxiomsTest.php",
+          "command": "php -d memory_limit=2G vendor/bin/phpunit --configuration=tests/phpunit.xml --filter testPNorm tests/LinearAlgebra/Vector/VectorAxiomsTest.php",
+          "checkIds": [
+            "PN-ORDINARY"
+          ],
+          "cwd": "/private/tmp/pair-test-contract-trial-20261108/vector-pnorm-scale-pair-contract-replay/.council/host-h6AZEK-pair/scratch/A-pair-code-2-replay-5-final-88930",
+          "attempted": true,
+          "ran": true,
+          "passed": true,
+          "hasExitCode": true,
+          "exitCode": 0,
+          "signal": 0,
+          "timedOut": false,
+          "seconds": 0.2,
+          "log": "/private/tmp/pair-test-contract-trial-20261108/vector-pnorm-scale-pair-contract-replay/.council/host-h6AZEK-pair/logs/replay-A-pair-code-2-replay-5-final.log",
+          "logSha256": "65567c18d13dbb627ba5339380651ff869301fd21cd2d9777878fb0f5666c200",
+          "tail": "PHPUnit 10.5.63 by Sebastian Bergmann and contributors.\n\nRuntime:       PHP 8.5.3\nConfiguration: /private/tmp/pair-test-contract-trial-20261108/vector-pnorm-scale-pair-contract-replay/.council/host-h6AZEK-pair/scratch/A-pair-code-2-replay-5-final-88930/tests/phpunit.xml\n\n.......................                                           23 / 23 (100%)\n\nTime: 00:00.010, Memory: 12.00 MB\n\nOK (23 tests, 39 assertions)",
+          "launchError": "",
+          "mutated": []
+        },
+        {
+          "side": "base",
+          "revision": "e5e2d2f4d2fdd81477c20a861022a097c3f435dc",
+          "tree": "5c370673d0090e561b51875ea961002aa8d8aedb",
+          "file": "tests/LinearAlgebra/Vector/VectorAxiomsTest.php",
+          "command": "php -d memory_limit=2G vendor/bin/phpunit --configuration=tests/phpunit.xml tests/LinearAlgebra/Vector/VectorAxiomsTest.php",
+          "checkIds": [
+            "PN-GATE"
+          ],
+          "cwd": "/private/tmp/pair-test-contract-trial-20261108/vector-pnorm-scale-pair-contract-replay/.council/host-h6AZEK-pair/scratch/A-pair-code-2-replay-6-base-88930",
+          "attempted": true,
+          "ran": true,
+          "passed": true,
+          "hasExitCode": true,
+          "exitCode": 0,
+          "signal": 0,
+          "timedOut": false,
+          "seconds": 0.2,
+          "log": "/private/tmp/pair-test-contract-trial-20261108/vector-pnorm-scale-pair-contract-replay/.council/host-h6AZEK-pair/logs/replay-A-pair-code-2-replay-6-base.log",
+          "logSha256": "5094ba41ef15f6e6fa2e3ccb8f2fa0eb4bd13a9e057b8da9dbee4d38ef39cf7a",
+          "tail": "PHPUnit 10.5.63 by Sebastian Bergmann and contributors.\n\nRuntime:       PHP 8.5.3\nConfiguration: /private/tmp/pair-test-contract-trial-20261108/vector-pnorm-scale-pair-contract-replay/.council/host-h6AZEK-pair/scratch/A-pair-code-2-replay-6-base-88930/tests/phpunit.xml\n\n...............................................................  63 / 315 ( 20%)\n............................................................... 126 / 315 ( 40%)\n............................................................... 189 / 315 ( 60%)\n............................................................... 252 / 315 ( 80%)\n............................................................... 315 / 315 (100%)\n\n\nTime: 00:00.044, Memory: 12.00 MB\n\nOK (315 tests, 621 assertions)",
+          "launchError": "",
+          "mutated": []
+        },
+        {
+          "side": "final",
+          "revision": "2ae17b1cead5a8f970d29d6869aa4dc462c24ee3",
+          "tree": "8f092ceef8c9ab811ddaf6b44eb26b4772a276fb",
+          "file": "tests/LinearAlgebra/Vector/VectorAxiomsTest.php",
+          "command": "php -d memory_limit=2G vendor/bin/phpunit --configuration=tests/phpunit.xml tests/LinearAlgebra/Vector/VectorAxiomsTest.php",
+          "checkIds": [
+            "PN-GATE"
+          ],
+          "cwd": "/private/tmp/pair-test-contract-trial-20261108/vector-pnorm-scale-pair-contract-replay/.council/host-h6AZEK-pair/scratch/A-pair-code-2-replay-6-final-88930",
+          "attempted": true,
+          "ran": true,
+          "passed": true,
+          "hasExitCode": true,
+          "exitCode": 0,
+          "signal": 0,
+          "timedOut": false,
+          "seconds": 0.3,
+          "log": "/private/tmp/pair-test-contract-trial-20261108/vector-pnorm-scale-pair-contract-replay/.council/host-h6AZEK-pair/logs/replay-A-pair-code-2-replay-6-final.log",
+          "logSha256": "b20334c8a544e980d44797cde65d9b381e5eec79f19adfeb7b6f5216b71496fe",
+          "tail": "PHPUnit 10.5.63 by Sebastian Bergmann and contributors.\n\nRuntime:       PHP 8.5.3\nConfiguration: /private/tmp/pair-test-contract-trial-20261108/vector-pnorm-scale-pair-contract-replay/.council/host-h6AZEK-pair/scratch/A-pair-code-2-replay-6-final-88930/tests/phpunit.xml\n\n...............................................................  63 / 315 ( 20%)\n............................................................... 126 / 315 ( 40%)\n............................................................... 189 / 315 ( 60%)\n............................................................... 252 / 315 ( 80%)\n............................................................... 315 / 315 (100%)\n\n\nTime: 00:00.045, Memory: 12.00 MB\n\nOK (315 tests, 621 assertions)",
+          "launchError": "",
+          "mutated": []
+        },
+        {
+          "side": "base",
+          "revision": "e5e2d2f4d2fdd81477c20a861022a097c3f435dc",
+          "tree": "5c370673d0090e561b51875ea961002aa8d8aedb",
+          "file": "tests/LinearAlgebra/Vector/VectorTest.php",
+          "command": "php -d memory_limit=2G vendor/bin/phpunit --configuration=tests/phpunit.xml tests/LinearAlgebra/Vector/VectorTest.php",
+          "checkIds": [
+            "PN-GATE"
+          ],
+          "cwd": "/private/tmp/pair-test-contract-trial-20261108/vector-pnorm-scale-pair-contract-replay/.council/host-h6AZEK-pair/scratch/A-pair-code-2-replay-7-base-88930",
+          "attempted": true,
+          "ran": true,
+          "passed": true,
+          "hasExitCode": true,
+          "exitCode": 0,
+          "signal": 0,
+          "timedOut": false,
+          "seconds": 0.2,
+          "log": "/private/tmp/pair-test-contract-trial-20261108/vector-pnorm-scale-pair-contract-replay/.council/host-h6AZEK-pair/logs/replay-A-pair-code-2-replay-7-base.log",
+          "logSha256": "86460723601a991742b1fb1275a11b1b34cf912bcd1c7ffd447a38a6dd6a33be",
+          "tail": "PHPUnit 10.5.63 by Sebastian Bergmann and contributors.\n\nRuntime:       PHP 8.5.3\nConfiguration: /private/tmp/pair-test-contract-trial-20261108/vector-pnorm-scale-pair-contract-replay/.council/host-h6AZEK-pair/scratch/A-pair-code-2-replay-7-base-88930/tests/phpunit.xml\n\n...................                                               19 / 19 (100%)\n\nTime: 00:00.008, Memory: 10.00 MB\n\nOK (19 tests, 27 assertions)",
+          "launchError": "",
+          "mutated": []
+        },
+        {
+          "side": "final",
+          "revision": "2ae17b1cead5a8f970d29d6869aa4dc462c24ee3",
+          "tree": "8f092ceef8c9ab811ddaf6b44eb26b4772a276fb",
+          "file": "tests/LinearAlgebra/Vector/VectorTest.php",
+          "command": "php -d memory_limit=2G vendor/bin/phpunit --configuration=tests/phpunit.xml tests/LinearAlgebra/Vector/VectorTest.php",
+          "checkIds": [
+            "PN-GATE"
+          ],
+          "cwd": "/private/tmp/pair-test-contract-trial-20261108/vector-pnorm-scale-pair-contract-replay/.council/host-h6AZEK-pair/scratch/A-pair-code-2-replay-7-final-88930",
+          "attempted": true,
+          "ran": true,
+          "passed": true,
+          "hasExitCode": true,
+          "exitCode": 0,
+          "signal": 0,
+          "timedOut": false,
+          "seconds": 0.2,
+          "log": "/private/tmp/pair-test-contract-trial-20261108/vector-pnorm-scale-pair-contract-replay/.council/host-h6AZEK-pair/logs/replay-A-pair-code-2-replay-7-final.log",
+          "logSha256": "3e8fdc13a0058526a7e404562826e1036c0d897c0bca323bbefe5e9c387bbf6f",
+          "tail": "PHPUnit 10.5.63 by Sebastian Bergmann and contributors.\n\nRuntime:       PHP 8.5.3\nConfiguration: /private/tmp/pair-test-contract-trial-20261108/vector-pnorm-scale-pair-contract-replay/.council/host-h6AZEK-pair/scratch/A-pair-code-2-replay-7-final-88930/tests/phpunit.xml\n\n...................                                               19 / 19 (100%)\n\nTime: 00:00.008, Memory: 10.00 MB\n\nOK (19 tests, 27 assertions)",
+          "launchError": "",
+          "mutated": []
+        },
+        {
+          "side": "base",
+          "revision": "e5e2d2f4d2fdd81477c20a861022a097c3f435dc",
+          "tree": "5c370673d0090e561b51875ea961002aa8d8aedb",
+          "file": "tests/LinearAlgebra/Vector/VectorAngleTest.php",
+          "command": "php -d memory_limit=2G vendor/bin/phpunit --configuration=tests/phpunit.xml tests/LinearAlgebra/Vector/VectorAngleTest.php",
+          "checkIds": [
+            "PN-GATE"
+          ],
+          "cwd": "/private/tmp/pair-test-contract-trial-20261108/vector-pnorm-scale-pair-contract-replay/.council/host-h6AZEK-pair/scratch/A-pair-code-2-replay-8-base-88930",
+          "attempted": true,
+          "ran": true,
+          "passed": true,
+          "hasExitCode": true,
+          "exitCode": 0,
+          "signal": 0,
+          "timedOut": false,
+          "seconds": 0.2,
+          "log": "/private/tmp/pair-test-contract-trial-20261108/vector-pnorm-scale-pair-contract-replay/.council/host-h6AZEK-pair/logs/replay-A-pair-code-2-replay-8-base.log",
+          "logSha256": "1a528404c4d0fcb500884d7ae0c659fd3e82d44e4d94824b41c0bcb11eab9aa1",
+          "tail": "PHPUnit 10.5.63 by Sebastian Bergmann and contributors.\n\nRuntime:       PHP 8.5.3\nConfiguration: /private/tmp/pair-test-contract-trial-20261108/vector-pnorm-scale-pair-contract-replay/.council/host-h6AZEK-pair/scratch/A-pair-code-2-replay-8-base-88930/tests/phpunit.xml\n\n...........................................                       43 / 43 (100%)\n\nTime: 00:00.014, Memory: 10.00 MB\n\nOK (43 tests, 107 assertions)",
+          "launchError": "",
+          "mutated": []
+        },
+        {
+          "side": "final",
+          "revision": "2ae17b1cead5a8f970d29d6869aa4dc462c24ee3",
+          "tree": "8f092ceef8c9ab811ddaf6b44eb26b4772a276fb",
+          "file": "tests/LinearAlgebra/Vector/VectorAngleTest.php",
+          "command": "php -d memory_limit=2G vendor/bin/phpunit --configuration=tests/phpunit.xml tests/LinearAlgebra/Vector/VectorAngleTest.php",
+          "checkIds": [
+            "PN-GATE"
+          ],
+          "cwd": "/private/tmp/pair-test-contract-trial-20261108/vector-pnorm-scale-pair-contract-replay/.council/host-h6AZEK-pair/scratch/A-pair-code-2-replay-8-final-88930",
+          "attempted": true,
+          "ran": true,
+          "passed": true,
+          "hasExitCode": true,
+          "exitCode": 0,
+          "signal": 0,
+          "timedOut": false,
+          "seconds": 0.2,
+          "log": "/private/tmp/pair-test-contract-trial-20261108/vector-pnorm-scale-pair-contract-replay/.council/host-h6AZEK-pair/logs/replay-A-pair-code-2-replay-8-final.log",
+          "logSha256": "253ac0c0bfd79505883e6bc26fee1322bff73c623d066dddb1a300d7a2dc3069",
+          "tail": "PHPUnit 10.5.63 by Sebastian Bergmann and contributors.\n\nRuntime:       PHP 8.5.3\nConfiguration: /private/tmp/pair-test-contract-trial-20261108/vector-pnorm-scale-pair-contract-replay/.council/host-h6AZEK-pair/scratch/A-pair-code-2-replay-8-final-88930/tests/phpunit.xml\n\n...........................................                       43 / 43 (100%)\n\nTime: 00:00.014, Memory: 10.00 MB\n\nOK (43 tests, 107 assertions)",
+          "launchError": "",
+          "mutated": []
+        },
+        {
+          "side": "base",
+          "revision": "e5e2d2f4d2fdd81477c20a861022a097c3f435dc",
+          "tree": "5c370673d0090e561b51875ea961002aa8d8aedb",
+          "file": "tests/LinearAlgebra/Vector/VectorDistanceTest.php",
+          "command": "php -d memory_limit=2G vendor/bin/phpunit --configuration=tests/phpunit.xml tests/LinearAlgebra/Vector/VectorDistanceTest.php",
+          "checkIds": [
+            "PN-GATE"
+          ],
+          "cwd": "/private/tmp/pair-test-contract-trial-20261108/vector-pnorm-scale-pair-contract-replay/.council/host-h6AZEK-pair/scratch/A-pair-code-2-replay-9-base-88930",
+          "attempted": true,
+          "ran": true,
+          "passed": true,
+          "hasExitCode": true,
+          "exitCode": 0,
+          "signal": 0,
+          "timedOut": false,
+          "seconds": 0.2,
+          "log": "/private/tmp/pair-test-contract-trial-20261108/vector-pnorm-scale-pair-contract-replay/.council/host-h6AZEK-pair/logs/replay-A-pair-code-2-replay-9-base.log",
+          "logSha256": "475f240c2f17f2d0036d531536ec5513d90d20cf8615d76818db2af06d92d028",
+          "tail": "PHPUnit 10.5.63 by Sebastian Bergmann and contributors.\n\nRuntime:       PHP 8.5.3\nConfiguration: /private/tmp/pair-test-contract-trial-20261108/vector-pnorm-scale-pair-contract-replay/.council/host-h6AZEK-pair/scratch/A-pair-code-2-replay-9-base-88930/tests/phpunit.xml\n\n...................................                               35 / 35 (100%)\n\nTime: 00:00.008, Memory: 10.00 MB\n\nOK (35 tests, 65 assertions)",
+          "launchError": "",
+          "mutated": []
+        },
+        {
+          "side": "final",
+          "revision": "2ae17b1cead5a8f970d29d6869aa4dc462c24ee3",
+          "tree": "8f092ceef8c9ab811ddaf6b44eb26b4772a276fb",
+          "file": "tests/LinearAlgebra/Vector/VectorDistanceTest.php",
+          "command": "php -d memory_limit=2G vendor/bin/phpunit --configuration=tests/phpunit.xml tests/LinearAlgebra/Vector/VectorDistanceTest.php",
+          "checkIds": [
+            "PN-GATE"
+          ],
+          "cwd": "/private/tmp/pair-test-contract-trial-20261108/vector-pnorm-scale-pair-contract-replay/.council/host-h6AZEK-pair/scratch/A-pair-code-2-replay-9-final-88930",
+          "attempted": true,
+          "ran": true,
+          "passed": true,
+          "hasExitCode": true,
+          "exitCode": 0,
+          "signal": 0,
+          "timedOut": false,
+          "seconds": 0.2,
+          "log": "/private/tmp/pair-test-contract-trial-20261108/vector-pnorm-scale-pair-contract-replay/.council/host-h6AZEK-pair/logs/replay-A-pair-code-2-replay-9-final.log",
+          "logSha256": "d82f7235804df6ff4851cdb0498ae64a1846c0abb63a6ce07b44cdaaa961871a",
+          "tail": "PHPUnit 10.5.63 by Sebastian Bergmann and contributors.\n\nRuntime:       PHP 8.5.3\nConfiguration: /private/tmp/pair-test-contract-trial-20261108/vector-pnorm-scale-pair-contract-replay/.council/host-h6AZEK-pair/scratch/A-pair-code-2-replay-9-final-88930/tests/phpunit.xml\n\n...................................                               35 / 35 (100%)\n\nTime: 00:00.008, Memory: 10.00 MB\n\nOK (35 tests, 65 assertions)",
+          "launchError": "",
+          "mutated": []
+        },
+        {
+          "side": "base",
+          "revision": "e5e2d2f4d2fdd81477c20a861022a097c3f435dc",
+          "tree": "5c370673d0090e561b51875ea961002aa8d8aedb",
+          "file": "tests/LinearAlgebra/Vector/VectorInterfaceTest.php",
+          "command": "php -d memory_limit=2G vendor/bin/phpunit --configuration=tests/phpunit.xml tests/LinearAlgebra/Vector/VectorInterfaceTest.php",
+          "checkIds": [
+            "PN-GATE"
+          ],
+          "cwd": "/private/tmp/pair-test-contract-trial-20261108/vector-pnorm-scale-pair-contract-replay/.council/host-h6AZEK-pair/scratch/A-pair-code-2-replay-10-base-88930",
+          "attempted": true,
+          "ran": true,
+          "passed": true,
+          "hasExitCode": true,
+          "exitCode": 0,
+          "signal": 0,
+          "timedOut": false,
+          "seconds": 0.2,
+          "log": "/private/tmp/pair-test-contract-trial-20261108/vector-pnorm-scale-pair-contract-replay/.council/host-h6AZEK-pair/logs/replay-A-pair-code-2-replay-10-base.log",
+          "logSha256": "d24945c5e4ae55c23adf725fd92f579404eee30174458e3d9600bace3749aec8",
+          "tail": "PHPUnit 10.5.63 by Sebastian Bergmann and contributors.\n\nRuntime:       PHP 8.5.3\nConfiguration: /private/tmp/pair-test-contract-trial-20261108/vector-pnorm-scale-pair-contract-replay/.council/host-h6AZEK-pair/scratch/A-pair-code-2-replay-10-base-88930/tests/phpunit.xml\n\n...................                                               19 / 19 (100%)\n\nTime: 00:00.007, Memory: 10.00 MB\n\nOK (19 tests, 38 assertions)",
+          "launchError": "",
+          "mutated": []
+        },
+        {
+          "side": "final",
+          "revision": "2ae17b1cead5a8f970d29d6869aa4dc462c24ee3",
+          "tree": "8f092ceef8c9ab811ddaf6b44eb26b4772a276fb",
+          "file": "tests/LinearAlgebra/Vector/VectorInterfaceTest.php",
+          "command": "php -d memory_limit=2G vendor/bin/phpunit --configuration=tests/phpunit.xml tests/LinearAlgebra/Vector/VectorInterfaceTest.php",
+          "checkIds": [
+            "PN-GATE"
+          ],
+          "cwd": "/private/tmp/pair-test-contract-trial-20261108/vector-pnorm-scale-pair-contract-replay/.council/host-h6AZEK-pair/scratch/A-pair-code-2-replay-10-final-88930",
+          "attempted": true,
+          "ran": true,
+          "passed": true,
+          "hasExitCode": true,
+          "exitCode": 0,
+          "signal": 0,
+          "timedOut": false,
+          "seconds": 0.2,
+          "log": "/private/tmp/pair-test-contract-trial-20261108/vector-pnorm-scale-pair-contract-replay/.council/host-h6AZEK-pair/logs/replay-A-pair-code-2-replay-10-final.log",
+          "logSha256": "c46a712e22925bf5f49355fe8dc2809fbb1cd4117b97f7868021622edd446489",
+          "tail": "PHPUnit 10.5.63 by Sebastian Bergmann and contributors.\n\nRuntime:       PHP 8.5.3\nConfiguration: /private/tmp/pair-test-contract-trial-20261108/vector-pnorm-scale-pair-contract-replay/.council/host-h6AZEK-pair/scratch/A-pair-code-2-replay-10-final-88930/tests/phpunit.xml\n\n...................                                               19 / 19 (100%)\n\nTime: 00:00.007, Memory: 10.00 MB\n\nOK (19 tests, 38 assertions)",
+          "launchError": "",
+          "mutated": []
+        },
+        {
+          "side": "base",
+          "revision": "e5e2d2f4d2fdd81477c20a861022a097c3f435dc",
+          "tree": "5c370673d0090e561b51875ea961002aa8d8aedb",
+          "file": "tests/LinearAlgebra/Vector/VectorNormsTest.php",
+          "command": "php -d memory_limit=2G vendor/bin/phpunit --configuration=tests/phpunit.xml tests/LinearAlgebra/Vector/VectorNormsTest.php",
+          "checkIds": [
+            "PN-GATE"
+          ],
+          "cwd": "/private/tmp/pair-test-contract-trial-20261108/vector-pnorm-scale-pair-contract-replay/.council/host-h6AZEK-pair/scratch/A-pair-code-2-replay-11-base-88930",
+          "attempted": true,
+          "ran": true,
+          "passed": false,
+          "hasExitCode": true,
+          "exitCode": 1,
+          "signal": 0,
+          "timedOut": false,
+          "seconds": 0.2,
+          "log": "/private/tmp/pair-test-contract-trial-20261108/vector-pnorm-scale-pair-contract-replay/.council/host-h6AZEK-pair/logs/replay-A-pair-code-2-replay-11-base.log",
+          "logSha256": "9b32727eb7746f27b018cd8aac87d3d51e3a4a022bd2db3d3522c50adf8b16d2",
+          "tail": "\n/private/tmp/pair-test-contract-trial-20261108/vector-pnorm-scale-pair-contract-replay/.council/host-h6AZEK-pair/scratch/A-pair-code-2-replay-11-base-88930/tests/LinearAlgebra/Vector/VectorNormsTest.php:234\n\n10) MathPHP\\Tests\\LinearAlgebra\\Vector\\VectorNormsTest::testPNormMixedScales with data set \"huge last p=2\" ([0, -1.0E-200, 3, -1.0E+200], 2, 1.0E+200)\nFailed asserting that false is true.\n\n/private/tmp/pair-test-contract-trial-20261108/vector-pnorm-scale-pair-contract-replay/.council/host-h6AZEK-pair/scratch/A-pair-code-2-replay-11-base-88930/tests/LinearAlgebra/Vector/VectorNormsTest.php:234\n\n11) MathPHP\\Tests\\LinearAlgebra\\Vector\\VectorNormsTest::testPNormMixedScales with data set \"huge first p=4\" ([-1.0E+200, 3, -1.0E-200, 0], 4, 1.0E+200)\nFailed asserting that false is true.\n\n/private/tmp/pair-test-contract-trial-20261108/vector-pnorm-scale-pair-contract-replay/.council/host-h6AZEK-pair/scratch/A-pair-code-2-replay-11-base-88930/tests/LinearAlgebra/Vector/VectorNormsTest.php:234\n\n12) MathPHP\\Tests\\LinearAlgebra\\Vector\\VectorNormsTest::testPNormMixedScales with data set \"huge last p=4\" ([0, -1.0E-200, 3, -1.0E+200], 4, 1.0E+200)\nFailed asserting that false is true.\n\n/private/tmp/pair-test-contract-trial-20261108/vector-pnorm-scale-pair-contract-replay/.council/host-h6AZEK-pair/scratch/A-pair-code-2-replay-11-base-88930/tests/LinearAlgebra/Vector/VectorNormsTest.php:234\n\n13) MathPHP\\Tests\\LinearAlgebra\\Vector\\VectorNormsTest::testPNormMixedScales with data set \"huge first p=2.5\" ([-1.0E+200, 3, -1.0E-200, 0], 2.5, 1.0E+200)\nFailed asserting that false is true.\n\n/private/tmp/pair-test-contract-trial-20261108/vector-pnorm-scale-pair-contract-replay/.council/host-h6AZEK-pair/scratch/A-pair-code-2-replay-11-base-88930/tests/LinearAlgebra/Vector/VectorNormsTest.php:234\n\n14) MathPHP\\Tests\\LinearAlgebra\\Vector\\VectorNormsTest::testPNormMixedScales with data set \"huge last p=2.5\" ([0, -1.0E-200, 3, -1.0E+200], 2.5, 1.0E+200)\nFailed asserting that false is true.\n\n/private/tmp/pair-test-contract-trial-20261108/vector-pnorm-scale-pair-contract-replay/.council/host-h6AZEK-pair/scratch/A-pair-code-2-replay-11-base-88930/tests/LinearAlgebra/Vector/VectorNormsTest.php:234\n\n15) MathPHP\\Tests\\LinearAlgebra\\Vector\\VectorNormsTest::testPNormMixedScales with data set \"huge first p=1000\" ([-1.0E+200, 3, -1.0E-200, 0], 1000, 1.0E+200)\nFailed asserting that false is true.\n\n/private/tmp/pair-test-contract-trial-20261108/vector-pnorm-scale-pair-contract-replay/.council/host-h6AZEK-pair/scratch/A-pair-code-2-replay-11-base-88930/tests/LinearAlgebra/Vector/VectorNormsTest.php:234\n\n16) MathPHP\\Tests\\LinearAlgebra\\Vector\\VectorNormsTest::testPNormMixedScales with data set \"huge last p=1000\" ([0, -1.0E-200, 3, -1.0E+200], 1000, 1.0E+200)\nFailed asserting that false is true.\n\n/private/tmp/pair-test-contract-trial-20261108/vector-pnorm-scale-pair-contract-replay/.council/host-h6AZEK-pair/scratch/A-pair-code-2-replay-11-base-88930/tests/LinearAlgebra/Vector/VectorNormsTest.php:234\n\nFAILURES!\nTests: 145, Assertions: 168, Failures: 16.",
+          "launchError": "",
+          "mutated": []
+        },
+        {
+          "side": "final",
+          "revision": "2ae17b1cead5a8f970d29d6869aa4dc462c24ee3",
+          "tree": "8f092ceef8c9ab811ddaf6b44eb26b4772a276fb",
+          "file": "tests/LinearAlgebra/Vector/VectorNormsTest.php",
+          "command": "php -d memory_limit=2G vendor/bin/phpunit --configuration=tests/phpunit.xml tests/LinearAlgebra/Vector/VectorNormsTest.php",
+          "checkIds": [
+            "PN-GATE"
+          ],
+          "cwd": "/private/tmp/pair-test-contract-trial-20261108/vector-pnorm-scale-pair-contract-replay/.council/host-h6AZEK-pair/scratch/A-pair-code-2-replay-11-final-88930",
+          "attempted": true,
+          "ran": true,
+          "passed": true,
+          "hasExitCode": true,
+          "exitCode": 0,
+          "signal": 0,
+          "timedOut": false,
+          "seconds": 0.2,
+          "log": "/private/tmp/pair-test-contract-trial-20261108/vector-pnorm-scale-pair-contract-replay/.council/host-h6AZEK-pair/logs/replay-A-pair-code-2-replay-11-final.log",
+          "logSha256": "22fb7e796a5d33e0a33d1188c8d17c73136be521548116ae3febe409646f3fd2",
+          "tail": "PHPUnit 10.5.63 by Sebastian Bergmann and contributors.\n\nRuntime:       PHP 8.5.3\nConfiguration: /private/tmp/pair-test-contract-trial-20261108/vector-pnorm-scale-pair-contract-replay/.council/host-h6AZEK-pair/scratch/A-pair-code-2-replay-11-final-88930/tests/phpunit.xml\n\n...............................................................  63 / 145 ( 43%)\n............................................................... 126 / 145 ( 86%)\n...................                                             145 / 145 (100%)\n\nTime: 00:00.022, Memory: 10.00 MB\n\nOK (145 tests, 196 assertions)",
+          "launchError": "",
+          "mutated": []
+        },
+        {
+          "side": "base",
+          "revision": "e5e2d2f4d2fdd81477c20a861022a097c3f435dc",
+          "tree": "5c370673d0090e561b51875ea961002aa8d8aedb",
+          "file": "tests/LinearAlgebra/Vector/VectorOperationsTest.php",
+          "command": "php -d memory_limit=2G vendor/bin/phpunit --configuration=tests/phpunit.xml tests/LinearAlgebra/Vector/VectorOperationsTest.php",
+          "checkIds": [
+            "PN-GATE"
+          ],
+          "cwd": "/private/tmp/pair-test-contract-trial-20261108/vector-pnorm-scale-pair-contract-replay/.council/host-h6AZEK-pair/scratch/A-pair-code-2-replay-12-base-88930",
+          "attempted": true,
+          "ran": true,
+          "passed": true,
+          "hasExitCode": true,
+          "exitCode": 0,
+          "signal": 0,
+          "timedOut": false,
+          "seconds": 0.2,
+          "log": "/private/tmp/pair-test-contract-trial-20261108/vector-pnorm-scale-pair-contract-replay/.council/host-h6AZEK-pair/logs/replay-A-pair-code-2-replay-12-base.log",
+          "logSha256": "ebb500de4487df5d9403438391fa441529c90fa1bc7fccadb7e7b93515191028",
+          "tail": "PHPUnit 10.5.63 by Sebastian Bergmann and contributors.\n\nRuntime:       PHP 8.5.3\nConfiguration: /private/tmp/pair-test-contract-trial-20261108/vector-pnorm-scale-pair-contract-replay/.council/host-h6AZEK-pair/scratch/A-pair-code-2-replay-12-base-88930/tests/phpunit.xml\n\n...............................................................  63 / 145 ( 43%)\n............................................................... 126 / 145 ( 86%)\n...................                                             145 / 145 (100%)\n\nTime: 00:00.026, Memory: 12.00 MB\n\nOK (145 tests, 209 assertions)",
+          "launchError": "",
+          "mutated": []
+        },
+        {
+          "side": "final",
+          "revision": "2ae17b1cead5a8f970d29d6869aa4dc462c24ee3",
+          "tree": "8f092ceef8c9ab811ddaf6b44eb26b4772a276fb",
+          "file": "tests/LinearAlgebra/Vector/VectorOperationsTest.php",
+          "command": "php -d memory_limit=2G vendor/bin/phpunit --configuration=tests/phpunit.xml tests/LinearAlgebra/Vector/VectorOperationsTest.php",
+          "checkIds": [
+            "PN-GATE"
+          ],
+          "cwd": "/private/tmp/pair-test-contract-trial-20261108/vector-pnorm-scale-pair-contract-replay/.council/host-h6AZEK-pair/scratch/A-pair-code-2-replay-12-final-88930",
+          "attempted": true,
+          "ran": true,
+          "passed": true,
+          "hasExitCode": true,
+          "exitCode": 0,
+          "signal": 0,
+          "timedOut": false,
+          "seconds": 0.2,
+          "log": "/private/tmp/pair-test-contract-trial-20261108/vector-pnorm-scale-pair-contract-replay/.council/host-h6AZEK-pair/logs/replay-A-pair-code-2-replay-12-final.log",
+          "logSha256": "c802c9aeee7ebc8e4d56a8b2b6ad5fc99bdd7b04f99b58357e0630334f752b58",
+          "tail": "PHPUnit 10.5.63 by Sebastian Bergmann and contributors.\n\nRuntime:       PHP 8.5.3\nConfiguration: /private/tmp/pair-test-contract-trial-20261108/vector-pnorm-scale-pair-contract-replay/.council/host-h6AZEK-pair/scratch/A-pair-code-2-replay-12-final-88930/tests/phpunit.xml\n\n...............................................................  63 / 145 ( 43%)\n............................................................... 126 / 145 ( 86%)\n...................                                             145 / 145 (100%)\n\nTime: 00:00.026, Memory: 12.00 MB\n\nOK (145 tests, 209 assertions)",
+          "launchError": "",
+          "mutated": []
+        }
+      ],
+      "elapsedSec": 42.7
+    },
+    "criteria": [
+      {
+        "criterion": "C1",
+        "status": "met",
+        "note": "Vector::pNorm uses maximum-magnitude scaling, bounded powered ratios, and final rescaling. PN-EXTREME passes all 10 cases covering huge and tiny components at p=1,2,4,2.5,1000."
+      },
+      {
+        "criterion": "C2",
+        "status": "met",
+        "note": "Both passes use absolute magnitudes. Zero is returned before division. Providers cover negative components, integer and signed floating zeros, and mixed huge/ordinary/tiny/zero components in both orders. PN-MIXED and PN-ZERO each pass 10 cases."
+      },
+      {
+        "criterion": "C3",
+        "status": "met",
+        "note": "The scan checks NAN before any infinity return. All 65 PN-NONFINITE cases pass on base and final, explicitly checking NAN precedence and positive infinity across both signs and component orders."
+      },
+      {
+        "criterion": "C4",
+        "status": "met",
+        "note": "Tests follow DataProvider and Given/When/Then conventions, document analytic expectations, and assert finite positive results before relative comparisons. The base replay log confirms huge p=2 fails the finite assertion and tiny p=2 fails positivity; final passes. Base p=1 passes are expected because first powers did not cause the original defect."
+      },
+      {
+        "criterion": "C5",
+        "status": "met",
+        "note": "The pNorm docblock and README describe the supported domain, scaled evaluation, extreme magnitudes, zero vectors, NAN precedence, and positive infinity. The README example now supplies p=2."
+      },
+      {
+        "criterion": "C6",
+        "status": "met",
+        "note": "The exact public signature and unsupported-domain expression remain intact. Only the three planned files changed. Ordinary cases and existing p-norm axioms pass on base and final. Replay exclusions appropriately retain original dependencies and unchanged tests while excluding production/documentation files from test overlays; no preserved-behavior signal is missing."
+      },
+      {
+        "criterion": "C7",
+        "status": "met",
+        "note": "The supplied neutral measurement for this exact snapshot records the required scoped command, fixed TMPDIR override, exit 0, and OK (721 tests, 1263 assertions). The corresponding suite log confirms the summary."
+      }
+    ],
+    "readiness": {
+      "state": "ready",
+      "blocked": [],
+      "incomplete": []
+    }
+  },
+  "delivery": {
+    "status": "pending"
+  },
+  "forTheOrchestrator": "Read final.readiness first. Report unresolved findings or missing evidence before any success summary. Spot-check the reviewed snapshot and report the design and implementation review outcomes. The change stays in final.worktree. Deliver only within the user's authorization, preserving unrelated edits; use dark-factory verify-delivery afterward. Do not start a council automatically. The Codex host can resume a validated checkpoint with --resume hostRunDir; changed inputs or evidence require a new run.",
+  "plan": {
+    "workflow": "pair",
+    "tier": "pair",
+    "strategy": "pair",
+    "mode": "implement",
+    "output": "reviewed implementation in a worktree; delivery pending",
+    "participants": [
+      {
+        "model": "sol",
+        "vendor": "codex",
+        "effort": "high"
+      }
+    ],
+    "reviewers": [
+      {
+        "model": "astra",
+        "vendor": "codex",
+        "effort": "high"
+      }
+    ],
+    "panel": [],
+    "specification": [],
+    "roles": {
+      "setup": {
+        "model": "sol",
+        "vendor": "codex"
+      }
+    },
+    "requiredCLIs": [
+      "codex"
+    ],
+    "verification": "php -d memory_limit=2G vendor/bin/phpunit --configuration=tests/phpunit.xml tests/LinearAlgebra/Vector",
+    "limits": {
+      "maxTurns": 24,
+      "maxRunMin": 60,
+      "repair": null,
+      "maxReviews": 8,
+      "rounds": null
+    },
+    "effort": "Setup, design and code turns, up to the review budget; measurements between code revisions.",
+    "intake": null
+  },
+  "metrics": {
+    "version": 1,
+    "taskId": "vector-pnorm-scale",
+    "variant": "pair-contract-replay",
+    "repetition": 1,
+    "workflow": "pair",
+    "tier": "pair",
+    "strategy": "pair",
+    "host": "codex",
+    "elapsedMs": 731406,
+    "turns": 5,
+    "turnsByRole": {
+      "setup": 1,
+      "author": 2,
+      "reviewer": 2
+    },
+    "failedTurns": 0,
+    "findingsByStage": {},
+    "readiness": "ready",
+    "delivery": "pending",
+    "escalated": false,
+    "requestedImplementation": true,
+    "deliveredImplementation": false,
+    "tokens": {
+      "records": 5,
+      "byModel": {
+        "gpt-6.1-sol": {
+          "input_tokens": 1350770,
+          "cached_input_tokens": 1203200,
+          "cache_write_input_tokens": 0,
+          "output_tokens": 25746,
+          "reasoning_output_tokens": 5593
+        },
+        "gpt-6-astra": {
+          "input_tokens": 310525,
+          "cached_input_tokens": 218112,
+          "cache_write_input_tokens": 0,
+          "output_tokens": 3779,
+          "reasoning_output_tokens": 376
+        }
+      }
+    },
+    "cost": null,
+    "limits": {
+      "maxTurns": 24,
+      "maxRunMin": 60
+    },
+    "repositoryHead": "e5e2d2f4d2fdd81477c20a861022a097c3f435dc"
+  },
+  "host": "codex",
+  "hostRunDir": "/private/tmp/pair-test-contract-trial-20261108/vector-pnorm-scale-pair-contract-replay/.council/host-h6AZEK",
+  "hostEvents": "/private/tmp/pair-test-contract-trial-20261108/vector-pnorm-scale-pair-contract-replay/.council/host-h6AZEK/events.jsonl",
+  "checkpoint": "/private/tmp/pair-test-contract-trial-20261108/vector-pnorm-scale-pair-contract-replay/.council/host-h6AZEK/checkpoint.json"
+}

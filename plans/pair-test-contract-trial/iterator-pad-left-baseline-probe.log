@@ -1,0 +1,29 @@
+{
+    "bounded-first-0": {
+        "passed": false,
+        "error": "RuntimeException: over-read before first output"
+    },
+    "bounded-first-1": {
+        "passed": false,
+        "error": "RuntimeException: over-read before first output"
+    },
+    "bounded-first-3": {
+        "passed": false,
+        "error": "RuntimeException: over-read before first output"
+    },
+    "empty": {
+        "passed": true
+    },
+    "short": {
+        "passed": true
+    },
+    "long": {
+        "passed": true
+    },
+    "negative-lazy": {
+        "passed": true
+    },
+    "stream": {
+        "passed": true
+    }
+}

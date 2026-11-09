@@ -1,0 +1,115 @@
+PHPUnit 10.5.63 by Sebastian Bergmann and contributors.
+
+Runtime:       PHP 8.5.3
+Configuration: /private/tmp/pair-test-contract-trial-20261108/iterator-pad-left-pair-contract-replay/.council/host-b4UBKn-pair/scratch/A-pair-code-2-replay-4-base-93327/tests/phpunit.xml
+
+EEEEEEEEEEEE                                                      12 / 12 (100%)
+
+Time: 00:00.012, Memory: 10.00 MB
+
+There were 12 errors:
+
+1) IterTools\Tests\Stream\StreamPadLeftStreamingTest::testBoundedLookaheadAndSuspension with data set "zero infinite" (0, true)
+RuntimeException: Source requested beyond the permitted lookahead
+
+/private/tmp/pair-test-contract-trial-20261108/iterator-pad-left-pair-contract-replay/.council/host-b4UBKn-pair/scratch/A-pair-code-2-replay-4-base-93327/tests/Stream/StreamPadLeftStreamingTest.php:96
+/private/tmp/pair-test-contract-trial-20261108/iterator-pad-left-pair-contract-replay/.council/host-b4UBKn-pair/scratch/A-pair-code-2-replay-4-base-93327/src/Single.php:1074
+/private/tmp/pair-test-contract-trial-20261108/iterator-pad-left-pair-contract-replay/.council/host-b4UBKn-pair/scratch/A-pair-code-2-replay-4-base-93327/tests/Stream/StreamPadLeftStreamingTest.php:31
+
+2) IterTools\Tests\Stream\StreamPadLeftStreamingTest::testBoundedLookaheadAndSuspension with data set "one infinite" (1, true)
+RuntimeException: Source requested beyond the permitted lookahead
+
+/private/tmp/pair-test-contract-trial-20261108/iterator-pad-left-pair-contract-replay/.council/host-b4UBKn-pair/scratch/A-pair-code-2-replay-4-base-93327/tests/Stream/StreamPadLeftStreamingTest.php:96
+/private/tmp/pair-test-contract-trial-20261108/iterator-pad-left-pair-contract-replay/.council/host-b4UBKn-pair/scratch/A-pair-code-2-replay-4-base-93327/src/Single.php:1074
+/private/tmp/pair-test-contract-trial-20261108/iterator-pad-left-pair-contract-replay/.council/host-b4UBKn-pair/scratch/A-pair-code-2-replay-4-base-93327/tests/Stream/StreamPadLeftStreamingTest.php:31
+
+3) IterTools\Tests\Stream\StreamPadLeftStreamingTest::testBoundedLookaheadAndSuspension with data set "three infinite" (3, true)
+RuntimeException: Source requested beyond the permitted lookahead
+
+/private/tmp/pair-test-contract-trial-20261108/iterator-pad-left-pair-contract-replay/.council/host-b4UBKn-pair/scratch/A-pair-code-2-replay-4-base-93327/tests/Stream/StreamPadLeftStreamingTest.php:96
+/private/tmp/pair-test-contract-trial-20261108/iterator-pad-left-pair-contract-replay/.council/host-b4UBKn-pair/scratch/A-pair-code-2-replay-4-base-93327/src/Single.php:1074
+/private/tmp/pair-test-contract-trial-20261108/iterator-pad-left-pair-contract-replay/.council/host-b4UBKn-pair/scratch/A-pair-code-2-replay-4-base-93327/tests/Stream/StreamPadLeftStreamingTest.php:31
+
+4) IterTools\Tests\Stream\StreamPadLeftStreamingTest::testBoundedLookaheadAndSuspension with data set "zero long finite" (0, false)
+RuntimeException: Source requested beyond the permitted lookahead
+
+/private/tmp/pair-test-contract-trial-20261108/iterator-pad-left-pair-contract-replay/.council/host-b4UBKn-pair/scratch/A-pair-code-2-replay-4-base-93327/tests/Stream/StreamPadLeftStreamingTest.php:96
+/private/tmp/pair-test-contract-trial-20261108/iterator-pad-left-pair-contract-replay/.council/host-b4UBKn-pair/scratch/A-pair-code-2-replay-4-base-93327/src/Single.php:1074
+/private/tmp/pair-test-contract-trial-20261108/iterator-pad-left-pair-contract-replay/.council/host-b4UBKn-pair/scratch/A-pair-code-2-replay-4-base-93327/tests/Stream/StreamPadLeftStreamingTest.php:31
+
+5) IterTools\Tests\Stream\StreamPadLeftStreamingTest::testBoundedLookaheadAndSuspension with data set "one long finite" (1, false)
+RuntimeException: Source requested beyond the permitted lookahead
+
+/private/tmp/pair-test-contract-trial-20261108/iterator-pad-left-pair-contract-replay/.council/host-b4UBKn-pair/scratch/A-pair-code-2-replay-4-base-93327/tests/Stream/StreamPadLeftStreamingTest.php:96
+/private/tmp/pair-test-contract-trial-20261108/iterator-pad-left-pair-contract-replay/.council/host-b4UBKn-pair/scratch/A-pair-code-2-replay-4-base-93327/src/Single.php:1074
+/private/tmp/pair-test-contract-trial-20261108/iterator-pad-left-pair-contract-replay/.council/host-b4UBKn-pair/scratch/A-pair-code-2-replay-4-base-93327/tests/Stream/StreamPadLeftStreamingTest.php:31
+
+6) IterTools\Tests\Stream\StreamPadLeftStreamingTest::testBoundedLookaheadAndSuspension with data set "three long finite" (3, false)
+RuntimeException: Source requested beyond the permitted lookahead
+
+/private/tmp/pair-test-contract-trial-20261108/iterator-pad-left-pair-contract-replay/.council/host-b4UBKn-pair/scratch/A-pair-code-2-replay-4-base-93327/tests/Stream/StreamPadLeftStreamingTest.php:96
+/private/tmp/pair-test-contract-trial-20261108/iterator-pad-left-pair-contract-replay/.council/host-b4UBKn-pair/scratch/A-pair-code-2-replay-4-base-93327/src/Single.php:1074
+/private/tmp/pair-test-contract-trial-20261108/iterator-pad-left-pair-contract-replay/.council/host-b4UBKn-pair/scratch/A-pair-code-2-replay-4-base-93327/tests/Stream/StreamPadLeftStreamingTest.php:31
+
+7) IterTools\Tests\Stream\StreamPadLeftStreamingTest::testLimitedPrefix with data set "zero infinite" (0, true)
+RuntimeException: Source requested beyond the permitted lookahead
+
+/private/tmp/pair-test-contract-trial-20261108/iterator-pad-left-pair-contract-replay/.council/host-b4UBKn-pair/scratch/A-pair-code-2-replay-4-base-93327/tests/Stream/StreamPadLeftStreamingTest.php:96
+/private/tmp/pair-test-contract-trial-20261108/iterator-pad-left-pair-contract-replay/.council/host-b4UBKn-pair/scratch/A-pair-code-2-replay-4-base-93327/src/Single.php:1074
+/private/tmp/pair-test-contract-trial-20261108/iterator-pad-left-pair-contract-replay/.council/host-b4UBKn-pair/scratch/A-pair-code-2-replay-4-base-93327/src/Single.php:605
+/private/tmp/pair-test-contract-trial-20261108/iterator-pad-left-pair-contract-replay/.council/host-b4UBKn-pair/scratch/A-pair-code-2-replay-4-base-93327/src/Transform.php:25
+/private/tmp/pair-test-contract-trial-20261108/iterator-pad-left-pair-contract-replay/.council/host-b4UBKn-pair/scratch/A-pair-code-2-replay-4-base-93327/src/Stream.php:2314
+/private/tmp/pair-test-contract-trial-20261108/iterator-pad-left-pair-contract-replay/.council/host-b4UBKn-pair/scratch/A-pair-code-2-replay-4-base-93327/tests/Stream/StreamPadLeftStreamingTest.php:67
+
+8) IterTools\Tests\Stream\StreamPadLeftStreamingTest::testLimitedPrefix with data set "one infinite" (1, true)
+RuntimeException: Source requested beyond the permitted lookahead
+
+/private/tmp/pair-test-contract-trial-20261108/iterator-pad-left-pair-contract-replay/.council/host-b4UBKn-pair/scratch/A-pair-code-2-replay-4-base-93327/tests/Stream/StreamPadLeftStreamingTest.php:96
+/private/tmp/pair-test-contract-trial-20261108/iterator-pad-left-pair-contract-replay/.council/host-b4UBKn-pair/scratch/A-pair-code-2-replay-4-base-93327/src/Single.php:1074
+/private/tmp/pair-test-contract-trial-20261108/iterator-pad-left-pair-contract-replay/.council/host-b4UBKn-pair/scratch/A-pair-code-2-replay-4-base-93327/src/Single.php:605
+/private/tmp/pair-test-contract-trial-20261108/iterator-pad-left-pair-contract-replay/.council/host-b4UBKn-pair/scratch/A-pair-code-2-replay-4-base-93327/src/Transform.php:25
+/private/tmp/pair-test-contract-trial-20261108/iterator-pad-left-pair-contract-replay/.council/host-b4UBKn-pair/scratch/A-pair-code-2-replay-4-base-93327/src/Stream.php:2314
+/private/tmp/pair-test-contract-trial-20261108/iterator-pad-left-pair-contract-replay/.council/host-b4UBKn-pair/scratch/A-pair-code-2-replay-4-base-93327/tests/Stream/StreamPadLeftStreamingTest.php:67
+
+9) IterTools\Tests\Stream\StreamPadLeftStreamingTest::testLimitedPrefix with data set "three infinite" (3, true)
+RuntimeException: Source requested beyond the permitted lookahead
+
+/private/tmp/pair-test-contract-trial-20261108/iterator-pad-left-pair-contract-replay/.council/host-b4UBKn-pair/scratch/A-pair-code-2-replay-4-base-93327/tests/Stream/StreamPadLeftStreamingTest.php:96
+/private/tmp/pair-test-contract-trial-20261108/iterator-pad-left-pair-contract-replay/.council/host-b4UBKn-pair/scratch/A-pair-code-2-replay-4-base-93327/src/Single.php:1074
+/private/tmp/pair-test-contract-trial-20261108/iterator-pad-left-pair-contract-replay/.council/host-b4UBKn-pair/scratch/A-pair-code-2-replay-4-base-93327/src/Single.php:605
+/private/tmp/pair-test-contract-trial-20261108/iterator-pad-left-pair-contract-replay/.council/host-b4UBKn-pair/scratch/A-pair-code-2-replay-4-base-93327/src/Transform.php:25
+/private/tmp/pair-test-contract-trial-20261108/iterator-pad-left-pair-contract-replay/.council/host-b4UBKn-pair/scratch/A-pair-code-2-replay-4-base-93327/src/Stream.php:2314
+/private/tmp/pair-test-contract-trial-20261108/iterator-pad-left-pair-contract-replay/.council/host-b4UBKn-pair/scratch/A-pair-code-2-replay-4-base-93327/tests/Stream/StreamPadLeftStreamingTest.php:67
+
+10) IterTools\Tests\Stream\StreamPadLeftStreamingTest::testLimitedPrefix with data set "zero long finite" (0, false)
+RuntimeException: Source requested beyond the permitted lookahead
+
+/private/tmp/pair-test-contract-trial-20261108/iterator-pad-left-pair-contract-replay/.council/host-b4UBKn-pair/scratch/A-pair-code-2-replay-4-base-93327/tests/Stream/StreamPadLeftStreamingTest.php:96
+/private/tmp/pair-test-contract-trial-20261108/iterator-pad-left-pair-contract-replay/.council/host-b4UBKn-pair/scratch/A-pair-code-2-replay-4-base-93327/src/Single.php:1074
+/private/tmp/pair-test-contract-trial-20261108/iterator-pad-left-pair-contract-replay/.council/host-b4UBKn-pair/scratch/A-pair-code-2-replay-4-base-93327/src/Single.php:605
+/private/tmp/pair-test-contract-trial-20261108/iterator-pad-left-pair-contract-replay/.council/host-b4UBKn-pair/scratch/A-pair-code-2-replay-4-base-93327/src/Transform.php:25
+/private/tmp/pair-test-contract-trial-20261108/iterator-pad-left-pair-contract-replay/.council/host-b4UBKn-pair/scratch/A-pair-code-2-replay-4-base-93327/src/Stream.php:2314
+/private/tmp/pair-test-contract-trial-20261108/iterator-pad-left-pair-contract-replay/.council/host-b4UBKn-pair/scratch/A-pair-code-2-replay-4-base-93327/tests/Stream/StreamPadLeftStreamingTest.php:67
+
+11) IterTools\Tests\Stream\StreamPadLeftStreamingTest::testLimitedPrefix with data set "one long finite" (1, false)
+RuntimeException: Source requested beyond the permitted lookahead
+
+/private/tmp/pair-test-contract-trial-20261108/iterator-pad-left-pair-contract-replay/.council/host-b4UBKn-pair/scratch/A-pair-code-2-replay-4-base-93327/tests/Stream/StreamPadLeftStreamingTest.php:96
+/private/tmp/pair-test-contract-trial-20261108/iterator-pad-left-pair-contract-replay/.council/host-b4UBKn-pair/scratch/A-pair-code-2-replay-4-base-93327/src/Single.php:1074
+/private/tmp/pair-test-contract-trial-20261108/iterator-pad-left-pair-contract-replay/.council/host-b4UBKn-pair/scratch/A-pair-code-2-replay-4-base-93327/src/Single.php:605
+/private/tmp/pair-test-contract-trial-20261108/iterator-pad-left-pair-contract-replay/.council/host-b4UBKn-pair/scratch/A-pair-code-2-replay-4-base-93327/src/Transform.php:25
+/private/tmp/pair-test-contract-trial-20261108/iterator-pad-left-pair-contract-replay/.council/host-b4UBKn-pair/scratch/A-pair-code-2-replay-4-base-93327/src/Stream.php:2314
+/private/tmp/pair-test-contract-trial-20261108/iterator-pad-left-pair-contract-replay/.council/host-b4UBKn-pair/scratch/A-pair-code-2-replay-4-base-93327/tests/Stream/StreamPadLeftStreamingTest.php:67
+
+12) IterTools\Tests\Stream\StreamPadLeftStreamingTest::testLimitedPrefix with data set "three long finite" (3, false)
+RuntimeException: Source requested beyond the permitted lookahead
+
+/private/tmp/pair-test-contract-trial-20261108/iterator-pad-left-pair-contract-replay/.council/host-b4UBKn-pair/scratch/A-pair-code-2-replay-4-base-93327/tests/Stream/StreamPadLeftStreamingTest.php:96
+/private/tmp/pair-test-contract-trial-20261108/iterator-pad-left-pair-contract-replay/.council/host-b4UBKn-pair/scratch/A-pair-code-2-replay-4-base-93327/src/Single.php:1074
+/private/tmp/pair-test-contract-trial-20261108/iterator-pad-left-pair-contract-replay/.council/host-b4UBKn-pair/scratch/A-pair-code-2-replay-4-base-93327/src/Single.php:605
+/private/tmp/pair-test-contract-trial-20261108/iterator-pad-left-pair-contract-replay/.council/host-b4UBKn-pair/scratch/A-pair-code-2-replay-4-base-93327/src/Transform.php:25
+/private/tmp/pair-test-contract-trial-20261108/iterator-pad-left-pair-contract-replay/.council/host-b4UBKn-pair/scratch/A-pair-code-2-replay-4-base-93327/src/Stream.php:2314
+/private/tmp/pair-test-contract-trial-20261108/iterator-pad-left-pair-contract-replay/.council/host-b4UBKn-pair/scratch/A-pair-code-2-replay-4-base-93327/tests/Stream/StreamPadLeftStreamingTest.php:67
+
+ERRORS!
+Tests: 12, Assertions: 12, Errors: 12.

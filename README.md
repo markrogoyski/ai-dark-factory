@@ -252,10 +252,18 @@ default pair needs both authenticated CLIs. Explicit `--author sol --reviewer as
 Codex models in the Codex host.
 
 1. The author establishes acceptance criteria, reference documents, and the verification gate.
-2. The author drafts a design; the reviewer checks it against the task and repository. The
-   author revises it until the design review passes.
+2. The author drafts a design and concrete test contract: criterion IDs, inputs, expected
+   outcomes, boundaries, changed/preserved purpose, test files, commands, and fixtures. Criteria
+   unsuitable for tests name an inspection and reason. The reviewer verifies test roots against
+   the base configuration/layout and supplies a plausible wrong implementation plus rejecting
+   check IDs for every criterion. The engine requires complete, valid challenges before approval.
+   A reviewer who finds no rejecting check can return empty IDs with an evidenced finding,
+   a partial/unmet assessment, or a design revision request; this returns the design to its author.
+   A malformed contract or challenge gets one correction attempt before stopping. Correction turns count toward the
+   run's turn budget and never count as design approval.
 3. The author implements the reviewed design in its own worktree. The helper snapshots the
-   change and runs the verification gate in a disposable checkout.
+   change, replays the current mapped tests on the original base and final snapshot in disposable
+   checkouts, and runs the existing full verification gate.
 4. A fresh reviewer context inspects that snapshot, the tests, and every criterion. Findings
    receive stable IDs. Only the reviewer can mark them fixed or refuted, with evidence.
 5. The author fixes findings and failed checks, then verification and review repeat. A material
@@ -267,6 +275,30 @@ workflow turns carry an explicit handoff and private notes. Review contexts and 
 fresh each time. Codex's runner executes measurements directly; Claude's workflow uses a
 transport turn to run the same helper. Its existing CLI relay handles external participants.
 There is no council, panel, voting, or automatic escalation.
+
+Each implementation response maps approved check IDs to current files, focused commands, and
+fixtures. Each command must isolate one test file. Tests depending on new APIs belong in separate
+files from preserved-behavior tests, so a loading fatal cannot hide the preserved signal. Only
+added/modified regular test and fixture files under the reviewed test roots are overlaid, using
+snapshot bytes. Unchanged files use the base copy. Production/config/dependency changes, unsafe
+paths and symlinks are excluded; renames/deletions are reported explicitly and are not overlaid.
+Dependencies needed for replay must be visible to the reviewer, rather than silently copied.
+Each execution gets a fresh checkout and the captured verification environment. Replay supplements
+the full gate and uses the helper's focused-test timeout (default 300 seconds per command).
+Base replay copies ignored dependencies from the original run repository and reports that author
+dependency changes were excluded. Final replay uses the author's dependency installation, like
+the full gate, so a package addition or upgrade can pass its final focused checks. Each command
+gets a fresh dependency copy. Ignored dependencies still have the checkpoint limitations below.
+
+Raw replay evidence is at file/command granularity, with check IDs, base/snapshot identity, cwd,
+exit/signal/timeout, launch errors, logs and output tails. A base fatal is a result even when no
+individual assertions ran. Base passes, timeouts and tool errors also require reviewer judgment;
+none automatically establishes or rejects intended changed behavior. An excluded or unscheduled
+file has no execution result. Every changed check needs a base result; every executable check
+needs a passing final result. Missing evidence is incomplete, and observed final failures block.
+Only the reviewer can close findings, and the final review examines the whole implementation,
+including omissions or weakening of the agreed checks and regressions introduced by fixes.
+There is no extra review stage, chronological TDD enforcement, or separate contract-version system.
 
 `maxReviews` (CLI: `--max-reviews`) limits total reviews across both stages, default **8**.
 An unchanged artifact with the same unresolved review state on consecutive attempts stops as
@@ -283,7 +315,10 @@ paths in `plan`, including uncommitted documents. Worktrees start at HEAD; track
 require explicit `allowDirty` or an already clean checkout. Factory tier, panel, audit, and
 historical-evidence options do not apply to Pair.
 
-Results include `design`, `reviews`, `findings`, `stopReason`, and `final.readiness`. Changes stay
+Results include `design`, `testContract`, `replayMapping`, `reviews`, `findings`, `stopReason`,
+`final.replay`, and `final.readiness`. Replay requests and logs participate in existing cache and
+checkpoint integrity. Ignored dependency directories and external toolchains retain the checkpoint
+limitations below. Changes stay
 in `final.worktree`; a ready snapshot has `delivery.status: pending`. Apply it within the user's
 authorization, then use the delivery verification below. Pair does not automatically launch a council when it stops. The Codex host supports validated checkpoint resume; changed task inputs or evidence require a new run.
 

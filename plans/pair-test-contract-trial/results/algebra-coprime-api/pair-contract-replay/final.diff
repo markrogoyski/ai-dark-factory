@@ -1,0 +1,204 @@
+diff --git a/README.md b/README.md
+index 5e3f0a88..838d4d02 100644
+--- a/README.md
++++ b/README.md
+@@ -116,6 +116,21 @@ use MathPHP\Algebra;
+ // Greatest common divisor (GCD)
+ $gcd = Algebra::gcd(8, 12);
+ 
++// Coprime: true exactly when the nonnegative mathematical gcd is one.
++// Signs and operand order do not affect the result.
++$coprime = Algebra::areCoprime(8, 15);   // true
++$coprime = Algebra::areCoprime(8, 12);   // false
++$coprime = Algebra::areCoprime(-15, 8);  // true
++
++// Zero is coprime only to 1 or -1; (0, 0) is not coprime.
++$coprime = Algebra::areCoprime(0, -1);   // true
++$coprime = Algebra::areCoprime(0, 2);    // false
++$coprime = Algebra::areCoprime(0, 0);    // false
++
++// All native signed integers are supported, including PHP_INT_MIN.
++$coprime = Algebra::areCoprime(PHP_INT_MIN, PHP_INT_MAX); // true
++$coprime = Algebra::areCoprime(PHP_INT_MIN, PHP_INT_MIN); // false
++
+ // Extended greatest common divisor - gcd(a, b) = a*a' + b*b'
+ $gcd = Algebra::extendedGcd(12, 8); // returns array [gcd, a', b']
+ 
+diff --git a/src/Algebra.php b/src/Algebra.php
+index d9c4c87e..417409f3 100644
+--- a/src/Algebra.php
++++ b/src/Algebra.php
+@@ -54,6 +54,34 @@ class Algebra
+         return Algebra::gcd($b, $a % $b);
+     }
+ 
++    /**
++     * Whether two integers are coprime: their nonnegative mathematical gcd is one.
++     * Signs and operand order do not affect the result. Zero is coprime only to 1 or -1;
++     * (0, 0) is not coprime.
++     *
++     * Uses Euclid's algorithm on signed operands without taking absolute values, so
++     * PHP_INT_MIN is supported even when the gcd magnitude cannot be represented as an int.
++     *
++     * @param  int $a
++     * @param  int $b
++     *
++     * @return bool
++     */
++    public static function areCoprime(int $a, int $b): bool
++    {
++        while ($b !== 0) {
++            // A unit divisor establishes coprimality without any further arithmetic.
++            if ($b === 1 || $b === -1) {
++                return true;
++            }
++            $r = $a % $b;
++            $a = $b;
++            $b = $r;
++        }
++
++        return $a === 1 || $a === -1;
++    }
++
+     /**
+      * Extended greatest common divisor
+      * Compute the gcd as a multiple of the inputs:
+diff --git a/tests/Algebra/AreCoprimeTest.php b/tests/Algebra/AreCoprimeTest.php
+new file mode 100644
+index 00000000..c2f8be9c
+--- /dev/null
++++ b/tests/Algebra/AreCoprimeTest.php
+@@ -0,0 +1,133 @@
++<?php
++
++declare(strict_types=1);
++
++namespace MathPHP\Tests\Algebra;
++
++use MathPHP\Algebra;
++use PHPUnit\Framework\Attributes\DataProvider;
++
++class AreCoprimeTest extends \PHPUnit\Framework\TestCase
++{
++    /**
++     * @test Coprimality is invariant under sign changes and operand swaps.
++     * @param int  $a
++     * @param int  $b
++     * @param bool $expected
++     */
++    #[DataProvider('dataProviderForSignAndOrderInvariance')]
++    public function testAreCoprimeSignAndOrderInvariance(int $a, int $b, bool $expected): void
++    {
++        foreach ([1, -1] as $a_sign) {
++            foreach ([1, -1] as $b_sign) {
++                $this->assertCoprimeInBothOrders($a_sign * $a, $b_sign * $b, $expected);
++            }
++        }
++    }
++
++    /**
++     * Expectations follow from prime factors, units, and consecutive integers being coprime.
++     * @return array<string, array{int, int, bool}>
++     */
++    public static function dataProviderForSignAndOrderInvariance(): array
++    {
++        return [
++            'coprime composites' => [8, 15, true],
++            'shared factor' => [8, 12, false],
++            'distinct prime factors' => [35, 64, true],
++            'equal nonunits' => [7, 7, false],
++            'two units' => [1, 1, true],
++            'unit and nonunit' => [1, 12, true],
++            'consecutive integers near maximum' => [\PHP_INT_MAX, \PHP_INT_MAX - 1, true],
++            'equal maximum integers' => [\PHP_INT_MAX, \PHP_INT_MAX, false],
++        ];
++    }
++
++    /**
++     * @test Zero is coprime only to a unit, in either operand order.
++     * @param int  $partner
++     * @param bool $expected
++     */
++    #[DataProvider('dataProviderForZero')]
++    public function testAreCoprimeWithZero(int $partner, bool $expected): void
++    {
++        $this->assertCoprimeInBothOrders(0, $partner, $expected);
++    }
++
++    /**
++     * Mathematical oracle: gcd(0, n) = |n|, including gcd(0, 0) = 0.
++     * @return array<string, array{int, bool}>
++     */
++    public static function dataProviderForZero(): array
++    {
++        return [
++            'zero' => [0, false],
++            'positive unit' => [1, true],
++            'negative unit' => [-1, true],
++            'two' => [2, false],
++            'negative two' => [-2, false],
++            'eight' => [8, false],
++            'negative eight' => [-8, false],
++            'maximum integer' => [\PHP_INT_MAX, false],
++            'negative maximum integer' => [-\PHP_INT_MAX, false],
++            'minimum integer' => [\PHP_INT_MIN, false],
++        ];
++    }
++
++    /**
++     * @test The most negative integer is supported without warnings or exceptions.
++     * @param int  $partner
++     * @param bool $expected
++     */
++    #[DataProvider('dataProviderForMostNegativeInteger')]
++    public function testAreCoprimeWithMostNegativeInteger(int $partner, bool $expected): void
++    {
++        $this->assertCoprimeInBothOrders(\PHP_INT_MIN, $partner, $expected);
++    }
++
++    /**
++     * Mathematical oracle: |PHP_INT_MIN| is a power of two, coprime exactly to odd integers.
++     * @return array<string, array{int, bool}>
++     */
++    public static function dataProviderForMostNegativeInteger(): array
++    {
++        return [
++            'minimum integer' => [\PHP_INT_MIN, false],
++            'zero' => [0, false],
++            'two' => [2, false],
++            'negative two' => [-2, false],
++            'six' => [6, false],
++            'negative six' => [-6, false],
++            'positive unit' => [1, true],
++            'negative unit' => [-1, true],
++            'three' => [3, true],
++            'seven' => [7, true],
++            'negative seven' => [-7, true],
++            'maximum integer' => [\PHP_INT_MAX, true],
++            'negative maximum integer' => [-\PHP_INT_MAX, true],
++            'minimum plus one' => [\PHP_INT_MIN + 1, true],
++        ];
++    }
++
++    /**
++     * Make warnings fail independently of PHPUnit's warning policy, restoring its handler afterward.
++     */
++    private function assertCoprimeInBothOrders(int $a, int $b, bool $expected): void
++    {
++        \set_error_handler(static function (int $severity, string $message, string $file, int $line): never {
++            throw new \ErrorException($message, 0, $severity, $file, $line);
++        }, \E_ALL);
++
++        try {
++            // When
++            $forward = Algebra::areCoprime($a, $b);
++            $reverse = Algebra::areCoprime($b, $a);
++        } finally {
++            \restore_error_handler();
++        }
++
++        // Then
++        $this->assertSame($expected, $forward, "areCoprime($a, $b)");
++        $this->assertSame($expected, $reverse, "areCoprime($b, $a)");
++    }
++}

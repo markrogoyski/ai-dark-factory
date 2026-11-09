@@ -1,0 +1,518 @@
+{
+  "status": "done",
+  "job": "measure-A-pair-code-2",
+  "seat": "A",
+  "label": "pair-code-2",
+  "tree": "/private/tmp/pair-test-contract-trial-20261108/algebra-coprime-api-pair-contract-replay/.council/host-mCY1cs-pair/wt/A",
+  "verification": {
+    "command": "php -d memory_limit=2G vendor/bin/phpunit --configuration=tests/phpunit.xml tests/Algebra",
+    "env": {
+      "TMPDIR": "/private/tmp/pair-test-contract-trial-20261108/algebra-coprime-api-pair-contract-replay/.council/host-mCY1cs-pair/tmp"
+    },
+    "baseEnv": {
+      "PATH": "/opt/homebrew/Caskroom/codex/0.167.0/codex-path:/Users/mark/.local/bin:/Users/mark/.local/bin:/Users/mark/.local/bin:/Library/Frameworks/Python.framework/Versions/3.12/bin:/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/System/Cryptexes/App/usr/bin:/usr/bin:/bin:/usr/sbin:/sbin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/local/bin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/bin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/appleinternal/bin:/opt/X11/bin:/Users/mark/.codex/tmp/arg0-macos/codex-arg0ygMrxJ:/opt/homebrew/Caskroom/codex/0.167.0/codex-path:/private/tmp/pair-test-contract-trial-20261108/candidate-engine/plugins/dark-factory/bin:/opt/homebrew/Caskroom/codex/0.166.0/codex-path:/Users/mark/.local/bin:/Library/Frameworks/Python.framework/Versions/3.12/bin:/opt/homebrew/bin:/opt/homebrew/sbin:/Users/mark/.codex/tmp/arg0-macos/codex-arg0BhigjN:/Users/mark/.cmuxterm/cmux-cli-shims/FFDD7431-F39E-4B37-A291-43524C287A38:/Applications/cmux.app/Contents/Resources/bin:/Users/mark/Library/Application Support/JetBrains/Toolbox/scripts:/Users/mark/.lmstudio/bin:/Users/mark/Library/Application Support/JetBrains/Toolbox/scripts:/Users/mark/.lmstudio/bin",
+      "HOME": "/Users/mark",
+      "USER": "mark",
+      "LOGNAME": "mark",
+      "SHELL": "/bin/zsh",
+      "TMPDIR": "/var/folders/vt/794vflbn1h71x6spk8dphrhh0000gn/T/",
+      "LANG": "en_US.UTF-8",
+      "LC_ALL": "C.UTF-8",
+      "LC_CTYPE": "C.UTF-8"
+    }
+  },
+  "snapshot": {
+    "ref": "refs/council/host-mCY1cs-pair/A-pair-code-2",
+    "commit": "8f1fb7f2985d1fef07b3fe855148c20a807e9fab",
+    "tree": "71e90e812c875e9f037e88bf483632994395deea",
+    "diff": "/private/tmp/pair-test-contract-trial-20261108/algebra-coprime-api-pair-contract-replay/.council/host-mCY1cs-pair/room/pair-code-2/A.diff",
+    "stat": "/private/tmp/pair-test-contract-trial-20261108/algebra-coprime-api-pair-contract-replay/.council/host-mCY1cs-pair/room/pair-code-2/A.stat",
+    "files": 3,
+    "fileList": [
+      "README.md",
+      "src/Algebra.php",
+      "tests/Algebra/AreCoprimeTest.php"
+    ],
+    "added": 176,
+    "removed": 0,
+    "delta": null,
+    "seatCommits": 0
+  },
+  "scratch": true,
+  "postWords": 635,
+  "replay": {
+    "base": "9626706183295d2f6b73cda26edc9bfb90e32f17",
+    "snapshot": "8f1fb7f2985d1fef07b3fe855148c20a807e9fab",
+    "snapshotTree": "71e90e812c875e9f037e88bf483632994395deea",
+    "testRoots": [
+      "tests/Algebra"
+    ],
+    "mapping": [
+      {
+        "file": "tests/Algebra/AreCoprimeTest.php",
+        "command": "php -d memory_limit=2G vendor/bin/phpunit --configuration=tests/phpunit.xml --filter testAreCoprimeSignAndOrderInvariance tests/Algebra/AreCoprimeTest.php",
+        "checkIds": [
+          "ordinary-sign-order"
+        ],
+        "fixtures": []
+      },
+      {
+        "file": "tests/Algebra/AreCoprimeTest.php",
+        "command": "php -d memory_limit=2G vendor/bin/phpunit --configuration=tests/phpunit.xml --filter testAreCoprimeWithZero tests/Algebra/AreCoprimeTest.php",
+        "checkIds": [
+          "zero-units"
+        ],
+        "fixtures": []
+      },
+      {
+        "file": "tests/Algebra/AreCoprimeTest.php",
+        "command": "php -d memory_limit=2G vendor/bin/phpunit --configuration=tests/phpunit.xml --filter testAreCoprimeWithMostNegativeInteger tests/Algebra/AreCoprimeTest.php",
+        "checkIds": [
+          "minimum-integer"
+        ],
+        "fixtures": []
+      },
+      {
+        "file": "tests/Algebra/AreCoprimeTest.php",
+        "command": "php -d memory_limit=2G vendor/bin/phpunit --configuration=tests/phpunit.xml tests/Algebra/AreCoprimeTest.php",
+        "checkIds": [
+          "scoped-release-gate"
+        ],
+        "fixtures": []
+      },
+      {
+        "file": "tests/Algebra/AlgebraTest.php",
+        "command": "php -d memory_limit=2G vendor/bin/phpunit --configuration=tests/phpunit.xml tests/Algebra/AlgebraTest.php",
+        "checkIds": [
+          "preserved-algebra",
+          "scoped-release-gate"
+        ],
+        "fixtures": []
+      },
+      {
+        "file": "tests/Algebra/AlgebraAxiomsTest.php",
+        "command": "php -d memory_limit=2G vendor/bin/phpunit --configuration=tests/phpunit.xml tests/Algebra/AlgebraAxiomsTest.php",
+        "checkIds": [
+          "preserved-axioms",
+          "scoped-release-gate"
+        ],
+        "fixtures": []
+      },
+      {
+        "file": "tests/Algebra/PolynomialRootsAxiomsTest.php",
+        "command": "php -d memory_limit=2G vendor/bin/phpunit --configuration=tests/phpunit.xml tests/Algebra/PolynomialRootsAxiomsTest.php",
+        "checkIds": [
+          "scoped-release-gate"
+        ],
+        "fixtures": []
+      }
+    ],
+    "changes": [
+      {
+        "status": "M",
+        "path": "README.md",
+        "previousPath": ""
+      },
+      {
+        "status": "M",
+        "path": "src/Algebra.php",
+        "previousPath": ""
+      },
+      {
+        "status": "A",
+        "path": "tests/Algebra/AreCoprimeTest.php",
+        "previousPath": ""
+      }
+    ],
+    "exclusions": [
+      {
+        "path": "vendor",
+        "reason": "author dependency changes are not overlaid; focused replay uses the original run repository dependency copy"
+      },
+      {
+        "path": "README.md",
+        "reason": "outside accepted test roots"
+      },
+      {
+        "path": "src/Algebra.php",
+        "reason": "outside accepted test roots"
+      },
+      {
+        "path": "tests/Algebra/AlgebraAxiomsTest.php",
+        "reason": "unchanged; use original base file without overlay"
+      },
+      {
+        "path": "tests/Algebra/AlgebraTest.php",
+        "reason": "unchanged; use original base file without overlay"
+      },
+      {
+        "path": "tests/Algebra/PolynomialRootsAxiomsTest.php",
+        "reason": "unchanged; use original base file without overlay"
+      }
+    ],
+    "records": [
+      {
+        "side": "base",
+        "revision": "9626706183295d2f6b73cda26edc9bfb90e32f17",
+        "tree": "0434f75ec7f1b58e49ab1198310464cde566f791",
+        "file": "tests/Algebra/AreCoprimeTest.php",
+        "command": "php -d memory_limit=2G vendor/bin/phpunit --configuration=tests/phpunit.xml --filter testAreCoprimeSignAndOrderInvariance tests/Algebra/AreCoprimeTest.php",
+        "checkIds": [
+          "ordinary-sign-order"
+        ],
+        "cwd": "/private/tmp/pair-test-contract-trial-20261108/algebra-coprime-api-pair-contract-replay/.council/host-mCY1cs-pair/scratch/A-pair-code-2-replay-0-base-85754",
+        "attempted": true,
+        "ran": true,
+        "passed": false,
+        "hasExitCode": true,
+        "exitCode": 2,
+        "signal": 0,
+        "timedOut": false,
+        "seconds": 0.2,
+        "log": "/private/tmp/pair-test-contract-trial-20261108/algebra-coprime-api-pair-contract-replay/.council/host-mCY1cs-pair/logs/replay-A-pair-code-2-replay-0-base.log",
+        "logSha256": "39e326b1b29fbba354c81fc9929cfb4a711f6b4f789591d0a63c3550bae04b09",
+        "tail": "/private/tmp/pair-test-contract-trial-20261108/algebra-coprime-api-pair-contract-replay/.council/host-mCY1cs-pair/scratch/A-pair-code-2-replay-0-base-85754/tests/Algebra/AreCoprimeTest.php:23\n\n3) MathPHP\\Tests\\Algebra\\AreCoprimeTest::testAreCoprimeSignAndOrderInvariance with data set \"distinct prime factors\" (35, 64, true)\nError: Call to undefined method MathPHP\\Algebra::areCoprime()\n\n/private/tmp/pair-test-contract-trial-20261108/algebra-coprime-api-pair-contract-replay/.council/host-mCY1cs-pair/scratch/A-pair-code-2-replay-0-base-85754/tests/Algebra/AreCoprimeTest.php:123\n/private/tmp/pair-test-contract-trial-20261108/algebra-coprime-api-pair-contract-replay/.council/host-mCY1cs-pair/scratch/A-pair-code-2-replay-0-base-85754/tests/Algebra/AreCoprimeTest.php:23\n\n4) MathPHP\\Tests\\Algebra\\AreCoprimeTest::testAreCoprimeSignAndOrderInvariance with data set \"equal nonunits\" (7, 7, false)\nError: Call to undefined method MathPHP\\Algebra::areCoprime()\n\n/private/tmp/pair-test-contract-trial-20261108/algebra-coprime-api-pair-contract-replay/.council/host-mCY1cs-pair/scratch/A-pair-code-2-replay-0-base-85754/tests/Algebra/AreCoprimeTest.php:123\n/private/tmp/pair-test-contract-trial-20261108/algebra-coprime-api-pair-contract-replay/.council/host-mCY1cs-pair/scratch/A-pair-code-2-replay-0-base-85754/tests/Algebra/AreCoprimeTest.php:23\n\n5) MathPHP\\Tests\\Algebra\\AreCoprimeTest::testAreCoprimeSignAndOrderInvariance with data set \"two units\" (1, 1, true)\nError: Call to undefined method MathPHP\\Algebra::areCoprime()\n\n/private/tmp/pair-test-contract-trial-20261108/algebra-coprime-api-pair-contract-replay/.council/host-mCY1cs-pair/scratch/A-pair-code-2-replay-0-base-85754/tests/Algebra/AreCoprimeTest.php:123\n/private/tmp/pair-test-contract-trial-20261108/algebra-coprime-api-pair-contract-replay/.council/host-mCY1cs-pair/scratch/A-pair-code-2-replay-0-base-85754/tests/Algebra/AreCoprimeTest.php:23\n\n6) MathPHP\\Tests\\Algebra\\AreCoprimeTest::testAreCoprimeSignAndOrderInvariance with data set \"unit and nonunit\" (1, 12, true)\nError: Call to undefined method MathPHP\\Algebra::areCoprime()\n\n/private/tmp/pair-test-contract-trial-20261108/algebra-coprime-api-pair-contract-replay/.council/host-mCY1cs-pair/scratch/A-pair-code-2-replay-0-base-85754/tests/Algebra/AreCoprimeTest.php:123\n/private/tmp/pair-test-contract-trial-20261108/algebra-coprime-api-pair-contract-replay/.council/host-mCY1cs-pair/scratch/A-pair-code-2-replay-0-base-85754/tests/Algebra/AreCoprimeTest.php:23\n\n7) MathPHP\\Tests\\Algebra\\AreCoprimeTest::testAreCoprimeSignAndOrderInvariance with data set \"consecutive integers near maximum\" (9223372036854775807, 9223372036854775806, true)\nError: Call to undefined method MathPHP\\Algebra::areCoprime()\n\n/private/tmp/pair-test-contract-trial-20261108/algebra-coprime-api-pair-contract-replay/.council/host-mCY1cs-pair/scratch/A-pair-code-2-replay-0-base-85754/tests/Algebra/AreCoprimeTest.php:123\n/private/tmp/pair-test-contract-trial-20261108/algebra-coprime-api-pair-contract-replay/.council/host-mCY1cs-pair/scratch/A-pair-code-2-replay-0-base-85754/tests/Algebra/AreCoprimeTest.php:23\n\n8) MathPHP\\Tests\\Algebra\\AreCoprimeTest::testAreCoprimeSignAndOrderInvariance with data set \"equal maximum integers\" (9223372036854775807, 9223372036854775807, false)\nError: Call to undefined method MathPHP\\Algebra::areCoprime()\n\n/private/tmp/pair-test-contract-trial-20261108/algebra-coprime-api-pair-contract-replay/.council/host-mCY1cs-pair/scratch/A-pair-code-2-replay-0-base-85754/tests/Algebra/AreCoprimeTest.php:123\n/private/tmp/pair-test-contract-trial-20261108/algebra-coprime-api-pair-contract-replay/.council/host-mCY1cs-pair/scratch/A-pair-code-2-replay-0-base-85754/tests/Algebra/AreCoprimeTest.php:23\n\nERRORS!\nTests: 8, Assertions: 0, Errors: 8.",
+        "launchError": "",
+        "mutated": []
+      },
+      {
+        "side": "final",
+        "revision": "8f1fb7f2985d1fef07b3fe855148c20a807e9fab",
+        "tree": "71e90e812c875e9f037e88bf483632994395deea",
+        "file": "tests/Algebra/AreCoprimeTest.php",
+        "command": "php -d memory_limit=2G vendor/bin/phpunit --configuration=tests/phpunit.xml --filter testAreCoprimeSignAndOrderInvariance tests/Algebra/AreCoprimeTest.php",
+        "checkIds": [
+          "ordinary-sign-order"
+        ],
+        "cwd": "/private/tmp/pair-test-contract-trial-20261108/algebra-coprime-api-pair-contract-replay/.council/host-mCY1cs-pair/scratch/A-pair-code-2-replay-0-final-85754",
+        "attempted": true,
+        "ran": true,
+        "passed": true,
+        "hasExitCode": true,
+        "exitCode": 0,
+        "signal": 0,
+        "timedOut": false,
+        "seconds": 0.2,
+        "log": "/private/tmp/pair-test-contract-trial-20261108/algebra-coprime-api-pair-contract-replay/.council/host-mCY1cs-pair/logs/replay-A-pair-code-2-replay-0-final.log",
+        "logSha256": "c78194c253c1b91009e223dd0f9d89664d9a1b0a26351245a4ceed969dede15d",
+        "tail": "PHPUnit 10.5.63 by Sebastian Bergmann and contributors.\n\nRuntime:       PHP 8.5.3\nConfiguration: /private/tmp/pair-test-contract-trial-20261108/algebra-coprime-api-pair-contract-replay/.council/host-mCY1cs-pair/scratch/A-pair-code-2-replay-0-final-85754/tests/phpunit.xml\n\n........                                                            8 / 8 (100%)\n\nTime: 00:00.006, Memory: 10.00 MB\n\nOK (8 tests, 64 assertions)",
+        "launchError": "",
+        "mutated": []
+      },
+      {
+        "side": "base",
+        "revision": "9626706183295d2f6b73cda26edc9bfb90e32f17",
+        "tree": "0434f75ec7f1b58e49ab1198310464cde566f791",
+        "file": "tests/Algebra/AreCoprimeTest.php",
+        "command": "php -d memory_limit=2G vendor/bin/phpunit --configuration=tests/phpunit.xml --filter testAreCoprimeWithZero tests/Algebra/AreCoprimeTest.php",
+        "checkIds": [
+          "zero-units"
+        ],
+        "cwd": "/private/tmp/pair-test-contract-trial-20261108/algebra-coprime-api-pair-contract-replay/.council/host-mCY1cs-pair/scratch/A-pair-code-2-replay-1-base-85754",
+        "attempted": true,
+        "ran": true,
+        "passed": false,
+        "hasExitCode": true,
+        "exitCode": 2,
+        "signal": 0,
+        "timedOut": false,
+        "seconds": 0.2,
+        "log": "/private/tmp/pair-test-contract-trial-20261108/algebra-coprime-api-pair-contract-replay/.council/host-mCY1cs-pair/logs/replay-A-pair-code-2-replay-1-base.log",
+        "logSha256": "31c482d5b2c75e4dd95d68ea2ec3e2ae619f9220885342ee34cc394c221a60dd",
+        "tail": "/private/tmp/pair-test-contract-trial-20261108/algebra-coprime-api-pair-contract-replay/.council/host-mCY1cs-pair/scratch/A-pair-code-2-replay-1-base-85754/tests/Algebra/AreCoprimeTest.php:54\n\n5) MathPHP\\Tests\\Algebra\\AreCoprimeTest::testAreCoprimeWithZero with data set \"negative two\" (-2, false)\nError: Call to undefined method MathPHP\\Algebra::areCoprime()\n\n/private/tmp/pair-test-contract-trial-20261108/algebra-coprime-api-pair-contract-replay/.council/host-mCY1cs-pair/scratch/A-pair-code-2-replay-1-base-85754/tests/Algebra/AreCoprimeTest.php:123\n/private/tmp/pair-test-contract-trial-20261108/algebra-coprime-api-pair-contract-replay/.council/host-mCY1cs-pair/scratch/A-pair-code-2-replay-1-base-85754/tests/Algebra/AreCoprimeTest.php:54\n\n6) MathPHP\\Tests\\Algebra\\AreCoprimeTest::testAreCoprimeWithZero with data set \"eight\" (8, false)\nError: Call to undefined method MathPHP\\Algebra::areCoprime()\n\n/private/tmp/pair-test-contract-trial-20261108/algebra-coprime-api-pair-contract-replay/.council/host-mCY1cs-pair/scratch/A-pair-code-2-replay-1-base-85754/tests/Algebra/AreCoprimeTest.php:123\n/private/tmp/pair-test-contract-trial-20261108/algebra-coprime-api-pair-contract-replay/.council/host-mCY1cs-pair/scratch/A-pair-code-2-replay-1-base-85754/tests/Algebra/AreCoprimeTest.php:54\n\n7) MathPHP\\Tests\\Algebra\\AreCoprimeTest::testAreCoprimeWithZero with data set \"negative eight\" (-8, false)\nError: Call to undefined method MathPHP\\Algebra::areCoprime()\n\n/private/tmp/pair-test-contract-trial-20261108/algebra-coprime-api-pair-contract-replay/.council/host-mCY1cs-pair/scratch/A-pair-code-2-replay-1-base-85754/tests/Algebra/AreCoprimeTest.php:123\n/private/tmp/pair-test-contract-trial-20261108/algebra-coprime-api-pair-contract-replay/.council/host-mCY1cs-pair/scratch/A-pair-code-2-replay-1-base-85754/tests/Algebra/AreCoprimeTest.php:54\n\n8) MathPHP\\Tests\\Algebra\\AreCoprimeTest::testAreCoprimeWithZero with data set \"maximum integer\" (9223372036854775807, false)\nError: Call to undefined method MathPHP\\Algebra::areCoprime()\n\n/private/tmp/pair-test-contract-trial-20261108/algebra-coprime-api-pair-contract-replay/.council/host-mCY1cs-pair/scratch/A-pair-code-2-replay-1-base-85754/tests/Algebra/AreCoprimeTest.php:123\n/private/tmp/pair-test-contract-trial-20261108/algebra-coprime-api-pair-contract-replay/.council/host-mCY1cs-pair/scratch/A-pair-code-2-replay-1-base-85754/tests/Algebra/AreCoprimeTest.php:54\n\n9) MathPHP\\Tests\\Algebra\\AreCoprimeTest::testAreCoprimeWithZero with data set \"negative maximum integer\" (-9223372036854775807, false)\nError: Call to undefined method MathPHP\\Algebra::areCoprime()\n\n/private/tmp/pair-test-contract-trial-20261108/algebra-coprime-api-pair-contract-replay/.council/host-mCY1cs-pair/scratch/A-pair-code-2-replay-1-base-85754/tests/Algebra/AreCoprimeTest.php:123\n/private/tmp/pair-test-contract-trial-20261108/algebra-coprime-api-pair-contract-replay/.council/host-mCY1cs-pair/scratch/A-pair-code-2-replay-1-base-85754/tests/Algebra/AreCoprimeTest.php:54\n\n10) MathPHP\\Tests\\Algebra\\AreCoprimeTest::testAreCoprimeWithZero with data set \"minimum integer\" (-9223372036854775807-1, false)\nError: Call to undefined method MathPHP\\Algebra::areCoprime()\n\n/private/tmp/pair-test-contract-trial-20261108/algebra-coprime-api-pair-contract-replay/.council/host-mCY1cs-pair/scratch/A-pair-code-2-replay-1-base-85754/tests/Algebra/AreCoprimeTest.php:123\n/private/tmp/pair-test-contract-trial-20261108/algebra-coprime-api-pair-contract-replay/.council/host-mCY1cs-pair/scratch/A-pair-code-2-replay-1-base-85754/tests/Algebra/AreCoprimeTest.php:54\n\nERRORS!\nTests: 10, Assertions: 0, Errors: 10.",
+        "launchError": "",
+        "mutated": []
+      },
+      {
+        "side": "final",
+        "revision": "8f1fb7f2985d1fef07b3fe855148c20a807e9fab",
+        "tree": "71e90e812c875e9f037e88bf483632994395deea",
+        "file": "tests/Algebra/AreCoprimeTest.php",
+        "command": "php -d memory_limit=2G vendor/bin/phpunit --configuration=tests/phpunit.xml --filter testAreCoprimeWithZero tests/Algebra/AreCoprimeTest.php",
+        "checkIds": [
+          "zero-units"
+        ],
+        "cwd": "/private/tmp/pair-test-contract-trial-20261108/algebra-coprime-api-pair-contract-replay/.council/host-mCY1cs-pair/scratch/A-pair-code-2-replay-1-final-85754",
+        "attempted": true,
+        "ran": true,
+        "passed": true,
+        "hasExitCode": true,
+        "exitCode": 0,
+        "signal": 0,
+        "timedOut": false,
+        "seconds": 0.2,
+        "log": "/private/tmp/pair-test-contract-trial-20261108/algebra-coprime-api-pair-contract-replay/.council/host-mCY1cs-pair/logs/replay-A-pair-code-2-replay-1-final.log",
+        "logSha256": "a550542aa35f48e0a6339bda2c67836751d391e604936f00b173d48c1a1595b4",
+        "tail": "PHPUnit 10.5.63 by Sebastian Bergmann and contributors.\n\nRuntime:       PHP 8.5.3\nConfiguration: /private/tmp/pair-test-contract-trial-20261108/algebra-coprime-api-pair-contract-replay/.council/host-mCY1cs-pair/scratch/A-pair-code-2-replay-1-final-85754/tests/phpunit.xml\n\n..........                                                        10 / 10 (100%)\n\nTime: 00:00.006, Memory: 10.00 MB\n\nOK (10 tests, 20 assertions)",
+        "launchError": "",
+        "mutated": []
+      },
+      {
+        "side": "base",
+        "revision": "9626706183295d2f6b73cda26edc9bfb90e32f17",
+        "tree": "0434f75ec7f1b58e49ab1198310464cde566f791",
+        "file": "tests/Algebra/AreCoprimeTest.php",
+        "command": "php -d memory_limit=2G vendor/bin/phpunit --configuration=tests/phpunit.xml --filter testAreCoprimeWithMostNegativeInteger tests/Algebra/AreCoprimeTest.php",
+        "checkIds": [
+          "minimum-integer"
+        ],
+        "cwd": "/private/tmp/pair-test-contract-trial-20261108/algebra-coprime-api-pair-contract-replay/.council/host-mCY1cs-pair/scratch/A-pair-code-2-replay-2-base-85754",
+        "attempted": true,
+        "ran": true,
+        "passed": false,
+        "hasExitCode": true,
+        "exitCode": 2,
+        "signal": 0,
+        "timedOut": false,
+        "seconds": 0.2,
+        "log": "/private/tmp/pair-test-contract-trial-20261108/algebra-coprime-api-pair-contract-replay/.council/host-mCY1cs-pair/logs/replay-A-pair-code-2-replay-2-base.log",
+        "logSha256": "438dfb791d40fcafabc5d0840d14de4c07eb13d82a2cc785e21be9c33774927e",
+        "tail": "/private/tmp/pair-test-contract-trial-20261108/algebra-coprime-api-pair-contract-replay/.council/host-mCY1cs-pair/scratch/A-pair-code-2-replay-2-base-85754/tests/Algebra/AreCoprimeTest.php:85\n\n9) MathPHP\\Tests\\Algebra\\AreCoprimeTest::testAreCoprimeWithMostNegativeInteger with data set \"three\" (3, true)\nError: Call to undefined method MathPHP\\Algebra::areCoprime()\n\n/private/tmp/pair-test-contract-trial-20261108/algebra-coprime-api-pair-contract-replay/.council/host-mCY1cs-pair/scratch/A-pair-code-2-replay-2-base-85754/tests/Algebra/AreCoprimeTest.php:123\n/private/tmp/pair-test-contract-trial-20261108/algebra-coprime-api-pair-contract-replay/.council/host-mCY1cs-pair/scratch/A-pair-code-2-replay-2-base-85754/tests/Algebra/AreCoprimeTest.php:85\n\n10) MathPHP\\Tests\\Algebra\\AreCoprimeTest::testAreCoprimeWithMostNegativeInteger with data set \"seven\" (7, true)\nError: Call to undefined method MathPHP\\Algebra::areCoprime()\n\n/private/tmp/pair-test-contract-trial-20261108/algebra-coprime-api-pair-contract-replay/.council/host-mCY1cs-pair/scratch/A-pair-code-2-replay-2-base-85754/tests/Algebra/AreCoprimeTest.php:123\n/private/tmp/pair-test-contract-trial-20261108/algebra-coprime-api-pair-contract-replay/.council/host-mCY1cs-pair/scratch/A-pair-code-2-replay-2-base-85754/tests/Algebra/AreCoprimeTest.php:85\n\n11) MathPHP\\Tests\\Algebra\\AreCoprimeTest::testAreCoprimeWithMostNegativeInteger with data set \"negative seven\" (-7, true)\nError: Call to undefined method MathPHP\\Algebra::areCoprime()\n\n/private/tmp/pair-test-contract-trial-20261108/algebra-coprime-api-pair-contract-replay/.council/host-mCY1cs-pair/scratch/A-pair-code-2-replay-2-base-85754/tests/Algebra/AreCoprimeTest.php:123\n/private/tmp/pair-test-contract-trial-20261108/algebra-coprime-api-pair-contract-replay/.council/host-mCY1cs-pair/scratch/A-pair-code-2-replay-2-base-85754/tests/Algebra/AreCoprimeTest.php:85\n\n12) MathPHP\\Tests\\Algebra\\AreCoprimeTest::testAreCoprimeWithMostNegativeInteger with data set \"maximum integer\" (9223372036854775807, true)\nError: Call to undefined method MathPHP\\Algebra::areCoprime()\n\n/private/tmp/pair-test-contract-trial-20261108/algebra-coprime-api-pair-contract-replay/.council/host-mCY1cs-pair/scratch/A-pair-code-2-replay-2-base-85754/tests/Algebra/AreCoprimeTest.php:123\n/private/tmp/pair-test-contract-trial-20261108/algebra-coprime-api-pair-contract-replay/.council/host-mCY1cs-pair/scratch/A-pair-code-2-replay-2-base-85754/tests/Algebra/AreCoprimeTest.php:85\n\n13) MathPHP\\Tests\\Algebra\\AreCoprimeTest::testAreCoprimeWithMostNegativeInteger with data set \"negative maximum integer\" (-9223372036854775807, true)\nError: Call to undefined method MathPHP\\Algebra::areCoprime()\n\n/private/tmp/pair-test-contract-trial-20261108/algebra-coprime-api-pair-contract-replay/.council/host-mCY1cs-pair/scratch/A-pair-code-2-replay-2-base-85754/tests/Algebra/AreCoprimeTest.php:123\n/private/tmp/pair-test-contract-trial-20261108/algebra-coprime-api-pair-contract-replay/.council/host-mCY1cs-pair/scratch/A-pair-code-2-replay-2-base-85754/tests/Algebra/AreCoprimeTest.php:85\n\n14) MathPHP\\Tests\\Algebra\\AreCoprimeTest::testAreCoprimeWithMostNegativeInteger with data set \"minimum plus one\" (-9223372036854775807, true)\nError: Call to undefined method MathPHP\\Algebra::areCoprime()\n\n/private/tmp/pair-test-contract-trial-20261108/algebra-coprime-api-pair-contract-replay/.council/host-mCY1cs-pair/scratch/A-pair-code-2-replay-2-base-85754/tests/Algebra/AreCoprimeTest.php:123\n/private/tmp/pair-test-contract-trial-20261108/algebra-coprime-api-pair-contract-replay/.council/host-mCY1cs-pair/scratch/A-pair-code-2-replay-2-base-85754/tests/Algebra/AreCoprimeTest.php:85\n\nERRORS!\nTests: 14, Assertions: 0, Errors: 14.",
+        "launchError": "",
+        "mutated": []
+      },
+      {
+        "side": "final",
+        "revision": "8f1fb7f2985d1fef07b3fe855148c20a807e9fab",
+        "tree": "71e90e812c875e9f037e88bf483632994395deea",
+        "file": "tests/Algebra/AreCoprimeTest.php",
+        "command": "php -d memory_limit=2G vendor/bin/phpunit --configuration=tests/phpunit.xml --filter testAreCoprimeWithMostNegativeInteger tests/Algebra/AreCoprimeTest.php",
+        "checkIds": [
+          "minimum-integer"
+        ],
+        "cwd": "/private/tmp/pair-test-contract-trial-20261108/algebra-coprime-api-pair-contract-replay/.council/host-mCY1cs-pair/scratch/A-pair-code-2-replay-2-final-85754",
+        "attempted": true,
+        "ran": true,
+        "passed": true,
+        "hasExitCode": true,
+        "exitCode": 0,
+        "signal": 0,
+        "timedOut": false,
+        "seconds": 0.2,
+        "log": "/private/tmp/pair-test-contract-trial-20261108/algebra-coprime-api-pair-contract-replay/.council/host-mCY1cs-pair/logs/replay-A-pair-code-2-replay-2-final.log",
+        "logSha256": "8073056ac4ade6ad19068e12982ef33ac72fadb33545d61520e6cda27c8f1274",
+        "tail": "PHPUnit 10.5.63 by Sebastian Bergmann and contributors.\n\nRuntime:       PHP 8.5.3\nConfiguration: /private/tmp/pair-test-contract-trial-20261108/algebra-coprime-api-pair-contract-replay/.council/host-mCY1cs-pair/scratch/A-pair-code-2-replay-2-final-85754/tests/phpunit.xml\n\n..............                                                    14 / 14 (100%)\n\nTime: 00:00.006, Memory: 10.00 MB\n\nOK (14 tests, 28 assertions)",
+        "launchError": "",
+        "mutated": []
+      },
+      {
+        "side": "base",
+        "revision": "9626706183295d2f6b73cda26edc9bfb90e32f17",
+        "tree": "0434f75ec7f1b58e49ab1198310464cde566f791",
+        "file": "tests/Algebra/AreCoprimeTest.php",
+        "command": "php -d memory_limit=2G vendor/bin/phpunit --configuration=tests/phpunit.xml tests/Algebra/AreCoprimeTest.php",
+        "checkIds": [
+          "scoped-release-gate"
+        ],
+        "cwd": "/private/tmp/pair-test-contract-trial-20261108/algebra-coprime-api-pair-contract-replay/.council/host-mCY1cs-pair/scratch/A-pair-code-2-replay-3-base-85754",
+        "attempted": true,
+        "ran": true,
+        "passed": false,
+        "hasExitCode": true,
+        "exitCode": 2,
+        "signal": 0,
+        "timedOut": false,
+        "seconds": 0.2,
+        "log": "/private/tmp/pair-test-contract-trial-20261108/algebra-coprime-api-pair-contract-replay/.council/host-mCY1cs-pair/logs/replay-A-pair-code-2-replay-3-base.log",
+        "logSha256": "ca2384fec5f7d67df5cc42cdc01d523a9be01c81b9e8b94c49d7188d22065f63",
+        "tail": "/private/tmp/pair-test-contract-trial-20261108/algebra-coprime-api-pair-contract-replay/.council/host-mCY1cs-pair/scratch/A-pair-code-2-replay-3-base-85754/tests/Algebra/AreCoprimeTest.php:85\n\n27) MathPHP\\Tests\\Algebra\\AreCoprimeTest::testAreCoprimeWithMostNegativeInteger with data set \"three\" (3, true)\nError: Call to undefined method MathPHP\\Algebra::areCoprime()\n\n/private/tmp/pair-test-contract-trial-20261108/algebra-coprime-api-pair-contract-replay/.council/host-mCY1cs-pair/scratch/A-pair-code-2-replay-3-base-85754/tests/Algebra/AreCoprimeTest.php:123\n/private/tmp/pair-test-contract-trial-20261108/algebra-coprime-api-pair-contract-replay/.council/host-mCY1cs-pair/scratch/A-pair-code-2-replay-3-base-85754/tests/Algebra/AreCoprimeTest.php:85\n\n28) MathPHP\\Tests\\Algebra\\AreCoprimeTest::testAreCoprimeWithMostNegativeInteger with data set \"seven\" (7, true)\nError: Call to undefined method MathPHP\\Algebra::areCoprime()\n\n/private/tmp/pair-test-contract-trial-20261108/algebra-coprime-api-pair-contract-replay/.council/host-mCY1cs-pair/scratch/A-pair-code-2-replay-3-base-85754/tests/Algebra/AreCoprimeTest.php:123\n/private/tmp/pair-test-contract-trial-20261108/algebra-coprime-api-pair-contract-replay/.council/host-mCY1cs-pair/scratch/A-pair-code-2-replay-3-base-85754/tests/Algebra/AreCoprimeTest.php:85\n\n29) MathPHP\\Tests\\Algebra\\AreCoprimeTest::testAreCoprimeWithMostNegativeInteger with data set \"negative seven\" (-7, true)\nError: Call to undefined method MathPHP\\Algebra::areCoprime()\n\n/private/tmp/pair-test-contract-trial-20261108/algebra-coprime-api-pair-contract-replay/.council/host-mCY1cs-pair/scratch/A-pair-code-2-replay-3-base-85754/tests/Algebra/AreCoprimeTest.php:123\n/private/tmp/pair-test-contract-trial-20261108/algebra-coprime-api-pair-contract-replay/.council/host-mCY1cs-pair/scratch/A-pair-code-2-replay-3-base-85754/tests/Algebra/AreCoprimeTest.php:85\n\n30) MathPHP\\Tests\\Algebra\\AreCoprimeTest::testAreCoprimeWithMostNegativeInteger with data set \"maximum integer\" (9223372036854775807, true)\nError: Call to undefined method MathPHP\\Algebra::areCoprime()\n\n/private/tmp/pair-test-contract-trial-20261108/algebra-coprime-api-pair-contract-replay/.council/host-mCY1cs-pair/scratch/A-pair-code-2-replay-3-base-85754/tests/Algebra/AreCoprimeTest.php:123\n/private/tmp/pair-test-contract-trial-20261108/algebra-coprime-api-pair-contract-replay/.council/host-mCY1cs-pair/scratch/A-pair-code-2-replay-3-base-85754/tests/Algebra/AreCoprimeTest.php:85\n\n31) MathPHP\\Tests\\Algebra\\AreCoprimeTest::testAreCoprimeWithMostNegativeInteger with data set \"negative maximum integer\" (-9223372036854775807, true)\nError: Call to undefined method MathPHP\\Algebra::areCoprime()\n\n/private/tmp/pair-test-contract-trial-20261108/algebra-coprime-api-pair-contract-replay/.council/host-mCY1cs-pair/scratch/A-pair-code-2-replay-3-base-85754/tests/Algebra/AreCoprimeTest.php:123\n/private/tmp/pair-test-contract-trial-20261108/algebra-coprime-api-pair-contract-replay/.council/host-mCY1cs-pair/scratch/A-pair-code-2-replay-3-base-85754/tests/Algebra/AreCoprimeTest.php:85\n\n32) MathPHP\\Tests\\Algebra\\AreCoprimeTest::testAreCoprimeWithMostNegativeInteger with data set \"minimum plus one\" (-9223372036854775807, true)\nError: Call to undefined method MathPHP\\Algebra::areCoprime()\n\n/private/tmp/pair-test-contract-trial-20261108/algebra-coprime-api-pair-contract-replay/.council/host-mCY1cs-pair/scratch/A-pair-code-2-replay-3-base-85754/tests/Algebra/AreCoprimeTest.php:123\n/private/tmp/pair-test-contract-trial-20261108/algebra-coprime-api-pair-contract-replay/.council/host-mCY1cs-pair/scratch/A-pair-code-2-replay-3-base-85754/tests/Algebra/AreCoprimeTest.php:85\n\nERRORS!\nTests: 32, Assertions: 0, Errors: 32.",
+        "launchError": "",
+        "mutated": []
+      },
+      {
+        "side": "final",
+        "revision": "8f1fb7f2985d1fef07b3fe855148c20a807e9fab",
+        "tree": "71e90e812c875e9f037e88bf483632994395deea",
+        "file": "tests/Algebra/AreCoprimeTest.php",
+        "command": "php -d memory_limit=2G vendor/bin/phpunit --configuration=tests/phpunit.xml tests/Algebra/AreCoprimeTest.php",
+        "checkIds": [
+          "scoped-release-gate"
+        ],
+        "cwd": "/private/tmp/pair-test-contract-trial-20261108/algebra-coprime-api-pair-contract-replay/.council/host-mCY1cs-pair/scratch/A-pair-code-2-replay-3-final-85754",
+        "attempted": true,
+        "ran": true,
+        "passed": true,
+        "hasExitCode": true,
+        "exitCode": 0,
+        "signal": 0,
+        "timedOut": false,
+        "seconds": 0.2,
+        "log": "/private/tmp/pair-test-contract-trial-20261108/algebra-coprime-api-pair-contract-replay/.council/host-mCY1cs-pair/logs/replay-A-pair-code-2-replay-3-final.log",
+        "logSha256": "12f73d3bc84ec12fef321c0d44a4b7b5851ed50e52ea1224131037a1f9475077",
+        "tail": "PHPUnit 10.5.63 by Sebastian Bergmann and contributors.\n\nRuntime:       PHP 8.5.3\nConfiguration: /private/tmp/pair-test-contract-trial-20261108/algebra-coprime-api-pair-contract-replay/.council/host-mCY1cs-pair/scratch/A-pair-code-2-replay-3-final-85754/tests/phpunit.xml\n\n................................                                  32 / 32 (100%)\n\nTime: 00:00.007, Memory: 10.00 MB\n\nOK (32 tests, 112 assertions)",
+        "launchError": "",
+        "mutated": []
+      },
+      {
+        "side": "base",
+        "revision": "9626706183295d2f6b73cda26edc9bfb90e32f17",
+        "tree": "0434f75ec7f1b58e49ab1198310464cde566f791",
+        "file": "tests/Algebra/AlgebraTest.php",
+        "command": "php -d memory_limit=2G vendor/bin/phpunit --configuration=tests/phpunit.xml tests/Algebra/AlgebraTest.php",
+        "checkIds": [
+          "preserved-algebra",
+          "scoped-release-gate"
+        ],
+        "cwd": "/private/tmp/pair-test-contract-trial-20261108/algebra-coprime-api-pair-contract-replay/.council/host-mCY1cs-pair/scratch/A-pair-code-2-replay-4-base-85754",
+        "attempted": true,
+        "ran": true,
+        "passed": true,
+        "hasExitCode": true,
+        "exitCode": 0,
+        "signal": 0,
+        "timedOut": false,
+        "seconds": 0.3,
+        "log": "/private/tmp/pair-test-contract-trial-20261108/algebra-coprime-api-pair-contract-replay/.council/host-mCY1cs-pair/logs/replay-A-pair-code-2-replay-4-base.log",
+        "logSha256": "a6cdac92da5a751cd467df06bb310726ecee7e56806c36a64e27675663f72fd9",
+        "tail": "PHPUnit 10.5.63 by Sebastian Bergmann and contributors.\n\nRuntime:       PHP 8.5.3\nConfiguration: /private/tmp/pair-test-contract-trial-20261108/algebra-coprime-api-pair-contract-replay/.council/host-mCY1cs-pair/scratch/A-pair-code-2-replay-4-base-85754/tests/phpunit.xml\n\n...............................................................  63 / 347 ( 18%)\n............................................................... 126 / 347 ( 36%)\n............................................................... 189 / 347 ( 54%)\n............................................................... 252 / 347 ( 72%)\n............................................................... 315 / 347 ( 90%)\n................................                                347 / 347 (100%)\n\nTime: 00:00.049, Memory: 14.00 MB\n\nOK (347 tests, 694 assertions)",
+        "launchError": "",
+        "mutated": []
+      },
+      {
+        "side": "final",
+        "revision": "8f1fb7f2985d1fef07b3fe855148c20a807e9fab",
+        "tree": "71e90e812c875e9f037e88bf483632994395deea",
+        "file": "tests/Algebra/AlgebraTest.php",
+        "command": "php -d memory_limit=2G vendor/bin/phpunit --configuration=tests/phpunit.xml tests/Algebra/AlgebraTest.php",
+        "checkIds": [
+          "preserved-algebra",
+          "scoped-release-gate"
+        ],
+        "cwd": "/private/tmp/pair-test-contract-trial-20261108/algebra-coprime-api-pair-contract-replay/.council/host-mCY1cs-pair/scratch/A-pair-code-2-replay-4-final-85754",
+        "attempted": true,
+        "ran": true,
+        "passed": true,
+        "hasExitCode": true,
+        "exitCode": 0,
+        "signal": 0,
+        "timedOut": false,
+        "seconds": 0.3,
+        "log": "/private/tmp/pair-test-contract-trial-20261108/algebra-coprime-api-pair-contract-replay/.council/host-mCY1cs-pair/logs/replay-A-pair-code-2-replay-4-final.log",
+        "logSha256": "0a5c0f6aea2b1dbe2d78d49f905e5556771ed46ee15c6d7610b26288e859349c",
+        "tail": "PHPUnit 10.5.63 by Sebastian Bergmann and contributors.\n\nRuntime:       PHP 8.5.3\nConfiguration: /private/tmp/pair-test-contract-trial-20261108/algebra-coprime-api-pair-contract-replay/.council/host-mCY1cs-pair/scratch/A-pair-code-2-replay-4-final-85754/tests/phpunit.xml\n\n...............................................................  63 / 347 ( 18%)\n............................................................... 126 / 347 ( 36%)\n............................................................... 189 / 347 ( 54%)\n............................................................... 252 / 347 ( 72%)\n............................................................... 315 / 347 ( 90%)\n................................                                347 / 347 (100%)\n\nTime: 00:00.046, Memory: 14.00 MB\n\nOK (347 tests, 694 assertions)",
+        "launchError": "",
+        "mutated": []
+      },
+      {
+        "side": "base",
+        "revision": "9626706183295d2f6b73cda26edc9bfb90e32f17",
+        "tree": "0434f75ec7f1b58e49ab1198310464cde566f791",
+        "file": "tests/Algebra/AlgebraAxiomsTest.php",
+        "command": "php -d memory_limit=2G vendor/bin/phpunit --configuration=tests/phpunit.xml tests/Algebra/AlgebraAxiomsTest.php",
+        "checkIds": [
+          "preserved-axioms",
+          "scoped-release-gate"
+        ],
+        "cwd": "/private/tmp/pair-test-contract-trial-20261108/algebra-coprime-api-pair-contract-replay/.council/host-mCY1cs-pair/scratch/A-pair-code-2-replay-5-base-85754",
+        "attempted": true,
+        "ran": true,
+        "passed": true,
+        "hasExitCode": true,
+        "exitCode": 0,
+        "signal": 0,
+        "timedOut": false,
+        "seconds": 0.3,
+        "log": "/private/tmp/pair-test-contract-trial-20261108/algebra-coprime-api-pair-contract-replay/.council/host-mCY1cs-pair/logs/replay-A-pair-code-2-replay-5-base.log",
+        "logSha256": "2aab5e8905e0da546c8265c31bfed6a151ad1c8d9064c50b4f0d9d89fb19cd7e",
+        "tail": "PHPUnit 10.5.63 by Sebastian Bergmann and contributors.\n\nRuntime:       PHP 8.5.3\nConfiguration: /private/tmp/pair-test-contract-trial-20261108/algebra-coprime-api-pair-contract-replay/.council/host-mCY1cs-pair/scratch/A-pair-code-2-replay-5-base-85754/tests/phpunit.xml\n\n...............................................................  63 / 361 ( 17%)\n............................................................... 126 / 361 ( 34%)\n............................................................... 189 / 361 ( 52%)\n............................................................... 252 / 361 ( 69%)\n............................................................... 315 / 361 ( 87%)\n..............................................                  361 / 361 (100%)\n\nTime: 00:00.068, Memory: 12.00 MB\n\nOK (361 tests, 565 assertions)",
+        "launchError": "",
+        "mutated": []
+      },
+      {
+        "side": "final",
+        "revision": "8f1fb7f2985d1fef07b3fe855148c20a807e9fab",
+        "tree": "71e90e812c875e9f037e88bf483632994395deea",
+        "file": "tests/Algebra/AlgebraAxiomsTest.php",
+        "command": "php -d memory_limit=2G vendor/bin/phpunit --configuration=tests/phpunit.xml tests/Algebra/AlgebraAxiomsTest.php",
+        "checkIds": [
+          "preserved-axioms",
+          "scoped-release-gate"
+        ],
+        "cwd": "/private/tmp/pair-test-contract-trial-20261108/algebra-coprime-api-pair-contract-replay/.council/host-mCY1cs-pair/scratch/A-pair-code-2-replay-5-final-85754",
+        "attempted": true,
+        "ran": true,
+        "passed": true,
+        "hasExitCode": true,
+        "exitCode": 0,
+        "signal": 0,
+        "timedOut": false,
+        "seconds": 0.3,
+        "log": "/private/tmp/pair-test-contract-trial-20261108/algebra-coprime-api-pair-contract-replay/.council/host-mCY1cs-pair/logs/replay-A-pair-code-2-replay-5-final.log",
+        "logSha256": "7cb867ed2db6a1cb696081af44b7568f898af66c5ddacfc040e8acf6aa428934",
+        "tail": "PHPUnit 10.5.63 by Sebastian Bergmann and contributors.\n\nRuntime:       PHP 8.5.3\nConfiguration: /private/tmp/pair-test-contract-trial-20261108/algebra-coprime-api-pair-contract-replay/.council/host-mCY1cs-pair/scratch/A-pair-code-2-replay-5-final-85754/tests/phpunit.xml\n\n...............................................................  63 / 361 ( 17%)\n............................................................... 126 / 361 ( 34%)\n............................................................... 189 / 361 ( 52%)\n............................................................... 252 / 361 ( 69%)\n............................................................... 315 / 361 ( 87%)\n..............................................                  361 / 361 (100%)\n\nTime: 00:00.067, Memory: 12.00 MB\n\nOK (361 tests, 565 assertions)",
+        "launchError": "",
+        "mutated": []
+      },
+      {
+        "side": "base",
+        "revision": "9626706183295d2f6b73cda26edc9bfb90e32f17",
+        "tree": "0434f75ec7f1b58e49ab1198310464cde566f791",
+        "file": "tests/Algebra/PolynomialRootsAxiomsTest.php",
+        "command": "php -d memory_limit=2G vendor/bin/phpunit --configuration=tests/phpunit.xml tests/Algebra/PolynomialRootsAxiomsTest.php",
+        "checkIds": [
+          "scoped-release-gate"
+        ],
+        "cwd": "/private/tmp/pair-test-contract-trial-20261108/algebra-coprime-api-pair-contract-replay/.council/host-mCY1cs-pair/scratch/A-pair-code-2-replay-6-base-85754",
+        "attempted": true,
+        "ran": true,
+        "passed": true,
+        "hasExitCode": true,
+        "exitCode": 0,
+        "signal": 0,
+        "timedOut": false,
+        "seconds": 0.3,
+        "log": "/private/tmp/pair-test-contract-trial-20261108/algebra-coprime-api-pair-contract-replay/.council/host-mCY1cs-pair/logs/replay-A-pair-code-2-replay-6-base.log",
+        "logSha256": "d94bd31c3c7c7387557d909b50e119f9fd1e9fcade9fbf6599990b8c6f11e0ff",
+        "tail": "PHPUnit 10.5.63 by Sebastian Bergmann and contributors.\n\nRuntime:       PHP 8.5.3\nConfiguration: /private/tmp/pair-test-contract-trial-20261108/algebra-coprime-api-pair-contract-replay/.council/host-mCY1cs-pair/scratch/A-pair-code-2-replay-6-base-85754/tests/phpunit.xml\n\n...............................................................  63 / 387 ( 16%)\n............................................................... 126 / 387 ( 32%)\n............................................................... 189 / 387 ( 48%)\n............................................................... 252 / 387 ( 65%)\n............................................................... 315 / 387 ( 81%)\n............................................................... 378 / 387 ( 97%)\n.........                                                       387 / 387 (100%)\n\nTime: 00:00.075, Memory: 12.00 MB\n\nOK (387 tests, 2187 assertions)",
+        "launchError": "",
+        "mutated": []
+      },
+      {
+        "side": "final",
+        "revision": "8f1fb7f2985d1fef07b3fe855148c20a807e9fab",
+        "tree": "71e90e812c875e9f037e88bf483632994395deea",
+        "file": "tests/Algebra/PolynomialRootsAxiomsTest.php",
+        "command": "php -d memory_limit=2G vendor/bin/phpunit --configuration=tests/phpunit.xml tests/Algebra/PolynomialRootsAxiomsTest.php",
+        "checkIds": [
+          "scoped-release-gate"
+        ],
+        "cwd": "/private/tmp/pair-test-contract-trial-20261108/algebra-coprime-api-pair-contract-replay/.council/host-mCY1cs-pair/scratch/A-pair-code-2-replay-6-final-85754",
+        "attempted": true,
+        "ran": true,
+        "passed": true,
+        "hasExitCode": true,
+        "exitCode": 0,
+        "signal": 0,
+        "timedOut": false,
+        "seconds": 0.2,
+        "log": "/private/tmp/pair-test-contract-trial-20261108/algebra-coprime-api-pair-contract-replay/.council/host-mCY1cs-pair/logs/replay-A-pair-code-2-replay-6-final.log",
+        "logSha256": "b219bbd1ca6b8824670d52456d769c12b203d6d36e32dd8582822395723bf578",
+        "tail": "PHPUnit 10.5.63 by Sebastian Bergmann and contributors.\n\nRuntime:       PHP 8.5.3\nConfiguration: /private/tmp/pair-test-contract-trial-20261108/algebra-coprime-api-pair-contract-replay/.council/host-mCY1cs-pair/scratch/A-pair-code-2-replay-6-final-85754/tests/phpunit.xml\n\n...............................................................  63 / 387 ( 16%)\n............................................................... 126 / 387 ( 32%)\n............................................................... 189 / 387 ( 48%)\n............................................................... 252 / 387 ( 65%)\n............................................................... 315 / 387 ( 81%)\n............................................................... 378 / 387 ( 97%)\n.........                                                       387 / 387 (100%)\n\nTime: 00:00.073, Memory: 14.00 MB\n\nOK (387 tests, 2187 assertions)",
+        "launchError": "",
+        "mutated": []
+      }
+    ],
+    "elapsedSec": 25.2
+  },
+  "suite": {
+    "exitCode": 0,
+    "timedOut": false,
+    "seconds": 0.4,
+    "tail": "PHPUnit 10.5.63 by Sebastian Bergmann and contributors.\n\nRuntime:       PHP 8.5.3\nConfiguration: /private/tmp/pair-test-contract-trial-20261108/algebra-coprime-api-pair-contract-replay/.council/host-mCY1cs-pair/scratch/A-pair-code-2-85754/tests/phpunit.xml\n\n.............................................................   61 / 1127 (  5%)\n.............................................................  122 / 1127 ( 10%)\n.............................................................  183 / 1127 ( 16%)\n.............................................................  244 / 1127 ( 21%)\n.............................................................  305 / 1127 ( 27%)\n.............................................................  366 / 1127 ( 32%)\n.............................................................  427 / 1127 ( 37%)\n.............................................................  488 / 1127 ( 43%)\n.............................................................  549 / 1127 ( 48%)\n.............................................................  610 / 1127 ( 54%)\n.............................................................  671 / 1127 ( 59%)\n.............................................................  732 / 1127 ( 64%)\n.............................................................  793 / 1127 ( 70%)\n.............................................................  854 / 1127 ( 75%)\n.............................................................  915 / 1127 ( 81%)\n.............................................................  976 / 1127 ( 86%)\n............................................................. 1037 / 1127 ( 92%)\n............................................................. 1098 / 1127 ( 97%)\n.............................                                 1127 / 1127 (100%)\n\nTime: 00:00.177, Memory: 16.00 MB\n\nOK (1127 tests, 3558 assertions)",
+    "log": "/private/tmp/pair-test-contract-trial-20261108/algebra-coprime-api-pair-contract-replay/.council/host-mCY1cs-pair/logs/suite-A-pair-code-2.log",
+    "ran": true,
+    "passed": true,
+    "cwd": "/private/tmp/pair-test-contract-trial-20261108/algebra-coprime-api-pair-contract-replay/.council/host-mCY1cs-pair/scratch/A-pair-code-2-85754",
+    "command": "php -d memory_limit=2G vendor/bin/phpunit --configuration=tests/phpunit.xml tests/Algebra",
+    "env": {
+      "TMPDIR": "/private/tmp/pair-test-contract-trial-20261108/algebra-coprime-api-pair-contract-replay/.council/host-mCY1cs-pair/tmp"
+    }
+  },
+  "crossTests": [],
+  "elapsedSec": 27.3,
+  "evidence": {
+    "status": "published",
+    "index": "/private/tmp/pair-test-contract-trial-20261108/algebra-coprime-api-pair-contract-replay/.council/host-mCY1cs-pair/evidence/A-pair-code-2-07730b77fc34ade515bba8f149c86a5d61e4d5978dedc11608237b8503e0e0fc/index.json",
+    "pointer": "/private/tmp/pair-test-contract-trial-20261108/algebra-coprime-api-pair-contract-replay/.council/host-mCY1cs-pair/evidence/A-pair-code-2.json"
+  }
+}

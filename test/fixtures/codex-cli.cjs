@@ -41,6 +41,7 @@ if ('signals' in schema.properties) {
     verify: 'node check.cjs', baselinePasses: baseline.suite.passed, baselineNote: 'Arithmetic test initially fails.',
     criteria: [{ id: 'C1', text: 'sum(2,3) returns 5; node check.cjs passes.' }] })
   fs.writeFileSync(runPath, run.runDir)
+  if ('head' in schema.properties) result.head = run.head
 } else if ('design' in schema.properties) {
   const design = /# Stage: design/.test(prompt)
   kind = design ? 'pair-design' : 'pair-implement'
@@ -50,11 +51,20 @@ if ('signals' in schema.properties) {
   fs.writeFileSync(handoff, design ? 'Use addition and test the result.\n' : 'Implemented addition.\n')
   if (!design) fs.writeFileSync(path.join(runDir, 'wt/A/sum.cjs'), 'module.exports = (a, b) => a + b\n')
   Object.assign(result, { status: 'done', summary: 'Corrected sum.', design: design ? 'Replace subtraction with addition and verify with node check.cjs.' : '' })
+  result.testContract = { testRoots: [{ path: 'tests', evidence: 'tests/preserved.cjs exists at base.' }], checks: [
+    { id: 'T1', criteria: ['C1'], kind: 'test', purpose: 'changed', scenario: 'sum(2,3)', expected: '5', boundaries: 'Unequal operands.',
+      file: 'tests/sum.cjs', command: 'node tests/sum.cjs', fixtures: [], inspection: '', reason: '' },
+    { id: 'T2', criteria: ['C1'], kind: 'test', purpose: 'preserved', scenario: 'sum(2,0)', expected: '2', boundaries: 'Zero second operand.',
+      file: 'tests/preserved.cjs', command: 'node tests/preserved.cjs', fixtures: [], inspection: '', reason: '' },
+  ] }
+  result.replayMapping = design ? [] : result.testContract.checks.map(c => ({ file: c.file, command: c.command, checkIds: [c.id], fixtures: [] }))
+  if (!design) fs.writeFileSync(path.join(runDir, 'wt/A/tests/sum.cjs'), "require('node:assert/strict').equal(require('../sum.cjs')(2, 3), 5)\n")
 } else if ('version' in schema.properties) {
   kind = 'pair-review'
   const code = /# Review stage: code/.test(prompt)
   Object.assign(result, { version: prompt.match(/^Version: (.+)$/m)[1], complete: true,
     summary: 'Reviewed the artifact.', criteria: [{ criterion: 'C1', status: 'met', note: 'Checked sum behavior and the regression test.' }] })
+  result.challenges = code ? [] : [{ criterion: 'C1', wrongImplementation: 'Subtract instead of add.', rejectingCheckIds: ['T1'] }]
   if (code) {
     if (!fs.readFileSync(path.join(process.cwd(), 'sum.cjs'), 'utf8').includes('a + b')) throw new Error('Reviewer did not receive the implementation snapshot')
     execFileSync(process.execPath, ['check.cjs'], { cwd: process.cwd() })

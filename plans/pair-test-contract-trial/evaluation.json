@@ -1,0 +1,135 @@
+{
+  "version": 1,
+  "runs": 9,
+  "groups": {
+    "codex/pair/pair/pair/pair-control/complete": {
+      "runs": 6,
+      "ready": 3,
+      "delivered": 0,
+      "deliveryFailed": 0,
+      "deliveryUnknown": 6,
+      "postDeliveryObserved": 3,
+      "postDeliveryRegressions": 0,
+      "escalated": 0,
+      "turns": 15,
+      "timedRuns": 6,
+      "elapsedMs": 1285332,
+      "failedTurns": 0,
+      "candidates": 0,
+      "readyCandidates": 0,
+      "runsWithReadyCandidate": 0,
+      "findingsByStage": {},
+      "tokensByModel": {
+        "gpt-6.1-sol": {
+          "input_tokens": 3081890,
+          "cached_input_tokens": 2674432,
+          "cache_write_input_tokens": 0,
+          "output_tokens": 43293,
+          "reasoning_output_tokens": 6156
+        },
+        "gpt-6-astra": {
+          "input_tokens": 689978,
+          "cached_input_tokens": 470016,
+          "cache_write_input_tokens": 0,
+          "output_tokens": 9073,
+          "reasoning_output_tokens": 1127
+        }
+      },
+      "tokenMeasuredRuns": 3,
+      "taskIds": [
+        "algebra-coprime-api",
+        "iterator-pad-left",
+        "vector-pnorm-scale"
+      ],
+      "turnsPerReadyResult": 5,
+      "turnsPerReadyCandidate": null,
+      "readyRate": 0.5,
+      "escalationRate": 0,
+      "elapsedMsPerReadyResult": 428444
+    },
+    "codex/pair/pair/pair/pair-contract-replay/complete": {
+      "runs": 3,
+      "ready": 3,
+      "delivered": 0,
+      "deliveryFailed": 0,
+      "deliveryUnknown": 3,
+      "postDeliveryObserved": 3,
+      "postDeliveryRegressions": 0,
+      "escalated": 0,
+      "turns": 15,
+      "timedRuns": 3,
+      "elapsedMs": 2166097,
+      "failedTurns": 0,
+      "candidates": 0,
+      "readyCandidates": 0,
+      "runsWithReadyCandidate": 0,
+      "findingsByStage": {},
+      "tokensByModel": {
+        "gpt-6.1-sol": {
+          "input_tokens": 5324694,
+          "cached_input_tokens": 4827264,
+          "cache_write_input_tokens": 0,
+          "output_tokens": 75720,
+          "reasoning_output_tokens": 14417
+        },
+        "gpt-6-astra": {
+          "input_tokens": 1018770,
+          "cached_input_tokens": 723712,
+          "cache_write_input_tokens": 0,
+          "output_tokens": 11896,
+          "reasoning_output_tokens": 935
+        }
+      },
+      "tokenMeasuredRuns": 3,
+      "taskIds": [
+        "algebra-coprime-api",
+        "iterator-pad-left",
+        "vector-pnorm-scale"
+      ],
+      "turnsPerReadyResult": 5,
+      "turnsPerReadyCandidate": null,
+      "readyRate": 1,
+      "escalationRate": 0,
+      "elapsedMsPerReadyResult": 722032.3333333334
+    }
+  },
+  "matchedTasks": {
+    "iterator-pad-left@f8ae71b11e508bf61a6233508b391262a5890454": {
+      "codex/pair/pair/pair/pair-control/complete": {
+        "runs": 2,
+        "ready": 1,
+        "turns": 5
+      },
+      "codex/pair/pair/pair/pair-contract-replay/complete": {
+        "runs": 1,
+        "ready": 1,
+        "turns": 5
+      }
+    },
+    "algebra-coprime-api@9626706183295d2f6b73cda26edc9bfb90e32f17": {
+      "codex/pair/pair/pair/pair-control/complete": {
+        "runs": 2,
+        "ready": 1,
+        "turns": 5
+      },
+      "codex/pair/pair/pair/pair-contract-replay/complete": {
+        "runs": 1,
+        "ready": 1,
+        "turns": 5
+      }
+    },
+    "vector-pnorm-scale@e5e2d2f4d2fdd81477c20a861022a097c3f435dc": {
+      "codex/pair/pair/pair/pair-control/complete": {
+        "runs": 2,
+        "ready": 1,
+        "turns": 5
+      },
+      "codex/pair/pair/pair/pair-contract-replay/complete": {
+        "runs": 1,
+        "ready": 1,
+        "turns": 5
+      }
+    }
+  },
+  "interpretation": "Compare repeated runs on the same task IDs and repository revisions. Readiness is process evidence, not proof of correctness. Delivery failures are measured only when delivery.json exists; missing token, time and dollar costs remain unknown. Findings may overlap across reviewers. No default tuning is performed."
+}

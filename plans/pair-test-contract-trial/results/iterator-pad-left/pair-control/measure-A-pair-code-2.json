@@ -1,0 +1,65 @@
+{
+  "status": "done",
+  "job": "measure-A-pair-code-2",
+  "seat": "A",
+  "label": "pair-code-2",
+  "tree": "/private/tmp/pair-test-contract-trial-20261108/iterator-pad-left-pair-control/.council/host-gx20QP-pair/wt/A",
+  "verification": {
+    "command": "php -d memory_limit=2G vendor/bin/phpunit --configuration=tests/phpunit.xml tests/Single && php -d memory_limit=2G vendor/bin/phpunit --configuration=tests/phpunit.xml tests/Stream",
+    "env": {
+      "TMPDIR": "/private/tmp/pair-test-contract-trial-20261108/iterator-pad-left-pair-control/.council/host-gx20QP-pair/tmp"
+    },
+    "baseEnv": {
+      "PATH": "/Users/mark/.local/bin:/Library/Frameworks/Python.framework/Versions/3.12/bin:/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/System/Cryptexes/App/usr/bin:/usr/bin:/bin:/usr/sbin:/sbin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/local/bin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/bin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/appleinternal/bin:/opt/X11/bin:/opt/homebrew/Caskroom/codex/0.167.0/codex-path:/Users/mark/.codex/tmp/arg0-macos/codex-arg0F1cuhg:/private/tmp/pair-test-contract-trial-20261108/control-engine/plugins/dark-factory/bin:/opt/homebrew/Caskroom/codex/0.166.0/codex-path:/Users/mark/.local/bin:/Library/Frameworks/Python.framework/Versions/3.12/bin:/opt/homebrew/bin:/opt/homebrew/sbin:/Users/mark/.codex/tmp/arg0-macos/codex-arg0BhigjN:/Users/mark/.cmuxterm/cmux-cli-shims/FFDD7431-F39E-4B37-A291-43524C287A38:/Applications/cmux.app/Contents/Resources/bin:/Users/mark/Library/Application Support/JetBrains/Toolbox/scripts:/Users/mark/.lmstudio/bin:/Users/mark/Library/Application Support/JetBrains/Toolbox/scripts",
+      "HOME": "/Users/mark",
+      "USER": "mark",
+      "LOGNAME": "mark",
+      "SHELL": "/bin/zsh",
+      "TMPDIR": "/var/folders/vt/794vflbn1h71x6spk8dphrhh0000gn/T/",
+      "LANG": "C.UTF-8",
+      "LC_ALL": "C.UTF-8",
+      "LC_CTYPE": "C.UTF-8"
+    }
+  },
+  "snapshot": {
+    "ref": "refs/council/host-gx20QP-pair/A-pair-code-2",
+    "commit": "acb7999fb9e5adf073aab1cc7e6d6468a93af79e",
+    "tree": "70c8241e0771486e78e8a4c94562b0d7505c12b0",
+    "diff": "/private/tmp/pair-test-contract-trial-20261108/iterator-pad-left-pair-control/.council/host-gx20QP-pair/room/pair-code-2/A.diff",
+    "stat": "/private/tmp/pair-test-contract-trial-20261108/iterator-pad-left-pair-control/.council/host-gx20QP-pair/room/pair-code-2/A.stat",
+    "files": 4,
+    "fileList": [
+      "docs/single-iteration.md",
+      "src/Single.php",
+      "tests/Single/PadLeftTest.php",
+      "tests/Stream/StreamPadLeftTest.php"
+    ],
+    "added": 302,
+    "removed": 1,
+    "delta": null,
+    "seatCommits": 0
+  },
+  "scratch": true,
+  "postWords": 395,
+  "suite": {
+    "exitCode": 0,
+    "timedOut": false,
+    "seconds": 2.1,
+    "tail": "............................................................. 1708 / 3809 ( 44%)\n............................................................. 1769 / 3809 ( 46%)\n............................................................. 1830 / 3809 ( 48%)\n............................................................. 1891 / 3809 ( 49%)\n............................................................. 1952 / 3809 ( 51%)\n............................................................. 2013 / 3809 ( 52%)\n............................................................. 2074 / 3809 ( 54%)\n............................................................. 2135 / 3809 ( 56%)\n............................................................. 2196 / 3809 ( 57%)\n............................................................. 2257 / 3809 ( 59%)\n............................................................. 2318 / 3809 ( 60%)\n............................................................. 2379 / 3809 ( 62%)\n............................................................. 2440 / 3809 ( 64%)\n............................................................. 2501 / 3809 ( 65%)\n............................................................. 2562 / 3809 ( 67%)\n............................................................. 2623 / 3809 ( 68%)\n............................................................. 2684 / 3809 ( 70%)\n............................................................. 2745 / 3809 ( 72%)\n............................................................. 2806 / 3809 ( 73%)\n............................................................. 2867 / 3809 ( 75%)\n............................................................. 2928 / 3809 ( 76%)\n............................................................. 2989 / 3809 ( 78%)\n............................................................. 3050 / 3809 ( 80%)\n............................................................. 3111 / 3809 ( 81%)\n............................................................. 3172 / 3809 ( 83%)\n............................................................. 3233 / 3809 ( 84%)\n............................................................. 3294 / 3809 ( 86%)\n............................................................. 3355 / 3809 ( 88%)\n............................................................. 3416 / 3809 ( 89%)\n............................................................. 3477 / 3809 ( 91%)\n............................................................. 3538 / 3809 ( 92%)\n............................................................. 3599 / 3809 ( 94%)\n............................................................. 3660 / 3809 ( 96%)\n............................................................. 3721 / 3809 ( 97%)\n............................................................. 3782 / 3809 ( 99%)\n...........................                                   3809 / 3809 (100%)\n\nTime: 00:01.107, Memory: 50.05 MB\n\nOK (3809 tests, 162567 assertions)",
+    "log": "/private/tmp/pair-test-contract-trial-20261108/iterator-pad-left-pair-control/.council/host-gx20QP-pair/logs/suite-A-pair-code-2.log",
+    "ran": true,
+    "passed": true,
+    "cwd": "/private/tmp/pair-test-contract-trial-20261108/iterator-pad-left-pair-control/.council/host-gx20QP-pair/scratch/A-pair-code-2-58930",
+    "command": "php -d memory_limit=2G vendor/bin/phpunit --configuration=tests/phpunit.xml tests/Single && php -d memory_limit=2G vendor/bin/phpunit --configuration=tests/phpunit.xml tests/Stream",
+    "env": {
+      "TMPDIR": "/private/tmp/pair-test-contract-trial-20261108/iterator-pad-left-pair-control/.council/host-gx20QP-pair/tmp"
+    }
+  },
+  "crossTests": [],
+  "elapsedSec": 3.8,
+  "evidence": {
+    "status": "published",
+    "index": "/private/tmp/pair-test-contract-trial-20261108/iterator-pad-left-pair-control/.council/host-gx20QP-pair/evidence/A-pair-code-2-70a7c8c579fad545040f6d4fe67e965adb7ba150de6d86beb1f70f4b2dd0f440/index.json",
+    "pointer": "/private/tmp/pair-test-contract-trial-20261108/iterator-pad-left-pair-control/.council/host-gx20QP-pair/evidence/A-pair-code-2.json"
+  }
+}

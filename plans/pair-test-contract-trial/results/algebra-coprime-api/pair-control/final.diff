@@ -1,0 +1,151 @@
+diff --git a/README.md b/README.md
+index 5e3f0a88..0cd6ee8f 100644
+--- a/README.md
++++ b/README.md
+@@ -116,6 +116,16 @@ use MathPHP\Algebra;
+ // Greatest common divisor (GCD)
+ $gcd = Algebra::gcd(8, 12);
+ 
++// areCoprime(int $a, int $b): bool - true exactly when the nonnegative mathematical gcd is one.
++// Signs and operand order do not affect the result. Supports all native signed integers,
++// including PHP_INT_MIN, without overflow. Zero is coprime only to 1 or -1; (0, 0) is false.
++$coprime = Algebra::areCoprime(35, 64);                  // true
++$coprime = Algebra::areCoprime(12, 18);                  // false
++$coprime = Algebra::areCoprime(-35, 64);                 // true
++$coprime = Algebra::areCoprime(0, -1);                   // true
++$coprime = Algebra::areCoprime(0, 0);                    // false
++$coprime = Algebra::areCoprime(PHP_INT_MIN, PHP_INT_MAX); // true
++
+ // Extended greatest common divisor - gcd(a, b) = a*a' + b*b'
+ $gcd = Algebra::extendedGcd(12, 8); // returns array [gcd, a', b']
+ 
+diff --git a/src/Algebra.php b/src/Algebra.php
+index d9c4c87e..a62462d7 100644
+--- a/src/Algebra.php
++++ b/src/Algebra.php
+@@ -54,6 +54,35 @@ class Algebra
+         return Algebra::gcd($b, $a % $b);
+     }
+ 
++    /**
++     * Whether two integers are coprime: their nonnegative mathematical gcd is one.
++     * Signs and operand order do not affect the result. Zero is coprime only to 1 or -1;
++     * (0, 0) is not coprime.
++     *
++     * Supports all native signed integers, including PHP_INT_MIN, without overflow.
++     * Euclid's algorithm runs on signed operands and compares the terminal value with
++     * the two units, so the positive magnitude of PHP_INT_MIN never needs to be represented.
++     *
++     * @param  int $a
++     * @param  int $b
++     *
++     * @return bool True if the mathematical gcd is one
++     */
++    public static function areCoprime(int $a, int $b): bool
++    {
++        while ($b !== 0) {
++            // A unit divisor establishes coprimality without evaluating PHP_INT_MIN % -1.
++            if ($b === 1 || $b === -1) {
++                return true;
++            }
++            $r = $a % $b;
++            $a = $b;
++            $b = $r;
++        }
++
++        return $a === 1 || $a === -1;
++    }
++
+     /**
+      * Extended greatest common divisor
+      * Compute the gcd as a multiple of the inputs:
+diff --git a/tests/Algebra/AreCoprimeTest.php b/tests/Algebra/AreCoprimeTest.php
+new file mode 100644
+index 00000000..cd3b3c81
+--- /dev/null
++++ b/tests/Algebra/AreCoprimeTest.php
+@@ -0,0 +1,84 @@
++<?php
++
++declare(strict_types=1);
++
++namespace MathPHP\Tests\Algebra;
++
++use MathPHP\Algebra;
++use PHPUnit\Framework\Attributes\DataProvider;
++
++class AreCoprimeTest extends \PHPUnit\Framework\TestCase
++{
++    /**
++     * @test  Coprimality is independent of operand order and emits no diagnostics.
++     * @param int  $a
++     * @param int  $b
++     * @param bool $expected
++     */
++    #[DataProvider('dataProviderForAreCoprime')]
++    public function testAreCoprime(int $a, int $b, bool $expected): void
++    {
++        // Given
++        \set_error_handler(static function (int $severity, string $message, string $file, int $line): never {
++            throw new \ErrorException($message, 0, $severity, $file, $line);
++        }, \E_ALL);
++
++        // When
++        try {
++            $result   = Algebra::areCoprime($a, $b);
++            $reversed = Algebra::areCoprime($b, $a);
++        } finally {
++            \restore_error_handler();
++        }
++
++        // Then
++        $this->assertSame($expected, $result);
++        $this->assertSame($expected, $reversed);
++    }
++
++    /**
++     * @return array<string, array{int, int, bool}>
++     */
++    public static function dataProviderForAreCoprime(): array
++    {
++        $pairs = [
++            'coprime' => [35, 64, true],
++            'common factor' => [12, 18, false],
++            'one divides other' => [6, 48, false],
++            'equal nonunits' => [17, 17, false],
++            'unit pair' => [1, 1, true],
++            'unit and nonunit' => [1, 18, true],
++        ];
++        $cases = [];
++        foreach ($pairs as $name => [$a, $b, $expected]) {
++            $cases[$name . ' positive']       = [$a, $b, $expected];
++            $cases[$name . ' negative']       = [-$a, -$b, $expected];
++            $cases[$name . ' negative first'] = [-$a, $b, $expected];
++            $cases[$name . ' negative last']  = [$a, -$b, $expected];
++        }
++
++        return $cases + [
++            'zero and one' => [0, 1, true],
++            'zero and negative one' => [0, -1, true],
++            'both zero' => [0, 0, false],
++            'zero and two' => [0, 2, false],
++            'zero and negative two' => [0, -2, false],
++            'zero and max' => [0, \PHP_INT_MAX, false],
++            'zero and negative max' => [0, -\PHP_INT_MAX, false],
++            'min and zero' => [\PHP_INT_MIN, 0, false],
++            'both min' => [\PHP_INT_MIN, \PHP_INT_MIN, false],
++            'min and two' => [\PHP_INT_MIN, 2, false],
++            'min and negative two' => [\PHP_INT_MIN, -2, false],
++            'min and one' => [\PHP_INT_MIN, 1, true],
++            'min and negative one' => [\PHP_INT_MIN, -1, true],
++            'min and max' => [\PHP_INT_MIN, \PHP_INT_MAX, true],
++            'min and negative max' => [\PHP_INT_MIN, -\PHP_INT_MAX, true],
++            'min and three' => [\PHP_INT_MIN, 3, true],
++            'min and negative three' => [\PHP_INT_MIN, -3, true],
++            'both max' => [\PHP_INT_MAX, \PHP_INT_MAX, false],
++            'max and negative max' => [\PHP_INT_MAX, -\PHP_INT_MAX, false],
++            'max and preceding integer' => [\PHP_INT_MAX, \PHP_INT_MAX - 1, true],
++            'min plus one and two' => [\PHP_INT_MIN + 1, 2, true],
++        ];
++    }
++}

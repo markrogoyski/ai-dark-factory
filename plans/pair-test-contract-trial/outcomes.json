@@ -1,0 +1,26 @@
+{
+  "/private/tmp/pair-test-contract-trial-20261108/iterator-pad-left-pair-control/.council/host-gx20QP": {
+    "status": "passed",
+    "evidence": "plans/pair-test-contract-trial/results/iterator-pad-left/pair-control/outcome.json"
+  },
+  "/private/tmp/pair-test-contract-trial-20261108/iterator-pad-left-pair-contract-replay/.council/host-b4UBKn": {
+    "status": "passed",
+    "evidence": "plans/pair-test-contract-trial/results/iterator-pad-left/pair-contract-replay/outcome.json"
+  },
+  "/private/tmp/pair-test-contract-trial-20261108/algebra-coprime-api-pair-control/.council/host-LpLTZw": {
+    "status": "passed",
+    "evidence": "plans/pair-test-contract-trial/results/algebra-coprime-api/pair-control/outcome.json"
+  },
+  "/private/tmp/pair-test-contract-trial-20261108/algebra-coprime-api-pair-contract-replay/.council/host-mCY1cs": {
+    "status": "passed",
+    "evidence": "plans/pair-test-contract-trial/results/algebra-coprime-api/pair-contract-replay/outcome.json"
+  },
+  "/private/tmp/pair-test-contract-trial-20261108/vector-pnorm-scale-pair-control/.council/host-D1Dlac": {
+    "status": "passed",
+    "evidence": "plans/pair-test-contract-trial/results/vector-pnorm-scale/pair-control/outcome.json"
+  },
+  "/private/tmp/pair-test-contract-trial-20261108/vector-pnorm-scale-pair-contract-replay/.council/host-h6AZEK": {
+    "status": "passed",
+    "evidence": "plans/pair-test-contract-trial/results/vector-pnorm-scale/pair-contract-replay/outcome.json"
+  }
+}

@@ -1,0 +1,10 @@
+PHPUnit 10.5.63 by Sebastian Bergmann and contributors.
+
+Runtime:       PHP 8.5.3
+Configuration: /private/tmp/pair-test-contract-trial-20261108/iterator-pad-left-pair-contract-replay/.council/host-b4UBKn-pair/scratch/A-pair-code-2-replay-4-final-93327/tests/phpunit.xml
+
+............                                                      12 / 12 (100%)
+
+Time: 00:00.008, Memory: 10.00 MB
+
+OK (12 tests, 222 assertions)

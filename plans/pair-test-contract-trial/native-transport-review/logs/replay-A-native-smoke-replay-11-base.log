@@ -1,0 +1,95 @@
+PHPUnit 10.5.63 by Sebastian Bergmann and contributors.
+
+Runtime:       PHP 8.5.3
+Configuration: /private/tmp/pair-review-native-20261108/repo/.council/native-transport/scratch/A-native-smoke-replay-11-base-77709/tests/phpunit.xml
+
+.....................................FFFF.FFFF..FFFFFFFF.......  63 / 145 ( 43%)
+............................................................... 126 / 145 ( 86%)
+...................                                             145 / 145 (100%)
+
+Time: 00:00.028, Memory: 10.00 MB
+
+There were 16 failures:
+
+1) MathPHP\Tests\LinearAlgebra\Vector\VectorNormsTest::testPNormExtremeMagnitudes with data set "huge p=2" ([-3.0E+200, 4.0E+200], 2, 4.9999999999999995E+200)
+Failed asserting that false is true.
+
+/private/tmp/pair-review-native-20261108/repo/.council/native-transport/scratch/A-native-smoke-replay-11-base-77709/tests/LinearAlgebra/Vector/VectorNormsTest.php:194
+
+2) MathPHP\Tests\LinearAlgebra\Vector\VectorNormsTest::testPNormExtremeMagnitudes with data set "huge p=4" ([-1.0E+200, 1.0E+200], 4, 1.189207115002721E+200)
+Failed asserting that false is true.
+
+/private/tmp/pair-review-native-20261108/repo/.council/native-transport/scratch/A-native-smoke-replay-11-base-77709/tests/LinearAlgebra/Vector/VectorNormsTest.php:194
+
+3) MathPHP\Tests\LinearAlgebra\Vector\VectorNormsTest::testPNormExtremeMagnitudes with data set "huge p=2.5" ([-1.0E+200, 1.0E+200], 2.5, 1.3195079107728941E+200)
+Failed asserting that false is true.
+
+/private/tmp/pair-review-native-20261108/repo/.council/native-transport/scratch/A-native-smoke-replay-11-base-77709/tests/LinearAlgebra/Vector/VectorNormsTest.php:194
+
+4) MathPHP\Tests\LinearAlgebra\Vector\VectorNormsTest::testPNormExtremeMagnitudes with data set "huge p=1000" ([-1.0E+200, 1.0E+200], 1000, 1.0006933874625807E+200)
+Failed asserting that false is true.
+
+/private/tmp/pair-review-native-20261108/repo/.council/native-transport/scratch/A-native-smoke-replay-11-base-77709/tests/LinearAlgebra/Vector/VectorNormsTest.php:194
+
+5) MathPHP\Tests\LinearAlgebra\Vector\VectorNormsTest::testPNormExtremeMagnitudes with data set "tiny p=2" ([-3.0E-200, 4.0E-200], 2, 5.0E-200)
+Failed asserting that 0.0 is greater than 0.0.
+
+/private/tmp/pair-review-native-20261108/repo/.council/native-transport/scratch/A-native-smoke-replay-11-base-77709/tests/LinearAlgebra/Vector/VectorNormsTest.php:195
+
+6) MathPHP\Tests\LinearAlgebra\Vector\VectorNormsTest::testPNormExtremeMagnitudes with data set "tiny p=4" ([-1.0E-200, 1.0E-200], 4, 1.189207115002721E-200)
+Failed asserting that 0.0 is greater than 0.0.
+
+/private/tmp/pair-review-native-20261108/repo/.council/native-transport/scratch/A-native-smoke-replay-11-base-77709/tests/LinearAlgebra/Vector/VectorNormsTest.php:195
+
+7) MathPHP\Tests\LinearAlgebra\Vector\VectorNormsTest::testPNormExtremeMagnitudes with data set "tiny p=2.5" ([-1.0E-200, 1.0E-200], 2.5, 1.3195079107728943E-200)
+Failed asserting that 0.0 is greater than 0.0.
+
+/private/tmp/pair-review-native-20261108/repo/.council/native-transport/scratch/A-native-smoke-replay-11-base-77709/tests/LinearAlgebra/Vector/VectorNormsTest.php:195
+
+8) MathPHP\Tests\LinearAlgebra\Vector\VectorNormsTest::testPNormExtremeMagnitudes with data set "tiny p=1000" ([-1.0E-200, 1.0E-200], 1000, 1.0006933874625808E-200)
+Failed asserting that 0.0 is greater than 0.0.
+
+/private/tmp/pair-review-native-20261108/repo/.council/native-transport/scratch/A-native-smoke-replay-11-base-77709/tests/LinearAlgebra/Vector/VectorNormsTest.php:195
+
+9) MathPHP\Tests\LinearAlgebra\Vector\VectorNormsTest::testPNormMixedScales with data set "huge first p=2" ([-1.0E+200, 3, -1.0E-200, 0], 2, 1.0E+200)
+Failed asserting that false is true.
+
+/private/tmp/pair-review-native-20261108/repo/.council/native-transport/scratch/A-native-smoke-replay-11-base-77709/tests/LinearAlgebra/Vector/VectorNormsTest.php:234
+
+10) MathPHP\Tests\LinearAlgebra\Vector\VectorNormsTest::testPNormMixedScales with data set "huge last p=2" ([0, -1.0E-200, 3, -1.0E+200], 2, 1.0E+200)
+Failed asserting that false is true.
+
+/private/tmp/pair-review-native-20261108/repo/.council/native-transport/scratch/A-native-smoke-replay-11-base-77709/tests/LinearAlgebra/Vector/VectorNormsTest.php:234
+
+11) MathPHP\Tests\LinearAlgebra\Vector\VectorNormsTest::testPNormMixedScales with data set "huge first p=4" ([-1.0E+200, 3, -1.0E-200, 0], 4, 1.0E+200)
+Failed asserting that false is true.
+
+/private/tmp/pair-review-native-20261108/repo/.council/native-transport/scratch/A-native-smoke-replay-11-base-77709/tests/LinearAlgebra/Vector/VectorNormsTest.php:234
+
+12) MathPHP\Tests\LinearAlgebra\Vector\VectorNormsTest::testPNormMixedScales with data set "huge last p=4" ([0, -1.0E-200, 3, -1.0E+200], 4, 1.0E+200)
+Failed asserting that false is true.
+
+/private/tmp/pair-review-native-20261108/repo/.council/native-transport/scratch/A-native-smoke-replay-11-base-77709/tests/LinearAlgebra/Vector/VectorNormsTest.php:234
+
+13) MathPHP\Tests\LinearAlgebra\Vector\VectorNormsTest::testPNormMixedScales with data set "huge first p=2.5" ([-1.0E+200, 3, -1.0E-200, 0], 2.5, 1.0E+200)
+Failed asserting that false is true.
+
+/private/tmp/pair-review-native-20261108/repo/.council/native-transport/scratch/A-native-smoke-replay-11-base-77709/tests/LinearAlgebra/Vector/VectorNormsTest.php:234
+
+14) MathPHP\Tests\LinearAlgebra\Vector\VectorNormsTest::testPNormMixedScales with data set "huge last p=2.5" ([0, -1.0E-200, 3, -1.0E+200], 2.5, 1.0E+200)
+Failed asserting that false is true.
+
+/private/tmp/pair-review-native-20261108/repo/.council/native-transport/scratch/A-native-smoke-replay-11-base-77709/tests/LinearAlgebra/Vector/VectorNormsTest.php:234
+
+15) MathPHP\Tests\LinearAlgebra\Vector\VectorNormsTest::testPNormMixedScales with data set "huge first p=1000" ([-1.0E+200, 3, -1.0E-200, 0], 1000, 1.0E+200)
+Failed asserting that false is true.
+
+/private/tmp/pair-review-native-20261108/repo/.council/native-transport/scratch/A-native-smoke-replay-11-base-77709/tests/LinearAlgebra/Vector/VectorNormsTest.php:234
+
+16) MathPHP\Tests\LinearAlgebra\Vector\VectorNormsTest::testPNormMixedScales with data set "huge last p=1000" ([0, -1.0E-200, 3, -1.0E+200], 1000, 1.0E+200)
+Failed asserting that false is true.
+
+/private/tmp/pair-review-native-20261108/repo/.council/native-transport/scratch/A-native-smoke-replay-11-base-77709/tests/LinearAlgebra/Vector/VectorNormsTest.php:234
+
+FAILURES!
+Tests: 145, Assertions: 168, Failures: 16.

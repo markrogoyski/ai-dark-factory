@@ -1,0 +1,358 @@
+diff --git a/docs/single-iteration.md b/docs/single-iteration.md
+index dcbdd02..d778bda 100644
+--- a/docs/single-iteration.md
++++ b/docs/single-iteration.md
+@@ -803,7 +803,9 @@ Pad an iterable on the left so its yielded length is at least `$length`.
+ 
+ * If the source is already `$length` or longer, all elements pass through unchanged (no truncation).
+ * Source keys are discarded; output keys are sequential 0-indexed.
+-* Throws `\InvalidArgumentException` if `$length` is negative.
++* Reads at most `max(1, $length)` source elements before the first output and buffers at most `$length` values, so it is suitable for long or infinite inputs.
++* While suspended at an output, the source is not advanced until the consumer advances.
++* Validation is lazy: a negative `$length` throws `\InvalidArgumentException` when iteration starts, before touching the source. Constructing the generator does not consume the source.
+ 
+ ```php
+ use IterTools\Single;
+diff --git a/src/Single.php b/src/Single.php
+index cd720e8..56eac10 100644
+--- a/src/Single.php
++++ b/src/Single.php
+@@ -1052,6 +1052,11 @@ final class Single
+      *
+      * If the source is already $length or longer, all elements pass through unchanged.
+      * Source keys are discarded; output keys are sequential 0-indexed.
++     * Reads at most max(1, $length) source elements before the first output and buffers
++     * at most $length values, making it suitable for long or infinite inputs. While
++     * suspended at an output, the source is not advanced until the consumer advances.
++     * Validation is lazy: negative lengths throw when iteration starts, before the
++     * source is touched. Constructing the generator does not consume the source.
+      *
+      * @param iterable<mixed> $data
+      * @param int             $length minimum final length (must be non-negative)
+@@ -1072,8 +1077,21 @@ final class Single
+         $count = 0;
+ 
+         foreach ($data as $datum) {
++            if ($count >= $length) {
++                yield $datum;
++                continue;
++            }
++
+             $buffer[] = $datum;
+             ++$count;
++
++            if ($count === $length) {
++                // Padding is ruled out; flush before advancing the source again.
++                foreach ($buffer as $buffered) {
++                    yield $buffered;
++                }
++                $buffer = [];
++            }
+         }
+ 
+         $padding = $length - $count;
+diff --git a/tests/Single/PadLeftTest.php b/tests/Single/PadLeftTest.php
+index c9357da..2fe7dc8 100644
+--- a/tests/Single/PadLeftTest.php
++++ b/tests/Single/PadLeftTest.php
+@@ -123,6 +123,9 @@ class PadLeftTest extends \PHPUnit\Framework\TestCase
+ 
+     public static function dataProviderForPadLeft(): array
+     {
++        $fill = new \stdClass();
++        $value = new \stdClass();
++
+         return [
+             // shorter source — pads
+             [[1, 2, 3], 5, 0, [0, 0, 1, 2, 3]],
+@@ -140,6 +143,151 @@ class PadLeftTest extends \PHPUnit\Framework\TestCase
+             [['a', 'b'], 4, 'x', ['x', 'x', 'a', 'b']],
+             // null fill
+             [[1], 3, null, [null, null, 1]],
++            // length one, with empty and longer sources
++            [[], 1, 'x', ['x']],
++            [[null, 2], 1, 'x', [null, 2]],
++            // non-scalar fills and original object identity
++            [[null], 3, ['x'], [['x'], ['x'], null]],
++            [[$value], 3, $fill, [$fill, $fill, $value]],
++            [[null, $value, false, ['x']], 2, $fill, [null, $value, false, ['x']]],
++        ];
++    }
++
++    /**
++     * @test         padLeft advances only on consumer demand after bounded lookahead
++     * @dataProvider dataProviderForStreaming
++     */
++    public function testBoundedLookahead(int $length, ?int $size): void
++    {
++        // Given
++        $pulled = 0;
++        $allowed = \max(1, $length);
++        $source = $this->guardedSource($pulled, $allowed, $size);
++        $result = Single::padLeft($source, $length, null);
++        $this->assertSame(0, $pulled);
++
++        // When
++        $result->rewind();
++        for ($index = 0; $index < 6; ++$index) {
++            if ($index > 0) {
++                $allowed = \max(\max(1, $length), $index + 1);
++                $result->next();
++            }
++
++            // Then repeated inspection never resumes the source
++            for ($inspection = 0; $inspection < 2; ++$inspection) {
++                $this->assertTrue($result->valid());
++                $this->assertSame($index, $result->key());
++                $this->assertSame($index + 1, $result->current());
++                $this->assertSame(\max(\max(1, $length), $index + 1), $pulled);
++            }
++        }
++    }
++
++    /**
++     * @test         padLeft does not resume its source after an early consumer stop
++     * @dataProvider dataProviderForStreaming
++     */
++    public function testEarlyTermination(int $length, ?int $size): void
++    {
++        // Given
++        $pulled = 0;
++        $allowed = \max(1, $length);
++        $source = $this->guardedSource($pulled, $allowed, $size);
++        $result = Single::padLeft($source, $length, null);
++
++        // When
++        foreach ($result as $key => $value) {
++            $this->assertSame(0, $key);
++            $this->assertSame(1, $value);
++            break;
++        }
++
++        // Then the source remains suspended even when the output is released
++        $this->assertSame($allowed, $pulled);
++        unset($result);
++        $this->assertSame($allowed, $pulled);
++        $this->assertSame($allowed, $source->current());
++    }
++
++    public static function dataProviderForStreaming(): array
++    {
++        return [
++            'infinite, length zero' => [0, null],
++            'infinite, length one' => [1, null],
++            'infinite, length three' => [3, null],
++            'long, length zero' => [0, 1_000_000],
++            'long, length one' => [1, 1_000_000],
++            'long, length three' => [3, 1_000_000],
++        ];
++    }
++
++    /**
++     * @return \Generator<string, int>
++     */
++    private function guardedSource(int &$pulled, int &$allowed, ?int $size): \Generator
++    {
++        for ($value = 1; $size === null || $value <= $size; ++$value) {
++            if ($pulled >= $allowed) {
++                throw new \LogicException('Source advanced without consumer demand');
++            }
++            ++$pulled;
++            yield 'key' . $value => $value;
++        }
++    }
++
++    /**
++     * @test padLeft validates negative lengths lazily before touching its source
++     */
++    public function testNegativeLengthIsLazy(): void
++    {
++        // Given
++        $pulled = [];
++        $source = GeneratorFixture::getRecordingGenerator([1, 2], $pulled);
++
++        // When construction succeeds without source consumption
++        $result = Single::padLeft($source, -1, null);
++        $this->assertSame([], $pulled);
++
++        // Then
++        $this->expectException(\InvalidArgumentException::class);
++        try {
++            $result->rewind();
++        } finally {
++            $this->assertSame([], $pulled);
++        }
++    }
++
++    /**
++     * @test         padLeft discards keys across padding, buffered values and the tail
++     * @dataProvider dataProviderForKeyedSource
++     * @param        array<mixed> $expected
++     */
++    public function testKeyedSource(int $length, array $expected): void
++    {
++        // Given
++        $data = ['a' => 10, 9 => 20, 'b' => 30, -1 => 40];
++        $sources = [
++            $data,
++            GeneratorFixture::getKeyValueGenerator($data),
++            new \ArrayIterator($data),
++            new IteratorAggregateFixture($data),
++        ];
++
++        // When / Then preserve actual output keys when collecting
++        foreach ($sources as $source) {
++            $this->assertSame($expected, \iterator_to_array(Single::padLeft($source, $length, null)));
++        }
++    }
++
++    public static function dataProviderForKeyedSource(): array
++    {
++        return [
++            [0, [10, 20, 30, 40]],
++            [1, [10, 20, 30, 40]],
++            [3, [10, 20, 30, 40]],
++            [4, [10, 20, 30, 40]],
++            [6, [null, null, 10, 20, 30, 40]],
+         ];
+     }
+ 
+diff --git a/tests/Stream/StreamPadLeftTest.php b/tests/Stream/StreamPadLeftTest.php
+new file mode 100644
+index 0000000..d570d11
+--- /dev/null
++++ b/tests/Stream/StreamPadLeftTest.php
+@@ -0,0 +1,133 @@
++<?php
++
++declare(strict_types=1);
++
++namespace IterTools\Tests\Stream;
++
++use IterTools\Stream;
++use IterTools\Tests\Fixture\GeneratorFixture;
++
++class StreamPadLeftTest extends \PHPUnit\Framework\TestCase
++{
++    /**
++     * @test padLeft is fluent and defers source consumption
++     */
++    public function testFluentDeferredDelegation(): void
++    {
++        // Given
++        $pulled = [];
++        $stream = Stream::of(GeneratorFixture::getRecordingGenerator([1, 2], $pulled));
++
++        // When
++        $result = $stream->padLeft(4, 'x');
++
++        // Then
++        $this->assertSame($stream, $result);
++        $this->assertSame([], $pulled);
++        $this->assertSame(['x', 'x', 1, 2], $result->toArray());
++        $this->assertSame([1, 2], $pulled);
++    }
++
++    /**
++     * @test         padLeft preserves values, fill identity and sequential keys
++     * @dataProvider dataProviderForFiniteSources
++     * @param        array<mixed> $data
++     * @param        array<mixed> $expected
++     */
++    public function testFiniteSources(array $data, int $length, mixed $fill, array $expected): void
++    {
++        // Given
++        $stream = Stream::of(GeneratorFixture::getKeyValueGenerator($data));
++
++        // When / Then collect without reindexing the actual keys
++        $this->assertSame($expected, $stream->padLeft($length, $fill)->toAssociativeArray());
++    }
++
++    public static function dataProviderForFiniteSources(): array
++    {
++        $fill = new \stdClass();
++        $value = new \stdClass();
++
++        return [
++            [[], 0, null, []],
++            [[], 3, null, [null, null, null]],
++            [['a' => 1], 3, ['x'], [['x'], ['x'], 1]],
++            [['a' => $value], 3, $fill, [$fill, $fill, $value]],
++            [['a' => null, 'b' => $value], 2, 'x', [null, $value]],
++            [['a' => null, 'b' => $value, 'c' => false, 'd' => ['x']], 2, $fill,
++                [null, $value, false, ['x']]],
++            [['a' => 1, 'b' => 2], 0, 'x', [1, 2]],
++        ];
++    }
++
++    /**
++     * @test padLeft rejects negative lengths on consumption before touching its source
++     */
++    public function testNegativeLengthIsLazy(): void
++    {
++        // Given
++        $pulled = [];
++        $stream = Stream::of(GeneratorFixture::getRecordingGenerator([1, 2], $pulled));
++
++        // When
++        $this->assertSame($stream, $stream->padLeft(-1, null));
++        $this->assertSame([], $pulled);
++
++        // Then
++        $this->expectException(\InvalidArgumentException::class);
++        try {
++            $stream->toArray();
++        } finally {
++            $this->assertSame([], $pulled);
++        }
++    }
++
++    /**
++     * @test         padLeft composes with partial consumption of unbounded or long sources
++     * @dataProvider dataProviderForPartialConsumption
++     */
++    public function testPartialConsumption(int $length, int $limit, ?int $size): void
++    {
++        // Given
++        $pulled = 0;
++        $allowed = $limit === 0 ? 0 : \max($length, $limit);
++        $source = (static function () use (&$pulled, $allowed, $size): \Generator {
++            for ($value = 1; $size === null || $value <= $size; ++$value) {
++                if ($pulled >= $allowed) {
++                    throw new \LogicException('Source advanced past the demanded prefix');
++                }
++                ++$pulled;
++                yield 'key' . $value => $value;
++            }
++        })();
++
++        // When
++        $stream = Stream::of($source)
++            ->map(fn (int $value): int => $value * 10)
++            ->padLeft($length, null)
++            ->limit($limit);
++        $this->assertSame(0, $pulled);
++        $result = $stream->toArray();
++
++        // Then
++        $expected = [];
++        for ($value = 1; $value <= $limit; ++$value) {
++            $expected[] = $value * 10;
++        }
++        $this->assertSame($expected, $result);
++        $this->assertSame($allowed, $pulled);
++    }
++
++    public static function dataProviderForPartialConsumption(): array
++    {
++        $cases = [];
++        foreach ([null, 1_000_000] as $size) {
++            foreach ([0, 1, 3] as $length) {
++                foreach ([0, 1, 2, 5] as $limit) {
++                    $cases[] = [$length, $limit, $size];
++                }
++            }
++        }
++        return $cases;
++    }
++}

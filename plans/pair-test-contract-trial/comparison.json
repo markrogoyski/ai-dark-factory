@@ -1,0 +1,682 @@
+{
+  "runs": [
+    {
+      "taskId": "iterator-pad-left",
+      "variant": "pair-control",
+      "startingCommit": "f8ae71b11e508bf61a6233508b391262a5890454",
+      "status": "done",
+      "readiness": {
+        "state": "ready",
+        "blocked": [],
+        "incomplete": []
+      },
+      "stopReason": "",
+      "result": "plans/pair-test-contract-trial/results/iterator-pad-left/pair-control/result.json",
+      "hostRunDir": "/private/tmp/pair-test-contract-trial-20261108/iterator-pad-left-pair-control/.council/host-gx20QP",
+      "designReviews": 1,
+      "codeReviews": 1,
+      "turns": 5,
+      "failedTurns": 0,
+      "elapsedMs": 486253,
+      "tokens": {
+        "records": 5,
+        "byModel": {
+          "gpt-6.1-sol": {
+            "input_tokens": 1147790,
+            "cached_input_tokens": 1009792,
+            "cache_write_input_tokens": 0,
+            "output_tokens": 16998,
+            "reasoning_output_tokens": 2717
+          },
+          "gpt-6-astra": {
+            "input_tokens": 232350,
+            "cached_input_tokens": 157440,
+            "cache_write_input_tokens": 0,
+            "output_tokens": 2948,
+            "reasoning_output_tokens": 299
+          }
+        }
+      },
+      "cost": null,
+      "findings": [],
+      "outcome": {
+        "status": "passed",
+        "exitCode": 0,
+        "evidence": "plans/pair-test-contract-trial/results/iterator-pad-left/pair-control/outcome.json",
+        "snapshotTree": "70c8241e0771486e78e8a4c94562b0d7505c12b0",
+        "checks": {
+          "bounded-first-0": {
+            "passed": true
+          },
+          "bounded-first-1": {
+            "passed": true
+          },
+          "bounded-first-3": {
+            "passed": true
+          },
+          "empty": {
+            "passed": true
+          },
+          "short": {
+            "passed": true
+          },
+          "long": {
+            "passed": true
+          },
+          "negative-lazy": {
+            "passed": true
+          },
+          "stream": {
+            "passed": true
+          }
+        }
+      },
+      "replay": {
+        "measurements": 0,
+        "elapsedSec": 0,
+        "records": 0,
+        "timeouts": 0,
+        "launchErrors": 0,
+        "nonzeroBaseCommands": 0,
+        "exclusions": []
+      }
+    },
+    {
+      "taskId": "iterator-pad-left",
+      "variant": "pair-contract-replay",
+      "startingCommit": "f8ae71b11e508bf61a6233508b391262a5890454",
+      "status": "done",
+      "readiness": {
+        "state": "ready",
+        "blocked": [],
+        "incomplete": []
+      },
+      "stopReason": "",
+      "result": "plans/pair-test-contract-trial/results/iterator-pad-left/pair-contract-replay/result.json",
+      "hostRunDir": "/private/tmp/pair-test-contract-trial-20261108/iterator-pad-left-pair-contract-replay/.council/host-b4UBKn",
+      "designReviews": 1,
+      "codeReviews": 1,
+      "turns": 5,
+      "failedTurns": 0,
+      "elapsedMs": 799450,
+      "tokens": {
+        "records": 5,
+        "byModel": {
+          "gpt-6.1-sol": {
+            "input_tokens": 1933114,
+            "cached_input_tokens": 1760768,
+            "cache_write_input_tokens": 0,
+            "output_tokens": 28895,
+            "reasoning_output_tokens": 5879
+          },
+          "gpt-6-astra": {
+            "input_tokens": 330243,
+            "cached_input_tokens": 234880,
+            "cache_write_input_tokens": 0,
+            "output_tokens": 4147,
+            "reasoning_output_tokens": 302
+          }
+        }
+      },
+      "cost": null,
+      "findings": [],
+      "outcome": {
+        "status": "passed",
+        "exitCode": 0,
+        "evidence": "plans/pair-test-contract-trial/results/iterator-pad-left/pair-contract-replay/outcome.json",
+        "snapshotTree": "de06fa15e9d1861d9f08c25e82d12b721f09ec08",
+        "checks": {
+          "bounded-first-0": {
+            "passed": true
+          },
+          "bounded-first-1": {
+            "passed": true
+          },
+          "bounded-first-3": {
+            "passed": true
+          },
+          "empty": {
+            "passed": true
+          },
+          "short": {
+            "passed": true
+          },
+          "long": {
+            "passed": true
+          },
+          "negative-lazy": {
+            "passed": true
+          },
+          "stream": {
+            "passed": true
+          }
+        }
+      },
+      "replay": {
+        "measurements": 1,
+        "elapsedSec": 16.8,
+        "records": 10,
+        "timeouts": 0,
+        "launchErrors": 0,
+        "nonzeroBaseCommands": 2,
+        "exclusions": [
+          {
+            "path": "vendor",
+            "reason": "author dependency changes are not overlaid; focused replay uses the original run repository dependency copy"
+          },
+          {
+            "path": "docs/single-iteration.md",
+            "reason": "outside accepted test roots"
+          },
+          {
+            "path": "docs/stream.md",
+            "reason": "outside accepted test roots"
+          },
+          {
+            "path": "src/Single.php",
+            "reason": "outside accepted test roots"
+          },
+          {
+            "path": "src/Stream.php",
+            "reason": "outside accepted test roots"
+          },
+          {
+            "path": "tests/Fixture/ArrayIteratorFixture.php",
+            "reason": "unchanged; use original base file without overlay"
+          },
+          {
+            "path": "tests/Fixture/CountingIteratorAggregateFixture.php",
+            "reason": "unchanged; use original base file without overlay"
+          },
+          {
+            "path": "tests/Fixture/DataProvider.php",
+            "reason": "unchanged; use original base file without overlay"
+          },
+          {
+            "path": "tests/Fixture/GeneratorFixture.php",
+            "reason": "unchanged; use original base file without overlay"
+          },
+          {
+            "path": "tests/Fixture/IteratorAggregateFixture.php",
+            "reason": "unchanged; use original base file without overlay"
+          }
+        ]
+      }
+    },
+    {
+      "taskId": "algebra-coprime-api",
+      "variant": "pair-control",
+      "startingCommit": "9626706183295d2f6b73cda26edc9bfb90e32f17",
+      "status": "done",
+      "readiness": {
+        "state": "ready",
+        "blocked": [],
+        "incomplete": []
+      },
+      "stopReason": "",
+      "result": "plans/pair-test-contract-trial/results/algebra-coprime-api/pair-control/result.json",
+      "hostRunDir": "/private/tmp/pair-test-contract-trial-20261108/algebra-coprime-api-pair-control/.council/host-LpLTZw",
+      "designReviews": 1,
+      "codeReviews": 1,
+      "turns": 5,
+      "failedTurns": 0,
+      "elapsedMs": 370869,
+      "tokens": {
+        "records": 5,
+        "byModel": {
+          "gpt-6.1-sol": {
+            "input_tokens": 886947,
+            "cached_input_tokens": 747520,
+            "cache_write_input_tokens": 0,
+            "output_tokens": 12333,
+            "reasoning_output_tokens": 1376
+          },
+          "gpt-6-astra": {
+            "input_tokens": 274844,
+            "cached_input_tokens": 193536,
+            "cache_write_input_tokens": 0,
+            "output_tokens": 2832,
+            "reasoning_output_tokens": 246
+          }
+        }
+      },
+      "cost": null,
+      "findings": [],
+      "outcome": {
+        "status": "passed",
+        "exitCode": 0,
+        "evidence": "plans/pair-test-contract-trial/results/algebra-coprime-api/pair-control/outcome.json",
+        "snapshotTree": "3e483f4e0004d45abaf6c161595e18fde417aeec",
+        "checks": {
+          "coprime-8-15": {
+            "passed": true
+          },
+          "coprime-8-12": {
+            "passed": true
+          },
+          "coprime--8-15": {
+            "passed": true
+          },
+          "coprime-0-0": {
+            "passed": true
+          },
+          "coprime-0-1": {
+            "passed": true
+          },
+          "coprime-0--1": {
+            "passed": true
+          },
+          "coprime-0-2": {
+            "passed": true
+          },
+          "coprime--9223372036854775808-0": {
+            "passed": true
+          },
+          "coprime--9223372036854775808--9223372036854775808": {
+            "passed": true
+          },
+          "coprime--9223372036854775808-1": {
+            "passed": true
+          },
+          "coprime--9223372036854775808--1": {
+            "passed": true
+          },
+          "coprime--9223372036854775808-2": {
+            "passed": true
+          },
+          "coprime--9223372036854775808-9223372036854775807": {
+            "passed": true
+          },
+          "preserved-gcd": {
+            "passed": true
+          }
+        }
+      },
+      "replay": {
+        "measurements": 0,
+        "elapsedSec": 0,
+        "records": 0,
+        "timeouts": 0,
+        "launchErrors": 0,
+        "nonzeroBaseCommands": 0,
+        "exclusions": []
+      }
+    },
+    {
+      "taskId": "algebra-coprime-api",
+      "variant": "pair-contract-replay",
+      "startingCommit": "9626706183295d2f6b73cda26edc9bfb90e32f17",
+      "status": "done",
+      "readiness": {
+        "state": "ready",
+        "blocked": [],
+        "incomplete": []
+      },
+      "stopReason": "",
+      "result": "plans/pair-test-contract-trial/results/algebra-coprime-api/pair-contract-replay/result.json",
+      "hostRunDir": "/private/tmp/pair-test-contract-trial-20261108/algebra-coprime-api-pair-contract-replay/.council/host-mCY1cs",
+      "designReviews": 1,
+      "codeReviews": 1,
+      "turns": 5,
+      "failedTurns": 0,
+      "elapsedMs": 635241,
+      "tokens": {
+        "records": 5,
+        "byModel": {
+          "gpt-6.1-sol": {
+            "input_tokens": 2040810,
+            "cached_input_tokens": 1863296,
+            "cache_write_input_tokens": 0,
+            "output_tokens": 21079,
+            "reasoning_output_tokens": 2945
+          },
+          "gpt-6-astra": {
+            "input_tokens": 378002,
+            "cached_input_tokens": 270720,
+            "cache_write_input_tokens": 0,
+            "output_tokens": 3970,
+            "reasoning_output_tokens": 257
+          }
+        }
+      },
+      "cost": null,
+      "findings": [],
+      "outcome": {
+        "status": "passed",
+        "exitCode": 0,
+        "evidence": "plans/pair-test-contract-trial/results/algebra-coprime-api/pair-contract-replay/outcome.json",
+        "snapshotTree": "71e90e812c875e9f037e88bf483632994395deea",
+        "checks": {
+          "coprime-8-15": {
+            "passed": true
+          },
+          "coprime-8-12": {
+            "passed": true
+          },
+          "coprime--8-15": {
+            "passed": true
+          },
+          "coprime-0-0": {
+            "passed": true
+          },
+          "coprime-0-1": {
+            "passed": true
+          },
+          "coprime-0--1": {
+            "passed": true
+          },
+          "coprime-0-2": {
+            "passed": true
+          },
+          "coprime--9223372036854775808-0": {
+            "passed": true
+          },
+          "coprime--9223372036854775808--9223372036854775808": {
+            "passed": true
+          },
+          "coprime--9223372036854775808-1": {
+            "passed": true
+          },
+          "coprime--9223372036854775808--1": {
+            "passed": true
+          },
+          "coprime--9223372036854775808-2": {
+            "passed": true
+          },
+          "coprime--9223372036854775808-9223372036854775807": {
+            "passed": true
+          },
+          "preserved-gcd": {
+            "passed": true
+          }
+        }
+      },
+      "replay": {
+        "measurements": 1,
+        "elapsedSec": 25.2,
+        "records": 14,
+        "timeouts": 0,
+        "launchErrors": 0,
+        "nonzeroBaseCommands": 4,
+        "exclusions": [
+          {
+            "path": "vendor",
+            "reason": "author dependency changes are not overlaid; focused replay uses the original run repository dependency copy"
+          },
+          {
+            "path": "README.md",
+            "reason": "outside accepted test roots"
+          },
+          {
+            "path": "src/Algebra.php",
+            "reason": "outside accepted test roots"
+          },
+          {
+            "path": "tests/Algebra/AlgebraAxiomsTest.php",
+            "reason": "unchanged; use original base file without overlay"
+          },
+          {
+            "path": "tests/Algebra/AlgebraTest.php",
+            "reason": "unchanged; use original base file without overlay"
+          },
+          {
+            "path": "tests/Algebra/PolynomialRootsAxiomsTest.php",
+            "reason": "unchanged; use original base file without overlay"
+          }
+        ]
+      }
+    },
+    {
+      "taskId": "vector-pnorm-scale",
+      "variant": "pair-control",
+      "startingCommit": "e5e2d2f4d2fdd81477c20a861022a097c3f435dc",
+      "status": "done",
+      "readiness": {
+        "state": "ready",
+        "blocked": [],
+        "incomplete": []
+      },
+      "stopReason": "",
+      "result": "plans/pair-test-contract-trial/results/vector-pnorm-scale/pair-control/result.json",
+      "hostRunDir": "/private/tmp/pair-test-contract-trial-20261108/vector-pnorm-scale-pair-control/.council/host-D1Dlac",
+      "designReviews": 1,
+      "codeReviews": 1,
+      "turns": 5,
+      "failedTurns": 0,
+      "elapsedMs": 427354,
+      "tokens": {
+        "records": 5,
+        "byModel": {
+          "gpt-6.1-sol": {
+            "input_tokens": 1047153,
+            "cached_input_tokens": 917120,
+            "cache_write_input_tokens": 0,
+            "output_tokens": 13962,
+            "reasoning_output_tokens": 2063
+          },
+          "gpt-6-astra": {
+            "input_tokens": 182784,
+            "cached_input_tokens": 119040,
+            "cache_write_input_tokens": 0,
+            "output_tokens": 3293,
+            "reasoning_output_tokens": 582
+          }
+        }
+      },
+      "cost": null,
+      "findings": [],
+      "outcome": {
+        "status": "passed",
+        "exitCode": 0,
+        "evidence": "plans/pair-test-contract-trial/results/vector-pnorm-scale/pair-control/outcome.json",
+        "snapshotTree": "98358478a45d6bbf1ea3a61076ad507875e29ecd",
+        "checks": {
+          "scale-1-1.0E+200": {
+            "passed": true
+          },
+          "scale-1-1.0E-200": {
+            "passed": true
+          },
+          "scale-1-1": {
+            "passed": true
+          },
+          "scale-2-1.0E+200": {
+            "passed": true
+          },
+          "scale-2-1.0E-200": {
+            "passed": true
+          },
+          "scale-2-1": {
+            "passed": true
+          },
+          "scale-3-1.0E+200": {
+            "passed": true
+          },
+          "scale-3-1.0E-200": {
+            "passed": true
+          },
+          "scale-3-1": {
+            "passed": true
+          },
+          "scale-20-1.0E+200": {
+            "passed": true
+          },
+          "scale-20-1.0E-200": {
+            "passed": true
+          },
+          "scale-20-1": {
+            "passed": true
+          },
+          "zero": {
+            "passed": true
+          },
+          "mixed": {
+            "passed": true
+          },
+          "infinity": {
+            "passed": true
+          },
+          "nan": {
+            "passed": true
+          }
+        }
+      },
+      "replay": {
+        "measurements": 0,
+        "elapsedSec": 0,
+        "records": 0,
+        "timeouts": 0,
+        "launchErrors": 0,
+        "nonzeroBaseCommands": 0,
+        "exclusions": []
+      }
+    },
+    {
+      "taskId": "vector-pnorm-scale",
+      "variant": "pair-contract-replay",
+      "startingCommit": "e5e2d2f4d2fdd81477c20a861022a097c3f435dc",
+      "status": "done",
+      "readiness": {
+        "state": "ready",
+        "blocked": [],
+        "incomplete": []
+      },
+      "stopReason": "",
+      "result": "plans/pair-test-contract-trial/results/vector-pnorm-scale/pair-contract-replay/result.json",
+      "hostRunDir": "/private/tmp/pair-test-contract-trial-20261108/vector-pnorm-scale-pair-contract-replay/.council/host-h6AZEK",
+      "designReviews": 1,
+      "codeReviews": 1,
+      "turns": 5,
+      "failedTurns": 0,
+      "elapsedMs": 731406,
+      "tokens": {
+        "records": 5,
+        "byModel": {
+          "gpt-6.1-sol": {
+            "input_tokens": 1350770,
+            "cached_input_tokens": 1203200,
+            "cache_write_input_tokens": 0,
+            "output_tokens": 25746,
+            "reasoning_output_tokens": 5593
+          },
+          "gpt-6-astra": {
+            "input_tokens": 310525,
+            "cached_input_tokens": 218112,
+            "cache_write_input_tokens": 0,
+            "output_tokens": 3779,
+            "reasoning_output_tokens": 376
+          }
+        }
+      },
+      "cost": null,
+      "findings": [],
+      "outcome": {
+        "status": "passed",
+        "exitCode": 0,
+        "evidence": "plans/pair-test-contract-trial/results/vector-pnorm-scale/pair-contract-replay/outcome.json",
+        "snapshotTree": "8f092ceef8c9ab811ddaf6b44eb26b4772a276fb",
+        "checks": {
+          "scale-1-1.0E+200": {
+            "passed": true
+          },
+          "scale-1-1.0E-200": {
+            "passed": true
+          },
+          "scale-1-1": {
+            "passed": true
+          },
+          "scale-2-1.0E+200": {
+            "passed": true
+          },
+          "scale-2-1.0E-200": {
+            "passed": true
+          },
+          "scale-2-1": {
+            "passed": true
+          },
+          "scale-3-1.0E+200": {
+            "passed": true
+          },
+          "scale-3-1.0E-200": {
+            "passed": true
+          },
+          "scale-3-1": {
+            "passed": true
+          },
+          "scale-20-1.0E+200": {
+            "passed": true
+          },
+          "scale-20-1.0E-200": {
+            "passed": true
+          },
+          "scale-20-1": {
+            "passed": true
+          },
+          "zero": {
+            "passed": true
+          },
+          "mixed": {
+            "passed": true
+          },
+          "infinity": {
+            "passed": true
+          },
+          "nan": {
+            "passed": true
+          }
+        }
+      },
+      "replay": {
+        "measurements": 1,
+        "elapsedSec": 42.7,
+        "records": 26,
+        "timeouts": 0,
+        "launchErrors": 0,
+        "nonzeroBaseCommands": 3,
+        "exclusions": [
+          {
+            "path": "vendor",
+            "reason": "author dependency changes are not overlaid; focused replay uses the original run repository dependency copy"
+          },
+          {
+            "path": "README.md",
+            "reason": "outside accepted test roots"
+          },
+          {
+            "path": "src/LinearAlgebra/Vector.php",
+            "reason": "outside accepted test roots"
+          },
+          {
+            "path": "tests/LinearAlgebra/Vector/VectorAngleTest.php",
+            "reason": "unchanged; use original base file without overlay"
+          },
+          {
+            "path": "tests/LinearAlgebra/Vector/VectorAxiomsTest.php",
+            "reason": "unchanged; use original base file without overlay"
+          },
+          {
+            "path": "tests/LinearAlgebra/Vector/VectorDistanceTest.php",
+            "reason": "unchanged; use original base file without overlay"
+          },
+          {
+            "path": "tests/LinearAlgebra/Vector/VectorInterfaceTest.php",
+            "reason": "unchanged; use original base file without overlay"
+          },
+          {
+            "path": "tests/LinearAlgebra/Vector/VectorOperationsTest.php",
+            "reason": "unchanged; use original base file without overlay"
+          },
+          {
+            "path": "tests/LinearAlgebra/Vector/VectorTest.php",
+            "reason": "unchanged; use original base file without overlay"
+          }
+        ]
+      }
+    }
+  ],
+  "preflightResults": [
+    "/Users/mark/Develop/ai/ai-dark-factory/plans/pair-test-contract-trial/results/iterator-pad-left/pair-control/result.json.sandbox-preflight",
+    "/Users/mark/Develop/ai/ai-dark-factory/plans/pair-test-contract-trial/results/algebra-coprime-api/pair-control/result.json.sandbox-preflight",
+    "/Users/mark/Develop/ai/ai-dark-factory/plans/pair-test-contract-trial/results/vector-pnorm-scale/pair-control/result.json.sandbox-preflight"
+  ]
+}

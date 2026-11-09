@@ -1,0 +1,43 @@
+{"at":"2026-11-08T22:34:50.200Z","type":"run.started","workflow":"pair","repo":"/private/tmp/pair-test-contract-trial-20261108/iterator-pad-left-pair-control","hostRunDir":"/private/tmp/pair-test-contract-trial-20261108/iterator-pad-left-pair-control/.council/host-gx20QP","resumed":false}
+{"at":"2026-11-08T22:34:50.205Z","type":"phase","title":"Setup"}
+{"at":"2026-11-08T22:34:50.258Z","type":"preflight","status":"ok","vendors":{"codex":{"ok":true,"exe":"codex","version":"codex-cli 0.167.0"}}}
+{"at":"2026-11-08T22:34:50.259Z","type":"turn.started","label":"setup","role":"setup","vendor":"codex","model":"gpt-6.1-sol","job":"host-1-setup","runDir":"/private/tmp/pair-test-contract-trial-20261108/iterator-pad-left-pair-control/.council/host-gx20QP"}
+{"at":"2026-11-08T22:35:26.686Z","type":"turn.running","label":"setup","job":"host-1-setup"}
+{"at":"2026-11-08T22:35:57.008Z","type":"turn.running","label":"setup","job":"host-1-setup"}
+{"at":"2026-11-08T22:36:27.349Z","type":"turn.running","label":"setup","job":"host-1-setup"}
+{"at":"2026-11-08T22:36:29.398Z","type":"turn.completed","label":"setup","job":"host-1-setup","status":"done"}
+{"at":"2026-11-08T22:36:29.434Z","type":"checkpoint.saved","operations":1,"path":"/private/tmp/pair-test-contract-trial-20261108/iterator-pad-left-pair-control/.council/host-gx20QP/checkpoint.json"}
+{"at":"2026-11-08T22:36:29.434Z","type":"log","message":"pair: Codex Sol authors; Codex Astra reviews; budget 8 reviews"}
+{"at":"2026-11-08T22:36:29.434Z","type":"phase","title":"Design"}
+{"at":"2026-11-08T22:36:29.436Z","type":"turn.started","label":"pair-design-1","role":"author","vendor":"codex","model":"gpt-6.1-sol","job":"pair-design-1","runDir":"/private/tmp/pair-test-contract-trial-20261108/iterator-pad-left-pair-control/.council/host-gx20QP-pair"}
+{"at":"2026-11-08T22:37:05.796Z","type":"turn.running","label":"pair-design-1","job":"pair-design-1"}
+{"at":"2026-11-08T22:37:36.128Z","type":"turn.running","label":"pair-design-1","job":"pair-design-1"}
+{"at":"2026-11-08T22:38:06.459Z","type":"turn.running","label":"pair-design-1","job":"pair-design-1"}
+{"at":"2026-11-08T22:38:36.777Z","type":"turn.completed","label":"pair-design-1","job":"pair-design-1","status":"done"}
+{"at":"2026-11-08T22:38:36.809Z","type":"checkpoint.saved","operations":2,"path":"/private/tmp/pair-test-contract-trial-20261108/iterator-pad-left-pair-control/.council/host-gx20QP/checkpoint.json"}
+{"at":"2026-11-08T22:38:36.809Z","type":"phase","title":"Review design"}
+{"at":"2026-11-08T22:38:36.810Z","type":"turn.started","label":"review pair-design-1","role":"reviewer","vendor":"codex","model":"gpt-6-astra","job":"review-pair-design-1","runDir":"/private/tmp/pair-test-contract-trial-20261108/iterator-pad-left-pair-control/.council/host-gx20QP-pair"}
+{"at":"2026-11-08T22:39:14.391Z","type":"turn.running","label":"review pair-design-1","job":"review-pair-design-1"}
+{"at":"2026-11-08T22:39:16.450Z","type":"turn.completed","label":"review pair-design-1","job":"review-pair-design-1","status":"done"}
+{"at":"2026-11-08T22:39:16.516Z","type":"checkpoint.saved","operations":3,"path":"/private/tmp/pair-test-contract-trial-20261108/iterator-pad-left-pair-control/.council/host-gx20QP/checkpoint.json"}
+{"at":"2026-11-08T22:39:16.516Z","type":"log","message":"pair: design review 1: ready; 0 open finding(s)"}
+{"at":"2026-11-08T22:39:16.516Z","type":"phase","title":"Implement"}
+{"at":"2026-11-08T22:39:16.517Z","type":"turn.started","label":"pair-code-2","role":"author","vendor":"codex","model":"gpt-6.1-sol","job":"pair-code-2","runDir":"/private/tmp/pair-test-contract-trial-20261108/iterator-pad-left-pair-control/.council/host-gx20QP-pair"}
+{"at":"2026-11-08T22:39:52.878Z","type":"turn.running","label":"pair-code-2","job":"pair-code-2"}
+{"at":"2026-11-08T22:40:23.230Z","type":"turn.running","label":"pair-code-2","job":"pair-code-2"}
+{"at":"2026-11-08T22:40:53.648Z","type":"turn.running","label":"pair-code-2","job":"pair-code-2"}
+{"at":"2026-11-08T22:41:24.015Z","type":"turn.running","label":"pair-code-2","job":"pair-code-2"}
+{"at":"2026-11-08T22:41:54.378Z","type":"turn.running","label":"pair-code-2","job":"pair-code-2"}
+{"at":"2026-11-08T22:42:10.623Z","type":"turn.completed","label":"pair-code-2","job":"pair-code-2","status":"done"}
+{"at":"2026-11-08T22:42:10.679Z","type":"checkpoint.saved","operations":4,"path":"/private/tmp/pair-test-contract-trial-20261108/iterator-pad-left-pair-control/.council/host-gx20QP/checkpoint.json"}
+{"at":"2026-11-08T22:42:10.679Z","type":"phase","title":"Verify"}
+{"at":"2026-11-08T22:42:10.679Z","type":"measurement.started","job":"measure-A-pair-code-2","runDir":"/private/tmp/pair-test-contract-trial-20261108/iterator-pad-left-pair-control/.council/host-gx20QP-pair"}
+{"at":"2026-11-08T22:42:14.794Z","type":"measurement.completed","job":"measure-A-pair-code-2","status":"done","passed":true}
+{"at":"2026-11-08T22:42:14.820Z","type":"checkpoint.saved","operations":5,"path":"/private/tmp/pair-test-contract-trial-20261108/iterator-pad-left-pair-control/.council/host-gx20QP/checkpoint.json"}
+{"at":"2026-11-08T22:42:14.820Z","type":"phase","title":"Review code"}
+{"at":"2026-11-08T22:42:14.821Z","type":"turn.started","label":"review pair-code-2","role":"reviewer","vendor":"codex","model":"gpt-6-astra","job":"review-pair-code-2","runDir":"/private/tmp/pair-test-contract-trial-20261108/iterator-pad-left-pair-control/.council/host-gx20QP-pair"}
+{"at":"2026-11-08T22:42:52.323Z","type":"turn.running","label":"review pair-code-2","job":"review-pair-code-2"}
+{"at":"2026-11-08T22:42:56.390Z","type":"turn.completed","label":"review pair-code-2","job":"review-pair-code-2","status":"done"}
+{"at":"2026-11-08T22:42:56.425Z","type":"checkpoint.saved","operations":6,"path":"/private/tmp/pair-test-contract-trial-20261108/iterator-pad-left-pair-control/.council/host-gx20QP/checkpoint.json"}
+{"at":"2026-11-08T22:42:56.425Z","type":"log","message":"pair: code review 2: ready; 0 open finding(s)"}
+{"at":"2026-11-08T22:42:56.431Z","type":"run.completed","status":"done","exitCode":0,"result":"/private/tmp/pair-test-contract-trial-20261108/iterator-pad-left-pair-control/.council/host-gx20QP/result.json"}

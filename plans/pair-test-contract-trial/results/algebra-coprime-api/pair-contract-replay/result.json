@@ -1,0 +1,1020 @@
+{
+  "status": "done",
+  "workflow": "pair",
+  "mode": "implement",
+  "task": "Add public static MathPHP\\Algebra::areCoprime(int $a, int $b): bool. Return whether the nonnegative mathematical gcd is one for all native signed integer inputs. Negative signs do not affect the result. Zero is coprime only to 1 or -1; (0,0) is false. PHP_INT_MIN must work without overflow, warnings, or exceptions, including paired with itself, zero, +/-1, 2, and PHP_INT_MAX. Keep existing gcd and extendedGcd behavior unchanged and document the API.",
+  "runDir": "/private/tmp/pair-test-contract-trial-20261108/algebra-coprime-api-pair-contract-replay/.council/host-mCY1cs-pair",
+  "room": "/private/tmp/pair-test-contract-trial-20261108/algebra-coprime-api-pair-contract-replay/.council/host-mCY1cs-pair/room",
+  "refs": [],
+  "stage": "code",
+  "stopReason": "",
+  "design": "Approach: Add public static MathPHP\\Algebra::areCoprime(int $a, int $b): bool beside gcd in src/Algebra.php. Run iterative Euclidean reduction directly on signed operands: while b is nonzero, return true if b is 1 or -1; otherwise compute r = a % b and advance (a,b) to (b,r). At termination return a === 1 || a === -1. Avoid absolute values, input negation, division, multiplication, floating-point conversion, and calls to gcd or extendedGcd.\n\nCorrectness: Euclidean reduction preserves the mathematical gcd magnitude, and remainder magnitude strictly decreases until termination. The terminal signed value has gcd magnitude, so comparison with both units gives the required boolean. Zero pairs naturally yield true only with a unit. PHP_INT_MIN stays representable throughout; minimum/minimum and minimum/zero terminate without constructing its positive magnitude. The unit shortcut also avoids evaluating PHP_INT_MIN % -1. A zero divisor is excluded. This reasoning applies across native integer widths.\n\nExisting-code basis: src/Algebra.php:31-54 already uses signed Euclidean remainders, but gcd throws when the terminal magnitude is unrepresentable. src/Algebra.php:64-69 and 100-125 explain signed processing and extendedGcd's unit-divisor shortcut. Add an independent predicate without modifying either existing method or extracting shared logic.\n\nAffected files: src/Algebra.php for the method and docblock; new tests/Algebra/AreCoprimeTest.php for all tests depending on the new API; README.md:112-123 for examples beside gcd. Both documentation locations will explain the nonnegative mathematical gcd-one meaning, sign/order independence, zero coprime only to +/-1, (0,0) false, and PHP_INT_MIN support. README examples will show ordinary true/false, signed, zero/unit, and minimum-integer results.\n\nTests follow .github/CONTRIBUTING.md and tests/Algebra/AlgebraTest.php:5-70: strict types, existing namespace, PHPUnit TestCase, DataProvider attributes, public static named providers, typed parameters, When/Then layout, and assertSame for exact booleans. Providers contain independent mathematical expectations and make no API calls during discovery. Ordinary cases exercise sign and order invariants. Zero and minimum-integer cases exercise both operand orders. Temporarily install an E_ALL error handler throwing ErrorException around API calls and restore it in finally, making warnings fail without changing PHPUnit configuration. Unexpected exceptions/errors also fail.\n\nVerification: C1-C4 use focused new tests and implementation review; C5 uses unchanged AlgebraTest.php and AlgebraAxiomsTest.php, run independently from the new tests and retained in the full gate; C6 uses documentation review; C7 uses the exact scoped gate plus scope/configuration inspection. Focused commands go into run-local command files and execute through dark-factory verify --command-file. Run the full gate through dark-factory verify with this run directory, author checkout, unique label, and --max-wait 5; poll sessions/jobs as instructed. Its command remains php -d memory_limit=2G vendor/bin/phpunit --configuration=tests/phpunit.xml tests/Algebra. Preserve verification.json, including TMPDIR. Do not change dependencies, existing tests, project defaults, or run make-all.\n\nAssumptions and risks: Inputs are native signed integers; no additional coercion policy or dependency is needed. Risks are accidentally normalizing PHP_INT_MIN, mishandling negative terminal units, allowing warnings to pass, or coupling preserved tests to the new API. Signed-only arithmetic, explicit boundary tests, the scoped error handler, separate test file, and independent preserved-file runs address these. No AGENTS.md was found in checked ancestors or the worktree. Repository files remain unchanged during design.",
+  "testContract": {
+    "testRoots": [
+      {
+        "path": "tests/Algebra",
+        "evidence": "tests/phpunit.xml:7-8 declares the Algebra suite with directory suffix=\"Test.php\">Algebra, relative to tests/phpunit.xml. Existing AlgebraTest.php and AlgebraAxiomsTest.php establish this layout."
+      }
+    ],
+    "checks": [
+      {
+        "id": "ordinary-sign-order",
+        "criteria": [
+          "C1",
+          "C4"
+        ],
+        "kind": "test",
+        "purpose": "changed",
+        "scenario": "testAreCoprimeSignAndOrderInvariance uses seeds (8,15,true), (8,12,false), (35,64,true), (7,7,false), (1,1,true), (1,12,true), (PHP_INT_MAX,PHP_INT_MAX-1,true), and (PHP_INT_MAX,PHP_INT_MAX,false). Exercise all four sign combinations and both operand orders under a scoped throwing E_ALL handler.",
+        "expected": "assertSame verifies each exact expected boolean. Signs and operand swaps preserve results. Warnings and unexpected exceptions fail.",
+        "boundaries": "Units, equal operands, composite coprime operands, shared factors, and consecutive integers near the maximum. Zero and PHP_INT_MIN have separate checks; implementation review covers the universal arithmetic claim.",
+        "file": "tests/Algebra/AreCoprimeTest.php",
+        "command": "php -d memory_limit=2G vendor/bin/phpunit --configuration=tests/phpunit.xml --filter testAreCoprimeSignAndOrderInvariance tests/Algebra/AreCoprimeTest.php",
+        "fixtures": [],
+        "inspection": "",
+        "reason": ""
+      },
+      {
+        "id": "zero-units",
+        "criteria": [
+          "C1",
+          "C2",
+          "C4"
+        ],
+        "kind": "test",
+        "purpose": "changed",
+        "scenario": "testAreCoprimeWithZero supplies partners 0, 1, -1, 2, -2, 8, -8, PHP_INT_MAX, -PHP_INT_MAX, and PHP_INT_MIN. Call (0,partner) and (partner,0) under a scoped throwing E_ALL handler.",
+        "expected": "Strict true only for partner 1 or -1; strict false otherwise, including (0,0). No warnings or exceptions.",
+        "boundaries": "Both operand orders, both unit signs, positive and negative nonunits, and native integer extrema.",
+        "file": "tests/Algebra/AreCoprimeTest.php",
+        "command": "php -d memory_limit=2G vendor/bin/phpunit --configuration=tests/phpunit.xml --filter testAreCoprimeWithZero tests/Algebra/AreCoprimeTest.php",
+        "fixtures": [],
+        "inspection": "",
+        "reason": ""
+      },
+      {
+        "id": "minimum-integer",
+        "criteria": [
+          "C1",
+          "C3",
+          "C4"
+        ],
+        "kind": "test",
+        "purpose": "changed",
+        "scenario": "testAreCoprimeWithMostNegativeInteger pairs PHP_INT_MIN with PHP_INT_MIN, 0, 2, -2, 6, -6 (false), and 1, -1, 3, 7, -7, PHP_INT_MAX, -PHP_INT_MAX, PHP_INT_MIN+1 (true). Assert both operand orders under a scoped throwing E_ALL handler.",
+        "expected": "Exact listed booleans without warnings, TypeError, ArithmeticError, or other exceptions/errors.",
+        "boundaries": "Unrepresentable gcd magnitudes, zero, signed units, even divisors, odd partners, both extremes, and reversed operands. Never negate PHP_INT_MIN in providers.",
+        "file": "tests/Algebra/AreCoprimeTest.php",
+        "command": "php -d memory_limit=2G vendor/bin/phpunit --configuration=tests/phpunit.xml --filter testAreCoprimeWithMostNegativeInteger tests/Algebra/AreCoprimeTest.php",
+        "fixtures": [],
+        "inspection": "",
+        "reason": ""
+      },
+      {
+        "id": "preserved-algebra",
+        "criteria": [
+          "C5"
+        ],
+        "kind": "test",
+        "purpose": "preserved",
+        "scenario": "Execute the complete unchanged AlgebraTest.php independently of new API tests, retaining signed-input, exact extendedGcd triple, and unrepresentable-gcd exception datasets.",
+        "expected": "All existing tests pass, including OutOfBoundsException for both gcd APIs on (PHP_INT_MIN,0), (0,PHP_INT_MIN), and (PHP_INT_MIN,PHP_INT_MIN).",
+        "boundaries": "Existing signed and extreme-value behavior; no new API references added to this file.",
+        "file": "tests/Algebra/AlgebraTest.php",
+        "command": "php -d memory_limit=2G vendor/bin/phpunit --configuration=tests/phpunit.xml tests/Algebra/AlgebraTest.php",
+        "fixtures": [],
+        "inspection": "",
+        "reason": ""
+      },
+      {
+        "id": "preserved-axioms",
+        "criteria": [
+          "C5"
+        ],
+        "kind": "test",
+        "purpose": "preserved",
+        "scenario": "Execute the complete unchanged AlgebraAxiomsTest.php independently of new API tests, retaining signed/large integer oracle providers and relationships among gcd, extendedGcd, lcm, and ArbitraryInteger.",
+        "expected": "All existing axioms and oracle comparisons pass unchanged.",
+        "boundaries": "Existing native extrema and arbitrary-integer cases remain as provided by the base project; no new API references added.",
+        "file": "tests/Algebra/AlgebraAxiomsTest.php",
+        "command": "php -d memory_limit=2G vendor/bin/phpunit --configuration=tests/phpunit.xml tests/Algebra/AlgebraAxiomsTest.php",
+        "fixtures": [],
+        "inspection": "",
+        "reason": ""
+      },
+      {
+        "id": "scoped-release-gate",
+        "criteria": [
+          "C4",
+          "C5",
+          "C7"
+        ],
+        "kind": "test",
+        "purpose": "changed",
+        "scenario": "Run the exact required directory gate through this run's dark-factory verify helper with unchanged verification.json and a unique label, retaining all existing Algebra files and the new file.",
+        "expected": "Recorded gate exit is zero and all tests pass; recorded cwd, command, overrides, and output match the scoped author-worktree invocation.",
+        "boundaries": "Entire tests/Algebra directory, including PolynomialRootsAxiomsTest.php. No make-all campaign or configuration workaround.",
+        "file": "tests/Algebra/AreCoprimeTest.php",
+        "command": "php -d memory_limit=2G vendor/bin/phpunit --configuration=tests/phpunit.xml tests/Algebra",
+        "fixtures": [],
+        "inspection": "",
+        "reason": ""
+      },
+      {
+        "id": "api-safety-review",
+        "criteria": [
+          "C1",
+          "C2",
+          "C3",
+          "C5"
+        ],
+        "kind": "inspection",
+        "purpose": "changed",
+        "scenario": "Inspect the new method and final src/Algebra.php diff against the stage base.",
+        "expected": "Exact public static typed signature; signed Euclidean invariant, nonzero remainder divisor, unit shortcut, and terminal +/-1 comparison. No overflow-producing normalization or gcd calls. Existing gcd and extendedGcd bodies/docblocks unchanged.",
+        "boundaries": "All native signed input pairs, including PHP_INT_MIN as dividend or divisor.",
+        "file": "",
+        "command": "",
+        "fixtures": [],
+        "inspection": "Review src/Algebra.php and its base-relative diff. Trace zero, +/-1, minimum/minimum, minimum/zero, minimum/2, and minimum/maximum in both orders; justify decreasing remainder magnitude.",
+        "reason": "Finite runtime tests cannot exhaust native signed input pairs or establish the arithmetic safety proof."
+      },
+      {
+        "id": "documentation-style",
+        "criteria": [
+          "C4",
+          "C6"
+        ],
+        "kind": "inspection",
+        "purpose": "changed",
+        "scenario": "Read the added docblock, README Algebra examples, and new regression file against adjacent repository conventions.",
+        "expected": "Documentation explains boolean mathematical gcd-one meaning, sign/order independence, zero/unit semantics, (0,0), and PHP_INT_MIN support. Tests use data providers, exact boolean assertions, documented expectations, and a throwing handler restored in finally; preserved tests remain separate.",
+        "boundaries": "New API documentation and focused tests; no generated documentation infrastructure required.",
+        "file": "",
+        "command": "",
+        "fixtures": [],
+        "inspection": "Inspect src/Algebra.php, README.md Algebra section, and tests/Algebra/AreCoprimeTest.php for the specified semantics and conventions. Verify providers do not call the new API during discovery.",
+        "reason": "Documentation clarity, style consistency, and test separation require review rather than brittle textual assertions."
+      },
+      {
+        "id": "scope-config-integrity",
+        "criteria": [
+          "C5",
+          "C7"
+        ],
+        "kind": "inspection",
+        "purpose": "preserved",
+        "scenario": "Compare final author-worktree changes against the stage base and verify run-owned verification.json remains byte-for-byte unchanged.",
+        "expected": "Only src/Algebra.php, README.md, and new tests/Algebra/AreCoprimeTest.php change. No dependency, lockfile, PHPUnit/default configuration, existing test, or verification setting changes. Gate evidence records the fixed TMPDIR override.",
+        "boundaries": "Author worktree and this run's verification configuration only; no other trial/history or reviewer/main checkout inspection.",
+        "file": "",
+        "command": "",
+        "fixtures": [],
+        "inspection": "Inspect git diff --stat, git diff, and git status --short, including the new file. Compare verification.json SHA-256 with the recorded design-stage value and inspect gate command/configuration evidence.",
+        "reason": "Change scope and configuration integrity are audit properties rather than behavioral unit tests."
+      }
+    ]
+  },
+  "replayMapping": [
+    {
+      "file": "tests/Algebra/AreCoprimeTest.php",
+      "command": "php -d memory_limit=2G vendor/bin/phpunit --configuration=tests/phpunit.xml --filter testAreCoprimeSignAndOrderInvariance tests/Algebra/AreCoprimeTest.php",
+      "checkIds": [
+        "ordinary-sign-order"
+      ],
+      "fixtures": []
+    },
+    {
+      "file": "tests/Algebra/AreCoprimeTest.php",
+      "command": "php -d memory_limit=2G vendor/bin/phpunit --configuration=tests/phpunit.xml --filter testAreCoprimeWithZero tests/Algebra/AreCoprimeTest.php",
+      "checkIds": [
+        "zero-units"
+      ],
+      "fixtures": []
+    },
+    {
+      "file": "tests/Algebra/AreCoprimeTest.php",
+      "command": "php -d memory_limit=2G vendor/bin/phpunit --configuration=tests/phpunit.xml --filter testAreCoprimeWithMostNegativeInteger tests/Algebra/AreCoprimeTest.php",
+      "checkIds": [
+        "minimum-integer"
+      ],
+      "fixtures": []
+    },
+    {
+      "file": "tests/Algebra/AreCoprimeTest.php",
+      "command": "php -d memory_limit=2G vendor/bin/phpunit --configuration=tests/phpunit.xml tests/Algebra/AreCoprimeTest.php",
+      "checkIds": [
+        "scoped-release-gate"
+      ],
+      "fixtures": []
+    },
+    {
+      "file": "tests/Algebra/AlgebraTest.php",
+      "command": "php -d memory_limit=2G vendor/bin/phpunit --configuration=tests/phpunit.xml tests/Algebra/AlgebraTest.php",
+      "checkIds": [
+        "preserved-algebra",
+        "scoped-release-gate"
+      ],
+      "fixtures": []
+    },
+    {
+      "file": "tests/Algebra/AlgebraAxiomsTest.php",
+      "command": "php -d memory_limit=2G vendor/bin/phpunit --configuration=tests/phpunit.xml tests/Algebra/AlgebraAxiomsTest.php",
+      "checkIds": [
+        "preserved-axioms",
+        "scoped-release-gate"
+      ],
+      "fixtures": []
+    },
+    {
+      "file": "tests/Algebra/PolynomialRootsAxiomsTest.php",
+      "command": "php -d memory_limit=2G vendor/bin/phpunit --configuration=tests/phpunit.xml tests/Algebra/PolynomialRootsAxiomsTest.php",
+      "checkIds": [
+        "scoped-release-gate"
+      ],
+      "fixtures": []
+    }
+  ],
+  "author": "Codex Sol",
+  "reviewer": "Codex Astra",
+  "reviews": [
+    {
+      "stage": "design",
+      "label": "pair-design-1",
+      "version": "design:11820-77c8c779:base",
+      "complete": true,
+      "summary": "The design satisfies all seven criteria at the design stage. Signed Euclidean reduction avoids constructing PHP_INT_MIN's positive magnitude, and the contract covers required boundaries, preserved behavior, documentation, and verification integrity. The base checkout is clean. No tests were run, as instructed.",
+      "requiresDesignRevision": false,
+      "challenges": [
+        {
+          "criterion": "C1",
+          "wrongImplementation": "Recognize only positive one as a unit, returning false for negative-unit results such as (-1,-1). The sign variants reject this result; implementation inspection also checks both unit comparisons and the exact public static signature.",
+          "rejectingCheckIds": [
+            "ordinary-sign-order",
+            "api-safety-review"
+          ]
+        },
+        {
+          "criterion": "C2",
+          "wrongImplementation": "Return false whenever either operand is zero, incorrectly rejecting (0,-1) and (1,0). The zero provider requires true for both signed units in both orders.",
+          "rejectingCheckIds": [
+            "zero-units"
+          ]
+        },
+        {
+          "criterion": "C3",
+          "wrongImplementation": "Implement the predicate as gcd(a,b) === 1, causing OutOfBoundsException for PHP_INT_MIN paired with zero or itself. The minimum-integer cases require false without exceptions, and inspection prohibits this delegation.",
+          "rejectingCheckIds": [
+            "minimum-integer",
+            "api-safety-review"
+          ]
+        },
+        {
+          "criterion": "C4",
+          "wrongImplementation": "Add tests with loose boolean assertions and no throwing error handler, allowing warning-producing calls to escape the promised failure policy. The test inspection explicitly requires assertSame, a throwing handler restored in finally, independent providers, and a separate new test file.",
+          "rejectingCheckIds": [
+            "documentation-style"
+          ]
+        },
+        {
+          "criterion": "C5",
+          "wrongImplementation": "Refactor gcd to return PHP_INT_MIN for an unrepresentable magnitude instead of throwing. Existing exception datasets reject this change, and the source and scope inspections require existing methods and tests to remain unchanged.",
+          "rejectingCheckIds": [
+            "preserved-algebra",
+            "api-safety-review",
+            "scope-config-integrity"
+          ]
+        },
+        {
+          "criterion": "C6",
+          "wrongImplementation": "Document only positive-input examples and incorrectly claim zero is never coprime, omitting PHP_INT_MIN support. Documentation inspection requires the mathematical meaning, signed-unit zero cases, (0,0), and minimum-integer support in both documentation locations.",
+          "rejectingCheckIds": [
+            "documentation-style"
+          ]
+        },
+        {
+          "criterion": "C7",
+          "wrongImplementation": "Report success from running only AreCoprimeTest.php, while changing verification settings or omitting preserved Algebra tests. The release check requires the exact directory command and recorded overrides; scope inspection rejects configuration, dependency, or existing-test changes.",
+          "rejectingCheckIds": [
+            "scoped-release-gate",
+            "scope-config-integrity"
+          ]
+        }
+      ],
+      "findings": [],
+      "resolutions": [],
+      "criteria": [
+        {
+          "criterion": "C1",
+          "status": "met",
+          "note": "The design specifies the exact signature and a terminating signed-remainder algorithm preserving gcd magnitude. src/Algebra.php:43-54 establishes the existing signed-remainder approach. Ordinary/sign/order tests and arithmetic inspection jointly address finite examples and the universal claim."
+        },
+        {
+          "criterion": "C2",
+          "status": "met",
+          "note": "The terminal comparison handles (a,0); reduction handles (0,b). The zero-units check explicitly includes zero, both units, signed nonunits, extrema, and both operand orders."
+        },
+        {
+          "criterion": "C3",
+          "status": "met",
+          "note": "The algorithm uses no magnitude normalization or arithmetic that constructs an out-of-range integer. Nonzero divisors and the unit shortcut protect remainder evaluation. The minimum-integer provider covers every required pair in both orders, with mathematically correct expectations."
+        },
+        {
+          "criterion": "C4",
+          "status": "met",
+          "note": "tests/phpunit.xml:7-8 confirms tests/Algebra as the test root with the Test.php suffix. Existing files confirm the namespace, DataProvider attributes, static providers, and When/Then style. The new AreCoprimeTest.php is separate from preserved tests and specifies strict booleans and scoped warning-to-exception handling."
+        },
+        {
+          "criterion": "C5",
+          "status": "met",
+          "note": "The design leaves gcd and extendedGcd unchanged. AlgebraTest.php:74-239 contains signed-input, exact boundary-triple, and unrepresentable-gcd exception checks. AlgebraAxiomsTest.php contains independent oracle and relationship checks. Both preserved files have independent planned commands and remain in the full gate."
+        },
+        {
+          "criterion": "C6",
+          "status": "met",
+          "note": "The planned docblock and README Algebra additions cover every required semantic point. README.md:112-123 confirms the proposed placement beside gcd and extendedGcd; documentation-style explicitly checks both locations."
+        },
+        {
+          "criterion": "C7",
+          "status": "met",
+          "note": "verify.sh contains the exact required command. verification.json supplies the fixed run-owned TMPDIR; its current SHA-256 is 0d940eb7a7855cf1e7ce23999fce9eae488a2c4b7f433f0492bf07bd0936fde3. The plan preserves these settings, limits changes to three files, and requires recorded author-worktree verification. Execution and integrated implementation remain implementation-stage obligations."
+        }
+      ],
+      "suggestions": []
+    },
+    {
+      "stage": "code",
+      "label": "pair-code-2",
+      "version": "code:71e90e812c875e9f037e88bf483632994395deea",
+      "complete": true,
+      "summary": "Reviewed the entire three-file diff, implementation, tests, documentation, and neutral verification evidence. All acceptance criteria are met; no actionable findings. No files changed or gates rerun.",
+      "requiresDesignRevision": false,
+      "challenges": [],
+      "findings": [],
+      "resolutions": [],
+      "criteria": [
+        {
+          "criterion": "C1",
+          "status": "met",
+          "note": "src/Algebra.php exposes the exact public static typed signature. Signed Euclidean remainders preserve gcd magnitude and strictly decrease divisor magnitude; unit and terminal comparisons correctly recognize both signs. Ordinary/sign/order replay passes 8 datasets and 64 assertions."
+        },
+        {
+          "criterion": "C2",
+          "status": "met",
+          "note": "Zero terminates with a strict comparison against ±1. The zero provider covers ten partners, including zero and both units, in both orders; replay passes 20 assertions."
+        },
+        {
+          "criterion": "C3",
+          "status": "met",
+          "note": "The implementation performs no normalization or overflowing arithmetic, excludes zero divisors, and short-circuits unit divisors. All required PHP_INT_MIN pairs and additional even/odd partners are tested in both orders; replay passes 14 datasets and 28 assertions."
+        },
+        {
+          "criterion": "C4",
+          "status": "met",
+          "note": "The separate regression file follows repository PHPUnit conventions and contains every contracted dataset. assertSame checks exact booleans; an E_ALL throwing handler surrounds both calls and is restored in finally. Final replay passes 32 tests and 112 assertions. Base errors occur at calls to the missing API, confirming intended missing behavior rather than infrastructure failure; base assertions did not execute."
+        },
+        {
+          "criterion": "C5",
+          "status": "met",
+          "note": "The full diff leaves existing methods, docblocks, and tests unchanged. Independent base/final replays pass AlgebraTest.php (347 tests, 694 assertions) and AlgebraAxiomsTest.php (361 tests, 565 assertions), retaining signed results and unrepresentable-gcd exceptions. PolynomialRootsAxiomsTest.php also passes unchanged on both."
+        },
+        {
+          "criterion": "C6",
+          "status": "met",
+          "note": "The method docblock and README Algebra section explain mathematical gcd-one meaning, sign/order independence, zero/unit behavior, (0,0), and PHP_INT_MIN support. README examples cover ordinary, signed, zero, and extreme inputs."
+        },
+        {
+          "criterion": "C7",
+          "status": "met",
+          "note": "The neutral exact-snapshot gate passes 1127 tests and 3558 assertions with the required command and TMPDIR override. Its log hash matches published evidence. verification.json SHA-256 matches the recorded design value, 0d940eb7a7855cf1e7ce23999fce9eae488a2c4b7f433f0492bf07bd0936fde3. Only the three approved files differ; dependencies and existing checks are unchanged. Replay exclusions correctly retain original dependencies and preserved tests while limiting test overlays to the accepted root. The author worktree remains untouched."
+        }
+      ],
+      "suggestions": []
+    }
+  ],
+  "findings": [],
+  "questions": [],
+  "notes": [],
+  "report": {
+    "markdown": "Pair: Codex Sol authors; Codex Astra reviews.\n\nReadiness: ready. Reviews: 2/8.\n\nVerification: passed on the reviewed snapshot.\n\nReplay: 14 file/command records; 6 overlay exclusions. Base outcomes require reviewer interpretation."
+  },
+  "final": {
+    "author": "A",
+    "model": "Codex Sol",
+    "summary": "Implemented areCoprime with PHP_INT_MIN-safe arithmetic, focused regression tests, and API documentation. Required gate passed: 1,127 tests, 3,558 assertions. Existing gcd behavior, dependencies, and verification settings remain unchanged.",
+    "worktree": "/private/tmp/pair-test-contract-trial-20261108/algebra-coprime-api-pair-contract-replay/.council/host-mCY1cs-pair/wt/A",
+    "post": "/private/tmp/pair-test-contract-trial-20261108/algebra-coprime-api-pair-contract-replay/.council/host-mCY1cs-pair/room/pair-code-2/A.md",
+    "snapshotRef": "refs/council/host-mCY1cs-pair/A-pair-code-2",
+    "snapshotTree": "71e90e812c875e9f037e88bf483632994395deea",
+    "diff": "/private/tmp/pair-test-contract-trial-20261108/algebra-coprime-api-pair-contract-replay/.council/host-mCY1cs-pair/room/pair-code-2/A.diff",
+    "suite": {
+      "exitCode": 0,
+      "timedOut": false,
+      "seconds": 0.4,
+      "tail": "PHPUnit 10.5.63 by Sebastian Bergmann and contributors.\n\nRuntime:       PHP 8.5.3\nConfiguration: /private/tmp/pair-test-contract-trial-20261108/algebra-coprime-api-pair-contract-replay/.council/host-mCY1cs-pair/scratch/A-pair-code-2-85754/tests/phpunit.xml\n\n.............................................................   61 / 1127 (  5%)\n.............................................................  122 / 1127 ( 10%)\n.............................................................  183 / 1127 ( 16%)\n.............................................................  244 / 1127 ( 21%)\n.............................................................  305 / 1127 ( 27%)\n.............................................................  366 / 1127 ( 32%)\n.............................................................  427 / 1127 ( 37%)\n.............................................................  488 / 1127 ( 43%)\n.............................................................  549 / 1127 ( 48%)\n.............................................................  610 / 1127 ( 54%)\n.............................................................  671 / 1127 ( 59%)\n.............................................................  732 / 1127 ( 64%)\n.............................................................  793 / 1127 ( 70%)\n.............................................................  854 / 1127 ( 75%)\n.............................................................  915 / 1127 ( 81%)\n.............................................................  976 / 1127 ( 86%)\n............................................................. 1037 / 1127 ( 92%)\n............................................................. 1098 / 1127 ( 97%)\n.............................                                 1127 / 1127 (100%)\n\nTime: 00:00.177, Memory: 16.00 MB\n\nOK (1127 tests, 3558 assertions)",
+      "log": "/private/tmp/pair-test-contract-trial-20261108/algebra-coprime-api-pair-contract-replay/.council/host-mCY1cs-pair/logs/suite-A-pair-code-2.log",
+      "ran": true,
+      "passed": true,
+      "cwd": "/private/tmp/pair-test-contract-trial-20261108/algebra-coprime-api-pair-contract-replay/.council/host-mCY1cs-pair/scratch/A-pair-code-2-85754",
+      "command": "php -d memory_limit=2G vendor/bin/phpunit --configuration=tests/phpunit.xml tests/Algebra",
+      "env": {
+        "TMPDIR": "/private/tmp/pair-test-contract-trial-20261108/algebra-coprime-api-pair-contract-replay/.council/host-mCY1cs-pair/tmp"
+      }
+    },
+    "replay": {
+      "base": "9626706183295d2f6b73cda26edc9bfb90e32f17",
+      "snapshot": "8f1fb7f2985d1fef07b3fe855148c20a807e9fab",
+      "snapshotTree": "71e90e812c875e9f037e88bf483632994395deea",
+      "testRoots": [
+        "tests/Algebra"
+      ],
+      "mapping": [
+        {
+          "file": "tests/Algebra/AreCoprimeTest.php",
+          "command": "php -d memory_limit=2G vendor/bin/phpunit --configuration=tests/phpunit.xml --filter testAreCoprimeSignAndOrderInvariance tests/Algebra/AreCoprimeTest.php",
+          "checkIds": [
+            "ordinary-sign-order"
+          ],
+          "fixtures": []
+        },
+        {
+          "file": "tests/Algebra/AreCoprimeTest.php",
+          "command": "php -d memory_limit=2G vendor/bin/phpunit --configuration=tests/phpunit.xml --filter testAreCoprimeWithZero tests/Algebra/AreCoprimeTest.php",
+          "checkIds": [
+            "zero-units"
+          ],
+          "fixtures": []
+        },
+        {
+          "file": "tests/Algebra/AreCoprimeTest.php",
+          "command": "php -d memory_limit=2G vendor/bin/phpunit --configuration=tests/phpunit.xml --filter testAreCoprimeWithMostNegativeInteger tests/Algebra/AreCoprimeTest.php",
+          "checkIds": [
+            "minimum-integer"
+          ],
+          "fixtures": []
+        },
+        {
+          "file": "tests/Algebra/AreCoprimeTest.php",
+          "command": "php -d memory_limit=2G vendor/bin/phpunit --configuration=tests/phpunit.xml tests/Algebra/AreCoprimeTest.php",
+          "checkIds": [
+            "scoped-release-gate"
+          ],
+          "fixtures": []
+        },
+        {
+          "file": "tests/Algebra/AlgebraTest.php",
+          "command": "php -d memory_limit=2G vendor/bin/phpunit --configuration=tests/phpunit.xml tests/Algebra/AlgebraTest.php",
+          "checkIds": [
+            "preserved-algebra",
+            "scoped-release-gate"
+          ],
+          "fixtures": []
+        },
+        {
+          "file": "tests/Algebra/AlgebraAxiomsTest.php",
+          "command": "php -d memory_limit=2G vendor/bin/phpunit --configuration=tests/phpunit.xml tests/Algebra/AlgebraAxiomsTest.php",
+          "checkIds": [
+            "preserved-axioms",
+            "scoped-release-gate"
+          ],
+          "fixtures": []
+        },
+        {
+          "file": "tests/Algebra/PolynomialRootsAxiomsTest.php",
+          "command": "php -d memory_limit=2G vendor/bin/phpunit --configuration=tests/phpunit.xml tests/Algebra/PolynomialRootsAxiomsTest.php",
+          "checkIds": [
+            "scoped-release-gate"
+          ],
+          "fixtures": []
+        }
+      ],
+      "changes": [
+        {
+          "status": "M",
+          "path": "README.md",
+          "previousPath": ""
+        },
+        {
+          "status": "M",
+          "path": "src/Algebra.php",
+          "previousPath": ""
+        },
+        {
+          "status": "A",
+          "path": "tests/Algebra/AreCoprimeTest.php",
+          "previousPath": ""
+        }
+      ],
+      "exclusions": [
+        {
+          "path": "vendor",
+          "reason": "author dependency changes are not overlaid; focused replay uses the original run repository dependency copy"
+        },
+        {
+          "path": "README.md",
+          "reason": "outside accepted test roots"
+        },
+        {
+          "path": "src/Algebra.php",
+          "reason": "outside accepted test roots"
+        },
+        {
+          "path": "tests/Algebra/AlgebraAxiomsTest.php",
+          "reason": "unchanged; use original base file without overlay"
+        },
+        {
+          "path": "tests/Algebra/AlgebraTest.php",
+          "reason": "unchanged; use original base file without overlay"
+        },
+        {
+          "path": "tests/Algebra/PolynomialRootsAxiomsTest.php",
+          "reason": "unchanged; use original base file without overlay"
+        }
+      ],
+      "records": [
+        {
+          "side": "base",
+          "revision": "9626706183295d2f6b73cda26edc9bfb90e32f17",
+          "tree": "0434f75ec7f1b58e49ab1198310464cde566f791",
+          "file": "tests/Algebra/AreCoprimeTest.php",
+          "command": "php -d memory_limit=2G vendor/bin/phpunit --configuration=tests/phpunit.xml --filter testAreCoprimeSignAndOrderInvariance tests/Algebra/AreCoprimeTest.php",
+          "checkIds": [
+            "ordinary-sign-order"
+          ],
+          "cwd": "/private/tmp/pair-test-contract-trial-20261108/algebra-coprime-api-pair-contract-replay/.council/host-mCY1cs-pair/scratch/A-pair-code-2-replay-0-base-85754",
+          "attempted": true,
+          "ran": true,
+          "passed": false,
+          "hasExitCode": true,
+          "exitCode": 2,
+          "signal": 0,
+          "timedOut": false,
+          "seconds": 0.2,
+          "log": "/private/tmp/pair-test-contract-trial-20261108/algebra-coprime-api-pair-contract-replay/.council/host-mCY1cs-pair/logs/replay-A-pair-code-2-replay-0-base.log",
+          "logSha256": "39e326b1b29fbba354c81fc9929cfb4a711f6b4f789591d0a63c3550bae04b09",
+          "tail": "/private/tmp/pair-test-contract-trial-20261108/algebra-coprime-api-pair-contract-replay/.council/host-mCY1cs-pair/scratch/A-pair-code-2-replay-0-base-85754/tests/Algebra/AreCoprimeTest.php:23\n\n3) MathPHP\\Tests\\Algebra\\AreCoprimeTest::testAreCoprimeSignAndOrderInvariance with data set \"distinct prime factors\" (35, 64, true)\nError: Call to undefined method MathPHP\\Algebra::areCoprime()\n\n/private/tmp/pair-test-contract-trial-20261108/algebra-coprime-api-pair-contract-replay/.council/host-mCY1cs-pair/scratch/A-pair-code-2-replay-0-base-85754/tests/Algebra/AreCoprimeTest.php:123\n/private/tmp/pair-test-contract-trial-20261108/algebra-coprime-api-pair-contract-replay/.council/host-mCY1cs-pair/scratch/A-pair-code-2-replay-0-base-85754/tests/Algebra/AreCoprimeTest.php:23\n\n4) MathPHP\\Tests\\Algebra\\AreCoprimeTest::testAreCoprimeSignAndOrderInvariance with data set \"equal nonunits\" (7, 7, false)\nError: Call to undefined method MathPHP\\Algebra::areCoprime()\n\n/private/tmp/pair-test-contract-trial-20261108/algebra-coprime-api-pair-contract-replay/.council/host-mCY1cs-pair/scratch/A-pair-code-2-replay-0-base-85754/tests/Algebra/AreCoprimeTest.php:123\n/private/tmp/pair-test-contract-trial-20261108/algebra-coprime-api-pair-contract-replay/.council/host-mCY1cs-pair/scratch/A-pair-code-2-replay-0-base-85754/tests/Algebra/AreCoprimeTest.php:23\n\n5) MathPHP\\Tests\\Algebra\\AreCoprimeTest::testAreCoprimeSignAndOrderInvariance with data set \"two units\" (1, 1, true)\nError: Call to undefined method MathPHP\\Algebra::areCoprime()\n\n/private/tmp/pair-test-contract-trial-20261108/algebra-coprime-api-pair-contract-replay/.council/host-mCY1cs-pair/scratch/A-pair-code-2-replay-0-base-85754/tests/Algebra/AreCoprimeTest.php:123\n/private/tmp/pair-test-contract-trial-20261108/algebra-coprime-api-pair-contract-replay/.council/host-mCY1cs-pair/scratch/A-pair-code-2-replay-0-base-85754/tests/Algebra/AreCoprimeTest.php:23\n\n6) MathPHP\\Tests\\Algebra\\AreCoprimeTest::testAreCoprimeSignAndOrderInvariance with data set \"unit and nonunit\" (1, 12, true)\nError: Call to undefined method MathPHP\\Algebra::areCoprime()\n\n/private/tmp/pair-test-contract-trial-20261108/algebra-coprime-api-pair-contract-replay/.council/host-mCY1cs-pair/scratch/A-pair-code-2-replay-0-base-85754/tests/Algebra/AreCoprimeTest.php:123\n/private/tmp/pair-test-contract-trial-20261108/algebra-coprime-api-pair-contract-replay/.council/host-mCY1cs-pair/scratch/A-pair-code-2-replay-0-base-85754/tests/Algebra/AreCoprimeTest.php:23\n\n7) MathPHP\\Tests\\Algebra\\AreCoprimeTest::testAreCoprimeSignAndOrderInvariance with data set \"consecutive integers near maximum\" (9223372036854775807, 9223372036854775806, true)\nError: Call to undefined method MathPHP\\Algebra::areCoprime()\n\n/private/tmp/pair-test-contract-trial-20261108/algebra-coprime-api-pair-contract-replay/.council/host-mCY1cs-pair/scratch/A-pair-code-2-replay-0-base-85754/tests/Algebra/AreCoprimeTest.php:123\n/private/tmp/pair-test-contract-trial-20261108/algebra-coprime-api-pair-contract-replay/.council/host-mCY1cs-pair/scratch/A-pair-code-2-replay-0-base-85754/tests/Algebra/AreCoprimeTest.php:23\n\n8) MathPHP\\Tests\\Algebra\\AreCoprimeTest::testAreCoprimeSignAndOrderInvariance with data set \"equal maximum integers\" (9223372036854775807, 9223372036854775807, false)\nError: Call to undefined method MathPHP\\Algebra::areCoprime()\n\n/private/tmp/pair-test-contract-trial-20261108/algebra-coprime-api-pair-contract-replay/.council/host-mCY1cs-pair/scratch/A-pair-code-2-replay-0-base-85754/tests/Algebra/AreCoprimeTest.php:123\n/private/tmp/pair-test-contract-trial-20261108/algebra-coprime-api-pair-contract-replay/.council/host-mCY1cs-pair/scratch/A-pair-code-2-replay-0-base-85754/tests/Algebra/AreCoprimeTest.php:23\n\nERRORS!\nTests: 8, Assertions: 0, Errors: 8.",
+          "launchError": "",
+          "mutated": []
+        },
+        {
+          "side": "final",
+          "revision": "8f1fb7f2985d1fef07b3fe855148c20a807e9fab",
+          "tree": "71e90e812c875e9f037e88bf483632994395deea",
+          "file": "tests/Algebra/AreCoprimeTest.php",
+          "command": "php -d memory_limit=2G vendor/bin/phpunit --configuration=tests/phpunit.xml --filter testAreCoprimeSignAndOrderInvariance tests/Algebra/AreCoprimeTest.php",
+          "checkIds": [
+            "ordinary-sign-order"
+          ],
+          "cwd": "/private/tmp/pair-test-contract-trial-20261108/algebra-coprime-api-pair-contract-replay/.council/host-mCY1cs-pair/scratch/A-pair-code-2-replay-0-final-85754",
+          "attempted": true,
+          "ran": true,
+          "passed": true,
+          "hasExitCode": true,
+          "exitCode": 0,
+          "signal": 0,
+          "timedOut": false,
+          "seconds": 0.2,
+          "log": "/private/tmp/pair-test-contract-trial-20261108/algebra-coprime-api-pair-contract-replay/.council/host-mCY1cs-pair/logs/replay-A-pair-code-2-replay-0-final.log",
+          "logSha256": "c78194c253c1b91009e223dd0f9d89664d9a1b0a26351245a4ceed969dede15d",
+          "tail": "PHPUnit 10.5.63 by Sebastian Bergmann and contributors.\n\nRuntime:       PHP 8.5.3\nConfiguration: /private/tmp/pair-test-contract-trial-20261108/algebra-coprime-api-pair-contract-replay/.council/host-mCY1cs-pair/scratch/A-pair-code-2-replay-0-final-85754/tests/phpunit.xml\n\n........                                                            8 / 8 (100%)\n\nTime: 00:00.006, Memory: 10.00 MB\n\nOK (8 tests, 64 assertions)",
+          "launchError": "",
+          "mutated": []
+        },
+        {
+          "side": "base",
+          "revision": "9626706183295d2f6b73cda26edc9bfb90e32f17",
+          "tree": "0434f75ec7f1b58e49ab1198310464cde566f791",
+          "file": "tests/Algebra/AreCoprimeTest.php",
+          "command": "php -d memory_limit=2G vendor/bin/phpunit --configuration=tests/phpunit.xml --filter testAreCoprimeWithZero tests/Algebra/AreCoprimeTest.php",
+          "checkIds": [
+            "zero-units"
+          ],
+          "cwd": "/private/tmp/pair-test-contract-trial-20261108/algebra-coprime-api-pair-contract-replay/.council/host-mCY1cs-pair/scratch/A-pair-code-2-replay-1-base-85754",
+          "attempted": true,
+          "ran": true,
+          "passed": false,
+          "hasExitCode": true,
+          "exitCode": 2,
+          "signal": 0,
+          "timedOut": false,
+          "seconds": 0.2,
+          "log": "/private/tmp/pair-test-contract-trial-20261108/algebra-coprime-api-pair-contract-replay/.council/host-mCY1cs-pair/logs/replay-A-pair-code-2-replay-1-base.log",
+          "logSha256": "31c482d5b2c75e4dd95d68ea2ec3e2ae619f9220885342ee34cc394c221a60dd",
+          "tail": "/private/tmp/pair-test-contract-trial-20261108/algebra-coprime-api-pair-contract-replay/.council/host-mCY1cs-pair/scratch/A-pair-code-2-replay-1-base-85754/tests/Algebra/AreCoprimeTest.php:54\n\n5) MathPHP\\Tests\\Algebra\\AreCoprimeTest::testAreCoprimeWithZero with data set \"negative two\" (-2, false)\nError: Call to undefined method MathPHP\\Algebra::areCoprime()\n\n/private/tmp/pair-test-contract-trial-20261108/algebra-coprime-api-pair-contract-replay/.council/host-mCY1cs-pair/scratch/A-pair-code-2-replay-1-base-85754/tests/Algebra/AreCoprimeTest.php:123\n/private/tmp/pair-test-contract-trial-20261108/algebra-coprime-api-pair-contract-replay/.council/host-mCY1cs-pair/scratch/A-pair-code-2-replay-1-base-85754/tests/Algebra/AreCoprimeTest.php:54\n\n6) MathPHP\\Tests\\Algebra\\AreCoprimeTest::testAreCoprimeWithZero with data set \"eight\" (8, false)\nError: Call to undefined method MathPHP\\Algebra::areCoprime()\n\n/private/tmp/pair-test-contract-trial-20261108/algebra-coprime-api-pair-contract-replay/.council/host-mCY1cs-pair/scratch/A-pair-code-2-replay-1-base-85754/tests/Algebra/AreCoprimeTest.php:123\n/private/tmp/pair-test-contract-trial-20261108/algebra-coprime-api-pair-contract-replay/.council/host-mCY1cs-pair/scratch/A-pair-code-2-replay-1-base-85754/tests/Algebra/AreCoprimeTest.php:54\n\n7) MathPHP\\Tests\\Algebra\\AreCoprimeTest::testAreCoprimeWithZero with data set \"negative eight\" (-8, false)\nError: Call to undefined method MathPHP\\Algebra::areCoprime()\n\n/private/tmp/pair-test-contract-trial-20261108/algebra-coprime-api-pair-contract-replay/.council/host-mCY1cs-pair/scratch/A-pair-code-2-replay-1-base-85754/tests/Algebra/AreCoprimeTest.php:123\n/private/tmp/pair-test-contract-trial-20261108/algebra-coprime-api-pair-contract-replay/.council/host-mCY1cs-pair/scratch/A-pair-code-2-replay-1-base-85754/tests/Algebra/AreCoprimeTest.php:54\n\n8) MathPHP\\Tests\\Algebra\\AreCoprimeTest::testAreCoprimeWithZero with data set \"maximum integer\" (9223372036854775807, false)\nError: Call to undefined method MathPHP\\Algebra::areCoprime()\n\n/private/tmp/pair-test-contract-trial-20261108/algebra-coprime-api-pair-contract-replay/.council/host-mCY1cs-pair/scratch/A-pair-code-2-replay-1-base-85754/tests/Algebra/AreCoprimeTest.php:123\n/private/tmp/pair-test-contract-trial-20261108/algebra-coprime-api-pair-contract-replay/.council/host-mCY1cs-pair/scratch/A-pair-code-2-replay-1-base-85754/tests/Algebra/AreCoprimeTest.php:54\n\n9) MathPHP\\Tests\\Algebra\\AreCoprimeTest::testAreCoprimeWithZero with data set \"negative maximum integer\" (-9223372036854775807, false)\nError: Call to undefined method MathPHP\\Algebra::areCoprime()\n\n/private/tmp/pair-test-contract-trial-20261108/algebra-coprime-api-pair-contract-replay/.council/host-mCY1cs-pair/scratch/A-pair-code-2-replay-1-base-85754/tests/Algebra/AreCoprimeTest.php:123\n/private/tmp/pair-test-contract-trial-20261108/algebra-coprime-api-pair-contract-replay/.council/host-mCY1cs-pair/scratch/A-pair-code-2-replay-1-base-85754/tests/Algebra/AreCoprimeTest.php:54\n\n10) MathPHP\\Tests\\Algebra\\AreCoprimeTest::testAreCoprimeWithZero with data set \"minimum integer\" (-9223372036854775807-1, false)\nError: Call to undefined method MathPHP\\Algebra::areCoprime()\n\n/private/tmp/pair-test-contract-trial-20261108/algebra-coprime-api-pair-contract-replay/.council/host-mCY1cs-pair/scratch/A-pair-code-2-replay-1-base-85754/tests/Algebra/AreCoprimeTest.php:123\n/private/tmp/pair-test-contract-trial-20261108/algebra-coprime-api-pair-contract-replay/.council/host-mCY1cs-pair/scratch/A-pair-code-2-replay-1-base-85754/tests/Algebra/AreCoprimeTest.php:54\n\nERRORS!\nTests: 10, Assertions: 0, Errors: 10.",
+          "launchError": "",
+          "mutated": []
+        },
+        {
+          "side": "final",
+          "revision": "8f1fb7f2985d1fef07b3fe855148c20a807e9fab",
+          "tree": "71e90e812c875e9f037e88bf483632994395deea",
+          "file": "tests/Algebra/AreCoprimeTest.php",
+          "command": "php -d memory_limit=2G vendor/bin/phpunit --configuration=tests/phpunit.xml --filter testAreCoprimeWithZero tests/Algebra/AreCoprimeTest.php",
+          "checkIds": [
+            "zero-units"
+          ],
+          "cwd": "/private/tmp/pair-test-contract-trial-20261108/algebra-coprime-api-pair-contract-replay/.council/host-mCY1cs-pair/scratch/A-pair-code-2-replay-1-final-85754",
+          "attempted": true,
+          "ran": true,
+          "passed": true,
+          "hasExitCode": true,
+          "exitCode": 0,
+          "signal": 0,
+          "timedOut": false,
+          "seconds": 0.2,
+          "log": "/private/tmp/pair-test-contract-trial-20261108/algebra-coprime-api-pair-contract-replay/.council/host-mCY1cs-pair/logs/replay-A-pair-code-2-replay-1-final.log",
+          "logSha256": "a550542aa35f48e0a6339bda2c67836751d391e604936f00b173d48c1a1595b4",
+          "tail": "PHPUnit 10.5.63 by Sebastian Bergmann and contributors.\n\nRuntime:       PHP 8.5.3\nConfiguration: /private/tmp/pair-test-contract-trial-20261108/algebra-coprime-api-pair-contract-replay/.council/host-mCY1cs-pair/scratch/A-pair-code-2-replay-1-final-85754/tests/phpunit.xml\n\n..........                                                        10 / 10 (100%)\n\nTime: 00:00.006, Memory: 10.00 MB\n\nOK (10 tests, 20 assertions)",
+          "launchError": "",
+          "mutated": []
+        },
+        {
+          "side": "base",
+          "revision": "9626706183295d2f6b73cda26edc9bfb90e32f17",
+          "tree": "0434f75ec7f1b58e49ab1198310464cde566f791",
+          "file": "tests/Algebra/AreCoprimeTest.php",
+          "command": "php -d memory_limit=2G vendor/bin/phpunit --configuration=tests/phpunit.xml --filter testAreCoprimeWithMostNegativeInteger tests/Algebra/AreCoprimeTest.php",
+          "checkIds": [
+            "minimum-integer"
+          ],
+          "cwd": "/private/tmp/pair-test-contract-trial-20261108/algebra-coprime-api-pair-contract-replay/.council/host-mCY1cs-pair/scratch/A-pair-code-2-replay-2-base-85754",
+          "attempted": true,
+          "ran": true,
+          "passed": false,
+          "hasExitCode": true,
+          "exitCode": 2,
+          "signal": 0,
+          "timedOut": false,
+          "seconds": 0.2,
+          "log": "/private/tmp/pair-test-contract-trial-20261108/algebra-coprime-api-pair-contract-replay/.council/host-mCY1cs-pair/logs/replay-A-pair-code-2-replay-2-base.log",
+          "logSha256": "438dfb791d40fcafabc5d0840d14de4c07eb13d82a2cc785e21be9c33774927e",
+          "tail": "/private/tmp/pair-test-contract-trial-20261108/algebra-coprime-api-pair-contract-replay/.council/host-mCY1cs-pair/scratch/A-pair-code-2-replay-2-base-85754/tests/Algebra/AreCoprimeTest.php:85\n\n9) MathPHP\\Tests\\Algebra\\AreCoprimeTest::testAreCoprimeWithMostNegativeInteger with data set \"three\" (3, true)\nError: Call to undefined method MathPHP\\Algebra::areCoprime()\n\n/private/tmp/pair-test-contract-trial-20261108/algebra-coprime-api-pair-contract-replay/.council/host-mCY1cs-pair/scratch/A-pair-code-2-replay-2-base-85754/tests/Algebra/AreCoprimeTest.php:123\n/private/tmp/pair-test-contract-trial-20261108/algebra-coprime-api-pair-contract-replay/.council/host-mCY1cs-pair/scratch/A-pair-code-2-replay-2-base-85754/tests/Algebra/AreCoprimeTest.php:85\n\n10) MathPHP\\Tests\\Algebra\\AreCoprimeTest::testAreCoprimeWithMostNegativeInteger with data set \"seven\" (7, true)\nError: Call to undefined method MathPHP\\Algebra::areCoprime()\n\n/private/tmp/pair-test-contract-trial-20261108/algebra-coprime-api-pair-contract-replay/.council/host-mCY1cs-pair/scratch/A-pair-code-2-replay-2-base-85754/tests/Algebra/AreCoprimeTest.php:123\n/private/tmp/pair-test-contract-trial-20261108/algebra-coprime-api-pair-contract-replay/.council/host-mCY1cs-pair/scratch/A-pair-code-2-replay-2-base-85754/tests/Algebra/AreCoprimeTest.php:85\n\n11) MathPHP\\Tests\\Algebra\\AreCoprimeTest::testAreCoprimeWithMostNegativeInteger with data set \"negative seven\" (-7, true)\nError: Call to undefined method MathPHP\\Algebra::areCoprime()\n\n/private/tmp/pair-test-contract-trial-20261108/algebra-coprime-api-pair-contract-replay/.council/host-mCY1cs-pair/scratch/A-pair-code-2-replay-2-base-85754/tests/Algebra/AreCoprimeTest.php:123\n/private/tmp/pair-test-contract-trial-20261108/algebra-coprime-api-pair-contract-replay/.council/host-mCY1cs-pair/scratch/A-pair-code-2-replay-2-base-85754/tests/Algebra/AreCoprimeTest.php:85\n\n12) MathPHP\\Tests\\Algebra\\AreCoprimeTest::testAreCoprimeWithMostNegativeInteger with data set \"maximum integer\" (9223372036854775807, true)\nError: Call to undefined method MathPHP\\Algebra::areCoprime()\n\n/private/tmp/pair-test-contract-trial-20261108/algebra-coprime-api-pair-contract-replay/.council/host-mCY1cs-pair/scratch/A-pair-code-2-replay-2-base-85754/tests/Algebra/AreCoprimeTest.php:123\n/private/tmp/pair-test-contract-trial-20261108/algebra-coprime-api-pair-contract-replay/.council/host-mCY1cs-pair/scratch/A-pair-code-2-replay-2-base-85754/tests/Algebra/AreCoprimeTest.php:85\n\n13) MathPHP\\Tests\\Algebra\\AreCoprimeTest::testAreCoprimeWithMostNegativeInteger with data set \"negative maximum integer\" (-9223372036854775807, true)\nError: Call to undefined method MathPHP\\Algebra::areCoprime()\n\n/private/tmp/pair-test-contract-trial-20261108/algebra-coprime-api-pair-contract-replay/.council/host-mCY1cs-pair/scratch/A-pair-code-2-replay-2-base-85754/tests/Algebra/AreCoprimeTest.php:123\n/private/tmp/pair-test-contract-trial-20261108/algebra-coprime-api-pair-contract-replay/.council/host-mCY1cs-pair/scratch/A-pair-code-2-replay-2-base-85754/tests/Algebra/AreCoprimeTest.php:85\n\n14) MathPHP\\Tests\\Algebra\\AreCoprimeTest::testAreCoprimeWithMostNegativeInteger with data set \"minimum plus one\" (-9223372036854775807, true)\nError: Call to undefined method MathPHP\\Algebra::areCoprime()\n\n/private/tmp/pair-test-contract-trial-20261108/algebra-coprime-api-pair-contract-replay/.council/host-mCY1cs-pair/scratch/A-pair-code-2-replay-2-base-85754/tests/Algebra/AreCoprimeTest.php:123\n/private/tmp/pair-test-contract-trial-20261108/algebra-coprime-api-pair-contract-replay/.council/host-mCY1cs-pair/scratch/A-pair-code-2-replay-2-base-85754/tests/Algebra/AreCoprimeTest.php:85\n\nERRORS!\nTests: 14, Assertions: 0, Errors: 14.",
+          "launchError": "",
+          "mutated": []
+        },
+        {
+          "side": "final",
+          "revision": "8f1fb7f2985d1fef07b3fe855148c20a807e9fab",
+          "tree": "71e90e812c875e9f037e88bf483632994395deea",
+          "file": "tests/Algebra/AreCoprimeTest.php",
+          "command": "php -d memory_limit=2G vendor/bin/phpunit --configuration=tests/phpunit.xml --filter testAreCoprimeWithMostNegativeInteger tests/Algebra/AreCoprimeTest.php",
+          "checkIds": [
+            "minimum-integer"
+          ],
+          "cwd": "/private/tmp/pair-test-contract-trial-20261108/algebra-coprime-api-pair-contract-replay/.council/host-mCY1cs-pair/scratch/A-pair-code-2-replay-2-final-85754",
+          "attempted": true,
+          "ran": true,
+          "passed": true,
+          "hasExitCode": true,
+          "exitCode": 0,
+          "signal": 0,
+          "timedOut": false,
+          "seconds": 0.2,
+          "log": "/private/tmp/pair-test-contract-trial-20261108/algebra-coprime-api-pair-contract-replay/.council/host-mCY1cs-pair/logs/replay-A-pair-code-2-replay-2-final.log",
+          "logSha256": "8073056ac4ade6ad19068e12982ef33ac72fadb33545d61520e6cda27c8f1274",
+          "tail": "PHPUnit 10.5.63 by Sebastian Bergmann and contributors.\n\nRuntime:       PHP 8.5.3\nConfiguration: /private/tmp/pair-test-contract-trial-20261108/algebra-coprime-api-pair-contract-replay/.council/host-mCY1cs-pair/scratch/A-pair-code-2-replay-2-final-85754/tests/phpunit.xml\n\n..............                                                    14 / 14 (100%)\n\nTime: 00:00.006, Memory: 10.00 MB\n\nOK (14 tests, 28 assertions)",
+          "launchError": "",
+          "mutated": []
+        },
+        {
+          "side": "base",
+          "revision": "9626706183295d2f6b73cda26edc9bfb90e32f17",
+          "tree": "0434f75ec7f1b58e49ab1198310464cde566f791",
+          "file": "tests/Algebra/AreCoprimeTest.php",
+          "command": "php -d memory_limit=2G vendor/bin/phpunit --configuration=tests/phpunit.xml tests/Algebra/AreCoprimeTest.php",
+          "checkIds": [
+            "scoped-release-gate"
+          ],
+          "cwd": "/private/tmp/pair-test-contract-trial-20261108/algebra-coprime-api-pair-contract-replay/.council/host-mCY1cs-pair/scratch/A-pair-code-2-replay-3-base-85754",
+          "attempted": true,
+          "ran": true,
+          "passed": false,
+          "hasExitCode": true,
+          "exitCode": 2,
+          "signal": 0,
+          "timedOut": false,
+          "seconds": 0.2,
+          "log": "/private/tmp/pair-test-contract-trial-20261108/algebra-coprime-api-pair-contract-replay/.council/host-mCY1cs-pair/logs/replay-A-pair-code-2-replay-3-base.log",
+          "logSha256": "ca2384fec5f7d67df5cc42cdc01d523a9be01c81b9e8b94c49d7188d22065f63",
+          "tail": "/private/tmp/pair-test-contract-trial-20261108/algebra-coprime-api-pair-contract-replay/.council/host-mCY1cs-pair/scratch/A-pair-code-2-replay-3-base-85754/tests/Algebra/AreCoprimeTest.php:85\n\n27) MathPHP\\Tests\\Algebra\\AreCoprimeTest::testAreCoprimeWithMostNegativeInteger with data set \"three\" (3, true)\nError: Call to undefined method MathPHP\\Algebra::areCoprime()\n\n/private/tmp/pair-test-contract-trial-20261108/algebra-coprime-api-pair-contract-replay/.council/host-mCY1cs-pair/scratch/A-pair-code-2-replay-3-base-85754/tests/Algebra/AreCoprimeTest.php:123\n/private/tmp/pair-test-contract-trial-20261108/algebra-coprime-api-pair-contract-replay/.council/host-mCY1cs-pair/scratch/A-pair-code-2-replay-3-base-85754/tests/Algebra/AreCoprimeTest.php:85\n\n28) MathPHP\\Tests\\Algebra\\AreCoprimeTest::testAreCoprimeWithMostNegativeInteger with data set \"seven\" (7, true)\nError: Call to undefined method MathPHP\\Algebra::areCoprime()\n\n/private/tmp/pair-test-contract-trial-20261108/algebra-coprime-api-pair-contract-replay/.council/host-mCY1cs-pair/scratch/A-pair-code-2-replay-3-base-85754/tests/Algebra/AreCoprimeTest.php:123\n/private/tmp/pair-test-contract-trial-20261108/algebra-coprime-api-pair-contract-replay/.council/host-mCY1cs-pair/scratch/A-pair-code-2-replay-3-base-85754/tests/Algebra/AreCoprimeTest.php:85\n\n29) MathPHP\\Tests\\Algebra\\AreCoprimeTest::testAreCoprimeWithMostNegativeInteger with data set \"negative seven\" (-7, true)\nError: Call to undefined method MathPHP\\Algebra::areCoprime()\n\n/private/tmp/pair-test-contract-trial-20261108/algebra-coprime-api-pair-contract-replay/.council/host-mCY1cs-pair/scratch/A-pair-code-2-replay-3-base-85754/tests/Algebra/AreCoprimeTest.php:123\n/private/tmp/pair-test-contract-trial-20261108/algebra-coprime-api-pair-contract-replay/.council/host-mCY1cs-pair/scratch/A-pair-code-2-replay-3-base-85754/tests/Algebra/AreCoprimeTest.php:85\n\n30) MathPHP\\Tests\\Algebra\\AreCoprimeTest::testAreCoprimeWithMostNegativeInteger with data set \"maximum integer\" (9223372036854775807, true)\nError: Call to undefined method MathPHP\\Algebra::areCoprime()\n\n/private/tmp/pair-test-contract-trial-20261108/algebra-coprime-api-pair-contract-replay/.council/host-mCY1cs-pair/scratch/A-pair-code-2-replay-3-base-85754/tests/Algebra/AreCoprimeTest.php:123\n/private/tmp/pair-test-contract-trial-20261108/algebra-coprime-api-pair-contract-replay/.council/host-mCY1cs-pair/scratch/A-pair-code-2-replay-3-base-85754/tests/Algebra/AreCoprimeTest.php:85\n\n31) MathPHP\\Tests\\Algebra\\AreCoprimeTest::testAreCoprimeWithMostNegativeInteger with data set \"negative maximum integer\" (-9223372036854775807, true)\nError: Call to undefined method MathPHP\\Algebra::areCoprime()\n\n/private/tmp/pair-test-contract-trial-20261108/algebra-coprime-api-pair-contract-replay/.council/host-mCY1cs-pair/scratch/A-pair-code-2-replay-3-base-85754/tests/Algebra/AreCoprimeTest.php:123\n/private/tmp/pair-test-contract-trial-20261108/algebra-coprime-api-pair-contract-replay/.council/host-mCY1cs-pair/scratch/A-pair-code-2-replay-3-base-85754/tests/Algebra/AreCoprimeTest.php:85\n\n32) MathPHP\\Tests\\Algebra\\AreCoprimeTest::testAreCoprimeWithMostNegativeInteger with data set \"minimum plus one\" (-9223372036854775807, true)\nError: Call to undefined method MathPHP\\Algebra::areCoprime()\n\n/private/tmp/pair-test-contract-trial-20261108/algebra-coprime-api-pair-contract-replay/.council/host-mCY1cs-pair/scratch/A-pair-code-2-replay-3-base-85754/tests/Algebra/AreCoprimeTest.php:123\n/private/tmp/pair-test-contract-trial-20261108/algebra-coprime-api-pair-contract-replay/.council/host-mCY1cs-pair/scratch/A-pair-code-2-replay-3-base-85754/tests/Algebra/AreCoprimeTest.php:85\n\nERRORS!\nTests: 32, Assertions: 0, Errors: 32.",
+          "launchError": "",
+          "mutated": []
+        },
+        {
+          "side": "final",
+          "revision": "8f1fb7f2985d1fef07b3fe855148c20a807e9fab",
+          "tree": "71e90e812c875e9f037e88bf483632994395deea",
+          "file": "tests/Algebra/AreCoprimeTest.php",
+          "command": "php -d memory_limit=2G vendor/bin/phpunit --configuration=tests/phpunit.xml tests/Algebra/AreCoprimeTest.php",
+          "checkIds": [
+            "scoped-release-gate"
+          ],
+          "cwd": "/private/tmp/pair-test-contract-trial-20261108/algebra-coprime-api-pair-contract-replay/.council/host-mCY1cs-pair/scratch/A-pair-code-2-replay-3-final-85754",
+          "attempted": true,
+          "ran": true,
+          "passed": true,
+          "hasExitCode": true,
+          "exitCode": 0,
+          "signal": 0,
+          "timedOut": false,
+          "seconds": 0.2,
+          "log": "/private/tmp/pair-test-contract-trial-20261108/algebra-coprime-api-pair-contract-replay/.council/host-mCY1cs-pair/logs/replay-A-pair-code-2-replay-3-final.log",
+          "logSha256": "12f73d3bc84ec12fef321c0d44a4b7b5851ed50e52ea1224131037a1f9475077",
+          "tail": "PHPUnit 10.5.63 by Sebastian Bergmann and contributors.\n\nRuntime:       PHP 8.5.3\nConfiguration: /private/tmp/pair-test-contract-trial-20261108/algebra-coprime-api-pair-contract-replay/.council/host-mCY1cs-pair/scratch/A-pair-code-2-replay-3-final-85754/tests/phpunit.xml\n\n................................                                  32 / 32 (100%)\n\nTime: 00:00.007, Memory: 10.00 MB\n\nOK (32 tests, 112 assertions)",
+          "launchError": "",
+          "mutated": []
+        },
+        {
+          "side": "base",
+          "revision": "9626706183295d2f6b73cda26edc9bfb90e32f17",
+          "tree": "0434f75ec7f1b58e49ab1198310464cde566f791",
+          "file": "tests/Algebra/AlgebraTest.php",
+          "command": "php -d memory_limit=2G vendor/bin/phpunit --configuration=tests/phpunit.xml tests/Algebra/AlgebraTest.php",
+          "checkIds": [
+            "preserved-algebra",
+            "scoped-release-gate"
+          ],
+          "cwd": "/private/tmp/pair-test-contract-trial-20261108/algebra-coprime-api-pair-contract-replay/.council/host-mCY1cs-pair/scratch/A-pair-code-2-replay-4-base-85754",
+          "attempted": true,
+          "ran": true,
+          "passed": true,
+          "hasExitCode": true,
+          "exitCode": 0,
+          "signal": 0,
+          "timedOut": false,
+          "seconds": 0.3,
+          "log": "/private/tmp/pair-test-contract-trial-20261108/algebra-coprime-api-pair-contract-replay/.council/host-mCY1cs-pair/logs/replay-A-pair-code-2-replay-4-base.log",
+          "logSha256": "a6cdac92da5a751cd467df06bb310726ecee7e56806c36a64e27675663f72fd9",
+          "tail": "PHPUnit 10.5.63 by Sebastian Bergmann and contributors.\n\nRuntime:       PHP 8.5.3\nConfiguration: /private/tmp/pair-test-contract-trial-20261108/algebra-coprime-api-pair-contract-replay/.council/host-mCY1cs-pair/scratch/A-pair-code-2-replay-4-base-85754/tests/phpunit.xml\n\n...............................................................  63 / 347 ( 18%)\n............................................................... 126 / 347 ( 36%)\n............................................................... 189 / 347 ( 54%)\n............................................................... 252 / 347 ( 72%)\n............................................................... 315 / 347 ( 90%)\n................................                                347 / 347 (100%)\n\nTime: 00:00.049, Memory: 14.00 MB\n\nOK (347 tests, 694 assertions)",
+          "launchError": "",
+          "mutated": []
+        },
+        {
+          "side": "final",
+          "revision": "8f1fb7f2985d1fef07b3fe855148c20a807e9fab",
+          "tree": "71e90e812c875e9f037e88bf483632994395deea",
+          "file": "tests/Algebra/AlgebraTest.php",
+          "command": "php -d memory_limit=2G vendor/bin/phpunit --configuration=tests/phpunit.xml tests/Algebra/AlgebraTest.php",
+          "checkIds": [
+            "preserved-algebra",
+            "scoped-release-gate"
+          ],
+          "cwd": "/private/tmp/pair-test-contract-trial-20261108/algebra-coprime-api-pair-contract-replay/.council/host-mCY1cs-pair/scratch/A-pair-code-2-replay-4-final-85754",
+          "attempted": true,
+          "ran": true,
+          "passed": true,
+          "hasExitCode": true,
+          "exitCode": 0,
+          "signal": 0,
+          "timedOut": false,
+          "seconds": 0.3,
+          "log": "/private/tmp/pair-test-contract-trial-20261108/algebra-coprime-api-pair-contract-replay/.council/host-mCY1cs-pair/logs/replay-A-pair-code-2-replay-4-final.log",
+          "logSha256": "0a5c0f6aea2b1dbe2d78d49f905e5556771ed46ee15c6d7610b26288e859349c",
+          "tail": "PHPUnit 10.5.63 by Sebastian Bergmann and contributors.\n\nRuntime:       PHP 8.5.3\nConfiguration: /private/tmp/pair-test-contract-trial-20261108/algebra-coprime-api-pair-contract-replay/.council/host-mCY1cs-pair/scratch/A-pair-code-2-replay-4-final-85754/tests/phpunit.xml\n\n...............................................................  63 / 347 ( 18%)\n............................................................... 126 / 347 ( 36%)\n............................................................... 189 / 347 ( 54%)\n............................................................... 252 / 347 ( 72%)\n............................................................... 315 / 347 ( 90%)\n................................                                347 / 347 (100%)\n\nTime: 00:00.046, Memory: 14.00 MB\n\nOK (347 tests, 694 assertions)",
+          "launchError": "",
+          "mutated": []
+        },
+        {
+          "side": "base",
+          "revision": "9626706183295d2f6b73cda26edc9bfb90e32f17",
+          "tree": "0434f75ec7f1b58e49ab1198310464cde566f791",
+          "file": "tests/Algebra/AlgebraAxiomsTest.php",
+          "command": "php -d memory_limit=2G vendor/bin/phpunit --configuration=tests/phpunit.xml tests/Algebra/AlgebraAxiomsTest.php",
+          "checkIds": [
+            "preserved-axioms",
+            "scoped-release-gate"
+          ],
+          "cwd": "/private/tmp/pair-test-contract-trial-20261108/algebra-coprime-api-pair-contract-replay/.council/host-mCY1cs-pair/scratch/A-pair-code-2-replay-5-base-85754",
+          "attempted": true,
+          "ran": true,
+          "passed": true,
+          "hasExitCode": true,
+          "exitCode": 0,
+          "signal": 0,
+          "timedOut": false,
+          "seconds": 0.3,
+          "log": "/private/tmp/pair-test-contract-trial-20261108/algebra-coprime-api-pair-contract-replay/.council/host-mCY1cs-pair/logs/replay-A-pair-code-2-replay-5-base.log",
+          "logSha256": "2aab5e8905e0da546c8265c31bfed6a151ad1c8d9064c50b4f0d9d89fb19cd7e",
+          "tail": "PHPUnit 10.5.63 by Sebastian Bergmann and contributors.\n\nRuntime:       PHP 8.5.3\nConfiguration: /private/tmp/pair-test-contract-trial-20261108/algebra-coprime-api-pair-contract-replay/.council/host-mCY1cs-pair/scratch/A-pair-code-2-replay-5-base-85754/tests/phpunit.xml\n\n...............................................................  63 / 361 ( 17%)\n............................................................... 126 / 361 ( 34%)\n............................................................... 189 / 361 ( 52%)\n............................................................... 252 / 361 ( 69%)\n............................................................... 315 / 361 ( 87%)\n..............................................                  361 / 361 (100%)\n\nTime: 00:00.068, Memory: 12.00 MB\n\nOK (361 tests, 565 assertions)",
+          "launchError": "",
+          "mutated": []
+        },
+        {
+          "side": "final",
+          "revision": "8f1fb7f2985d1fef07b3fe855148c20a807e9fab",
+          "tree": "71e90e812c875e9f037e88bf483632994395deea",
+          "file": "tests/Algebra/AlgebraAxiomsTest.php",
+          "command": "php -d memory_limit=2G vendor/bin/phpunit --configuration=tests/phpunit.xml tests/Algebra/AlgebraAxiomsTest.php",
+          "checkIds": [
+            "preserved-axioms",
+            "scoped-release-gate"
+          ],
+          "cwd": "/private/tmp/pair-test-contract-trial-20261108/algebra-coprime-api-pair-contract-replay/.council/host-mCY1cs-pair/scratch/A-pair-code-2-replay-5-final-85754",
+          "attempted": true,
+          "ran": true,
+          "passed": true,
+          "hasExitCode": true,
+          "exitCode": 0,
+          "signal": 0,
+          "timedOut": false,
+          "seconds": 0.3,
+          "log": "/private/tmp/pair-test-contract-trial-20261108/algebra-coprime-api-pair-contract-replay/.council/host-mCY1cs-pair/logs/replay-A-pair-code-2-replay-5-final.log",
+          "logSha256": "7cb867ed2db6a1cb696081af44b7568f898af66c5ddacfc040e8acf6aa428934",
+          "tail": "PHPUnit 10.5.63 by Sebastian Bergmann and contributors.\n\nRuntime:       PHP 8.5.3\nConfiguration: /private/tmp/pair-test-contract-trial-20261108/algebra-coprime-api-pair-contract-replay/.council/host-mCY1cs-pair/scratch/A-pair-code-2-replay-5-final-85754/tests/phpunit.xml\n\n...............................................................  63 / 361 ( 17%)\n............................................................... 126 / 361 ( 34%)\n............................................................... 189 / 361 ( 52%)\n............................................................... 252 / 361 ( 69%)\n............................................................... 315 / 361 ( 87%)\n..............................................                  361 / 361 (100%)\n\nTime: 00:00.067, Memory: 12.00 MB\n\nOK (361 tests, 565 assertions)",
+          "launchError": "",
+          "mutated": []
+        },
+        {
+          "side": "base",
+          "revision": "9626706183295d2f6b73cda26edc9bfb90e32f17",
+          "tree": "0434f75ec7f1b58e49ab1198310464cde566f791",
+          "file": "tests/Algebra/PolynomialRootsAxiomsTest.php",
+          "command": "php -d memory_limit=2G vendor/bin/phpunit --configuration=tests/phpunit.xml tests/Algebra/PolynomialRootsAxiomsTest.php",
+          "checkIds": [
+            "scoped-release-gate"
+          ],
+          "cwd": "/private/tmp/pair-test-contract-trial-20261108/algebra-coprime-api-pair-contract-replay/.council/host-mCY1cs-pair/scratch/A-pair-code-2-replay-6-base-85754",
+          "attempted": true,
+          "ran": true,
+          "passed": true,
+          "hasExitCode": true,
+          "exitCode": 0,
+          "signal": 0,
+          "timedOut": false,
+          "seconds": 0.3,
+          "log": "/private/tmp/pair-test-contract-trial-20261108/algebra-coprime-api-pair-contract-replay/.council/host-mCY1cs-pair/logs/replay-A-pair-code-2-replay-6-base.log",
+          "logSha256": "d94bd31c3c7c7387557d909b50e119f9fd1e9fcade9fbf6599990b8c6f11e0ff",
+          "tail": "PHPUnit 10.5.63 by Sebastian Bergmann and contributors.\n\nRuntime:       PHP 8.5.3\nConfiguration: /private/tmp/pair-test-contract-trial-20261108/algebra-coprime-api-pair-contract-replay/.council/host-mCY1cs-pair/scratch/A-pair-code-2-replay-6-base-85754/tests/phpunit.xml\n\n...............................................................  63 / 387 ( 16%)\n............................................................... 126 / 387 ( 32%)\n............................................................... 189 / 387 ( 48%)\n............................................................... 252 / 387 ( 65%)\n............................................................... 315 / 387 ( 81%)\n............................................................... 378 / 387 ( 97%)\n.........                                                       387 / 387 (100%)\n\nTime: 00:00.075, Memory: 12.00 MB\n\nOK (387 tests, 2187 assertions)",
+          "launchError": "",
+          "mutated": []
+        },
+        {
+          "side": "final",
+          "revision": "8f1fb7f2985d1fef07b3fe855148c20a807e9fab",
+          "tree": "71e90e812c875e9f037e88bf483632994395deea",
+          "file": "tests/Algebra/PolynomialRootsAxiomsTest.php",
+          "command": "php -d memory_limit=2G vendor/bin/phpunit --configuration=tests/phpunit.xml tests/Algebra/PolynomialRootsAxiomsTest.php",
+          "checkIds": [
+            "scoped-release-gate"
+          ],
+          "cwd": "/private/tmp/pair-test-contract-trial-20261108/algebra-coprime-api-pair-contract-replay/.council/host-mCY1cs-pair/scratch/A-pair-code-2-replay-6-final-85754",
+          "attempted": true,
+          "ran": true,
+          "passed": true,
+          "hasExitCode": true,
+          "exitCode": 0,
+          "signal": 0,
+          "timedOut": false,
+          "seconds": 0.2,
+          "log": "/private/tmp/pair-test-contract-trial-20261108/algebra-coprime-api-pair-contract-replay/.council/host-mCY1cs-pair/logs/replay-A-pair-code-2-replay-6-final.log",
+          "logSha256": "b219bbd1ca6b8824670d52456d769c12b203d6d36e32dd8582822395723bf578",
+          "tail": "PHPUnit 10.5.63 by Sebastian Bergmann and contributors.\n\nRuntime:       PHP 8.5.3\nConfiguration: /private/tmp/pair-test-contract-trial-20261108/algebra-coprime-api-pair-contract-replay/.council/host-mCY1cs-pair/scratch/A-pair-code-2-replay-6-final-85754/tests/phpunit.xml\n\n...............................................................  63 / 387 ( 16%)\n............................................................... 126 / 387 ( 32%)\n............................................................... 189 / 387 ( 48%)\n............................................................... 252 / 387 ( 65%)\n............................................................... 315 / 387 ( 81%)\n............................................................... 378 / 387 ( 97%)\n.........                                                       387 / 387 (100%)\n\nTime: 00:00.073, Memory: 14.00 MB\n\nOK (387 tests, 2187 assertions)",
+          "launchError": "",
+          "mutated": []
+        }
+      ],
+      "elapsedSec": 25.2
+    },
+    "criteria": [
+      {
+        "criterion": "C1",
+        "status": "met",
+        "note": "src/Algebra.php exposes the exact public static typed signature. Signed Euclidean remainders preserve gcd magnitude and strictly decrease divisor magnitude; unit and terminal comparisons correctly recognize both signs. Ordinary/sign/order replay passes 8 datasets and 64 assertions."
+      },
+      {
+        "criterion": "C2",
+        "status": "met",
+        "note": "Zero terminates with a strict comparison against ±1. The zero provider covers ten partners, including zero and both units, in both orders; replay passes 20 assertions."
+      },
+      {
+        "criterion": "C3",
+        "status": "met",
+        "note": "The implementation performs no normalization or overflowing arithmetic, excludes zero divisors, and short-circuits unit divisors. All required PHP_INT_MIN pairs and additional even/odd partners are tested in both orders; replay passes 14 datasets and 28 assertions."
+      },
+      {
+        "criterion": "C4",
+        "status": "met",
+        "note": "The separate regression file follows repository PHPUnit conventions and contains every contracted dataset. assertSame checks exact booleans; an E_ALL throwing handler surrounds both calls and is restored in finally. Final replay passes 32 tests and 112 assertions. Base errors occur at calls to the missing API, confirming intended missing behavior rather than infrastructure failure; base assertions did not execute."
+      },
+      {
+        "criterion": "C5",
+        "status": "met",
+        "note": "The full diff leaves existing methods, docblocks, and tests unchanged. Independent base/final replays pass AlgebraTest.php (347 tests, 694 assertions) and AlgebraAxiomsTest.php (361 tests, 565 assertions), retaining signed results and unrepresentable-gcd exceptions. PolynomialRootsAxiomsTest.php also passes unchanged on both."
+      },
+      {
+        "criterion": "C6",
+        "status": "met",
+        "note": "The method docblock and README Algebra section explain mathematical gcd-one meaning, sign/order independence, zero/unit behavior, (0,0), and PHP_INT_MIN support. README examples cover ordinary, signed, zero, and extreme inputs."
+      },
+      {
+        "criterion": "C7",
+        "status": "met",
+        "note": "The neutral exact-snapshot gate passes 1127 tests and 3558 assertions with the required command and TMPDIR override. Its log hash matches published evidence. verification.json SHA-256 matches the recorded design value, 0d940eb7a7855cf1e7ce23999fce9eae488a2c4b7f433f0492bf07bd0936fde3. Only the three approved files differ; dependencies and existing checks are unchanged. Replay exclusions correctly retain original dependencies and preserved tests while limiting test overlays to the accepted root. The author worktree remains untouched."
+      }
+    ],
+    "readiness": {
+      "state": "ready",
+      "blocked": [],
+      "incomplete": []
+    }
+  },
+  "delivery": {
+    "status": "pending"
+  },
+  "forTheOrchestrator": "Read final.readiness first. Report unresolved findings or missing evidence before any success summary. Spot-check the reviewed snapshot and report the design and implementation review outcomes. The change stays in final.worktree. Deliver only within the user's authorization, preserving unrelated edits; use dark-factory verify-delivery afterward. Do not start a council automatically. The Codex host can resume a validated checkpoint with --resume hostRunDir; changed inputs or evidence require a new run.",
+  "plan": {
+    "workflow": "pair",
+    "tier": "pair",
+    "strategy": "pair",
+    "mode": "implement",
+    "output": "reviewed implementation in a worktree; delivery pending",
+    "participants": [
+      {
+        "model": "sol",
+        "vendor": "codex",
+        "effort": "high"
+      }
+    ],
+    "reviewers": [
+      {
+        "model": "astra",
+        "vendor": "codex",
+        "effort": "high"
+      }
+    ],
+    "panel": [],
+    "specification": [],
+    "roles": {
+      "setup": {
+        "model": "sol",
+        "vendor": "codex"
+      }
+    },
+    "requiredCLIs": [
+      "codex"
+    ],
+    "verification": "php -d memory_limit=2G vendor/bin/phpunit --configuration=tests/phpunit.xml tests/Algebra",
+    "limits": {
+      "maxTurns": 24,
+      "maxRunMin": 60,
+      "repair": null,
+      "maxReviews": 8,
+      "rounds": null
+    },
+    "effort": "Setup, design and code turns, up to the review budget; measurements between code revisions.",
+    "intake": null
+  },
+  "metrics": {
+    "version": 1,
+    "taskId": "algebra-coprime-api",
+    "variant": "pair-contract-replay",
+    "repetition": 1,
+    "workflow": "pair",
+    "tier": "pair",
+    "strategy": "pair",
+    "host": "codex",
+    "elapsedMs": 635241,
+    "turns": 5,
+    "turnsByRole": {
+      "setup": 1,
+      "author": 2,
+      "reviewer": 2
+    },
+    "failedTurns": 0,
+    "findingsByStage": {},
+    "readiness": "ready",
+    "delivery": "pending",
+    "escalated": false,
+    "requestedImplementation": true,
+    "deliveredImplementation": false,
+    "tokens": {
+      "records": 5,
+      "byModel": {
+        "gpt-6.1-sol": {
+          "input_tokens": 2040810,
+          "cached_input_tokens": 1863296,
+          "cache_write_input_tokens": 0,
+          "output_tokens": 21079,
+          "reasoning_output_tokens": 2945
+        },
+        "gpt-6-astra": {
+          "input_tokens": 378002,
+          "cached_input_tokens": 270720,
+          "cache_write_input_tokens": 0,
+          "output_tokens": 3970,
+          "reasoning_output_tokens": 257
+        }
+      }
+    },
+    "cost": null,
+    "limits": {
+      "maxTurns": 24,
+      "maxRunMin": 60
+    },
+    "repositoryHead": "9626706183295d2f6b73cda26edc9bfb90e32f17"
+  },
+  "host": "codex",
+  "hostRunDir": "/private/tmp/pair-test-contract-trial-20261108/algebra-coprime-api-pair-contract-replay/.council/host-mCY1cs",
+  "hostEvents": "/private/tmp/pair-test-contract-trial-20261108/algebra-coprime-api-pair-contract-replay/.council/host-mCY1cs/events.jsonl",
+  "checkpoint": "/private/tmp/pair-test-contract-trial-20261108/algebra-coprime-api-pair-contract-replay/.council/host-mCY1cs/checkpoint.json"
+}

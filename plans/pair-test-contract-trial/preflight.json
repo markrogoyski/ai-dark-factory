@@ -1,0 +1,38 @@
+[
+  {
+    "taskId": "iterator-pad-left",
+    "kind": "probe",
+    "exitCode": 1,
+    "log": "plans/pair-test-contract-trial/iterator-pad-left-baseline-probe.log"
+  },
+  {
+    "taskId": "iterator-pad-left",
+    "kind": "gate",
+    "exitCode": 0,
+    "log": "plans/pair-test-contract-trial/iterator-pad-left-baseline-gate.log"
+  },
+  {
+    "taskId": "algebra-coprime-api",
+    "kind": "probe",
+    "exitCode": 1,
+    "log": "plans/pair-test-contract-trial/algebra-coprime-api-baseline-probe.log"
+  },
+  {
+    "taskId": "algebra-coprime-api",
+    "kind": "gate",
+    "exitCode": 0,
+    "log": "plans/pair-test-contract-trial/algebra-coprime-api-baseline-gate.log"
+  },
+  {
+    "taskId": "vector-pnorm-scale",
+    "kind": "probe",
+    "exitCode": 1,
+    "log": "plans/pair-test-contract-trial/vector-pnorm-scale-baseline-probe.log"
+  },
+  {
+    "taskId": "vector-pnorm-scale",
+    "kind": "gate",
+    "exitCode": 0,
+    "log": "plans/pair-test-contract-trial/vector-pnorm-scale-baseline-gate.log"
+  }
+]

@@ -1,4 +1,8 @@
-function pairAuthorPrompt(S, label) {
+function pairSetupPrompt(S) {
+  return setupPrompt(S) + '\n\nPair also requires head: copy the full original commit from the helper init output (head), or run.json. Do not use a later author commit or snapshot. This identity will be checked against every baseline replay.'
+}
+
+function pairAuthorPrompt(S, label, correction = '') {
   const p = S.pair, design = p.stage === 'design'
   return `You are the sole author in a pair workflow. Own the task through completion; an independent reviewer checks each stage.
 
@@ -7,11 +11,19 @@ ${taskBlock(S, 99)}
 
 Your worktree: ${S.seats[0].wt}. Work only there; never edit the main checkout or reviewer checkouts.
 Read the repository instructions and the relevant code. Do not delegate or launch other models.
+${correction ? `\n# Correct the previous output\nThe engine could not accept your design output: ${correction}\nReturn a complete corrected design and contract. This is the one correction attempt for this turn, not approval to implement. Preserve the task and substantive requirements.\n` : ''}
 ${design ? `Return a complete short design in design: the approach, affected files, assumptions, risks, and how every acceptance criterion will be tested. Cite existing code where the approach depends on it. Revise the entire design in response to feedback. Do not implement yet. ${pairBaseline(S)}`
     : `Implement the reviewed design, including the required tests and documentation. Run appropriate focused checks and the shared verification gate. Fix all open actionable findings and any failed verification. Return design as an empty string; the accepted design remains fixed until the reviewer requests design revision.`}
 
+${design ? `Return testContract alongside the design. testRoots are repository-relative test directories, each with evidence from the base project's configuration or established layout. Never use '.' or designate a production directory as a test root. Each check needs a stable local id, criterion IDs in criteria, a concrete scenario (inputs/setup), expected observable outcome, and boundaries (or a reason none apply). For kind=test, supply purpose=changed or preserved, the planned file, a focused command run from repository root, and required fixtures, all files under those roots. For kind=inspection, give a concrete inspection and reason automation is unsuitable; leave test execution fields empty. Cover every criterion without inventing meaningless tests. Return replayMapping=[] during design.
+Tests depending on a new API must live in their own files, separate from preserved-behavior tests: a fatal while loading the new API must not erase the preserved signal.`
+    : `The approved test contract below remains an obligation. Return testContract with empty testRoots/checks; return replayMapping for the CURRENT implementation: one entry per test file/focused command, with file, command, checkIds from the approved executable checks, and fixtures. Isolate commands at least by file; never group multiple test files into a command. Include every executable check, including preserved behavior. Omissions do not remove obligations. Keep tests relying on new APIs in separate files from preserved tests. The helper replays added/modified test files and fixtures from the snapshot onto the ORIGINAL base; production/config/dependency changes are excluded. Report unsupported replay dependencies and justified differences from the design in the handoff. Ordinary assertion/path adjustments do not need a separate contract amendment; only a materially different approach returns to design.`}
+
 # Current design
 ${p.design || '(none yet)'}
+
+# Test contract
+${JSON.stringify(p.approvedContract || p.testContract)}
 
 # Findings ledger
 ${JSON.stringify(p.findings)}
@@ -26,7 +38,7 @@ For each open finding, return its ID with the change made or an evidence-backed 
 Write a concise handoff at ${S.run.room}/${label}/A.md (create the directory). Include the ${design ? 'full design' : 'change summary and actual checks'}, responses to findings, and important remaining work. Return private notes sufficient for a fresh author context to continue. Keep implementation and design artifacts inside this run until delivery.`
 }
 
-function pairReviewPrompt(S, label, checkout) {
+function pairReviewPrompt(S, label, checkout, correction = null) {
   const p = S.pair, design = p.stage === 'design'
   const tag = pairReviewTag(S)
   return `You are the independent reviewer in a pair workflow. This is a fresh review context. You did not author the work. Review the current artifact yourself, using repository evidence, and verify every proposed finding resolution.
@@ -35,6 +47,7 @@ ${taskBlock(S, 99)}
 # Review stage: ${p.stage}
 Version: ${pairVersion(S)}
 Return that exact version. Return complete=true only after examining the entire current artifact and every acceptance criterion, including regressions introduced by fixes.
+${correction ? `\n# Correct the previous structured review\n${correction.error}\nThis is one correction attempt for this artifact. Preserve substantive criticisms, findings, and resolutions; correct the invalid structured fields. Do not invent rejecting checks or convert rejection into approval. The prior submission was:\n${JSON.stringify(correction.review)}\n` : ''}
 
 Repository checkout to inspect: ${checkout}
 ${hostMaterializationNote(S, label, tag, checkout)}
@@ -43,10 +56,16 @@ This checkout is separate from the author's worktree. Do not edit the author's w
 # Design
 ${p.design}
 
-${design ? `Check the approach against the task and existing code: correctness, missing requirements, assumptions, alternatives that materially affect the outcome, scope, and planned test coverage. Each criterion is met only if the design explains how it will be satisfied and checked. ${pairBaseline(S)}`
+# Test contract
+${JSON.stringify(p.approvedContract || p.testContract)}
+
+${design ? `Check the approach against the task and existing code: correctness, missing requirements, assumptions, alternatives that materially affect the outcome, scope, and planned test coverage. Verify every proposed test root against the BASE repository configuration/layout and its cited evidence; naming a directory does not make it a test root. Reject production roots, missing concrete outcomes/boundaries, and new-API tests sharing files with preserved tests. Each criterion is met only if the design explains how it will be satisfied and checked.
+Return exactly one structured challenge per criterion in challenges: criterion, a substantive wrongImplementation, and rejectingCheckIds that resolve to contract checks covering that criterion. If no check rejects a plausible wrong implementation, return rejectingCheckIds=[] and raise an evidenced finding, assess that criterion partial/unmet, or request design revision with the reason in summary. Never cite a check you believe is ineffective just to fill the array. Approval requires a rejecting check for every challenge. Describe a plausible incorrect result and its rejecting inspection for non-code criteria. Judge whether the checks actually reject that implementation; valid IDs alone are insufficient. ${pairBaseline(S)}`
     : `Review the implementation and tests against the task and approved design. Inspect the whole diff at ${p.measurement.snapshot.diff}, not only the latest fixes. Look for incorrect behavior, regressions, missing requirements, and tests that would miss the defect. The neutral helper measured this exact snapshot:
 ${JSON.stringify(p.measurement)}
 Passing tests do not replace code review. Treat a failing or missing required check as unresolved.
+Interpret the raw replay records for each check, reading their logs when needed. A base fatal at file level (including a missing new API), pass, timeout, or tool error is evidence to interpret, not an automatic red/green verdict. Records cover files/commands and associated check IDs; an aborted file does not prove individual assertions ran. Preserved behavior should pass on base; changed behavior passing there needs investigation. Distinguish the intended missing behavior from infrastructure failure using actual output. If inconclusive, reflect that in criterion assessments/findings rather than approving solely because a record exists.
+Inspect every overlay exclusion and missing preserved-behavior signal. Compare actual assertions and coverage with the approved contract and report omissions or weakening through findings. Check that each mapped command really isolates its named file and executes its claimed checks. Attack the whole implementation for uncovered requirements, regressions, races, numeric mistakes, and defects introduced by fixes: the contract is a floor, not the review checklist. Return challenges=[] during code review.
 That measurement is the gate result for this snapshot: don't rerun the verification command or the checks in it. Run only targeted probes, such as one test or one analyser on the changed files. Sandboxes can block the sockets that parallel workers use: if a probe fails that way, run the tool single-process.`}
 
 # Findings and proposed responses
@@ -68,7 +87,7 @@ function hostMaterializationNote(S, label, tag, checkout) {
 
 function pairMeasurePrompt(S, label) {
   return `You are transporting a deterministic verification result for the pair workflow. Do not review, change, or judge the implementation. Run exactly:
-${S.cli} measure --run-dir ${shq(S.run.runDir)} --seat A --label ${shq(label)} --max-wait 5
+${S.cli} measure --run-dir ${shq(S.run.runDir)} --seat A --label ${shq(label)} --replay-json ${shq(JSON.stringify(pairReplayRequest(S)))} --max-wait 5
 If status is running, poll ${S.cli} wait --run-dir ${shq(S.run.runDir)} --job ${shq(`measure-A-${label}`)} --max-wait 5 until it finishes. Poll an active shell session before launching another command. Do not use sleep polling.
-Return status done only for the helper's completed result. Copy snapshot.ref, snapshot.tree, snapshot.diff, and suite.ran, suite.passed, suite.command, and suite.tail exactly (empty command or tail if absent). On failure return error with the actual message and empty snapshot values. Do not substitute results from the live worktree or remove required checks.`
+Return status done only for the helper's completed result. Copy snapshot.ref, snapshot.tree, snapshot.diff, and suite.ran, suite.passed, suite.command, and suite.tail exactly (empty command or tail if absent). Copy the ENTIRE replay object unchanged, including mapping, roots, identities, changes, exclusions, file/command records, launch errors, exit/signal/timeout fields, log paths, tails, and timings. Never summarize individual tests or interpret base failures. On failure return error with the actual message and empty snapshot/replay values. Do not substitute results from the live worktree or remove required checks.`
 }

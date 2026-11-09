@@ -1,0 +1,168 @@
+{
+  "version": 1,
+  "frozenAt": "2026-11-08T22:34:22.292624+00:00",
+  "controlEngineRevision": "e915be937ff53b9c7eca54257258a9a9a1583372",
+  "controlEngine": "/private/tmp/pair-test-contract-trial-20261108/control-engine",
+  "candidateEngine": "/private/tmp/pair-test-contract-trial-20261108/candidate-engine",
+  "host": "codex",
+  "settings": {
+    "author": "sol",
+    "reviewer": "astra",
+    "effort": "high",
+    "maxReviews": 8,
+    "maxTurns": 24,
+    "maxRunMin": 60,
+    "timeoutMin": 15
+  },
+  "concurrency": 1,
+  "repetitions": 1,
+  "extraRepetitions": 0,
+  "executionOrder": [
+    "iterator-pad-left-pair-control",
+    "algebra-coprime-api-pair-control",
+    "vector-pnorm-scale-pair-control",
+    "iterator-pad-left-pair-contract-replay",
+    "algebra-coprime-api-pair-contract-replay",
+    "vector-pnorm-scale-pair-contract-replay"
+  ],
+  "tasks": [
+    {
+      "id": "iterator-pad-left",
+      "category": "bug-fix",
+      "task": "Fix IterTools\\Single::padLeft so it can emit from an arbitrarily long or infinite input after bounded lookahead. It may consume up to max(1, length) elements to determine padding before the first output, but must not request an additional element until the consumer advances. Preserve lazy validation of negative lengths, left padding of short/empty inputs, all original values of longer finite inputs, fill values, and sequential output keys. Stream::padLeft must retain its existing semantics.",
+      "verify": "php -d memory_limit=2G vendor/bin/phpunit --configuration=tests/phpunit.xml tests/Single && php -d memory_limit=2G vendor/bin/phpunit --configuration=tests/phpunit.xml tests/Stream",
+      "expectations": [
+        "bounded first-output reads for length 0, 1, 3 using a source that throws on over-read",
+        "empty and short inputs padded on left",
+        "finite long input retained and sequential keys",
+        "negative length rejected lazily",
+        "Stream wrapper preserved"
+      ],
+      "repository": {
+        "local": "/Users/mark/Develop/php/itertools-php",
+        "identity": "git@github.com:markrogoyski/itertools-php.git"
+      },
+      "startingCommit": "f8ae71b11e508bf61a6233508b391262a5890454",
+      "referenceDocuments": [],
+      "context": "This is an isolated scoped workflow trial. Do not inspect other trial runs or later repository history. Leave changes in the author worktree. Use the explicit scoped verification command as this trial\u2019s required gate; the broader project make-all campaign is outside this trial. Add focused regression tests and relevant API documentation, following the repository style. Do not modify dependencies or weaken existing checks.",
+      "environment": {
+        "php": "8.5.3",
+        "node": "26.0.0",
+        "dependencies": "APFS copy of /Users/mark/Develop/php/itertools-php/vendor; relative Composer autoload; no install/network",
+        "installedJsonSha256": "9a89b4b22c769af92731187b66c8146e25d006b04a6a782ae64bd4a0a3a6400a"
+      },
+      "runs": [
+        {
+          "variant": "pair-control",
+          "repetition": 1,
+          "target": "/private/tmp/pair-test-contract-trial-20261108/iterator-pad-left-pair-control",
+          "args": "/private/tmp/pair-test-contract-trial-20261108/iterator-pad-left-pair-control.args.json",
+          "result": "/private/tmp/pair-test-contract-trial-20261108/iterator-pad-left-pair-control.result.json",
+          "log": "/private/tmp/pair-test-contract-trial-20261108/iterator-pad-left-pair-control.log"
+        },
+        {
+          "variant": "pair-contract-replay",
+          "repetition": 1,
+          "target": "/private/tmp/pair-test-contract-trial-20261108/iterator-pad-left-pair-contract-replay",
+          "args": "/private/tmp/pair-test-contract-trial-20261108/iterator-pad-left-pair-contract-replay.args.json",
+          "result": "/private/tmp/pair-test-contract-trial-20261108/iterator-pad-left-pair-contract-replay.result.json",
+          "log": "/private/tmp/pair-test-contract-trial-20261108/iterator-pad-left-pair-contract-replay.log"
+        }
+      ]
+    },
+    {
+      "id": "algebra-coprime-api",
+      "category": "small-feature",
+      "task": "Add public static MathPHP\\Algebra::areCoprime(int $a, int $b): bool. Return whether the nonnegative mathematical gcd is one for all native signed integer inputs. Negative signs do not affect the result. Zero is coprime only to 1 or -1; (0,0) is false. PHP_INT_MIN must work without overflow, warnings, or exceptions, including paired with itself, zero, +/-1, 2, and PHP_INT_MAX. Keep existing gcd and extendedGcd behavior unchanged and document the API.",
+      "verify": "php -d memory_limit=2G vendor/bin/phpunit --configuration=tests/phpunit.xml tests/Algebra",
+      "expectations": [
+        "new API absent at base",
+        "coprime and non-coprime ordinary pairs and signs",
+        "zero cases",
+        "PHP_INT_MIN boundary pairs",
+        "existing gcd and extendedGcd unchanged"
+      ],
+      "repository": {
+        "local": "/Users/mark/Develop/php/math-php",
+        "identity": "git@github.com:markrogoyski/math-php.git"
+      },
+      "startingCommit": "9626706183295d2f6b73cda26edc9bfb90e32f17",
+      "referenceDocuments": [],
+      "context": "This is an isolated scoped workflow trial. Do not inspect other trial runs or later repository history. Leave changes in the author worktree. Use the explicit scoped verification command as this trial\u2019s required gate; the broader project make-all campaign is outside this trial. Add focused regression tests and relevant API documentation, following the repository style. Do not modify dependencies or weaken existing checks.",
+      "environment": {
+        "php": "8.5.3",
+        "node": "26.0.0",
+        "dependencies": "APFS copy of /Users/mark/Develop/php/math-php/vendor; relative Composer autoload; no install/network",
+        "installedJsonSha256": "4afaaa5a296a4f627af0aa3eabb972a0c97da0d0e8e514972766e9543bc65343"
+      },
+      "runs": [
+        {
+          "variant": "pair-control",
+          "repetition": 1,
+          "target": "/private/tmp/pair-test-contract-trial-20261108/algebra-coprime-api-pair-control",
+          "args": "/private/tmp/pair-test-contract-trial-20261108/algebra-coprime-api-pair-control.args.json",
+          "result": "/private/tmp/pair-test-contract-trial-20261108/algebra-coprime-api-pair-control.result.json",
+          "log": "/private/tmp/pair-test-contract-trial-20261108/algebra-coprime-api-pair-control.log"
+        },
+        {
+          "variant": "pair-contract-replay",
+          "repetition": 1,
+          "target": "/private/tmp/pair-test-contract-trial-20261108/algebra-coprime-api-pair-contract-replay",
+          "args": "/private/tmp/pair-test-contract-trial-20261108/algebra-coprime-api-pair-contract-replay.args.json",
+          "result": "/private/tmp/pair-test-contract-trial-20261108/algebra-coprime-api-pair-contract-replay.result.json",
+          "log": "/private/tmp/pair-test-contract-trial-20261108/algebra-coprime-api-pair-contract-replay.log"
+        }
+      ]
+    },
+    {
+      "id": "vector-pnorm-scale",
+      "category": "numeric-boundaries",
+      "task": "Fix MathPHP\\LinearAlgebra\\Vector::pNorm for finite p >= 1 so finite components near 1e200 or 1e-200 do not overflow or underflow intermediate powers when the mathematical norm is representable. Preserve the existing public signature and ordinary results. Cover negative components, all-zero vectors, mixed scales, p=1, p=2, and larger finite p. Preserve NAN propagation and positive infinity for vectors containing an infinite component and no NAN. Do not change unrelated vector operations or define new behavior for p outside finite p >= 1.",
+      "verify": "php -d memory_limit=2G vendor/bin/phpunit --configuration=tests/phpunit.xml tests/LinearAlgebra/Vector",
+      "expectations": [
+        "finite norm of [1e200, -1e200] for p=2",
+        "nonzero norm of [1e-200, -1e-200] for p=2",
+        "homogeneity at p=1,2,3,20",
+        "zero, mixed scales, sign/permutation invariance",
+        "NAN precedence and infinity behavior"
+      ],
+      "repository": {
+        "local": "/Users/mark/Develop/php/math-php",
+        "identity": "git@github.com:markrogoyski/math-php.git"
+      },
+      "startingCommit": "e5e2d2f4d2fdd81477c20a861022a097c3f435dc",
+      "referenceDocuments": [],
+      "context": "This is an isolated scoped workflow trial. Do not inspect other trial runs or later repository history. Leave changes in the author worktree. Use the explicit scoped verification command as this trial\u2019s required gate; the broader project make-all campaign is outside this trial. Add focused regression tests and relevant API documentation, following the repository style. Do not modify dependencies or weaken existing checks.",
+      "environment": {
+        "php": "8.5.3",
+        "node": "26.0.0",
+        "dependencies": "APFS copy of /Users/mark/Develop/php/math-php/vendor; relative Composer autoload; no install/network",
+        "installedJsonSha256": "4afaaa5a296a4f627af0aa3eabb972a0c97da0d0e8e514972766e9543bc65343"
+      },
+      "runs": [
+        {
+          "variant": "pair-control",
+          "repetition": 1,
+          "target": "/private/tmp/pair-test-contract-trial-20261108/vector-pnorm-scale-pair-control",
+          "args": "/private/tmp/pair-test-contract-trial-20261108/vector-pnorm-scale-pair-control.args.json",
+          "result": "/private/tmp/pair-test-contract-trial-20261108/vector-pnorm-scale-pair-control.result.json",
+          "log": "/private/tmp/pair-test-contract-trial-20261108/vector-pnorm-scale-pair-control.log"
+        },
+        {
+          "variant": "pair-contract-replay",
+          "repetition": 1,
+          "target": "/private/tmp/pair-test-contract-trial-20261108/vector-pnorm-scale-pair-contract-replay",
+          "args": "/private/tmp/pair-test-contract-trial-20261108/vector-pnorm-scale-pair-contract-replay.args.json",
+          "result": "/private/tmp/pair-test-contract-trial-20261108/vector-pnorm-scale-pair-contract-replay.result.json",
+          "log": "/private/tmp/pair-test-contract-trial-20261108/vector-pnorm-scale-pair-contract-replay.log"
+        }
+      ]
+    }
+  ],
+  "independentOutcomeProbes": "outcome-probe.php; frozen before launches; run against each final snapshot plus each initial revision; raw JSON output; no probe shared with either arm",
+  "acceptance": "Retain provisionally only if independent outcomes do not worsen; compare total turns/time/tokens per ready result including failures. Unknown costs remain unknown. Three tasks give directional evidence only.",
+  "outcomeProbeSha256": "5c220371b54f70d15d55a867b082dc7193679801a92eca0fe6169d6de758ba77",
+  "parallelRuns": 3,
+  "executionOrderPolicy": "Launch controls in listed order before implementation; allow three simultaneous runs, each with concurrency 1. Launch treatments in listed order after checks.",
+  "candidateEngineRevision": "28f359b15106f707b1863227401559ce34c3976d"
+}

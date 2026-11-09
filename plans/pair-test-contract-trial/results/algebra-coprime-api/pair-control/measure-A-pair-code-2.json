@@ -1,0 +1,64 @@
+{
+  "status": "done",
+  "job": "measure-A-pair-code-2",
+  "seat": "A",
+  "label": "pair-code-2",
+  "tree": "/private/tmp/pair-test-contract-trial-20261108/algebra-coprime-api-pair-control/.council/host-LpLTZw-pair/wt/A",
+  "verification": {
+    "command": "php -d memory_limit=2G vendor/bin/phpunit --configuration=tests/phpunit.xml tests/Algebra",
+    "env": {
+      "TMPDIR": "/private/tmp"
+    },
+    "baseEnv": {
+      "PATH": "/opt/homebrew/Caskroom/codex/0.167.0/codex-path:/Users/mark/.local/bin:/Users/mark/.local/bin:/Users/mark/.local/bin:/Library/Frameworks/Python.framework/Versions/3.12/bin:/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/System/Cryptexes/App/usr/bin:/usr/bin:/bin:/usr/sbin:/sbin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/local/bin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/bin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/appleinternal/bin:/opt/X11/bin:/Users/mark/.codex/tmp/arg0-macos/codex-arg0xkf8yn:/opt/homebrew/Caskroom/codex/0.167.0/codex-path:/private/tmp/pair-test-contract-trial-20261108/control-engine/plugins/dark-factory/bin:/opt/homebrew/Caskroom/codex/0.166.0/codex-path:/Users/mark/.local/bin:/Library/Frameworks/Python.framework/Versions/3.12/bin:/opt/homebrew/bin:/opt/homebrew/sbin:/Users/mark/.codex/tmp/arg0-macos/codex-arg0BhigjN:/Users/mark/.cmuxterm/cmux-cli-shims/FFDD7431-F39E-4B37-A291-43524C287A38:/Applications/cmux.app/Contents/Resources/bin:/Users/mark/Library/Application Support/JetBrains/Toolbox/scripts:/Users/mark/.lmstudio/bin:/Users/mark/Library/Application Support/JetBrains/Toolbox/scripts:/Users/mark/.lmstudio/bin",
+      "HOME": "/Users/mark",
+      "USER": "mark",
+      "LOGNAME": "mark",
+      "SHELL": "/bin/zsh",
+      "TMPDIR": "/var/folders/vt/794vflbn1h71x6spk8dphrhh0000gn/T/",
+      "LANG": "en_US.UTF-8",
+      "LC_ALL": "C.UTF-8",
+      "LC_CTYPE": "C.UTF-8"
+    }
+  },
+  "snapshot": {
+    "ref": "refs/council/host-LpLTZw-pair/A-pair-code-2",
+    "commit": "ad34a63adb59fbf09d53a3d5af0fb9549bce832a",
+    "tree": "3e483f4e0004d45abaf6c161595e18fde417aeec",
+    "diff": "/private/tmp/pair-test-contract-trial-20261108/algebra-coprime-api-pair-control/.council/host-LpLTZw-pair/room/pair-code-2/A.diff",
+    "stat": "/private/tmp/pair-test-contract-trial-20261108/algebra-coprime-api-pair-control/.council/host-LpLTZw-pair/room/pair-code-2/A.stat",
+    "files": 3,
+    "fileList": [
+      "README.md",
+      "src/Algebra.php",
+      "tests/Algebra/AreCoprimeTest.php"
+    ],
+    "added": 123,
+    "removed": 0,
+    "delta": null,
+    "seatCommits": 0
+  },
+  "scratch": true,
+  "postWords": 373,
+  "suite": {
+    "exitCode": 0,
+    "timedOut": false,
+    "seconds": 0.4,
+    "tail": "PHPUnit 10.5.63 by Sebastian Bergmann and contributors.\n\nRuntime:       PHP 8.5.3\nConfiguration: /private/tmp/pair-test-contract-trial-20261108/algebra-coprime-api-pair-control/.council/host-LpLTZw-pair/scratch/A-pair-code-2-51422/tests/phpunit.xml\n\n.............................................................   61 / 1140 (  5%)\n.............................................................  122 / 1140 ( 10%)\n.............................................................  183 / 1140 ( 16%)\n.............................................................  244 / 1140 ( 21%)\n.............................................................  305 / 1140 ( 26%)\n.............................................................  366 / 1140 ( 32%)\n.............................................................  427 / 1140 ( 37%)\n.............................................................  488 / 1140 ( 42%)\n.............................................................  549 / 1140 ( 48%)\n.............................................................  610 / 1140 ( 53%)\n.............................................................  671 / 1140 ( 58%)\n.............................................................  732 / 1140 ( 64%)\n.............................................................  793 / 1140 ( 69%)\n.............................................................  854 / 1140 ( 74%)\n.............................................................  915 / 1140 ( 80%)\n.............................................................  976 / 1140 ( 85%)\n............................................................. 1037 / 1140 ( 90%)\n............................................................. 1098 / 1140 ( 96%)\n..........................................                    1140 / 1140 (100%)\n\nTime: 00:00.185, Memory: 16.00 MB\n\nOK (1140 tests, 3536 assertions)",
+    "log": "/private/tmp/pair-test-contract-trial-20261108/algebra-coprime-api-pair-control/.council/host-LpLTZw-pair/logs/suite-A-pair-code-2.log",
+    "ran": true,
+    "passed": true,
+    "cwd": "/private/tmp/pair-test-contract-trial-20261108/algebra-coprime-api-pair-control/.council/host-LpLTZw-pair/scratch/A-pair-code-2-51422",
+    "command": "php -d memory_limit=2G vendor/bin/phpunit --configuration=tests/phpunit.xml tests/Algebra",
+    "env": {
+      "TMPDIR": "/private/tmp"
+    }
+  },
+  "crossTests": [],
+  "elapsedSec": 2.0,
+  "evidence": {
+    "status": "published",
+    "index": "/private/tmp/pair-test-contract-trial-20261108/algebra-coprime-api-pair-control/.council/host-LpLTZw-pair/evidence/A-pair-code-2-0e91053e9d714e752292152cc50156b2bdcd9717075cb46764bcc0bcc795c8a5/index.json",
+    "pointer": "/private/tmp/pair-test-contract-trial-20261108/algebra-coprime-api-pair-control/.council/host-LpLTZw-pair/evidence/A-pair-code-2.json"
+  }
+}

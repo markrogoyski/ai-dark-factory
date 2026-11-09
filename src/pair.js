@@ -4,15 +4,15 @@ async function pairRun() {
   // of the two selected participants; CLI seats and all Codex-host turns use their adapters.
   const native = [S.pairOptions.author, S.pairOptions.reviewer].find(s => s.vendor === 'claude')
   const transportModel = native ? native.model : 'haiku'
-  const setup = await ask(setupPrompt(S), { label: 'setup', phase: 'Setup', schema: SETUP_SCHEMA,
+  const setup = await ask(pairSetupPrompt(S), { label: 'setup', phase: 'Setup', schema: PAIR_SETUP_SCHEMA,
     model: transportModel, effort: 'medium' }, 'setup')
   if (setup?.status === 'needs-plan') return needsPlan(S, setup.planMissing, setup.runDir)
   if (setup?.status === 'preflight') return preflightStop(S, setup.preflight)
-  if (!setup || setup.status === 'error' || !setup.runDir || !setup.runId || !setup.repoRoot) {
+  if (!setup || setup.status === 'error' || !setup.runDir || !setup.runId || !setup.repoRoot || !/^[0-9a-f]{40,64}$/.test(setup.head || '')) {
     S.pair.stop = setup?.error || 'Setup did not return a run.'
     return pairResult(S, 'failed')
   }
-  S.run = { runId: setup.runId, runDir: setup.runDir, repoRoot: setup.repoRoot, room: `${setup.runDir}/room` }
+  S.run = { runId: setup.runId, runDir: setup.runDir, repoRoot: setup.repoRoot, head: setup.head, room: `${setup.runDir}/room` }
   S.seats = [{ L: 'A', ...S.lineup[0], wt: `${S.run.runDir}/wt/A`, active: true }]
   if (((setup.dirty || []).length && !S.allowDirty) || setup.status === 'dirty') {
     S.pair.stop = 'Tracked working-tree changes are absent from worktrees based on HEAD. Commit or stash them, or explicitly set allowDirty.'
@@ -32,10 +32,22 @@ async function pairRun() {
   const p = S.pair
   log(`pair: ${S.pairOptions.author.name} authors; ${S.pairOptions.reviewer.name} reviews; budget ${S.pairOptions.maxReviews} reviews`)
   while (p.reviews.length < S.pairOptions.maxReviews) {
-    const label = `pair-${p.stage}-${p.reviews.length + 1}`
+    let label = `pair-${p.stage}-${p.reviews.length + 1}`
     p.label = label
     phase(p.stage === 'design' ? 'Design' : 'Implement')
-    const author = await pairAuthorTurn(label)
+    let author = await pairAuthorTurn(label)
+    if (p.stage === 'design' && author?.status === 'done') {
+      p.author = author
+      p.design = author.design
+      p.testContract = author.testContract
+      const error = !author.design?.trim() ? 'The author returned no design.' : pairContractError(S, p.testContract)
+      if (error) {
+        S.notes.push(`${label}: ${error} Requested one author correction; no design approval was recorded.`)
+        label += '-corrected'
+        p.label = label
+        author = await pairAuthorTurn(label, error)
+      }
+    }
     if (!author) { p.stop = 'The author turn failed.'; return pairResult(S, 'failed') }
     p.author = author
     if (author.status !== 'done') {
@@ -46,10 +58,14 @@ async function pairRun() {
     if (p.stage === 'design') {
       if (!author.design?.trim()) { p.stop = 'The author returned no design.'; return pairResult(S, 'failed') }
       p.design = author.design
+      p.testContract = author.testContract
+      const error = pairContractError(S, p.testContract)
+      if (error) { p.stop = error; return pairResult(S, 'blocked') }
     } else {
+      p.replayMapping = author.replayMapping || []
       phase('Verify')
       try {
-        p.measurement = hostRuntime ? await hostRuntime.measure({ run: S.run, seat: 'A', label })
+        p.measurement = hostRuntime ? await hostRuntime.measure({ run: S.run, seat: 'A', label, replay: pairReplayRequest(S) })
           : await ask(pairMeasurePrompt(S, label), { label: `measure ${label}`, phase: 'Verify', schema: PAIR_MEASURE_SCHEMA,
             model: transportModel, effort: 'low' }, 'checker')
       } catch (error) {
@@ -65,14 +81,20 @@ async function pairRun() {
       }
     }
     phase(p.stage === 'design' ? 'Review design' : 'Review code')
-    const review = await pairReviewTurn(label)
-    const error = pairIngestReview(S, review)
+    let review = await pairReviewTurn(label)
+    let error = pairIngestReview(S, review)
+    if (error && p.stage === 'design' && review?.complete === true && review.version === pairVersion(S) && pairChallengeError(S, review)) {
+      S.notes.push(`review ${label}: ${error} Requested one reviewer correction; the invalid review changed no findings.`)
+      review = await pairReviewTurn(`${label}-corrected`, { error, review })
+      error = pairIngestReview(S, review)
+    }
     if (error) { p.stop = error; return pairResult(S, review ? 'blocked' : 'failed') }
     const ready = pairReadiness(S)
     log(`pair: ${p.stage} review ${p.reviews.length}: ${ready.state}; ${pairOpen(S).length} open finding(s)`)
     if (ready.state === 'ready') {
       if (p.stage === 'code') return pairResult(S, 'done')
       p.approvedDesign = p.design
+      p.approvedContract = JSON.parse(JSON.stringify(p.testContract))
       p.stage = 'code'
       p.lastReview = null
       continue
@@ -81,6 +103,7 @@ async function pairRun() {
     if (p.stage === 'code' && review.requiresDesignRevision) {
       p.stage = 'design'
       p.approvedDesign = ''
+      p.approvedContract = null
       p.lastReview = null
     }
   }
@@ -88,8 +111,8 @@ async function pairRun() {
   return pairResult(S)
 }
 
-function pairAuthorTurn(label) {
-  const a = S.seats[0], prompt = pairAuthorPrompt(S, label)
+function pairAuthorTurn(label, correction = '') {
+  const a = S.seats[0], prompt = pairAuthorPrompt(S, label, correction)
   const ph = S.pair.stage === 'design' ? 'Design' : 'Implement'
   if (a.vendor === 'claude' && !hostRuntime) return ask(prompt, {
     label, phase: ph, schema: PAIR_AUTHOR_SCHEMA, model: a.model, effort: a.effort,
@@ -100,10 +123,10 @@ function pairAuthorTurn(label) {
   }, prompt, PAIR_AUTHOR_SCHEMA, label, ph)
 }
 
-function pairReviewTurn(label) {
+function pairReviewTurn(label, correction = null) {
   const a = S.auditors[0]
   const checkout = `${S.run.runDir}/snap/pair-review-${label}`
-  const prompt = pairReviewPrompt(S, label, checkout)
+  const prompt = pairReviewPrompt(S, label, checkout, correction)
   const ph = S.pair.stage === 'design' ? 'Review design' : 'Review code'
   if (a.vendor === 'claude' && !hostRuntime) return ask(prompt, {
     label: `review ${label}`, phase: ph, schema: PAIR_REVIEW_SCHEMA, model: a.model, effort: a.effort,

@@ -36,3 +36,5 @@ Every criterion must be checkable by the route seats and verifiers actually have
 Write <runDir>/TASK.md with the task (verbatim), the mode and what it means the seats deliver (for implement: the integrated change in their worktree, including the tests and docs the criteria ask for), the paths of the reference-document snapshots, the context if any, the acceptance criteria, and the verification command.
 
 Return the values from these steps.
+
+Pair also requires head: copy the full original commit from the helper init output (head), or run.json. Do not use a later author commit or snapshot. This identity will be checked against every baseline replay.

@@ -304,6 +304,25 @@ test('untrusted setup paths are rejected before host files can be created', asyn
   assert.equal(existsSync(invented), false)
 })
 
+test('Pair setup base identity must match the helper run metadata', async t => {
+  const repo = temporary(t), runDir = join(repo, '.council', 'pair-base')
+  const run = { runDir, repoRoot: repo, runId: 'pair-base', head: 'b'.repeat(40) }
+  mkdirSync(runDir, { recursive: true })
+  writeFileSync(join(runDir, 'run.json'), JSON.stringify(run))
+  let head = 'c'.repeat(40)
+  const schema = { type: 'object', properties: Object.fromEntries(Object.keys(run).map(key => [key, { type: 'string' }])),
+    required: Object.keys(run), additionalProperties: false }
+  const runtime = createRuntime({ repo, hostRunDir: repo, execute: async argv => {
+    const payload = readFileSync(argv[argv.indexOf('--prompt-file') + 1], 'utf8')
+    const outputSchema = JSON.parse(payload.split('<<<OUTPUT_SCHEMA\n')[1].split('\nOUTPUT_SCHEMA>>>')[0])
+    return { status: 'done', result: { ...run, head, turn: outputSchema.properties.turn.enum[0] } }
+  } })
+  const request = { prompt: 'setup', schema, role: 'setup', model: 'test', vendor: 'codex' }
+  await assert.rejects(runtime.agent(request), /different original base commit/)
+  head = run.head
+  assert.deepEqual(await runtime.agent(request), run)
+})
+
 test('cancellation stops detached measurement commands and prevents queued model launches', async t => {
   const dir = temporary(t), repo = join(dir, 'repo'), runDir = join(repo, '.council', 'run')
   mkdirSync(join(runDir, 'logs'), { recursive: true })
@@ -383,6 +402,10 @@ test('installed pair workflow runs both author/reviewer directions and repeated 
   for (const author of ['sol', 'opus']) {
     const dir = temporary(t), repo = join(dir, 'repo'), bin = join(dir, 'bin')
     initRepo(repo); mkdirSync(bin)
+    mkdirSync(join(repo, 'tests'))
+    writeFileSync(join(repo, 'tests/preserved.cjs'), "require('node:assert/strict').equal(require('../sum.cjs')(2, 0), 2)\n")
+    execFileSync('git', ['-C', repo, 'add', 'tests'])
+    execFileSync('git', ['-C', repo, 'commit', '-qm', 'Add preserved test root'])
     for (const cli of ['codex', 'claude']) writeFileSync(join(bin, cli), readFileSync(join(root, 'test/fixtures/codex-cli.cjs')), { mode: 0o755 })
     execFileSync('bash', [join(root, 'install-codex.sh'), '--repo', repo], { encoding: 'utf8' })
     const result = JSON.parse(execFileSync(process.execPath, [join(repo, '.agents/skills/dark-factory/scripts/run.mjs'),
@@ -396,6 +419,7 @@ test('installed pair workflow runs both author/reviewer directions and repeated 
     assert.equal(result.final.readiness.state, 'ready')
     assert.deepEqual(result.reviews.map(r => r.stage), ['design', 'code', 'code', 'code'])
     assert.ok(result.findings.every(f => f.status === 'fixed'))
+    assert.deepEqual(result.final.replay.records.map(r => [r.side, r.passed]), [['base', false], ['final', true], ['base', true], ['final', true]])
     assert.match(readFileSync(join(repo, 'sum.cjs'), 'utf8'), /a - b/, 'delivery stays separate')
     assert.match(readFileSync(join(result.final.worktree, 'sum.cjs'), 'utf8'), /a \+ b/)
     assert.equal(result.final.snapshotTree, execFileSync('git', ['-C', repo, 'rev-parse', `${result.final.snapshotRef}^{tree}`], { encoding: 'utf8' }).trim())
@@ -415,6 +439,7 @@ test('installed pair workflow runs both author/reviewer directions and repeated 
     }))
     assert.equal(resumed.final.snapshotTree, result.final.snapshotTree)
     assert.deepEqual(resumed.findings, result.findings)
+    assert.deepEqual(resumed.final.replay, result.final.replay)
     assert.equal(resumed.metrics.turns, result.metrics.turns)
     assert.deepEqual(resumed.metrics.turnsByRole, result.metrics.turnsByRole)
     assert.equal(readFileSync(join(dir, 'calls.jsonl'), 'utf8').trim().split('\n').length, calls.length, 'checkpoint replay launches no model CLI')

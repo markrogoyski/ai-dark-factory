@@ -1,0 +1,15 @@
+{
+  "completedAt": "2026-11-08T22:49:24.904589+00:00",
+  "makeCheck": "passed",
+  "promptGoldensChanged": [
+    "test/golden/pair/1-author.txt",
+    "test/golden/pair/2-review.txt",
+    "test/golden/pair/3-author.txt",
+    "test/golden/pair/4-review.txt",
+    "test/golden/pair/5-author.txt",
+    "test/golden/pair/6-measure.txt",
+    "test/golden/pair/7-review.txt"
+  ],
+  "councilAndEnsembleUnchanged": true,
+  "modelCallsInRegressionTests": 0
+}

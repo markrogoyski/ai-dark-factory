@@ -446,6 +446,8 @@ test('packaged CLI runs a Pair task through stub model CLIs and real delivery', 
   }
   writeFileSync(join(f.repo, 'sum.cjs'), 'module.exports = (a,b) => a-b\n')
   writeFileSync(join(f.repo, 'check.cjs'), "require('node:assert/strict').equal(require('./sum.cjs')(2,3),5)\n")
+  mkdirSync(join(f.repo, 'tests'))
+  writeFileSync(join(f.repo, 'tests/preserved.cjs'), "require('node:assert/strict').equal(require('../sum.cjs')(2,0),2)\n")
   f.git('add', '.'); f.git('commit', '-qm', 'Add failing sum')
   const result = spawnSync(process.execPath, [join(root, 'plugins/dark-factory/bin/dark-factory-codex'), '--workflow', 'run-plan', '--cwd', f.repo, '--plan-file', f.file], {
     encoding: 'utf8', timeout: 90000, env: { ...process.env, PATH: `${bin}:${process.env.PATH}`, CODEX_HOME: join(f.temp, 'codex-config'), CLAUDE_CONFIG_DIR: join(f.temp, 'claude-config'), FACTORY_TEST_REPO: f.repo,

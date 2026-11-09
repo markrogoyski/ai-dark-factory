@@ -1,0 +1,50 @@
+{
+    "scale-1-1.0E+200": {
+        "passed": true
+    },
+    "scale-1-1.0E-200": {
+        "passed": true
+    },
+    "scale-1-1": {
+        "passed": true
+    },
+    "scale-2-1.0E+200": {
+        "passed": true
+    },
+    "scale-2-1.0E-200": {
+        "passed": true
+    },
+    "scale-2-1": {
+        "passed": true
+    },
+    "scale-3-1.0E+200": {
+        "passed": true
+    },
+    "scale-3-1.0E-200": {
+        "passed": true
+    },
+    "scale-3-1": {
+        "passed": true
+    },
+    "scale-20-1.0E+200": {
+        "passed": true
+    },
+    "scale-20-1.0E-200": {
+        "passed": true
+    },
+    "scale-20-1": {
+        "passed": true
+    },
+    "zero": {
+        "passed": true
+    },
+    "mixed": {
+        "passed": true
+    },
+    "infinity": {
+        "passed": true
+    },
+    "nan": {
+        "passed": true
+    }
+}

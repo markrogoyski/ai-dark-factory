@@ -1,0 +1,962 @@
+{
+  "status": "done",
+  "workflow": "pair",
+  "mode": "implement",
+  "task": "Fix IterTools\\Single::padLeft so it can emit from an arbitrarily long or infinite input after bounded lookahead. It may consume up to max(1, length) elements to determine padding before the first output, but must not request an additional element until the consumer advances. Preserve lazy validation of negative lengths, left padding of short/empty inputs, all original values of longer finite inputs, fill values, and sequential output keys. Stream::padLeft must retain its existing semantics.",
+  "runDir": "/private/tmp/pair-test-contract-trial-20261108/iterator-pad-left-pair-contract-replay/.council/host-b4UBKn-pair",
+  "room": "/private/tmp/pair-test-contract-trial-20261108/iterator-pad-left-pair-contract-replay/.council/host-b4UBKn-pair/room",
+  "refs": [],
+  "stage": "code",
+  "stopReason": "",
+  "design": "Keep Single::padLeft a generator and replace its full-source buffer with a bounded prefix buffer inside the existing source foreach (src/Single.php:1064–1086). Preserve the negative-length check before source iteration, including its exception message. Buffer and count values only until $length is reached; then yield the buffered values immediately and clear the buffer. Yield subsequent source values directly. If the source ends short, yield $length minus its buffered count copies of $fill, followed by the buffered values. For length 0, yield source values directly.\n\nThe threshold flush remains inside the source foreach body. The source stays positioned on the threshold element throughout buffered output, including suspension at its last yield; only another consumer advance can request the next source element. Use one source traversal and unkeyed yields throughout. This avoids rewinding one-shot inputs, preserves sequential keys, and retains all source/fill values without coercion or cloning. Initial consumption is bounded by max(1, $length), with auxiliary storage O(max(1, $length)) independent of total source length.\n\nLeave Stream::padLeft's executable wrapper unchanged: it already delegates to Single and returns $this (src/Stream.php:1054–1057). Update padLeft PHPDoc in src/Single.php and src/Stream.php and the Pad Left sections in docs/single-iteration.md and docs/stream.md. Explain bounded lookahead, partial consumption of infinite sources, suspension without additional pulls, and negative-length validation when iteration begins, before touching the source. Preserve the existing finite examples and documentation style.\n\nAdd tests/Single/PadLeftStreamingTest.php and tests/Stream/StreamPadLeftStreamingTest.php for changed consumption behavior. Extend tests/Single/PadLeftTest.php and add tests/Stream/StreamPadLeftTest.php for preserved behavior. Retain all existing assertions, including StreamSingleTier3Test. Follow existing strict types, namespaces, TestCase, static providers, @test/@dataProvider, Given/When/Then, and assertSame conventions. Reuse existing fixtures; guarded sources remain inside their test files. No API is added; changed streaming tests remain separate from preserved-behavior files.\n\nC1–C2: parameterize guarded recording sources by lengths 0, 1, 3 and infinite/very-long-finite source kind. Start their permitted pull budget at b=max(1,length). Inspect the first output, repeated suspended observations, all buffered outputs, and two tail outputs. At output index j, require key/value j and total pulls max(b,j+1); increase the guard budget only immediately before an explicit next(). An extra pull throws immediately, including at the lookahead boundary. C3: retain existing four-form cases and add full keyed-result assertions covering empty/short/equal/long inputs, mixed/null values, fills, and object identity. C4: verify construction is inert and negative-length iteration throws before source consumption or aggregate acquisition. C5: independently verify fluent identity, deferred behavior, finite values/keys, manual suspension, and limited infinite-source consumption through Stream.\n\nC6: during implementation, run focused contract commands through dark-factory verify with command files. Establish intended guarded streaming failures before production edits, then pass focused checks after implementation. Finally run the unchanged complete gate through the supplied helper: php -d memory_limit=2G vendor/bin/phpunit --configuration=tests/phpunit.xml tests/Single && php -d memory_limit=2G vendor/bin/phpunit --configuration=tests/phpunit.xml tests/Stream. Inspect recorded cwd, overrides, output, and exit status. C7: review all four documentation locations against implementation boundaries.\n\nAssumptions and risks: the bound counts elements delivered by the supplied iterable; short/empty inputs necessarily require exhaustion detection. Prefetch internal to a supplied iterable is outside padLeft's control. Large requested lengths still require proportional prefix storage. Main risks are an extra threshold pull, duplicated/lost boundary values, reset keys, and eager validation; focused tests target each. No dependencies, verification configuration, project defaults, unrelated APIs, or translations need changes. No AGENTS.md was found in the worktree or ancestor instruction paths. Setup's passing baseline is supplied evidence; no checks run during design.",
+  "testContract": {
+    "testRoots": [
+      {
+        "path": "tests/Single",
+        "evidence": "tests/phpunit.xml:16 registers Single with suffix Test.php; tests/Single/PadLeftTest.php establishes four-form PHPUnit tests."
+      },
+      {
+        "path": "tests/Stream",
+        "evidence": "tests/phpunit.xml:18 registers Stream with suffix Test.php; tests/Stream/StreamSingleTier3Test.php:56–94 tests padLeft delegation."
+      },
+      {
+        "path": "tests/Fixture",
+        "evidence": "tests/phpunit.xml:9 registers Fixture; composer.json maps IterTools\\Tests\\ to tests/. Existing PadLeftTest imports fixtures from this directory."
+      }
+    ],
+    "checks": [
+      {
+        "id": "single-bounded-consumption",
+        "criteria": [
+          "C1",
+          "C2",
+          "C6"
+        ],
+        "kind": "test",
+        "purpose": "changed",
+        "scenario": "Lengths 0,1,3 over inline guarded recording generators yielding keyed integers from 0, separately unbounded and lazily finite up to PHP_INT_MAX. A mutable allowed-pull budget rejects an extra request before yielding another value. Manually inspect b=max(1,length) initial outputs and two tail outputs without advancing after the last inspected value.",
+        "expected": "Construction pulls nothing. First output has key/value 0 after exactly b pulls. Repeated current/key/valid calls while suspended leave consumption unchanged. At output index j, key/value are j and total pulls are max(b,j+1). Pull b+1 occurs only after advancing past the final buffered output; subsequent advances pull one value each.",
+        "boundaries": "Lengths 0,1,>1; first output, suspended observations, final buffered yield, first/second tail yields. Increase the guard budget only immediately before next(), making over-reading fail promptly.",
+        "file": "tests/Single/PadLeftStreamingTest.php",
+        "command": "php -d memory_limit=2G vendor/bin/phpunit --configuration=tests/phpunit.xml tests/Single/PadLeftStreamingTest.php",
+        "fixtures": [],
+        "inspection": "",
+        "reason": ""
+      },
+      {
+        "id": "single-finite-values-keys",
+        "criteria": [
+          "C3",
+          "C6"
+        ],
+        "kind": "test",
+        "purpose": "preserved",
+        "scenario": "Retain existing four-form provider cases. Add full keyed-result assertions across arrays, GeneratorFixture::getKeyValueGenerator, native ArrayIterator, and IteratorAggregateFixture. Exercise empty sources at lengths 0,1,3 and keyed [null,false,0,''] at lengths 0,1,2,4,6 with null/string fills. Include shared object identity for source and fill values.",
+        "expected": "Empty sources yield requested fills; short sources yield left fills then all original values; equal/long sources pass through without truncation or reordering. assertSame preserves types, nulls, and object identity. iterator_to_array with keys retained equals a sequential zero-based expected list for every form.",
+        "boundaries": "Empty/non-empty; lengths 0,1; short/equal/long; string and nonsequential numeric input keys. Use native ArrayIterator for keyed cases because ArrayIteratorFixture numerically indexes its backing array.",
+        "file": "tests/Single/PadLeftTest.php",
+        "command": "php -d memory_limit=2G vendor/bin/phpunit --configuration=tests/phpunit.xml tests/Single/PadLeftTest.php",
+        "fixtures": [
+          "tests/Fixture/ArrayIteratorFixture.php",
+          "tests/Fixture/GeneratorFixture.php",
+          "tests/Fixture/IteratorAggregateFixture.php",
+          "tests/Fixture/DataProvider.php"
+        ],
+        "inspection": "",
+        "reason": ""
+      },
+      {
+        "id": "single-deferred-validation",
+        "criteria": [
+          "C4",
+          "C6"
+        ],
+        "kind": "test",
+        "purpose": "preserved",
+        "scenario": "Create padLeft results at lengths 0,1,3,-1 over a recording generator. Separately create a negative-length result over CountingIteratorAggregateFixture. Assert construction is inert, explicitly begin negative-length iteration, and inspect source activity after catching the exception.",
+        "expected": "Every construction succeeds with zero pulls. Beginning negative-length iteration raises InvalidArgumentException with the existing message and still zero pulls or aggregate getIterator calls. Valid-length construction also leaves the source untouched.",
+        "boundaries": "API call versus first iteration; length -1 versus 0,1,3. Use explicit catch or try/finally so exception assertions do not skip post-exception non-consumption assertions.",
+        "file": "tests/Single/PadLeftTest.php",
+        "command": "php -d memory_limit=2G vendor/bin/phpunit --configuration=tests/phpunit.xml tests/Single/PadLeftTest.php --filter 'Deferred|Negative|Lazy'",
+        "fixtures": [
+          "tests/Fixture/GeneratorFixture.php",
+          "tests/Fixture/CountingIteratorAggregateFixture.php",
+          "tests/Fixture/DataProvider.php",
+          "tests/Fixture/ArrayIteratorFixture.php",
+          "tests/Fixture/IteratorAggregateFixture.php"
+        ],
+        "inspection": "",
+        "reason": ""
+      },
+      {
+        "id": "stream-preserved-contract",
+        "criteria": [
+          "C5",
+          "C6"
+        ],
+        "kind": "test",
+        "purpose": "preserved",
+        "scenario": "For fresh streams over arrays, keyed generators, ArrayIterator, and IteratorAggregateFixture, assert same-instance return. Fully iterate empty sources at lengths 0,1,3 and keyed ['a'=>null,9=>false,'z'=>0] at lengths 0,1,3,5 with null/'x' fills. Use recording sources and CountingIteratorAggregateFixture for construction and negative-length timing. Retain StreamSingleTier3Test checks.",
+        "expected": "padLeft returns the same Stream. Full output has exact padding/pass-through values and sequential keys. Construction touches neither recording source nor aggregate. Negative padLeft returns normally; iteration throws InvalidArgumentException before source activity.",
+        "boundaries": "Fluent call versus iteration; negative/zero/positive lengths; empty/short/equal/long sources; all four iterable forms. Use iterator_to_array($stream) with keys retained so toArray cannot hide key regressions.",
+        "file": "tests/Stream/StreamPadLeftTest.php",
+        "command": "php -d memory_limit=2G vendor/bin/phpunit --configuration=tests/phpunit.xml tests/Stream/StreamPadLeftTest.php",
+        "fixtures": [
+          "tests/Fixture/GeneratorFixture.php",
+          "tests/Fixture/IteratorAggregateFixture.php",
+          "tests/Fixture/CountingIteratorAggregateFixture.php"
+        ],
+        "inspection": "",
+        "reason": ""
+      },
+      {
+        "id": "stream-bounded-consumption",
+        "criteria": [
+          "C5",
+          "C1",
+          "C2",
+          "C6"
+        ],
+        "kind": "test",
+        "purpose": "changed",
+        "scenario": "Use inline guarded recording infinite and lazily long finite integer generators with Stream::of(...)->padLeft(length,null), parameterized by lengths 0,1,3. Manually inspect the Stream iterator across its prefix/tail boundary; independently consume a fresh pipeline with limit(b+2)->toArray().",
+        "expected": "Construction pulls nothing. First output follows exactly b=max(1,length) source values; suspended observations pull nothing. Manual advances preserve zero-based keys/values and total pulls max(b,j+1). Limited output is [0,...,b+1] with exactly b+2 source pulls.",
+        "boundaries": "First output, suspension, buffered-to-tail transition, and limited termination without another pull. Single::limit already stops immediately after its final yield (src/Single.php:594 onward), supporting precise composed consumption assertions.",
+        "file": "tests/Stream/StreamPadLeftStreamingTest.php",
+        "command": "php -d memory_limit=2G vendor/bin/phpunit --configuration=tests/phpunit.xml tests/Stream/StreamPadLeftStreamingTest.php",
+        "fixtures": [],
+        "inspection": "",
+        "reason": ""
+      },
+      {
+        "id": "single-buffer-invariant",
+        "criteria": [
+          "C1",
+          "C2"
+        ],
+        "kind": "inspection",
+        "purpose": "changed",
+        "scenario": "Review final Single::padLeft control flow and every write to its buffer/count.",
+        "expected": "One source traversal; count capped at length; no append after the threshold; buffer cleared after flushing; memory independent of total source length. Threshold flushing yields before source advancement, and tail values yield directly.",
+        "boundaries": "Lengths 0,1,>1; short-source exhaustion; last buffered yield and subsequent source advance.",
+        "file": "",
+        "command": "",
+        "fixtures": [],
+        "inspection": "Inspect src/Single.php padLeft and the author diff; trace source-advance points around every yield and prove the storage bound for arbitrary total source length.",
+        "reason": "Finite runtime tests cannot prove a universal storage/control-flow bound. Guarded tests independently verify observable boundaries."
+      },
+      {
+        "id": "scope-and-gate",
+        "criteria": [
+          "C6"
+        ],
+        "kind": "inspection",
+        "purpose": "preserved",
+        "scenario": "Inspect the author-worktree diff and verification records after focused checks and the complete required gate.",
+        "expected": "Repository PHPUnit conventions are followed; existing assertions remain intact; dependencies, configuration, and defaults remain unchanged. The recorded full gate uses the supplied Single && Stream command and succeeds in author worktree A with supplied overrides.",
+        "boundaries": "No design-stage checks or make-all campaign. Focused runs use command files; the final gate preserves verify.sh and verification.json.",
+        "file": "",
+        "command": "",
+        "fixtures": [],
+        "inspection": "Review git diff --check and git diff in A. Inspect helper records for cwd, exact command, overrides, both suite outputs, and successful exit. Use a unique author/stage gate label.",
+        "reason": "Suite assertions cannot establish permitted patch scope, preservation of checks, or verification provenance; these require patch and evidence review."
+      },
+      {
+        "id": "padleft-documentation",
+        "criteria": [
+          "C7"
+        ],
+        "kind": "inspection",
+        "purpose": "changed",
+        "scenario": "Review padLeft PHPDoc in Single/Stream and English Pad Left sections in docs/single-iteration.md and docs/stream.md against implementation.",
+        "expected": "All four locations consistently explain bounded initial lookahead, partial consumption of infinite inputs, suspension without additional pulls, sequential keys, and finite padding/pass-through. Negative validation occurs when iteration begins before consuming the source. Stream remains fluent and deferred.",
+        "boundaries": "State the first-output bound for non-empty sources and necessary exhaustion detection for short/empty inputs. Do not imply fully collecting an infinite source terminates.",
+        "file": "",
+        "command": "",
+        "fixtures": [],
+        "inspection": "Compare all four changed sections with threshold, empty, and negative paths and existing Markdown/PHPDoc style; confirm finite examples remain correct.",
+        "reason": "Semantic accuracy and documentation style need review; text-matching tests would be brittle and insufficient."
+      }
+    ]
+  },
+  "replayMapping": [
+    {
+      "file": "tests/Single/PadLeftStreamingTest.php",
+      "command": "php -d memory_limit=2G vendor/bin/phpunit --configuration=tests/phpunit.xml tests/Single/PadLeftStreamingTest.php",
+      "checkIds": [
+        "single-bounded-consumption"
+      ],
+      "fixtures": []
+    },
+    {
+      "file": "tests/Single/PadLeftTest.php",
+      "command": "php -d memory_limit=2G vendor/bin/phpunit --configuration=tests/phpunit.xml tests/Single/PadLeftTest.php",
+      "checkIds": [
+        "single-finite-values-keys"
+      ],
+      "fixtures": [
+        "tests/Fixture/ArrayIteratorFixture.php",
+        "tests/Fixture/CountingIteratorAggregateFixture.php",
+        "tests/Fixture/DataProvider.php",
+        "tests/Fixture/GeneratorFixture.php",
+        "tests/Fixture/IteratorAggregateFixture.php"
+      ]
+    },
+    {
+      "file": "tests/Single/PadLeftTest.php",
+      "command": "php -d memory_limit=2G vendor/bin/phpunit --configuration=tests/phpunit.xml tests/Single/PadLeftTest.php --filter 'Deferred|Negative|Lazy'",
+      "checkIds": [
+        "single-deferred-validation"
+      ],
+      "fixtures": [
+        "tests/Fixture/ArrayIteratorFixture.php",
+        "tests/Fixture/CountingIteratorAggregateFixture.php",
+        "tests/Fixture/DataProvider.php",
+        "tests/Fixture/GeneratorFixture.php",
+        "tests/Fixture/IteratorAggregateFixture.php"
+      ]
+    },
+    {
+      "file": "tests/Stream/StreamPadLeftTest.php",
+      "command": "php -d memory_limit=2G vendor/bin/phpunit --configuration=tests/phpunit.xml tests/Stream/StreamPadLeftTest.php",
+      "checkIds": [
+        "stream-preserved-contract"
+      ],
+      "fixtures": [
+        "tests/Fixture/CountingIteratorAggregateFixture.php",
+        "tests/Fixture/GeneratorFixture.php",
+        "tests/Fixture/IteratorAggregateFixture.php"
+      ]
+    },
+    {
+      "file": "tests/Stream/StreamPadLeftStreamingTest.php",
+      "command": "php -d memory_limit=2G vendor/bin/phpunit --configuration=tests/phpunit.xml tests/Stream/StreamPadLeftStreamingTest.php",
+      "checkIds": [
+        "stream-bounded-consumption"
+      ],
+      "fixtures": []
+    }
+  ],
+  "author": "Codex Sol",
+  "reviewer": "Codex Astra",
+  "reviews": [
+    {
+      "stage": "design",
+      "label": "pair-design-1",
+      "version": "design:14386-5a9d3f1c:base",
+      "complete": true,
+      "summary": "The design satisfies all seven criteria at the planning stage. Repository inspection confirms the control-flow approach, test roots, fixtures, wrapper behavior, and documentation targets. No tests were run, as required for design review.",
+      "requiresDesignRevision": false,
+      "challenges": [
+        {
+          "criterion": "C1",
+          "wrongImplementation": "Yield the initial prefix promptly but continue appending every subsequent source value to a retained buffer. The buffer-invariant inspection rejects the unbounded storage; guarded consumption tests also reject implementations that exhaust the source before yielding.",
+          "rejectingCheckIds": [
+            "single-buffer-invariant",
+            "single-bounded-consumption"
+          ]
+        },
+        {
+          "criterion": "C2",
+          "wrongImplementation": "Advance the source to element length+1 before flushing the prefix. The guard permits only max(1,length) pulls at first output, and per-output consumption assertions also detect premature advancement during buffered output.",
+          "rejectingCheckIds": [
+            "single-bounded-consumption",
+            "single-buffer-invariant"
+          ]
+        },
+        {
+          "criterion": "C3",
+          "wrongImplementation": "Replay buffered values with their original keys, discard null values, or duplicate the threshold value when switching to the tail. Full keyed assertSame comparisons across all four iterable forms reject these changes, including type and identity changes.",
+          "rejectingCheckIds": [
+            "single-finite-values-keys"
+          ]
+        },
+        {
+          "criterion": "C4",
+          "wrongImplementation": "Validate negative lengths eagerly or acquire the source iterator before checking the length. Construction assertions and post-exception pull/getIterator counts reject both timing defects.",
+          "rejectingCheckIds": [
+            "single-deferred-validation"
+          ]
+        },
+        {
+          "criterion": "C5",
+          "wrongImplementation": "Have Stream::padLeft return a replacement Stream or materialize its source before delegating. Same-instance assertions reject replacement, while construction, guarded suspension, and limited infinite-source checks reject eager consumption.",
+          "rejectingCheckIds": [
+            "stream-preserved-contract",
+            "stream-bounded-consumption"
+          ]
+        },
+        {
+          "criterion": "C6",
+          "wrongImplementation": "Report only focused-test success while weakening existing assertions or changing dependencies to obtain a pass. Diff inspection and recorded verification provenance require preserved checks, unchanged dependencies, and successful execution of both complete scoped suites.",
+          "rejectingCheckIds": [
+            "scope-and-gate"
+          ]
+        },
+        {
+          "criterion": "C7",
+          "wrongImplementation": "Document immediate negative-length rejection or claim that fully collecting an infinite input terminates. The four-location documentation review explicitly compares these claims with deferred validation, bounded lookahead, and partial-consumption semantics.",
+          "rejectingCheckIds": [
+            "padleft-documentation"
+          ]
+        }
+      ],
+      "findings": [],
+      "resolutions": [],
+      "criteria": [
+        {
+          "criterion": "C1",
+          "status": "met",
+          "note": "The design replaces the full-source buffer in src/Single.php:1064 with a capped prefix and direct tail yields. Lengths 0, 1, and 3 receive guarded infinite and very-long-finite tests; inspection establishes the universal storage bound."
+        },
+        {
+          "criterion": "C2",
+          "status": "met",
+          "note": "Flushing inside the existing source foreach preserves suspension on the threshold element. The contract checks every buffered output, repeated suspended observations, and two tail outputs with explicit pull budgets."
+        },
+        {
+          "criterion": "C3",
+          "status": "met",
+          "note": "Existing PadLeftTest covers four iterable forms. Planned keyed comparisons extend this to mixed/null values, object identity, and empty/short/equal/long cases. Inspected fixtures confirm keyed generators and aggregates preserve input keys; native ArrayIterator correctly avoids ArrayIteratorFixture's numeric-index restriction."
+        },
+        {
+          "criterion": "C4",
+          "status": "met",
+          "note": "Keeping the existing negative-length check inside the generator and before foreach preserves deferred validation. Planned post-exception assertions use recording generators and the existing CountingIteratorAggregateFixture to establish source non-consumption."
+        },
+        {
+          "criterion": "C5",
+          "status": "met",
+          "note": "src/Stream.php:1054 delegates to Single and returns $this. Stream::getIterator delegates to Transform::toIterator, which returns an existing Generator unchanged. Independent wrapper tests cover identity, validation, keys, suspension, and limited consumption; Single::limit returns before requesting another source element."
+        },
+        {
+          "criterion": "C6",
+          "status": "met",
+          "note": "tests/phpunit.xml registers Fixture, Single, and Stream at lines 9, 16, and 18 with suffix Test.php; composer.json maps IterTools\\Tests\\ to tests/. All proposed test roots and fixtures exist. Changed streaming tests have separate files, existing assertions are retained, and the design requires the unchanged full gate through the supplied helper. Execution remains an implementation-stage obligation."
+        },
+        {
+          "criterion": "C7",
+          "status": "met",
+          "note": "Both padLeft PHPDoc blocks and the existing Pad Left sections in docs/single-iteration.md:799 and docs/stream.md:2114 were inspected. The planned updates preserve finite examples and explicitly cover lookahead, suspension, infinite-source prefixes, and deferred negative-length validation."
+        }
+      ],
+      "suggestions": []
+    },
+    {
+      "stage": "code",
+      "label": "pair-code-2",
+      "version": "code:de06fa15e9d1861d9f08c25e82d12b721f09ec08",
+      "complete": true,
+      "summary": "Reviewed the entire eight-file diff and confirmed the checkout matches the measured snapshot. No actionable defects found. All acceptance criteria are met; the supplied required gate passed.",
+      "requiresDesignRevision": false,
+      "challenges": [],
+      "findings": [],
+      "resolutions": [],
+      "criteria": [
+        {
+          "criterion": "C1",
+          "status": "met",
+          "note": "Single::padLeft caps its count and buffer at length, flushes at the threshold, and streams subsequent values directly. Guarded tests cover lengths 0, 1, and 3 over infinite and very long finite sources. All six base cases fail specifically on excess consumption; all six final cases pass."
+        },
+        {
+          "criterion": "C2",
+          "status": "met",
+          "note": "The threshold flush occurs inside the source foreach, preventing advancement during buffered yields. Tests inspect repeated suspended observations, every buffered output, and two tail outputs, increasing the permitted pull budget only immediately before next()."
+        },
+        {
+          "criterion": "C3",
+          "status": "met",
+          "note": "Existing assertions remain intact. Added keyed-result tests cover empty, short, equal, and longer inputs across all four iterable forms, including null, mixed values, fill values, and object identity. The preserved-behavior file passes on both base and final: 109 tests, 121 assertions."
+        },
+        {
+          "criterion": "C4",
+          "status": "met",
+          "note": "Validation remains inside the generator before source traversal, with the original exception message. Tests verify inert construction and post-exception non-consumption for recording generators and aggregate acquisition. The filtered command executes seven tests and passes on both base and final."
+        },
+        {
+          "criterion": "C5",
+          "status": "met",
+          "note": "Stream's executable wrapper is unchanged. Tests independently verify fluent identity, deferred execution and validation, finite values and keys, suspension, and limited source consumption. Preserved tests pass on both revisions; all 12 streaming cases fail through the intended guard on base and pass on final."
+        },
+        {
+          "criterion": "C6",
+          "status": "met",
+          "note": "The recorded exact gate passed: Single 3,825 tests/4,780 assertions; Stream 3,852 tests/162,846 assertions. Verified snapshot identity, command, cwd, overrides, and exit 0. Replay commands isolate their named files; exclusions appropriately retain unchanged fixtures and dependencies while excluding production/documentation changes from test overlays. No dependencies, configuration, or existing checks changed. Diff whitespace check passes."
+        },
+        {
+          "criterion": "C7",
+          "status": "met",
+          "note": "Both PHPDoc blocks and both Markdown sections consistently describe bounded lookahead, incremental infinite-source consumption, suspension, sequential keys, and deferred negative-length validation. Stream documentation preserves fluent semantics, and existing finite examples remain correct."
+        }
+      ],
+      "suggestions": []
+    }
+  ],
+  "findings": [],
+  "questions": [],
+  "notes": [],
+  "report": {
+    "markdown": "Pair: Codex Sol authors; Codex Astra reviews.\n\nReadiness: ready. Reviews: 2/8.\n\nVerification: passed on the reviewed snapshot.\n\nReplay: 10 file/command records; 10 overlay exclusions. Base outcomes require reviewer interpretation."
+  },
+  "final": {
+    "author": "A",
+    "model": "Codex Sol",
+    "summary": "Implemented bounded-lookahead padLeft with regression tests and documentation. All focused checks and the required gate pass: 3,825 Single tests and 3,852 Stream tests.",
+    "worktree": "/private/tmp/pair-test-contract-trial-20261108/iterator-pad-left-pair-contract-replay/.council/host-b4UBKn-pair/wt/A",
+    "post": "/private/tmp/pair-test-contract-trial-20261108/iterator-pad-left-pair-contract-replay/.council/host-b4UBKn-pair/room/pair-code-2/A.md",
+    "snapshotRef": "refs/council/host-b4UBKn-pair/A-pair-code-2",
+    "snapshotTree": "de06fa15e9d1861d9f08c25e82d12b721f09ec08",
+    "diff": "/private/tmp/pair-test-contract-trial-20261108/iterator-pad-left-pair-contract-replay/.council/host-b4UBKn-pair/room/pair-code-2/A.diff",
+    "suite": {
+      "exitCode": 0,
+      "timedOut": false,
+      "seconds": 2.2,
+      "tail": "............................................................. 1769 / 3852 ( 45%)\n............................................................. 1830 / 3852 ( 47%)\n............................................................. 1891 / 3852 ( 49%)\n............................................................. 1952 / 3852 ( 50%)\n............................................................. 2013 / 3852 ( 52%)\n............................................................. 2074 / 3852 ( 53%)\n............................................................. 2135 / 3852 ( 55%)\n............................................................. 2196 / 3852 ( 57%)\n............................................................. 2257 / 3852 ( 58%)\n............................................................. 2318 / 3852 ( 60%)\n............................................................. 2379 / 3852 ( 61%)\n............................................................. 2440 / 3852 ( 63%)\n............................................................. 2501 / 3852 ( 64%)\n............................................................. 2562 / 3852 ( 66%)\n............................................................. 2623 / 3852 ( 68%)\n............................................................. 2684 / 3852 ( 69%)\n............................................................. 2745 / 3852 ( 71%)\n............................................................. 2806 / 3852 ( 72%)\n............................................................. 2867 / 3852 ( 74%)\n............................................................. 2928 / 3852 ( 76%)\n............................................................. 2989 / 3852 ( 77%)\n............................................................. 3050 / 3852 ( 79%)\n............................................................. 3111 / 3852 ( 80%)\n............................................................. 3172 / 3852 ( 82%)\n............................................................. 3233 / 3852 ( 83%)\n............................................................. 3294 / 3852 ( 85%)\n............................................................. 3355 / 3852 ( 87%)\n............................................................. 3416 / 3852 ( 88%)\n............................................................. 3477 / 3852 ( 90%)\n............................................................. 3538 / 3852 ( 91%)\n............................................................. 3599 / 3852 ( 93%)\n............................................................. 3660 / 3852 ( 95%)\n............................................................. 3721 / 3852 ( 96%)\n............................................................. 3782 / 3852 ( 98%)\n............................................................. 3843 / 3852 ( 99%)\n.........                                                     3852 / 3852 (100%)\n\nTime: 00:01.189, Memory: 50.05 MB\n\nOK (3852 tests, 162846 assertions)",
+      "log": "/private/tmp/pair-test-contract-trial-20261108/iterator-pad-left-pair-contract-replay/.council/host-b4UBKn-pair/logs/suite-A-pair-code-2.log",
+      "ran": true,
+      "passed": true,
+      "cwd": "/private/tmp/pair-test-contract-trial-20261108/iterator-pad-left-pair-contract-replay/.council/host-b4UBKn-pair/scratch/A-pair-code-2-93327",
+      "command": "php -d memory_limit=2G vendor/bin/phpunit --configuration=tests/phpunit.xml tests/Single && php -d memory_limit=2G vendor/bin/phpunit --configuration=tests/phpunit.xml tests/Stream",
+      "env": {
+        "TMPDIR": "/private/tmp/pair-test-contract-trial-20261108/iterator-pad-left-pair-contract-replay/.council/host-b4UBKn-pair/tmp",
+        "XDG_CACHE_HOME": "/private/tmp/pair-test-contract-trial-20261108/iterator-pad-left-pair-contract-replay/.council/host-b4UBKn-pair/cache"
+      }
+    },
+    "replay": {
+      "base": "f8ae71b11e508bf61a6233508b391262a5890454",
+      "snapshot": "65de019628da372b4446cc8a6f96eaed64389994",
+      "snapshotTree": "de06fa15e9d1861d9f08c25e82d12b721f09ec08",
+      "testRoots": [
+        "tests/Single",
+        "tests/Stream",
+        "tests/Fixture"
+      ],
+      "mapping": [
+        {
+          "file": "tests/Single/PadLeftStreamingTest.php",
+          "command": "php -d memory_limit=2G vendor/bin/phpunit --configuration=tests/phpunit.xml tests/Single/PadLeftStreamingTest.php",
+          "checkIds": [
+            "single-bounded-consumption"
+          ],
+          "fixtures": []
+        },
+        {
+          "file": "tests/Single/PadLeftTest.php",
+          "command": "php -d memory_limit=2G vendor/bin/phpunit --configuration=tests/phpunit.xml tests/Single/PadLeftTest.php",
+          "checkIds": [
+            "single-finite-values-keys"
+          ],
+          "fixtures": [
+            "tests/Fixture/ArrayIteratorFixture.php",
+            "tests/Fixture/CountingIteratorAggregateFixture.php",
+            "tests/Fixture/DataProvider.php",
+            "tests/Fixture/GeneratorFixture.php",
+            "tests/Fixture/IteratorAggregateFixture.php"
+          ]
+        },
+        {
+          "file": "tests/Single/PadLeftTest.php",
+          "command": "php -d memory_limit=2G vendor/bin/phpunit --configuration=tests/phpunit.xml tests/Single/PadLeftTest.php --filter 'Deferred|Negative|Lazy'",
+          "checkIds": [
+            "single-deferred-validation"
+          ],
+          "fixtures": [
+            "tests/Fixture/ArrayIteratorFixture.php",
+            "tests/Fixture/CountingIteratorAggregateFixture.php",
+            "tests/Fixture/DataProvider.php",
+            "tests/Fixture/GeneratorFixture.php",
+            "tests/Fixture/IteratorAggregateFixture.php"
+          ]
+        },
+        {
+          "file": "tests/Stream/StreamPadLeftTest.php",
+          "command": "php -d memory_limit=2G vendor/bin/phpunit --configuration=tests/phpunit.xml tests/Stream/StreamPadLeftTest.php",
+          "checkIds": [
+            "stream-preserved-contract"
+          ],
+          "fixtures": [
+            "tests/Fixture/CountingIteratorAggregateFixture.php",
+            "tests/Fixture/GeneratorFixture.php",
+            "tests/Fixture/IteratorAggregateFixture.php"
+          ]
+        },
+        {
+          "file": "tests/Stream/StreamPadLeftStreamingTest.php",
+          "command": "php -d memory_limit=2G vendor/bin/phpunit --configuration=tests/phpunit.xml tests/Stream/StreamPadLeftStreamingTest.php",
+          "checkIds": [
+            "stream-bounded-consumption"
+          ],
+          "fixtures": []
+        }
+      ],
+      "changes": [
+        {
+          "status": "M",
+          "path": "docs/single-iteration.md",
+          "previousPath": ""
+        },
+        {
+          "status": "M",
+          "path": "docs/stream.md",
+          "previousPath": ""
+        },
+        {
+          "status": "M",
+          "path": "src/Single.php",
+          "previousPath": ""
+        },
+        {
+          "status": "M",
+          "path": "src/Stream.php",
+          "previousPath": ""
+        },
+        {
+          "status": "A",
+          "path": "tests/Single/PadLeftStreamingTest.php",
+          "previousPath": ""
+        },
+        {
+          "status": "M",
+          "path": "tests/Single/PadLeftTest.php",
+          "previousPath": ""
+        },
+        {
+          "status": "A",
+          "path": "tests/Stream/StreamPadLeftStreamingTest.php",
+          "previousPath": ""
+        },
+        {
+          "status": "A",
+          "path": "tests/Stream/StreamPadLeftTest.php",
+          "previousPath": ""
+        }
+      ],
+      "exclusions": [
+        {
+          "path": "vendor",
+          "reason": "author dependency changes are not overlaid; focused replay uses the original run repository dependency copy"
+        },
+        {
+          "path": "docs/single-iteration.md",
+          "reason": "outside accepted test roots"
+        },
+        {
+          "path": "docs/stream.md",
+          "reason": "outside accepted test roots"
+        },
+        {
+          "path": "src/Single.php",
+          "reason": "outside accepted test roots"
+        },
+        {
+          "path": "src/Stream.php",
+          "reason": "outside accepted test roots"
+        },
+        {
+          "path": "tests/Fixture/ArrayIteratorFixture.php",
+          "reason": "unchanged; use original base file without overlay"
+        },
+        {
+          "path": "tests/Fixture/CountingIteratorAggregateFixture.php",
+          "reason": "unchanged; use original base file without overlay"
+        },
+        {
+          "path": "tests/Fixture/DataProvider.php",
+          "reason": "unchanged; use original base file without overlay"
+        },
+        {
+          "path": "tests/Fixture/GeneratorFixture.php",
+          "reason": "unchanged; use original base file without overlay"
+        },
+        {
+          "path": "tests/Fixture/IteratorAggregateFixture.php",
+          "reason": "unchanged; use original base file without overlay"
+        }
+      ],
+      "records": [
+        {
+          "side": "base",
+          "revision": "f8ae71b11e508bf61a6233508b391262a5890454",
+          "tree": "1f4bec2f7ee27d26726db9427a50ee298adaa023",
+          "file": "tests/Single/PadLeftStreamingTest.php",
+          "command": "php -d memory_limit=2G vendor/bin/phpunit --configuration=tests/phpunit.xml tests/Single/PadLeftStreamingTest.php",
+          "checkIds": [
+            "single-bounded-consumption"
+          ],
+          "cwd": "/private/tmp/pair-test-contract-trial-20261108/iterator-pad-left-pair-contract-replay/.council/host-b4UBKn-pair/scratch/A-pair-code-2-replay-0-base-93327",
+          "attempted": true,
+          "ran": true,
+          "passed": false,
+          "hasExitCode": true,
+          "exitCode": 2,
+          "signal": 0,
+          "timedOut": false,
+          "seconds": 0.4,
+          "log": "/private/tmp/pair-test-contract-trial-20261108/iterator-pad-left-pair-contract-replay/.council/host-b4UBKn-pair/logs/replay-A-pair-code-2-replay-0-base.log",
+          "logSha256": "642408af85e4e98c1b43ba084c93cb874a3ce3f1ff28734507d05b7276a1f414",
+          "tail": "/private/tmp/pair-test-contract-trial-20261108/iterator-pad-left-pair-contract-replay/.council/host-b4UBKn-pair/scratch/A-pair-code-2-replay-0-base-93327/src/Single.php:1074\n/private/tmp/pair-test-contract-trial-20261108/iterator-pad-left-pair-contract-replay/.council/host-b4UBKn-pair/scratch/A-pair-code-2-replay-0-base-93327/tests/Single/PadLeftStreamingTest.php:38\n\n2) IterTools\\Tests\\Single\\PadLeftStreamingTest::testBoundedLookaheadAndSuspension with data set \"one infinite\" (1, true)\nRuntimeException: Source requested beyond the permitted lookahead\n\n/private/tmp/pair-test-contract-trial-20261108/iterator-pad-left-pair-contract-replay/.council/host-b4UBKn-pair/scratch/A-pair-code-2-replay-0-base-93327/tests/Single/PadLeftStreamingTest.php:24\n/private/tmp/pair-test-contract-trial-20261108/iterator-pad-left-pair-contract-replay/.council/host-b4UBKn-pair/scratch/A-pair-code-2-replay-0-base-93327/src/Single.php:1074\n/private/tmp/pair-test-contract-trial-20261108/iterator-pad-left-pair-contract-replay/.council/host-b4UBKn-pair/scratch/A-pair-code-2-replay-0-base-93327/tests/Single/PadLeftStreamingTest.php:38\n\n3) IterTools\\Tests\\Single\\PadLeftStreamingTest::testBoundedLookaheadAndSuspension with data set \"three infinite\" (3, true)\nRuntimeException: Source requested beyond the permitted lookahead\n\n/private/tmp/pair-test-contract-trial-20261108/iterator-pad-left-pair-contract-replay/.council/host-b4UBKn-pair/scratch/A-pair-code-2-replay-0-base-93327/tests/Single/PadLeftStreamingTest.php:24\n/private/tmp/pair-test-contract-trial-20261108/iterator-pad-left-pair-contract-replay/.council/host-b4UBKn-pair/scratch/A-pair-code-2-replay-0-base-93327/src/Single.php:1074\n/private/tmp/pair-test-contract-trial-20261108/iterator-pad-left-pair-contract-replay/.council/host-b4UBKn-pair/scratch/A-pair-code-2-replay-0-base-93327/tests/Single/PadLeftStreamingTest.php:38\n\n4) IterTools\\Tests\\Single\\PadLeftStreamingTest::testBoundedLookaheadAndSuspension with data set \"zero long finite\" (0, false)\nRuntimeException: Source requested beyond the permitted lookahead\n\n/private/tmp/pair-test-contract-trial-20261108/iterator-pad-left-pair-contract-replay/.council/host-b4UBKn-pair/scratch/A-pair-code-2-replay-0-base-93327/tests/Single/PadLeftStreamingTest.php:24\n/private/tmp/pair-test-contract-trial-20261108/iterator-pad-left-pair-contract-replay/.council/host-b4UBKn-pair/scratch/A-pair-code-2-replay-0-base-93327/src/Single.php:1074\n/private/tmp/pair-test-contract-trial-20261108/iterator-pad-left-pair-contract-replay/.council/host-b4UBKn-pair/scratch/A-pair-code-2-replay-0-base-93327/tests/Single/PadLeftStreamingTest.php:38\n\n5) IterTools\\Tests\\Single\\PadLeftStreamingTest::testBoundedLookaheadAndSuspension with data set \"one long finite\" (1, false)\nRuntimeException: Source requested beyond the permitted lookahead\n\n/private/tmp/pair-test-contract-trial-20261108/iterator-pad-left-pair-contract-replay/.council/host-b4UBKn-pair/scratch/A-pair-code-2-replay-0-base-93327/tests/Single/PadLeftStreamingTest.php:24\n/private/tmp/pair-test-contract-trial-20261108/iterator-pad-left-pair-contract-replay/.council/host-b4UBKn-pair/scratch/A-pair-code-2-replay-0-base-93327/src/Single.php:1074\n/private/tmp/pair-test-contract-trial-20261108/iterator-pad-left-pair-contract-replay/.council/host-b4UBKn-pair/scratch/A-pair-code-2-replay-0-base-93327/tests/Single/PadLeftStreamingTest.php:38\n\n6) IterTools\\Tests\\Single\\PadLeftStreamingTest::testBoundedLookaheadAndSuspension with data set \"three long finite\" (3, false)\nRuntimeException: Source requested beyond the permitted lookahead\n\n/private/tmp/pair-test-contract-trial-20261108/iterator-pad-left-pair-contract-replay/.council/host-b4UBKn-pair/scratch/A-pair-code-2-replay-0-base-93327/tests/Single/PadLeftStreamingTest.php:24\n/private/tmp/pair-test-contract-trial-20261108/iterator-pad-left-pair-contract-replay/.council/host-b4UBKn-pair/scratch/A-pair-code-2-replay-0-base-93327/src/Single.php:1074\n/private/tmp/pair-test-contract-trial-20261108/iterator-pad-left-pair-contract-replay/.council/host-b4UBKn-pair/scratch/A-pair-code-2-replay-0-base-93327/tests/Single/PadLeftStreamingTest.php:38\n\nERRORS!\nTests: 6, Assertions: 6, Errors: 6.",
+          "launchError": "",
+          "mutated": []
+        },
+        {
+          "side": "final",
+          "revision": "65de019628da372b4446cc8a6f96eaed64389994",
+          "tree": "de06fa15e9d1861d9f08c25e82d12b721f09ec08",
+          "file": "tests/Single/PadLeftStreamingTest.php",
+          "command": "php -d memory_limit=2G vendor/bin/phpunit --configuration=tests/phpunit.xml tests/Single/PadLeftStreamingTest.php",
+          "checkIds": [
+            "single-bounded-consumption"
+          ],
+          "cwd": "/private/tmp/pair-test-contract-trial-20261108/iterator-pad-left-pair-contract-replay/.council/host-b4UBKn-pair/scratch/A-pair-code-2-replay-0-final-93327",
+          "attempted": true,
+          "ran": true,
+          "passed": true,
+          "hasExitCode": true,
+          "exitCode": 0,
+          "signal": 0,
+          "timedOut": false,
+          "seconds": 0.1,
+          "log": "/private/tmp/pair-test-contract-trial-20261108/iterator-pad-left-pair-contract-replay/.council/host-b4UBKn-pair/logs/replay-A-pair-code-2-replay-0-final.log",
+          "logSha256": "42456badb5273742bef1e497c97eade0673d1f674bb3481ebc6258b2ca47901a",
+          "tail": "PHPUnit 10.5.63 by Sebastian Bergmann and contributors.\n\nRuntime:       PHP 8.5.3\nConfiguration: /private/tmp/pair-test-contract-trial-20261108/iterator-pad-left-pair-contract-replay/.council/host-b4UBKn-pair/scratch/A-pair-code-2-replay-0-final-93327/tests/phpunit.xml\n\n......                                                              6 / 6 (100%)\n\nTime: 00:00.006, Memory: 10.00 MB\n\nOK (6 tests, 204 assertions)",
+          "launchError": "",
+          "mutated": []
+        },
+        {
+          "side": "base",
+          "revision": "f8ae71b11e508bf61a6233508b391262a5890454",
+          "tree": "1f4bec2f7ee27d26726db9427a50ee298adaa023",
+          "file": "tests/Single/PadLeftTest.php",
+          "command": "php -d memory_limit=2G vendor/bin/phpunit --configuration=tests/phpunit.xml tests/Single/PadLeftTest.php",
+          "checkIds": [
+            "single-finite-values-keys"
+          ],
+          "cwd": "/private/tmp/pair-test-contract-trial-20261108/iterator-pad-left-pair-contract-replay/.council/host-b4UBKn-pair/scratch/A-pair-code-2-replay-1-base-93327",
+          "attempted": true,
+          "ran": true,
+          "passed": true,
+          "hasExitCode": true,
+          "exitCode": 0,
+          "signal": 0,
+          "timedOut": false,
+          "seconds": 0.1,
+          "log": "/private/tmp/pair-test-contract-trial-20261108/iterator-pad-left-pair-contract-replay/.council/host-b4UBKn-pair/logs/replay-A-pair-code-2-replay-1-base.log",
+          "logSha256": "07c8dcf7f9453e130f5e81e195fde91a4d5980950a77d2f02fc530a92aa1fc60",
+          "tail": "PHPUnit 10.5.63 by Sebastian Bergmann and contributors.\n\nRuntime:       PHP 8.5.3\nConfiguration: /private/tmp/pair-test-contract-trial-20261108/iterator-pad-left-pair-contract-replay/.council/host-b4UBKn-pair/scratch/A-pair-code-2-replay-1-base-93327/tests/phpunit.xml\n\n...............................................................  63 / 109 ( 57%)\n..............................................                  109 / 109 (100%)\n\nTime: 00:00.016, Memory: 10.00 MB\n\nOK (109 tests, 121 assertions)",
+          "launchError": "",
+          "mutated": []
+        },
+        {
+          "side": "final",
+          "revision": "65de019628da372b4446cc8a6f96eaed64389994",
+          "tree": "de06fa15e9d1861d9f08c25e82d12b721f09ec08",
+          "file": "tests/Single/PadLeftTest.php",
+          "command": "php -d memory_limit=2G vendor/bin/phpunit --configuration=tests/phpunit.xml tests/Single/PadLeftTest.php",
+          "checkIds": [
+            "single-finite-values-keys"
+          ],
+          "cwd": "/private/tmp/pair-test-contract-trial-20261108/iterator-pad-left-pair-contract-replay/.council/host-b4UBKn-pair/scratch/A-pair-code-2-replay-1-final-93327",
+          "attempted": true,
+          "ran": true,
+          "passed": true,
+          "hasExitCode": true,
+          "exitCode": 0,
+          "signal": 0,
+          "timedOut": false,
+          "seconds": 0.1,
+          "log": "/private/tmp/pair-test-contract-trial-20261108/iterator-pad-left-pair-contract-replay/.council/host-b4UBKn-pair/logs/replay-A-pair-code-2-replay-1-final.log",
+          "logSha256": "fc644427baecd09a89739799ede7a93078e7e0af956c6aed3cf979b8c0bf5b6f",
+          "tail": "PHPUnit 10.5.63 by Sebastian Bergmann and contributors.\n\nRuntime:       PHP 8.5.3\nConfiguration: /private/tmp/pair-test-contract-trial-20261108/iterator-pad-left-pair-contract-replay/.council/host-b4UBKn-pair/scratch/A-pair-code-2-replay-1-final-93327/tests/phpunit.xml\n\n...............................................................  63 / 109 ( 57%)\n..............................................                  109 / 109 (100%)\n\nTime: 00:00.016, Memory: 10.00 MB\n\nOK (109 tests, 121 assertions)",
+          "launchError": "",
+          "mutated": []
+        },
+        {
+          "side": "base",
+          "revision": "f8ae71b11e508bf61a6233508b391262a5890454",
+          "tree": "1f4bec2f7ee27d26726db9427a50ee298adaa023",
+          "file": "tests/Single/PadLeftTest.php",
+          "command": "php -d memory_limit=2G vendor/bin/phpunit --configuration=tests/phpunit.xml tests/Single/PadLeftTest.php --filter 'Deferred|Negative|Lazy'",
+          "checkIds": [
+            "single-deferred-validation"
+          ],
+          "cwd": "/private/tmp/pair-test-contract-trial-20261108/iterator-pad-left-pair-contract-replay/.council/host-b4UBKn-pair/scratch/A-pair-code-2-replay-2-base-93327",
+          "attempted": true,
+          "ran": true,
+          "passed": true,
+          "hasExitCode": true,
+          "exitCode": 0,
+          "signal": 0,
+          "timedOut": false,
+          "seconds": 0.1,
+          "log": "/private/tmp/pair-test-contract-trial-20261108/iterator-pad-left-pair-contract-replay/.council/host-b4UBKn-pair/logs/replay-A-pair-code-2-replay-2-base.log",
+          "logSha256": "b3bbb1f2bb1620cbbf1e5b21d8f24a69256967d08a4d5b397a1e0eb725349979",
+          "tail": "PHPUnit 10.5.63 by Sebastian Bergmann and contributors.\n\nRuntime:       PHP 8.5.3\nConfiguration: /private/tmp/pair-test-contract-trial-20261108/iterator-pad-left-pair-contract-replay/.council/host-b4UBKn-pair/scratch/A-pair-code-2-replay-2-base-93327/tests/phpunit.xml\n\n.......                                                             7 / 7 (100%)\n\nTime: 00:00.007, Memory: 10.00 MB\n\nOK (7 tests, 15 assertions)",
+          "launchError": "",
+          "mutated": []
+        },
+        {
+          "side": "final",
+          "revision": "65de019628da372b4446cc8a6f96eaed64389994",
+          "tree": "de06fa15e9d1861d9f08c25e82d12b721f09ec08",
+          "file": "tests/Single/PadLeftTest.php",
+          "command": "php -d memory_limit=2G vendor/bin/phpunit --configuration=tests/phpunit.xml tests/Single/PadLeftTest.php --filter 'Deferred|Negative|Lazy'",
+          "checkIds": [
+            "single-deferred-validation"
+          ],
+          "cwd": "/private/tmp/pair-test-contract-trial-20261108/iterator-pad-left-pair-contract-replay/.council/host-b4UBKn-pair/scratch/A-pair-code-2-replay-2-final-93327",
+          "attempted": true,
+          "ran": true,
+          "passed": true,
+          "hasExitCode": true,
+          "exitCode": 0,
+          "signal": 0,
+          "timedOut": false,
+          "seconds": 0.1,
+          "log": "/private/tmp/pair-test-contract-trial-20261108/iterator-pad-left-pair-contract-replay/.council/host-b4UBKn-pair/logs/replay-A-pair-code-2-replay-2-final.log",
+          "logSha256": "3c023c50344685703bc6421ea38d2cc48655808d7da44af48baa5846bf7a4649",
+          "tail": "PHPUnit 10.5.63 by Sebastian Bergmann and contributors.\n\nRuntime:       PHP 8.5.3\nConfiguration: /private/tmp/pair-test-contract-trial-20261108/iterator-pad-left-pair-contract-replay/.council/host-b4UBKn-pair/scratch/A-pair-code-2-replay-2-final-93327/tests/phpunit.xml\n\n.......                                                             7 / 7 (100%)\n\nTime: 00:00.008, Memory: 10.00 MB\n\nOK (7 tests, 15 assertions)",
+          "launchError": "",
+          "mutated": []
+        },
+        {
+          "side": "base",
+          "revision": "f8ae71b11e508bf61a6233508b391262a5890454",
+          "tree": "1f4bec2f7ee27d26726db9427a50ee298adaa023",
+          "file": "tests/Stream/StreamPadLeftTest.php",
+          "command": "php -d memory_limit=2G vendor/bin/phpunit --configuration=tests/phpunit.xml tests/Stream/StreamPadLeftTest.php",
+          "checkIds": [
+            "stream-preserved-contract"
+          ],
+          "cwd": "/private/tmp/pair-test-contract-trial-20261108/iterator-pad-left-pair-contract-replay/.council/host-b4UBKn-pair/scratch/A-pair-code-2-replay-3-base-93327",
+          "attempted": true,
+          "ran": true,
+          "passed": true,
+          "hasExitCode": true,
+          "exitCode": 0,
+          "signal": 0,
+          "timedOut": false,
+          "seconds": 0.1,
+          "log": "/private/tmp/pair-test-contract-trial-20261108/iterator-pad-left-pair-contract-replay/.council/host-b4UBKn-pair/logs/replay-A-pair-code-2-replay-3-base.log",
+          "logSha256": "30eb9c32909307f92f8d57219dcce6bf562aba573655d302720a08ac5a7ed8e2",
+          "tail": "PHPUnit 10.5.63 by Sebastian Bergmann and contributors.\n\nRuntime:       PHP 8.5.3\nConfiguration: /private/tmp/pair-test-contract-trial-20261108/iterator-pad-left-pair-contract-replay/.council/host-b4UBKn-pair/scratch/A-pair-code-2-replay-3-base-93327/tests/phpunit.xml\n\n................................................................  64 / 64 (100%)\n\nTime: 00:00.012, Memory: 10.00 MB\n\nOK (64 tests, 144 assertions)",
+          "launchError": "",
+          "mutated": []
+        },
+        {
+          "side": "final",
+          "revision": "65de019628da372b4446cc8a6f96eaed64389994",
+          "tree": "de06fa15e9d1861d9f08c25e82d12b721f09ec08",
+          "file": "tests/Stream/StreamPadLeftTest.php",
+          "command": "php -d memory_limit=2G vendor/bin/phpunit --configuration=tests/phpunit.xml tests/Stream/StreamPadLeftTest.php",
+          "checkIds": [
+            "stream-preserved-contract"
+          ],
+          "cwd": "/private/tmp/pair-test-contract-trial-20261108/iterator-pad-left-pair-contract-replay/.council/host-b4UBKn-pair/scratch/A-pair-code-2-replay-3-final-93327",
+          "attempted": true,
+          "ran": true,
+          "passed": true,
+          "hasExitCode": true,
+          "exitCode": 0,
+          "signal": 0,
+          "timedOut": false,
+          "seconds": 0.1,
+          "log": "/private/tmp/pair-test-contract-trial-20261108/iterator-pad-left-pair-contract-replay/.council/host-b4UBKn-pair/logs/replay-A-pair-code-2-replay-3-final.log",
+          "logSha256": "60b497cd10c2aad455ed19514d1c398c3c985fe3da3f8d13f60a62e9067e3903",
+          "tail": "PHPUnit 10.5.63 by Sebastian Bergmann and contributors.\n\nRuntime:       PHP 8.5.3\nConfiguration: /private/tmp/pair-test-contract-trial-20261108/iterator-pad-left-pair-contract-replay/.council/host-b4UBKn-pair/scratch/A-pair-code-2-replay-3-final-93327/tests/phpunit.xml\n\n................................................................  64 / 64 (100%)\n\nTime: 00:00.012, Memory: 10.00 MB\n\nOK (64 tests, 144 assertions)",
+          "launchError": "",
+          "mutated": []
+        },
+        {
+          "side": "base",
+          "revision": "f8ae71b11e508bf61a6233508b391262a5890454",
+          "tree": "1f4bec2f7ee27d26726db9427a50ee298adaa023",
+          "file": "tests/Stream/StreamPadLeftStreamingTest.php",
+          "command": "php -d memory_limit=2G vendor/bin/phpunit --configuration=tests/phpunit.xml tests/Stream/StreamPadLeftStreamingTest.php",
+          "checkIds": [
+            "stream-bounded-consumption"
+          ],
+          "cwd": "/private/tmp/pair-test-contract-trial-20261108/iterator-pad-left-pair-contract-replay/.council/host-b4UBKn-pair/scratch/A-pair-code-2-replay-4-base-93327",
+          "attempted": true,
+          "ran": true,
+          "passed": false,
+          "hasExitCode": true,
+          "exitCode": 2,
+          "signal": 0,
+          "timedOut": false,
+          "seconds": 0.1,
+          "log": "/private/tmp/pair-test-contract-trial-20261108/iterator-pad-left-pair-contract-replay/.council/host-b4UBKn-pair/logs/replay-A-pair-code-2-replay-4-base.log",
+          "logSha256": "441a69a28b7c2b3d44f514347ab56959814153c0de660d74e9c328c8014173b3",
+          "tail": "\n/private/tmp/pair-test-contract-trial-20261108/iterator-pad-left-pair-contract-replay/.council/host-b4UBKn-pair/scratch/A-pair-code-2-replay-4-base-93327/tests/Stream/StreamPadLeftStreamingTest.php:96\n/private/tmp/pair-test-contract-trial-20261108/iterator-pad-left-pair-contract-replay/.council/host-b4UBKn-pair/scratch/A-pair-code-2-replay-4-base-93327/src/Single.php:1074\n/private/tmp/pair-test-contract-trial-20261108/iterator-pad-left-pair-contract-replay/.council/host-b4UBKn-pair/scratch/A-pair-code-2-replay-4-base-93327/src/Single.php:605\n/private/tmp/pair-test-contract-trial-20261108/iterator-pad-left-pair-contract-replay/.council/host-b4UBKn-pair/scratch/A-pair-code-2-replay-4-base-93327/src/Transform.php:25\n/private/tmp/pair-test-contract-trial-20261108/iterator-pad-left-pair-contract-replay/.council/host-b4UBKn-pair/scratch/A-pair-code-2-replay-4-base-93327/src/Stream.php:2314\n/private/tmp/pair-test-contract-trial-20261108/iterator-pad-left-pair-contract-replay/.council/host-b4UBKn-pair/scratch/A-pair-code-2-replay-4-base-93327/tests/Stream/StreamPadLeftStreamingTest.php:67\n\n10) IterTools\\Tests\\Stream\\StreamPadLeftStreamingTest::testLimitedPrefix with data set \"zero long finite\" (0, false)\nRuntimeException: Source requested beyond the permitted lookahead\n\n/private/tmp/pair-test-contract-trial-20261108/iterator-pad-left-pair-contract-replay/.council/host-b4UBKn-pair/scratch/A-pair-code-2-replay-4-base-93327/tests/Stream/StreamPadLeftStreamingTest.php:96\n/private/tmp/pair-test-contract-trial-20261108/iterator-pad-left-pair-contract-replay/.council/host-b4UBKn-pair/scratch/A-pair-code-2-replay-4-base-93327/src/Single.php:1074\n/private/tmp/pair-test-contract-trial-20261108/iterator-pad-left-pair-contract-replay/.council/host-b4UBKn-pair/scratch/A-pair-code-2-replay-4-base-93327/src/Single.php:605\n/private/tmp/pair-test-contract-trial-20261108/iterator-pad-left-pair-contract-replay/.council/host-b4UBKn-pair/scratch/A-pair-code-2-replay-4-base-93327/src/Transform.php:25\n/private/tmp/pair-test-contract-trial-20261108/iterator-pad-left-pair-contract-replay/.council/host-b4UBKn-pair/scratch/A-pair-code-2-replay-4-base-93327/src/Stream.php:2314\n/private/tmp/pair-test-contract-trial-20261108/iterator-pad-left-pair-contract-replay/.council/host-b4UBKn-pair/scratch/A-pair-code-2-replay-4-base-93327/tests/Stream/StreamPadLeftStreamingTest.php:67\n\n11) IterTools\\Tests\\Stream\\StreamPadLeftStreamingTest::testLimitedPrefix with data set \"one long finite\" (1, false)\nRuntimeException: Source requested beyond the permitted lookahead\n\n/private/tmp/pair-test-contract-trial-20261108/iterator-pad-left-pair-contract-replay/.council/host-b4UBKn-pair/scratch/A-pair-code-2-replay-4-base-93327/tests/Stream/StreamPadLeftStreamingTest.php:96\n/private/tmp/pair-test-contract-trial-20261108/iterator-pad-left-pair-contract-replay/.council/host-b4UBKn-pair/scratch/A-pair-code-2-replay-4-base-93327/src/Single.php:1074\n/private/tmp/pair-test-contract-trial-20261108/iterator-pad-left-pair-contract-replay/.council/host-b4UBKn-pair/scratch/A-pair-code-2-replay-4-base-93327/src/Single.php:605\n/private/tmp/pair-test-contract-trial-20261108/iterator-pad-left-pair-contract-replay/.council/host-b4UBKn-pair/scratch/A-pair-code-2-replay-4-base-93327/src/Transform.php:25\n/private/tmp/pair-test-contract-trial-20261108/iterator-pad-left-pair-contract-replay/.council/host-b4UBKn-pair/scratch/A-pair-code-2-replay-4-base-93327/src/Stream.php:2314\n/private/tmp/pair-test-contract-trial-20261108/iterator-pad-left-pair-contract-replay/.council/host-b4UBKn-pair/scratch/A-pair-code-2-replay-4-base-93327/tests/Stream/StreamPadLeftStreamingTest.php:67\n\n12) IterTools\\Tests\\Stream\\StreamPadLeftStreamingTest::testLimitedPrefix with data set \"three long finite\" (3, false)\nRuntimeException: Source requested beyond the permitted lookahead\n\n/private/tmp/pair-test-contract-trial-20261108/iterator-pad-left-pair-contract-replay/.council/host-b4UBKn-pair/scratch/A-pair-code-2-replay-4-base-93327/tests/Stream/StreamPadLeftStreamingTest.php:96\n/private/tmp/pair-test-contract-trial-20261108/iterator-pad-left-pair-contract-replay/.council/host-b4UBKn-pair/scratch/A-pair-code-2-replay-4-base-93327/src/Single.php:1074\n/private/tmp/pair-test-contract-trial-20261108/iterator-pad-left-pair-contract-replay/.council/host-b4UBKn-pair/scratch/A-pair-code-2-replay-4-base-93327/src/Single.php:605\n/private/tmp/pair-test-contract-trial-20261108/iterator-pad-left-pair-contract-replay/.council/host-b4UBKn-pair/scratch/A-pair-code-2-replay-4-base-93327/src/Transform.php:25\n/private/tmp/pair-test-contract-trial-20261108/iterator-pad-left-pair-contract-replay/.council/host-b4UBKn-pair/scratch/A-pair-code-2-replay-4-base-93327/src/Stream.php:2314\n/private/tmp/pair-test-contract-trial-20261108/iterator-pad-left-pair-contract-replay/.council/host-b4UBKn-pair/scratch/A-pair-code-2-replay-4-base-93327/tests/Stream/StreamPadLeftStreamingTest.php:67\n\nERRORS!\nTests: 12, Assertions: 12, Errors: 12.",
+          "launchError": "",
+          "mutated": []
+        },
+        {
+          "side": "final",
+          "revision": "65de019628da372b4446cc8a6f96eaed64389994",
+          "tree": "de06fa15e9d1861d9f08c25e82d12b721f09ec08",
+          "file": "tests/Stream/StreamPadLeftStreamingTest.php",
+          "command": "php -d memory_limit=2G vendor/bin/phpunit --configuration=tests/phpunit.xml tests/Stream/StreamPadLeftStreamingTest.php",
+          "checkIds": [
+            "stream-bounded-consumption"
+          ],
+          "cwd": "/private/tmp/pair-test-contract-trial-20261108/iterator-pad-left-pair-contract-replay/.council/host-b4UBKn-pair/scratch/A-pair-code-2-replay-4-final-93327",
+          "attempted": true,
+          "ran": true,
+          "passed": true,
+          "hasExitCode": true,
+          "exitCode": 0,
+          "signal": 0,
+          "timedOut": false,
+          "seconds": 0.1,
+          "log": "/private/tmp/pair-test-contract-trial-20261108/iterator-pad-left-pair-contract-replay/.council/host-b4UBKn-pair/logs/replay-A-pair-code-2-replay-4-final.log",
+          "logSha256": "8a585f1a9e1efce512dc61ebdb871b63e88934ba994a8e6080908507fa830542",
+          "tail": "PHPUnit 10.5.63 by Sebastian Bergmann and contributors.\n\nRuntime:       PHP 8.5.3\nConfiguration: /private/tmp/pair-test-contract-trial-20261108/iterator-pad-left-pair-contract-replay/.council/host-b4UBKn-pair/scratch/A-pair-code-2-replay-4-final-93327/tests/phpunit.xml\n\n............                                                      12 / 12 (100%)\n\nTime: 00:00.008, Memory: 10.00 MB\n\nOK (12 tests, 222 assertions)",
+          "launchError": "",
+          "mutated": []
+        }
+      ],
+      "elapsedSec": 16.8
+    },
+    "criteria": [
+      {
+        "criterion": "C1",
+        "status": "met",
+        "note": "Single::padLeft caps its count and buffer at length, flushes at the threshold, and streams subsequent values directly. Guarded tests cover lengths 0, 1, and 3 over infinite and very long finite sources. All six base cases fail specifically on excess consumption; all six final cases pass."
+      },
+      {
+        "criterion": "C2",
+        "status": "met",
+        "note": "The threshold flush occurs inside the source foreach, preventing advancement during buffered yields. Tests inspect repeated suspended observations, every buffered output, and two tail outputs, increasing the permitted pull budget only immediately before next()."
+      },
+      {
+        "criterion": "C3",
+        "status": "met",
+        "note": "Existing assertions remain intact. Added keyed-result tests cover empty, short, equal, and longer inputs across all four iterable forms, including null, mixed values, fill values, and object identity. The preserved-behavior file passes on both base and final: 109 tests, 121 assertions."
+      },
+      {
+        "criterion": "C4",
+        "status": "met",
+        "note": "Validation remains inside the generator before source traversal, with the original exception message. Tests verify inert construction and post-exception non-consumption for recording generators and aggregate acquisition. The filtered command executes seven tests and passes on both base and final."
+      },
+      {
+        "criterion": "C5",
+        "status": "met",
+        "note": "Stream's executable wrapper is unchanged. Tests independently verify fluent identity, deferred execution and validation, finite values and keys, suspension, and limited source consumption. Preserved tests pass on both revisions; all 12 streaming cases fail through the intended guard on base and pass on final."
+      },
+      {
+        "criterion": "C6",
+        "status": "met",
+        "note": "The recorded exact gate passed: Single 3,825 tests/4,780 assertions; Stream 3,852 tests/162,846 assertions. Verified snapshot identity, command, cwd, overrides, and exit 0. Replay commands isolate their named files; exclusions appropriately retain unchanged fixtures and dependencies while excluding production/documentation changes from test overlays. No dependencies, configuration, or existing checks changed. Diff whitespace check passes."
+      },
+      {
+        "criterion": "C7",
+        "status": "met",
+        "note": "Both PHPDoc blocks and both Markdown sections consistently describe bounded lookahead, incremental infinite-source consumption, suspension, sequential keys, and deferred negative-length validation. Stream documentation preserves fluent semantics, and existing finite examples remain correct."
+      }
+    ],
+    "readiness": {
+      "state": "ready",
+      "blocked": [],
+      "incomplete": []
+    }
+  },
+  "delivery": {
+    "status": "pending"
+  },
+  "forTheOrchestrator": "Read final.readiness first. Report unresolved findings or missing evidence before any success summary. Spot-check the reviewed snapshot and report the design and implementation review outcomes. The change stays in final.worktree. Deliver only within the user's authorization, preserving unrelated edits; use dark-factory verify-delivery afterward. Do not start a council automatically. The Codex host can resume a validated checkpoint with --resume hostRunDir; changed inputs or evidence require a new run.",
+  "plan": {
+    "workflow": "pair",
+    "tier": "pair",
+    "strategy": "pair",
+    "mode": "implement",
+    "output": "reviewed implementation in a worktree; delivery pending",
+    "participants": [
+      {
+        "model": "sol",
+        "vendor": "codex",
+        "effort": "high"
+      }
+    ],
+    "reviewers": [
+      {
+        "model": "astra",
+        "vendor": "codex",
+        "effort": "high"
+      }
+    ],
+    "panel": [],
+    "specification": [],
+    "roles": {
+      "setup": {
+        "model": "sol",
+        "vendor": "codex"
+      }
+    },
+    "requiredCLIs": [
+      "codex"
+    ],
+    "verification": "php -d memory_limit=2G vendor/bin/phpunit --configuration=tests/phpunit.xml tests/Single && php -d memory_limit=2G vendor/bin/phpunit --configuration=tests/phpunit.xml tests/Stream",
+    "limits": {
+      "maxTurns": 24,
+      "maxRunMin": 60,
+      "repair": null,
+      "maxReviews": 8,
+      "rounds": null
+    },
+    "effort": "Setup, design and code turns, up to the review budget; measurements between code revisions.",
+    "intake": null
+  },
+  "metrics": {
+    "version": 1,
+    "taskId": "iterator-pad-left",
+    "variant": "pair-contract-replay",
+    "repetition": 1,
+    "workflow": "pair",
+    "tier": "pair",
+    "strategy": "pair",
+    "host": "codex",
+    "elapsedMs": 799450,
+    "turns": 5,
+    "turnsByRole": {
+      "setup": 1,
+      "author": 2,
+      "reviewer": 2
+    },
+    "failedTurns": 0,
+    "findingsByStage": {},
+    "readiness": "ready",
+    "delivery": "pending",
+    "escalated": false,
+    "requestedImplementation": true,
+    "deliveredImplementation": false,
+    "tokens": {
+      "records": 5,
+      "byModel": {
+        "gpt-6.1-sol": {
+          "input_tokens": 1933114,
+          "cached_input_tokens": 1760768,
+          "cache_write_input_tokens": 0,
+          "output_tokens": 28895,
+          "reasoning_output_tokens": 5879
+        },
+        "gpt-6-astra": {
+          "input_tokens": 330243,
+          "cached_input_tokens": 234880,
+          "cache_write_input_tokens": 0,
+          "output_tokens": 4147,
+          "reasoning_output_tokens": 302
+        }
+      }
+    },
+    "cost": null,
+    "limits": {
+      "maxTurns": 24,
+      "maxRunMin": 60
+    },
+    "repositoryHead": "f8ae71b11e508bf61a6233508b391262a5890454"
+  },
+  "host": "codex",
+  "hostRunDir": "/private/tmp/pair-test-contract-trial-20261108/iterator-pad-left-pair-contract-replay/.council/host-b4UBKn",
+  "hostEvents": "/private/tmp/pair-test-contract-trial-20261108/iterator-pad-left-pair-contract-replay/.council/host-b4UBKn/events.jsonl",
+  "checkpoint": "/private/tmp/pair-test-contract-trial-20261108/iterator-pad-left-pair-contract-replay/.council/host-b4UBKn/checkpoint.json"
+}

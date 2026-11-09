@@ -1,0 +1,176 @@
+diff --git a/src/LinearAlgebra/Vector.php b/src/LinearAlgebra/Vector.php
+index 37a2dd12..e79cdcd4 100644
+--- a/src/LinearAlgebra/Vector.php
++++ b/src/LinearAlgebra/Vector.php
+@@ -694,10 +694,36 @@ class Vector implements \Countable, \Iterator, \ArrayAccess, \JsonSerializable,
+      * https://en.wikipedia.org/wiki/Norm_(mathematics)#p-norm
+      *
+      * |x|p = (∑|xᵢ|ᵖ)¹/ᵖ
++     *
++     * For finite p >= 1, evaluated as s(∑(|xᵢ|/s)ᵖ)¹/ᵖ, where s = max|xᵢ|,
++     * to avoid overflow and underflow from raising component magnitudes to powers.
++     * In this domain, returns 0 for a zero vector and NAN if any component is NAN.
++     * Returns positive INF for an infinite component when no component is NAN, or if the norm overflows.
+      */
+     public function pNorm(int|float $p): int|float
+     {
+-        return \array_sum(Map\Single::pow(Map\Single::abs($this->A), $p)) ** (1 / $p);
++        if (!\is_finite($p) || $p < 1) {
++            return \array_sum(Map\Single::pow(Map\Single::abs($this->A), $p)) ** (1 / $p);
++        }
++
++        $s = 0.0;
++        foreach ($this->A as $xᵢ) {
++            if (\is_nan($xᵢ)) {
++                return \NAN;
++            }
++            $s = \max($s, \abs($xᵢ));
++        }
++
++        if ($s === 0.0 || \is_infinite($s)) {
++            return $s;
++        }
++
++        $∑ = 0.0;
++        foreach ($this->A as $xᵢ) {
++            $∑ += (\abs($xᵢ) / $s) ** $p;
++        }
++
++        return $s * $∑ ** (1 / $p);
+     }
+ 
+     /**
+diff --git a/tests/LinearAlgebra/Vector/VectorNormsTest.php b/tests/LinearAlgebra/Vector/VectorNormsTest.php
+index 9e5c7f88..3c96af14 100644
+--- a/tests/LinearAlgebra/Vector/VectorNormsTest.php
++++ b/tests/LinearAlgebra/Vector/VectorNormsTest.php
+@@ -177,6 +177,129 @@ class VectorNormsTest extends \PHPUnit\Framework\TestCase
+         ];
+     }
+ 
++    /**
++     * @test         p norm remains finite across component scales
++     * @param        array<int|float> $A
++     * @param        int|float        $p
++     * @param        float            $expected
++     */
++    #[DataProvider('dataProviderForPNormExtremeMagnitudes')]
++    public function testPNormExtremeMagnitudes(array $A, int|float $p, float $expected): void
++    {
++        // Given
++        $V = new Vector($A);
++
++        // When
++        $norm = $V->pNorm($p);
++
++        // Then
++        $this->assertTrue(\is_finite($norm));
++        $this->assertGreaterThan(0, $norm);
++        $this->assertEqualsWithDelta($expected, $norm, \abs($expected) * 1e-12);
++
++        if ($p == 1) {
++            $sum = \array_sum(\array_map(fn($x) => \abs($x), $A));
++            $this->assertEqualsWithDelta($sum, $norm, \abs($sum) * 1e-12);
++        }
++        if ($p == 2) {
++            $this->assertEqualsWithDelta($V->l2Norm(), $norm, \abs($expected) * 1e-12);
++        }
++    }
++
++    /**
++     * Analytical expectations, scaled by homogeneity:
++     *   p=1: |−3| + |4| = 7; p=2: the 3–4–5 triangle or two equal components.
++     *   p=1.5: (4^(3/2) + 9^(3/2))^(2/3) = 35^(2/3).
++     *   p=3: (1 + 8 + 8)^(1/3) = 17^(1/3).
++     *   p=4: four unit magnitudes give 4^(1/4) = sqrt(2).
++     *   Two equal magnitudes give 2^(1/p); a single magnitude gives itself.
++     * Mixed-scale corrections are below floating-point precision at 1e200.
++     *
++     * @return array [A, p, expected]
++     */
++    public static function dataProviderForPNormExtremeMagnitudes(): array
++    {
++        $cases = [];
++        foreach (['ordinary' => 1.0, 'huge' => 1e200, 'tiny' => 1e-200] as $scale => $s) {
++            $cases["$scale p=1"]          = [[-3 * $s, 0, 4 * $s], 1, 7 * $s];
++            $cases["$scale p=1.0"]        = [[-3 * $s, 0, 4 * $s], 1.0, 7 * $s];
++            $cases["$scale p=2 triangle"] = [[-3 * $s, 0, 4 * $s], 2, 5 * $s];
++            $cases["$scale p=2 equal"]    = [[$s, -$s], 2.0, \sqrt(2) * $s];
++            $cases["$scale p=1.5"]        = [[-4 * $s, 9 * $s], 1.5, 35 ** (2 / 3) * $s];
++            $cases["$scale p=3"]          = [[-$s, 2 * $s, -2 * $s], 3, 17 ** (1 / 3) * $s];
++            $cases["$scale p=4"]          = [[-$s, $s, -$s, $s], 4, \sqrt(2) * $s];
++            $cases["$scale p=10"]         = [[$s, -$s], 10, 2 ** (1 / 10) * $s];
++            $cases["$scale p=1024"]       = [[$s, -$s], 1024, 2 ** (1 / 1024) * $s];
++        }
++
++        foreach ([1, 2, 1.5, 3, 10, 1024] as $p) {
++            $cases["mixed scales p=$p"]          = [[-1e200, 1.0, 1e-200, 0], $p, 1e200];
++            $cases["reversed mixed scales p=$p"] = [[0, 1e-200, 1.0, -1e200], $p, 1e200];
++            $cases["single huge negative p=$p"]  = [[-1e200], $p, 1e200];
++            $cases["single tiny negative p=$p"]  = [[-1e-200], $p, 1e-200];
++        }
++
++        return $cases;
++    }
++
++    /**
++     * @test         p norm preserves zero and nonfinite results
++     * @param        array<int|float> $A
++     * @param        int|float        $p
++     * @param        float            $expected
++     */
++    #[DataProvider('dataProviderForPNormBoundaryValues')]
++    public function testPNormBoundaryValues(array $A, int|float $p, float $expected): void
++    {
++        // Given
++        $V = new Vector($A);
++
++        // When
++        $norm = $V->pNorm($p);
++
++        // Then
++        if (\is_nan($expected)) {
++            $this->assertNan($norm);
++        } else {
++            $this->assertSame($expected, $norm);
++        }
++    }
++
++    /**
++     * Zero and nonfinite expectations follow the p-norm definition for finite p >= 1,
++     * with NAN taking precedence over infinity. The two finite-input overflow cases
++     * have mathematical norms larger than PHP_FLOAT_MAX.
++     *
++     * @return array [A, p, expected]
++     */
++    public static function dataProviderForPNormBoundaryValues(): array
++    {
++        $vectors = [
++            'integer zeros'                 => [[0, 0, 0], 0.0],
++            'signed floating zeros'         => [[0.0, -0.0], 0.0],
++            'positive infinity'             => [[\INF, 1.0], \INF],
++            'negative infinity'             => [[1.0, -\INF], \INF],
++            'both infinities'               => [[\INF, -\INF], \INF],
++            'nan only'                      => [[\NAN], \NAN],
++            'nan among finite components'   => [[1.0, \NAN, -2.0], \NAN],
++            'nan before positive infinity'  => [[\NAN, \INF], \NAN],
++            'nan after positive infinity'   => [[\INF, \NAN], \NAN],
++            'nan before negative infinity'  => [[\NAN, -\INF], \NAN],
++            'nan after negative infinity'   => [[-\INF, \NAN], \NAN],
++        ];
++
++        $cases = [];
++        foreach ([1, 2, 1.5, 3, 10, 1024] as $p) {
++            foreach ($vectors as $name => [$A, $expected]) {
++                $cases["$name p=$p"] = [$A, $p, $expected];
++            }
++        }
++        $cases['overflowing p=1 norm'] = [[1e308, 1e308], 1, \INF];
++        $cases['overflowing p=2 norm'] = [[1.7e308, 1.7e308], 2, \INF];
++
++        return $cases;
++    }
++
+     /**
+      * @test         max norm
+      */

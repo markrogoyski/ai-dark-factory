@@ -5,6 +5,7 @@ import { readFileSync, writeFileSync, mkdirSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { loadLib } from './lib.mjs'
 import { validateResult } from '../plugins/dark-factory/lib/codex-runner.mjs'
+import { contract, mapping, challenges, replay } from './fixtures/pair-contract.mjs'
 
 const L = loadLib()
 const root = new URL('../', import.meta.url)
@@ -21,10 +22,11 @@ function defaults(schema) {
 }
 
 const setup = () => ({ status: 'ok', mode: 'implement', runId: 'pair-test', runDir: '/repo/.council/pair-test', repoRoot: '/repo',
+  head: 'b'.repeat(40),
   criteria: [{ id: 'C1', text: 'The requested behavior works.' }], refs: [], dirty: [], verify: 'node test.cjs', baselinePasses: true })
 const measurement = (label, tree = 'a'.repeat(40)) => ({ status: 'done', error: '', snapshot: {
   ref: `refs/council/pair-test/A-${label}`, tree, diff: `/repo/.council/pair-test/room/${label}/A.diff`,
-}, suite: { ran: true, passed: true, tail: 'pass', command: 'node test.cjs' } })
+}, suite: { ran: true, passed: true, tail: 'pass', command: 'node test.cjs' }, replay: replay(tree) })
 const finding = statement => ({ severity: 'minor', statement, evidence: 'src/example.js:12 lacks the required case.' })
 
 async function run(options = {}) {
@@ -39,15 +41,18 @@ async function run(options = {}) {
     if (kind === 'setup') Object.assign(value, setup(), options.setup)
     else if (kind === 'author') {
       Object.assign(value, { status: 'done', summary: 'Implemented the behavior.', design: 'Implement the behavior and cover it with tests.', notes: 'Continue with the boundary case.' })
+      Object.assign(value, { testContract: contract(), replayMapping: mapping() })
       if (options.author) value = await options.author(value, call)
     } else if (kind === 'review') {
       Object.assign(value, { version: prompt.match(/^Version: (.+)$/m)[1], complete: true, summary: 'Reviewed.',
         requiresDesignRevision: false, criteria: [{ criterion: 'C1', status: 'met', note: 'Checked the behavior against the criterion.' }] })
+      value.challenges = /# Review stage: design/.test(prompt) ? challenges() : []
       reviewNumber++
       if (options.review) value = await options.review(value, reviewNumber, call)
     } else if (kind === 'measure') {
       const label = prompt.match(/--label '([^']+)'/)[1]
-      Object.assign(value, await measure({ label }))
+      const replay = JSON.parse(prompt.match(/--replay-json '([^']+)'/)[1])
+      Object.assign(value, await measure({ label, replay }))
     } else throw new Error(`Unexpected turn: ${kind}`)
     if (value === null) return null
     validateResult(value, schema)
@@ -106,6 +111,9 @@ test('pair completes design and code review in both hosts with fresh independent
     assert.equal(result.final.snapshotRef, 'refs/council/pair-test/A-pair-code-2')
     assert.deepEqual(result.reviews.map(r => r.stage), ['design', 'code'])
     assert.equal(measurements.length, 1)
+    assert.deepEqual(measurements[0].replay, { testRoots: ['tests'], mapping: mapping() })
+    assert.deepEqual(result.testContract, contract())
+    assert.deepEqual(result.final.replay, replay(result.final.snapshotTree))
     const reviews = calls.filter(c => c.kind === 'review')
     const authors = calls.filter(c => c.kind === 'author')
     if (!native) {
@@ -231,4 +239,149 @@ test('pair prompts have reviewed golden coverage', async () => {
     if (process.env.UPDATE_GOLDEN) writeFileSync(file, value)
     else assert.equal(value, readFileSync(file, 'utf8'), `Prompt changed: ${fileURLToPath(file)}`)
   }
+})
+
+test('design challenges must uniquely cover every criterion with substantive valid references', async () => {
+  for (const change of [() => [], c => [c[0], c[0]], c => [{ ...c[0], criterion: 'invented' }],
+    c => [{ ...c[0], wrongImplementation: ' ' }], c => [{ ...c[0], rejectingCheckIds: [] }],
+    c => [{ ...c[0], rejectingCheckIds: ['missing'] }], c => [{ ...c[0], rejectingCheckIds: ['T1', 'T1'] }]]) {
+    const { result, measurements, calls } = await run({ review: r => ({ ...r, challenges: change(r.challenges) }) })
+    assert.notEqual(result.status, 'done')
+    assert.equal(measurements.length, 0)
+    assert.match(result.stopReason, /challenge/i)
+    assert.equal(calls.filter(c => c.kind === 'review').length, 2, 'one bounded correction before stopping')
+  }
+  const state = { criteria: [{ id: 'C1' }, { id: 'C2' }], pair: { testContract: contract() } }
+  const inspect = { ...contract().checks[0], id: 'I1', criteria: ['C2'], kind: 'inspection', file: '', command: '',
+    inspection: 'Read the API reference and compare the named parameters to the exported signature.', reason: 'A prose-only requirement.' }
+  state.pair.testContract.checks.push(inspect)
+  const review = { challenges: [...challenges(), { criterion: 'C2', wrongImplementation: 'Document the wrong parameter order.', rejectingCheckIds: ['I1'] }] }
+  assert.equal(L.pairChallengeError(state, review), null)
+  review.challenges[1].rejectingCheckIds = ['T1']
+  assert.match(L.pairChallengeError(state, review), /covering that criterion/)
+  state.pair.testContract.checks[2].reason = ''
+  assert.match(L.pairContractError(state, state.pair.testContract), /reason/)
+})
+
+test('one invalid author contract gets corrected without spending a review or losing the design', async () => {
+  for (const native of [false, true]) for (const mutate of [
+    c => { c.testRoots[0].evidence = '' }, c => { c.checks[0].criteria = ['UNKNOWN'] },
+    c => { c.checks[0].fixtures = ['src/helper.js'] }, c => { c.checks[0].boundaries = '' },
+  ]) {
+    let authors = 0
+    const { result, calls } = await run({ native, author: a => { if (++authors === 1) mutate(a.testContract); return a } })
+    assert.equal(result.status, 'done')
+    assert.deepEqual(result.reviews.map(r => r.stage), ['design', 'code'])
+    const turns = calls.filter(c => c.kind === 'author')
+    assert.equal(turns.length, 3)
+    assert.match(turns[1].prompt, /Correct the previous output/)
+    assert.match(turns[1].prompt, /Implement the behavior and cover it with tests/)
+    assert.notEqual(turns[0].label, turns[1].label)
+    assert.match(result.notes.join(' '), /one author correction/)
+  }
+  const { result, calls } = await run({ author: a => { a.testContract.checks[0].boundaries = ''; return a } })
+  assert.notEqual(result.status, 'done')
+  assert.equal(calls.filter(c => c.kind === 'author').length, 2)
+  assert.equal(result.reviews.length, 0)
+})
+
+test('malformed challenges get one fresh correction and remain subject to the turn budget', async () => {
+  for (const native of [false, true]) {
+    const { result, calls } = await run({ native, review: (r, n) => ({ ...r, challenges: n === 1 ? [] : r.challenges }) })
+    assert.equal(result.status, 'done')
+    assert.deepEqual(result.reviews.map(r => r.stage), ['design', 'code'])
+    const reviews = calls.filter(c => c.kind === 'review')
+    assert.equal(reviews.length, 3)
+    assert.match(reviews[1].prompt, /Correct the previous structured review/)
+    if (!native) {
+      assert.ok(reviews.every(r => r.fresh))
+      assert.equal(new Set(reviews.map(r => r.threadKey)).size, 3)
+    }
+  }
+  const { result, calls } = await run({ args: { maxTurns: 2 }, author: a => { a.testContract.checks = []; return a } })
+  assert.notEqual(result.status, 'done')
+  assert.match(result.stopReason, /turn budget/)
+  assert.equal(calls.filter(c => c.kind === 'author').length, 1)
+})
+
+test('reviewers can identify a missing rejecting check and obtain a design revision', async () => {
+  for (const native of [false, true]) for (const rejection of ['criterion', 'finding', 'design']) {
+    const { result, calls } = await run({ native, review: (r, n) => {
+      if (n === 1) {
+        r.challenges[0].rejectingCheckIds = []
+        if (rejection === 'finding') r.findings = [finding('The contract cannot reject the wrong boundary value.')]
+        else if (rejection === 'criterion') r.criteria[0] = { criterion: 'C1', status: 'partial', note: 'No contracted check distinguishes the boundary.' }
+        else { r.requiresDesignRevision = true; r.summary = 'Revise the contract to reject the wrong boundary value.' }
+      }
+      if (n === 2 && rejection === 'finding') r.resolutions = [{ id: 'P1', status: 'fixed', evidence: 'The revised check rejects the wrong boundary.' }]
+      return r
+    } })
+    assert.equal(result.status, 'done')
+    assert.deepEqual(result.reviews.map(r => r.stage), ['design', 'design', 'code'])
+    assert.deepEqual(result.reviews[0].challenges[0].rejectingCheckIds, [])
+    assert.ok(!calls.some(c => c.prompt.includes('# Correct the previous structured review')))
+    assert.equal(result.findings.length, rejection === 'finding' ? 1 : 0)
+    if (rejection === 'finding') assert.equal(result.findings[0].status, 'fixed')
+  }
+})
+
+test('contract identity binds design review and malformed contracts cannot pass', async () => {
+  const state = { pair: { ...L.newPairState(), design: 'Design', testContract: contract() } }
+  const version = L.pairVersion(state)
+  state.pair.testContract.checks[0].expected = 'Different expectation'
+  assert.notEqual(L.pairVersion(state), version)
+  for (const mutate of [c => { c.checks = [] }, c => { c.checks.push(c.checks[0]) },
+    c => { c.testRoots[0].path = '.' }, c => { c.testRoots[0].evidence = '' },
+    c => { c.checks[0].file = '../source.cjs' }, c => { c.checks[0].expected = '' }]) {
+    const { result } = await run({ author: a => { mutate(a.testContract); return a } })
+    assert.notEqual(result.status, 'done')
+  }
+})
+
+test('base fatal, pass, timeout and tool errors remain raw evidence for both reviewers', async () => {
+  for (const native of [true, false]) for (const outcome of ['fatal', 'pass', 'timeout', 'tool-error', 'launch-error']) {
+    const { result, calls } = await run({ native, measure: m => {
+      const b = m.replay.records[0]
+      if (outcome === 'fatal') { b.exitCode = 255; b.tail = 'Fatal: new API not found before test discovery' }
+      if (outcome === 'pass') { b.exitCode = 0; b.passed = true }
+      if (outcome === 'timeout') { b.timedOut = true; b.exitCode = -9; b.signal = 9 }
+      if (outcome === 'tool-error') { b.exitCode = 127; b.tail = 'tool not found' }
+      if (outcome === 'launch-error') { b.ran = false; b.hasExitCode = false; b.launchError = 'cannot spawn' }
+      return m
+    } })
+    assert.equal(result.final.readiness.state, 'ready', outcome)
+    assert.equal(result.reviews.length, 2)
+    const code = calls.filter(c => c.kind === 'review').at(-1)
+    assert.ok(code.prompt.includes(JSON.stringify(result.final.replay.records[0])))
+    assert.match(code.prompt, /contract is a floor/)
+    assert.ok(result.final.replay.records.some(r => r.side === 'base' && r.checkIds.includes('T2') && r.passed))
+  }
+})
+
+test('missing replay obligations and failed final executions prevent readiness despite approval', async () => {
+  for (const native of [true, false]) for (const outcome of ['wrong-base', 'missing-base', 'unscheduled-base', 'empty-base', 'empty-final', 'missing-final', 'failed-final', 'missing-mapping', 'wrong-tree', 'wrong-command', 'mutated-final']) {
+    const { result } = await run({ native, args: { maxReviews: 2 }, measure: m => {
+      if (outcome === 'missing-base') m.replay.records = m.replay.records.filter(r => r.side !== 'base')
+      if (outcome === 'unscheduled-base') m.replay.records[0].attempted = false
+      if (outcome === 'wrong-base') {
+        m.replay.base = 'f'.repeat(40)
+        for (const r of m.replay.records.filter(r => r.side === 'base')) r.revision = m.replay.base
+      }
+      if (outcome === 'empty-base') m.replay.records[0].hasExitCode = false
+      if (outcome === 'empty-final') m.replay.records[1].hasExitCode = false
+      if (outcome === 'missing-final') m.replay.records = m.replay.records.filter(r => r.side !== 'final')
+      if (outcome === 'failed-final') { m.replay.records[1].exitCode = 1; m.replay.records[1].passed = false }
+      if (outcome === 'mutated-final') m.replay.records[1].mutated = ['source.cjs']
+      if (outcome === 'missing-mapping') m.replay.mapping = []
+      if (outcome === 'wrong-tree') m.replay.snapshotTree = 'f'.repeat(40)
+      if (outcome === 'wrong-command') m.replay.records[1].command = 'true'
+      return m
+    } })
+    assert.notEqual(result.status, 'done', outcome)
+    assert.equal(result.final.readiness.state, ['failed-final', 'mutated-final'].includes(outcome) ? 'blocked' : 'incomplete', outcome)
+  }
+  const { result } = await run({ args: { maxReviews: 2 }, author: a => ({ ...a, replayMapping: [] }), measure: m => {
+    m.replay.mapping = []; m.replay.records = []; return m
+  } })
+  assert.match(result.final.readiness.incomplete.join(' '), /No replay mapping for T1/)
 })
