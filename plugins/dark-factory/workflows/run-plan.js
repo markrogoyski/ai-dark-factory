@@ -130,12 +130,24 @@ function runPlanAnswer(S, answers) {
   }
 }
 
+function runPlanExtendLimits(S, extension) {
+  if (!extension || typeof extension !== 'object' || typeof extension.reason !== 'string' || !extension.reason.trim() ||
+      !extension.limits || typeof extension.limits !== 'object' || Array.isArray(extension.limits) || !Object.keys(extension.limits).length ||
+      Object.keys(extension).some(k => !['reason', 'limits'].includes(k))) throw new Error('run-plan: extendLimits requires a reason and nonempty limits object')
+  const limits = runPlanDefinition({ ...S.plan, limits: { ...S.plan.limits, ...extension.limits } }).limits
+  for (const key of Object.keys(limits)) if (limits[key] < S.plan.limits[key]) throw new Error(`run-plan: limit ${key} may only increase`)
+  if (JSON.stringify(limits) === JSON.stringify(S.plan.limits)) return
+  S.limitChanges ||= []
+  S.limitChanges.push({ reason: extension.reason.trim(), before: S.plan.limits, after: limits, spentTurns: S.turns, spentMs: S.elapsedMs })
+  S.plan = { ...S.plan, limits }
+}
+
 function runPlanReport(S) {
   const ready = S.tasks.acceptance.status === 'done' && S.plan.tasks.every(t => S.tasks[t.id].status === 'done')
   return { status: ready ? 'done' : 'blocked', workflow: 'run-plan', planId: S.plan.id, head: S.head,
     stopReason: ready ? null : S.turns >= S.plan.limits.maxTurns ? 'Run-plan turn budget exhausted.' : S.elapsedMs >= S.plan.limits.maxRunMin * 60000 ? 'Run-plan time budget exhausted.' : 'No eligible tasks; inspect parked work and dependencies.',
     final: { readiness: { state: ready ? 'ready' : 'incomplete', blocked: [], incomplete: ready ? [] : ['Required run-plan work remains; inspect tasks, parked questions, and budgets.'] } },
-    tasks: S.tasks, decisions: S.decisions, parked: Object.entries(S.tasks).filter(([,t]) => t.status === 'parked').map(([id,t]) => ({ id, question: t.question, result: t.result })),
+    tasks: S.tasks, decisions: S.decisions, limitChanges: S.limitChanges || [], parked: Object.entries(S.tasks).filter(([,t]) => t.status === 'parked').map(([id,t]) => ({ id, question: t.question, result: t.result })),
     budget: { turns: S.turns, elapsedMs: S.elapsedMs, remainingTurns: Math.max(0, S.plan.limits.maxTurns - S.turns), remainingMs: Math.max(0, S.plan.limits.maxRunMin * 60000 - S.elapsedMs), limits: S.plan.limits } }
 }
 
@@ -143,6 +155,7 @@ function runPlanReport(S) {
 async function runPlanWorkflow(input, runtime) {
   const S = await runtime.open(input, runPlanDefinition)
   await runtime.recover(S)
+  if (input.extendLimits) { runPlanExtendLimits(S, input.extendLimits); await runtime.save(S) }
   if (input.answers) { runPlanAnswer(S, input.answers); await runtime.save(S) }
   let task
   while ((task = runPlanNext(S))) {

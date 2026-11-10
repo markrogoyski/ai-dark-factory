@@ -2,6 +2,7 @@
 async function runPlanWorkflow(input, runtime) {
   const S = await runtime.open(input, runPlanDefinition)
   await runtime.recover(S)
+  if (input.extendLimits) { runPlanExtendLimits(S, input.extendLimits); await runtime.save(S) }
   if (input.answers) { runPlanAnswer(S, input.answers); await runtime.save(S) }
   let task
   while ((task = runPlanNext(S))) {

@@ -1741,7 +1741,7 @@ It prints JSON with runId, runDir, repoRoot, refs (the snapshots it made of thos
 ${S.allowDirty || (S.modeGiven && S.mode !== 'implement') ? '' : `- If ${S.modeGiven ? '' : 'the mode is implement and '}dirty is non-empty, stop and return status "dirty" with that list. The worktrees branch from HEAD, so uncommitted changes would be invisible to every seat.\n`}
 ## Step 3 — the verification command
 ${S.raw.verify ? `Use exactly: ${S.raw.verify}` : `${S.tier ? 'If the task or a document from step 1 names commands the change must pass (a "Done when" section, acceptance criteria, a checklist), the verification command runs all of them, joined with &&, even when they include static analysis or coverage: every role is measured against this command, and one that leaves a required check out makes each of them run it separately. Otherwise, find' : 'Find'}` + ' the project\'s standard command for checking a change: its test suite, from CLAUDE.md or AGENTS.md, a Makefile, composer.json, package.json, pyproject.toml and so on. Prefer the normal test run. Avoid full static-analysis sweeps and very slow suites unless the task is about them. If the project has no tests, there is no command.'}
-Write it to <runDir>/verify.sh as just the command, with no shebang line; it is run as \`bash verify.sh\` from the root of a worktree. Write an empty file if there is no command.${S.tier && S.tier !== 'architecture' ? `\nStore sandbox-compatible execution settings as explicit string overrides in <runDir>/verification.json: {"env": {"VARIABLE": "value"}}. Preserve all required checks. Prefer these run-owned overrides to changing project defaults. Preflight the exact command through neutral measurement below, including worker/socket/cache restrictions; shell-local exports are insufficient. Keep this configuration fixed for the run after specification review.` : ''}
+Write it to <runDir>/verify.sh as just the command, with no shebang line; it is run as \`bash verify.sh\` from the root of a worktree. Write an empty file if there is no command.${S.tier && S.tier !== 'architecture' ? `\nStore sandbox-compatible execution settings as explicit string overrides in <runDir>/verification.json: {"env": {"VARIABLE": "value"}}. Preserve all required checks. The helper supplies private TMPDIR/TMP/TEMP directories, preferring short writable roots, for every verification execution; do not point temporary files at the long run directory. Prefer these run-owned overrides to changing project defaults. Preflight the exact command through neutral measurement below, including worker/socket/cache restrictions; shell-local exports are insufficient. Keep this configuration fixed for the run after specification review.` : ''}
 ${S.modeGiven && S.mode !== 'implement'
     ? 'Set baselinePasses to false and baselineNote to "".'
     : `${S.modeGiven ? 'Then' : 'If the mode is implement,'} measure the baseline: ${S.cli} measure --run-dir <runDir> --seat ${A} --label base${S.tier ? '' : ' --no-snapshot'} (if it prints status "running", poll with ${S.cli} wait --run-dir <runDir> --job measure-${A}-base). Set baselinePasses to suite.passed. If the suite fails or doesn't run at baseline, put the reason and the failing tail in baselineNote.${S.modeGiven ? '' : ' Otherwise set baselinePasses to false and baselineNote to "".'}`}
@@ -1763,6 +1763,8 @@ Return the values from these steps.`
 // it can't anchor on one, and its prompt stays the same when the user confirms or switches,
 // which lets the resumed run replay it from cache.
 function intakePrompt(S) {
+  // Native intake is cached by prompt: mutable resume caps must not change it.
+  const limits = S.raw.intakeLimits || {}
   return `Choose collaboration separately from complexity: strategy=pair for a scoped implementation with one clear approach that benefits from repeated review; strategy=independent for competing root causes or plans. Keep the tier based on task complexity. Architecture and investigations always use independent attempts.
 
 You are the intake for a software factory. A task arrives, and you decide how much process it needs, before anyone works on it. Read; don't change anything, don't attempt the task, and don't run tests or builds. A few minutes of reading is enough: the task, any document it names, and the code it touches.
@@ -1775,7 +1777,7 @@ ${S.context ? `\n# Context from the user\n\n${S.context}\n` : ''}${S.plan.length
 
 If the task depends on a plan, checklist or other document, find it: the paths above, or a file the task names (resolved against the repository root, and ~/.claude/plans/ for a plan named there). If it depends on one you can't identify or find, including "the plan" with no file named, return status "needs-plan" with planMissing saying what is missing. Never pick a plan yourself. Otherwise planMissing is "", and status is "ok" (or "needs-split", below).
 
-# The tiers, cheapest first
+${limits.maxRunMin || limits.maxTurns ? `# Execution budget\nThe entire task has ${limits.maxRunMin || "unlimited"} minutes and ${limits.maxTurns || "unlimited"} model turns, including verification, audits and delivery. If the chosen process is unlikely to fit, explicitly warn in reasons. Preserve all required checks; do not call a risky task simple to fit a deadline. A fully specified implementation can use Pair at Feature complexity.\n\n` : ""}# The tiers, cheapest first
 
 - "simple": a change to the code that is small, contained and unambiguous: roughly 3 files or fewer and about 100 changed lines, no public API or schema change, no design choice the request leaves open, and for a bug, a cause that is already clear. One implementer, one reviewer.
 - "fix": a bug or a question whose cause is unknown or subtle, where the obvious answer may be wrong, but the eventual change is contained. Two independent attempts, cross-checked.
@@ -3119,6 +3121,20 @@ function needsUser(S, k, qs) {
   }
 }
 
+function compactResult(S, result) {
+  const f = result.final || {}
+  const snapshot = f.snapshotRef?.match(/\/([A-Z])-([^/]+)$/)
+  return { artifactType: 'dark-factory-summary', artifactVersion: 1, status: result.status, workflow: result.workflow || S.workflowName,
+    runDir: result.runDir, stopReason: result.stopReason || result.error || '',
+    final: { readiness: f.readiness, snapshotRef: f.snapshotRef || null, snapshotTree: f.snapshotTree || null,
+      post: f.post || null, diff: f.diff || null, worktree: f.worktree || null,
+      suite: f.suite ? { ran: f.suite.ran, passed: f.suite.passed, command: f.suite.command || S.verify, log: f.suite.log || null } : null },
+    findings: (result.findings || []).filter(f => f.status === 'open').map(f => ({ id: f.id, severity: f.severity, statement: f.statement })),
+    questions: result.questions || [], delivery: result.delivery || null,
+    artifacts: { room: result.room || S.run?.room || null, verification: result.runDir ? `${result.runDir}/verification.json` : null,
+      measurement: snapshot ? `${result.runDir}/jobs/measure-${snapshot[1]}-${snapshot[2]}/status.json` : null } }
+}
+
 // The factory's tiers: which one a run starts at, when the Simple tier hands the work up, and the
 // facts each run records so the router can be tuned. Pure, like the rest of lib/.
 //
@@ -3808,7 +3824,9 @@ function parseControls(raw) {
 function factoryStrategy(S, intake) {
   const requested = S.raw.strategy || 'auto'
   if (!['auto', 'pair', 'independent'].includes(requested)) throw new Error('strategy must be auto, pair, or independent.')
-  const independentOptions = ['seats', 'simple', 'panel', 'spec', 'audit', 'roles', 'evidence'].filter(k => S.raw[k] !== undefined)
+  // Run-plan's request to ask about unresolved requirements also applies to Pair
+  // setup; it is not a request for a separate specification-review panel.
+  const independentOptions = ['seats', 'simple', 'panel', 'spec', 'audit', 'roles', 'evidence'].filter(k => S.raw[k] !== undefined && !(k === 'spec' && S.raw[k] === 'ask'))
   if (requested === 'pair' && independentOptions.length) throw new Error(`Pair strategy does not accept ${independentOptions.join(', ')}; configure participants with pair: {author, reviewer, maxReviews}.`)
   const tier = S.factory.tier
   if (requested === 'pair' && (intake.mode !== 'implement' || tier === 'architecture')) throw new Error('Pair strategy requires an implementation below Architecture.')
@@ -4493,6 +4511,11 @@ async function controlledRun(work) {
   }
   result.plan = result.plan || executionPlan(S)
   result.metrics = evaluationFacts(S, result, requestControl.started !== null ? hostRuntime.now() - requestControl.started : null, requestControl.turns)
+  if ((S.factory || S.pairOptions) && result.runDir) {
+    result.artifactType = 'dark-factory-result'
+    result.artifactVersion = 1
+    result.summary = compactResult(S, result)
+  }
   return result
 }
 

@@ -1,33 +1,34 @@
 #!/usr/bin/env python3
-"""council — plumbing for the /council workflow.
+"""dark-factory — deterministic plumbing for the factory workflows.
 
 The workflow script can only spawn Claude agents; it has no shell. Everything that has to be
 deterministic — worktrees, snapshots, test runs, and driving the Codex and Gemini (agy) CLIs — lives here, and the
 workflow's agents call it. Every subcommand prints one JSON object on its last line.
 
-    council init        --repo DIR --seats A,B,C,D [--run-id ID] [--ref FILE]...
-    council seat-run    --run-dir D [--vendor codex|gemini|claude] --seat KEY --job KEY --model M --effort E --cwd DIR
+    dark-factory init        --repo DIR --seats A,B,C,D [--run-id ID] [--ref FILE]...
+    dark-factory seat-run    --run-dir D [--vendor codex|gemini|claude] --seat KEY --job KEY --model M --effort E --cwd DIR
                         --prompt-file F --expect HASH [--sandbox MODE] [--writable DIR]... [--fresh]
                         [--checkout L-LABEL]   (first creates --cwd as a checkout of that snapshot)
                         (reads the payload from the relay's saved transcript when F is missing)
-    council measure     --run-dir D --seat L --label rN [--since rM] [--tests T0A1,T1B2] [--no-snapshot]
-    council wait        --run-dir D --job KEY
-    council materialize --run-dir D --seat L --label rN [--name DIR]
-    council usage       --run-dir D [--no-claude]
-    council preflight   --vendors codex,gemini,claude
-    council jobs        --run-dir D
-    council cleanup     --run-dir D [--all]
-    council retro       --run-dir D [--expect HASH] [--payload-file FILE] [--out-dir DIR]
+    dark-factory measure     --run-dir D --seat L --label rN [--since rM] [--tests T0A1,T1B2] [--no-snapshot]
+    dark-factory wait        --run-dir D --job KEY
+    dark-factory materialize --run-dir D --seat L --label rN [--name DIR]
+    dark-factory usage       --run-dir D [--no-claude]
+    dark-factory preflight   --vendors codex,gemini,claude
+    dark-factory jobs        --run-dir D
+    dark-factory cleanup     --run-dir D [--all]
+    dark-factory retro       --run-dir D [--expect HASH] [--payload-file FILE] [--out-dir DIR]
                         (saves <run>/retro.md, plus the run's process notes read from the retro
                         agent's saved transcript, where they outlive the run)
-    council hash        --file F
+    dark-factory hash        --file F
 
 Long-running work (Codex and Gemini turns, test runs) executes as a detached job so it survives the 10-minute
 Bash tool timeout: the command waits up to --max-wait seconds, then returns {"status": "running"}
-and the caller polls with `council wait`.
+and the caller polls with `dark-factory wait`.
 """
 
 import argparse
+from contextlib import contextmanager
 import hashlib
 import json
 import os
@@ -282,9 +283,9 @@ def copy_refs(root, run_dir, paths):
 AGENT_DOCS = ('CLAUDE.md', 'CLAUDE.local.md', 'AGENTS.md', 'GEMINI.md')
 
 
-def copy_agent_docs(root, wt):
-    """Copy the project's agent instructions into a worktree when git ignores them, since a checkout of
-    HEAD never has them. Only ignored files: they stay out of every seat's diff."""
+def copy_agent_docs(root, wt, untracked=False):
+    """Copy ignored instructions, and untracked ones for Factory, into isolated checkouts.
+    Snapshot exclusions keep these local instructions out of the delivered change."""
     copied = []
     for name in AGENT_DOCS:
         src, dst = os.path.join(root, name), os.path.join(wt, name)
@@ -292,7 +293,7 @@ def copy_agent_docs(root, wt):
             continue
         ignored = subprocess.run(['git', 'check-ignore', '-q', name], cwd=root, stdin=subprocess.DEVNULL,
                                  capture_output=True).returncode == 0
-        if ignored:
+        if ignored or (untracked and not git('ls-files', '--', name, cwd=root).strip()):
             shutil.copy2(src, dst)
             copied.append(name)
     return copied
@@ -336,7 +337,7 @@ def cmd_init(a):
         if not os.path.exists(path):
             git('worktree', 'add', '--detach', path, head, cwd=root)
         deps = clone_deps(root, path) or deps
-        docs = copy_agent_docs(root, path)
+        docs = copy_agent_docs(root, path, untracked=getattr(a, 'factory', False))
         worktrees[s] = path
 
     dirty = [l for l in git('status', '--porcelain', '--untracked-files=no', cwd=root).split('\n') if l]
@@ -408,7 +409,7 @@ def wait_job(jd, key, max_wait):
             return state
         if time.time() >= deadline:
             return {'status': 'running', 'job': key,
-                    'hint': 'still working; poll again with `council wait --run-dir ... --job ' + key + '`'}
+                    'hint': 'still working; poll again with `dark-factory wait --run-dir ... --job ' + key + '`'}
         time.sleep(JOB_POLL_SEC)
 
 
@@ -1202,14 +1203,78 @@ def verification_environment(settings):
     return dict(settings.get('baseEnv', os.environ), **settings['env'])
 
 
+class VerificationInfrastructureError(CouncilError):
+    pass
+
+
+@contextmanager
+def verification_temp(run, settings):
+    env = verification_environment(settings)
+    if not run.get('factory'):
+        yield env
+        return
+    # Prefer short roots for Unix sockets, but probe creation rather than assuming
+    # /tmp is writable inside every host sandbox. Never clean another job's files.
+    candidates = []
+    for source in (settings['env'], os.environ, env, {'TMPDIR': '/tmp', 'TMP': '/var/tmp'}):
+        for key in ('TMPDIR', 'TMP', 'TEMP'):
+            root = source.get(key)
+            if root and os.path.isabs(root) and root not in candidates:
+                candidates.append(root)
+    candidates.sort(key=lambda root: len(os.fsencode(os.path.realpath(root))) > 40)
+    failures = []
+    for root in candidates:
+        try:
+            temporary = tempfile.TemporaryDirectory(prefix='df-', dir=root)
+        except OSError as error:
+            failures.append(f'{root}: {error.strerror or error}')
+            continue
+        with temporary as directory:
+            yield dict(env, TMPDIR=directory, TMP=directory, TEMP=directory)
+        return
+    raise VerificationInfrastructureError('No writable verification temporary root: ' + '; '.join(failures))
+
+
+def verification_infrastructure_failure(result, env):
+    if result['exitCode'] == 0 or result['timedOut']:
+        return False
+    # Require an exception diagnostic referencing this execution's private temp
+    # directory. A test mentioning socket limits is not an infrastructure failure.
+    roots = {env['TMPDIR'], os.path.realpath(env['TMPDIR'])}
+    for line in read(result['log']).splitlines():
+        if not any(root.rstrip('/') + '/' in line for root in roots):
+            continue
+        if re.match(r'^(?:PHP Fatal error:\s*)?(?:Uncaught\s+)?[\w\\]*SocketException:\s+Could not create server unix://', line):
+            return True
+        if re.match(r'^OSError:\s+(?:\[Errno \d+\] )?(?:AF_UNIX path too long|sun_path exceeds (?:the )?limit)', line):
+            return True
+    return False
+
+
 def suite(run, cwd, label, seat, timeout, settings=None):
     settings = verification_settings(run) if settings is None else settings
     if not settings['command']:
         return {'ran': False, 'passed': False, 'note': 'no verification command configured'}
     log = os.path.join(run['runDir'], 'logs', f'suite-{seat}-{label}.log')
-    r = run_shell(settings['command'], cwd, timeout, log, env=verification_environment(settings))
+    attempts, started = [], time.monotonic()
+    original = git('diff', '--binary', 'HEAD', cwd=cwd) if run.get('factory') else None
+    for attempt in range(2 if run.get('factory') else 1):
+        attempt_log = log if attempt == 0 else log + '.retry'
+        try:
+            with verification_temp(run, settings) as env:
+                r = run_shell(settings['command'], cwd, max(0.01, timeout - (time.monotonic() - started)), attempt_log, env=env)
+                infrastructure = run.get('factory') and verification_infrastructure_failure(r, env)
+                attempts.append(dict(r, env={**settings['env'], **{k: env[k] for k in ('TMPDIR', 'TMP', 'TEMP') if k in env}},
+                                     failureKind='infrastructure' if infrastructure else ''))
+        except VerificationInfrastructureError as error:
+            write(attempt_log, str(error) + '\n')
+            return dict(ran=False, passed=False, cwd=cwd, command=settings['command'], env=settings['env'],
+                        log=attempt_log, tail=str(error), attempts=attempts, failureKind='infrastructure')
+        if not infrastructure or time.monotonic() - started >= timeout or git('diff', '--binary', 'HEAD', cwd=cwd) != original:
+            break
     return dict(r, ran=True, passed=(r['exitCode'] == 0 and not r['timedOut']),
-                cwd=cwd, command=settings['command'], env=settings['env'], log=log)
+                cwd=cwd, command=settings['command'], env=settings['env'],
+                **({'attempts': attempts, 'failureKind': 'infrastructure' if infrastructure else ''} if run.get('factory') else {}))
 
 
 def safe_relative(root, rel):
@@ -1423,6 +1488,8 @@ def scratch_checkout(run, seat, label, commit, live):
         shutil.rmtree(path, ignore_errors=True)
         git('worktree', 'add', '--detach', path, commit, cwd=run['repoRoot'])
         clone_deps(live, path)
+        if run.get('factory'):
+            copy_agent_docs(run['repoRoot'], path, untracked=True)
         return path, None
     except (CouncilError, OSError, subprocess.CalledProcessError) as e:
         drop_checkout(run, path)
@@ -1597,13 +1664,13 @@ def run_replay(run, spec, snapshot_info, live, settings):
                         os.chmod(dst, 0o755 if mode == '100755' else 0o644)
                 record['attempted'] = True
                 try:
-                    result = run_shell(entry['command'], cwd, spec['testTimeout'], log,
-                                       env=verification_environment(settings))
+                    with verification_temp(run, settings) as env:
+                        result = run_shell(entry['command'], cwd, spec['testTimeout'], log, env=env)
                     record.update(result, ran=True, hasExitCode=True)
                     record['signal'] = -result['exitCode'] if result['exitCode'] < 0 else 0
                     record['mutated'] = tracked_changes(cwd) if side == 'final' else []
                     record['passed'] = result['exitCode'] == 0 and not result['timedOut'] and not record['mutated']
-                except OSError as e:
+                except (OSError, VerificationInfrastructureError) as e:
                     record['launchError'] = str(e)
                     record['tail'] = str(e)
                     write(log, str(e) + '\n')
@@ -1758,6 +1825,8 @@ def checkout_snapshot(run, seat, label, path):
     if not os.path.exists(path):
         git('worktree', 'add', '--detach', path, ref, cwd=run['repoRoot'])
         clone_deps(run['repoRoot'], path)
+        if run.get('factory'):
+            copy_agent_docs(run['repoRoot'], path, untracked=True)
     return ref
 
 
@@ -1827,7 +1896,7 @@ def delivery_entries(manifest):
     return {item['path']: item for kind in ('adjustments', 'handoffs') for item in manifest[kind]}
 
 
-def inspect_delivery(run, final, manifest):
+def delivery_snapshot(run, final, diagnostic=False):
     repo = run['repoRoot']
     ref = final.get('snapshotRef', '')
     match = re.fullmatch(re.escape(f'refs/council/{run["runId"]}/') + r'([A-Z])-([A-Za-z0-9][A-Za-z0-9._-]*)', ref) if isinstance(ref, str) else None
@@ -1837,8 +1906,15 @@ def inspect_delivery(run, final, manifest):
     if final.get('snapshotTree') != tree:
         raise CouncilError('snapshot no longer matches the tree in the factory result')
     ready = final.get('readiness', {})
-    if ready.get('state') != 'ready' or ready.get('blocked') or ready.get('incomplete'):
+    if not diagnostic and (ready.get('state') != 'ready' or ready.get('blocked') or ready.get('incomplete')):
         raise CouncilError('factory readiness has not passed; delivery cannot be verified')
+    inspect_evidence(run, *match.groups())
+    return ref
+
+
+def inspect_delivery(run, final, manifest, diagnostic=False):
+    repo = run['repoRoot']
+    ref = delivery_snapshot(run, final, diagnostic)
     head = git('rev-parse', 'HEAD', cwd=repo).strip()
     ancestor = subprocess.run(['git', 'merge-base', '--is-ancestor', run['head'], head], cwd=repo,
                               stdin=subprocess.DEVNULL, capture_output=True)
@@ -1846,7 +1922,6 @@ def inspect_delivery(run, final, manifest):
         raise CouncilError('main HEAD no longer descends from the setup commit')
     if 'deliveryBaseline' not in run:
         raise CouncilError('run has no delivery baseline; use a factory run initialized with --factory')
-    inspect_evidence(run, *match.groups())
     declared = delivery_entries(manifest)
     expected = tree_files(repo, ref)
     before = tree_files(repo, run['head'])
@@ -1874,38 +1949,45 @@ def inspect_delivery(run, final, manifest):
 
 def run_delivery_job(jd, spec):
     run = load_run(spec['runDir'])
-    before = inspect_delivery(run, spec['final'], spec['manifest'])
+    reason = spec.get('diagnosticReason', '')
+    before = inspect_delivery(run, spec['final'], spec['manifest'], bool(reason))
     result = {'status': 'incomplete', 'factoryReadiness': spec['final']['readiness'],
-              'manifest': spec['manifest'], **before}
+              'manifest': spec['manifest'], **({'diagnosticReason': reason} if reason else {}), **before}
     if not before['problems']:
         result['validation'] = suite(run, run['repoRoot'], 'delivery', 'main', spec['suiteTimeout'], spec['verification'])
-        after = inspect_delivery(run, spec['final'], spec['manifest'])
+        after = inspect_delivery(run, spec['final'], spec['manifest'], bool(reason))
         result['problems'] = after['problems']
         if after['files'] != before['files'] or after['mainHead'] != before['mainHead'] or after['snapshot'] != before['snapshot']:
             result['problems'].append('project checks changed delivery files')
         gate_ok = result['validation'].get('passed') or not spec['verification']['command']
         if gate_ok and not result['problems']:
-            result['status'] = 'delivered'
-    write_json(os.path.join(run['runDir'], 'delivery.json'), result)
+            result['status'] = 'verified-diagnostic' if reason else 'delivered'
+    write_json(os.path.join(run['runDir'], 'delivery-diagnostic.json' if reason else 'delivery.json'), result)
     return result
 
 
 def cmd_verify_delivery(a):
     run = load_run(a.run_dir)
     report = json.loads(read(a.result))
+    if report.get('artifactType') == 'dark-factory-summary':
+        raise CouncilError('verify-delivery requires the full result; summary.json is informational only')
     if os.path.realpath(report.get('runDir', '')) != os.path.realpath(run['runDir']):
         raise CouncilError('result belongs to a different run')
     manifest = json.loads(read(a.manifest)) if a.manifest else {'adjustments': [], 'handoffs': []}
     final = report.get('final', {})
+    reason = (a.diagnostic_reason or '').strip()
+    if a.diagnostic_reason is not None and not reason:
+        raise CouncilError('--diagnostic-reason requires a nonempty explanation')
+    output = os.path.join(run['runDir'], 'delivery-diagnostic.json' if reason else 'delivery.json')
     try:
-        inspect_delivery(run, final, manifest)
+        inspect_delivery(run, final, manifest, bool(reason))
     except (CouncilError, OSError, ValueError, KeyError) as e:
-        write_json(os.path.join(run['runDir'], 'delivery.json'), {'status': 'incomplete', 'problems': [str(e)]})
+        write_json(output, {'status': 'incomplete', 'problems': [str(e)], **({'diagnosticReason': reason} if reason else {})})
         raise
-    key = 'verify-delivery'
+    key = 'verify-delivery-diagnostic' if reason else 'verify-delivery'
     jd = job_dir(a.run_dir, key)
     spec = {'kind': 'delivery', 'job': key, 'runDir': run['runDir'], 'final': final,
-            'manifest': manifest, 'verification': verification_settings(run), 'suiteTimeout': a.suite_timeout}
+            'manifest': manifest, 'verification': verification_settings(run), 'suiteTimeout': a.suite_timeout, 'diagnosticReason': reason}
     def decide(old, state):
         if state and state.get('status') == 'running':
             if old != spec:
@@ -1914,9 +1996,51 @@ def cmd_verify_delivery(a):
         return None
     if settle_existing_job(jd, key, a.max_wait, decide):
         return
-    write_json(os.path.join(run['runDir'], 'delivery.json'), {'status': 'pending', 'job': key})
+    write_json(output, {'status': 'pending', 'job': key})
     start_job(jd, spec)
     emit(wait_job(jd, key, a.max_wait))
+
+
+def cmd_apply(a):
+    run = load_run(a.run_dir)
+    report = json.loads(read(a.result or os.path.join(run['runDir'], 'result.json')))
+    if report.get('artifactType') != 'dark-factory-result' or report.get('artifactVersion') != 1:
+        raise CouncilError('apply requires a full dark-factory-result v1; summary.json is informational only')
+    if os.path.realpath(report.get('runDir', '')) != os.path.realpath(run['runDir']):
+        raise CouncilError('result belongs to a different run')
+    final, repo = report.get('final', {}), run['repoRoot']
+    ref = delivery_snapshot(run, final)
+    if git('rev-parse', 'HEAD', cwd=repo).strip() != run['head']:
+        raise CouncilError('HEAD changed since setup; apply requires the original base')
+    if git('status', '--porcelain', '--untracked-files=no', cwd=repo).strip():
+        raise CouncilError('apply requires a clean tracked checkout and index; existing changes were preserved')
+    baseline = run.get('deliveryBaseline', {})
+    for path in set(checkout_changes(repo)) | set(baseline):
+        if checkout_file(repo, path) != baseline.get(path):
+            raise CouncilError(f'local file changed since setup and would not pass delivery verification: {path}')
+    paths = git('diff', '--name-only', '-z', run['head'], ref, cwd=repo).split('\0')[:-1]
+    # Refuse collisions with untracked/ignored local files, including a parent path.
+    before = tree_files(repo, run['head'])
+    for path in paths:
+        if path not in before and os.path.lexists(os.path.join(repo, path)):
+            raise CouncilError(f'local file would be overwritten: {path}')
+        parent = os.path.dirname(path)
+        if parent:
+            safe_relative(repo, parent)
+    patch = subprocess.check_output(['git', 'diff', '--binary', '--no-ext-diff', run['head'], ref], cwd=repo)
+    if patch:
+        for flags in (['--check', '--index'], ['--index']):
+            r = subprocess.run(['git', 'apply', *flags, '-'], input=patch, cwd=repo, capture_output=True)
+            if r.returncode:
+                raise CouncilError(r.stderr.decode(errors='replace').strip())
+    tree = git('write-tree', cwd=repo).strip()
+    if tree != final['snapshotTree']:
+        raise CouncilError('applied index differs from reviewed snapshot; changes retained for inspection')
+    result = inspect_delivery(run, final, {'adjustments': [], 'handoffs': []})
+    if result['problems']:
+        raise CouncilError('applied checkout differs: ' + '; '.join(result['problems']))
+    emit({'status': 'applied', 'snapshotRef': ref, 'snapshotTree': tree, 'runDir': run['runDir'],
+          'next': 'Run dark-factory verify-delivery before committing.'})
 
 
 # ---------------------------------------------------------------- reporting and cleanup
@@ -2378,6 +2502,11 @@ def main():
     p.add_argument('--manifest', help='JSON with adjustments and handoffs, each with path/reason/sha256')
     p.add_argument('--suite-timeout', type=int, default=1200)
     p.add_argument('--max-wait', type=int, default=DEFAULT_MAX_WAIT)
+    p.add_argument('--diagnostic-reason', help='verify an incomplete run for diagnosis; records the reason without granting delivery readiness')
+
+    p = sub.add_parser('apply', help='apply a ready reviewed snapshot to its base and verify the index tree hash')
+    p.add_argument('--run-dir', required=True)
+    p.add_argument('--result', help='saved factory result JSON; defaults to RUN/result.json')
 
     p = sub.add_parser('usage')
     p.add_argument('--run-dir', required=True)
@@ -2411,6 +2540,7 @@ def main():
         a.run_dir = os.path.abspath(os.path.expanduser(a.run_dir))
     handlers = {'init': cmd_init, 'seat-run': cmd_seat_run, 'wait': cmd_wait, 'measure': cmd_measure,
                 'verify': cmd_verify, 'verify-delivery': cmd_verify_delivery, 'evidence': cmd_evidence,
+                'apply': cmd_apply,
                 'materialize': cmd_materialize, 'usage': cmd_usage, 'jobs': cmd_jobs,
                 'cleanup': cmd_cleanup, 'retro': cmd_retro, 'hash': cmd_hash, 'preflight': cmd_preflight}
     try:

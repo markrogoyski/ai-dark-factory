@@ -461,6 +461,9 @@ export async function runWorkflow(options, dependencies = {}) {
     const engine = digest(source + readFileSync(helper) + readFileSync(fileURLToPath(import.meta.url)) + readFileSync(join(plugin, 'lib/checkpoint.mjs')))
     const previous = options.resume ? JSON.parse(readFileSync(join(hostRunDir, 'args.json'), 'utf8')) : {}
     const args = { ...previous, ...options.args, host: 'codex', repo, cli: 'dark-factory', hostRunId: hostRunDir.split('/').at(-1) }
+    // Intake is replayed on resume, including after an authorized cap increase.
+    // Keep its original budget context stable while execution uses the current caps.
+    args.intakeLimits = previous.intakeLimits || { maxTurns: args.maxTurns || null, maxRunMin: args.maxRunMin || null }
     if (options.resume) {
       const immutable = value => Object.fromEntries(Object.entries(value).filter(([k]) => !['clarifications', 'tierConfirmed', 'noSplit', 'maxTurns', 'maxRunMin', 'explain'].includes(k)))
       if (fingerprint(immutable(args)) !== fingerprint(immutable(previous))) throw new Error('Task or execution arguments changed; start a new run so dependent reviews are fresh.')
@@ -528,11 +531,17 @@ export async function runWorkflow(options, dependencies = {}) {
     result.metrics.turns = runtimeStats.spentTurns
     result.metrics.elapsedMs = runtimeStats.elapsedMs
     result.metrics.repositoryHead = gitRoot(repo, 'HEAD')
+    if (result.summary && result.runDir && runtime.runDirectories().includes(result.runDir)) {
+      result.summaryFile = join(result.runDir, 'summary.json')
+      result.summary = { ...result.summary, status: result.status, stopReason: result.stopReason || result.error || '', final: { ...result.summary.final, readiness: result.final?.readiness } }
+      writeJsonAtomic(result.summaryFile, result.summary, 2)
+      writeJsonAtomic(join(result.runDir, 'result.json'), result, 2)
+    }
     const json = JSON.stringify(result, null, 2) + '\n'
     writeJsonAtomic(join(hostRunDir, 'result.json'), result, 2)
     writeJsonAtomic(join(hostRunDir, 'metrics.json'), result.metrics, 2)
     if (options.output) writeFileSync(options.output, json)
-    emit({ type: 'run.completed', status: result.status, exitCode: resultExitCode(result), result: join(hostRunDir, 'result.json') })
+    emit({ type: 'run.completed', status: result.status, exitCode: resultExitCode(result), result: join(hostRunDir, 'result.json'), summary: result.summaryFile || null })
     return result
   }
 }

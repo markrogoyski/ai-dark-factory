@@ -59,7 +59,8 @@ class Verification(TmpDirCase):
         final = {'snapshotRef': measured['snapshot']['ref'], 'snapshotTree': measured['snapshot']['tree'],
                  'readiness': {'state': 'ready', 'blocked': [], 'incomplete': []}}
         report = os.path.join(self.rd, 'result.json')
-        council.write_json(report, {'runDir': self.rd, 'final': final})
+        council.write_json(report, {'artifactType': 'dark-factory-result', 'artifactVersion': 1,
+                                   'runDir': self.rd, 'final': final})
         return report
 
     def replay_mapping(self):
@@ -404,6 +405,155 @@ class Verification(TmpDirCase):
         os.symlink(os.path.join(self.run['room'], 'r0'), os.path.join(self.run['room'], 'evidence', 'A'))
         with self.assertRaises(council.CouncilError):
             council.evidence_inputs(self.run, 'A')
+
+
+    def test_short_private_temp_directories_retry_owned_socket_failure_and_keep_logs(self):
+        marker = self.path('ipc-attempt')
+        unrelated = self.path('amp-parallel-ipc-unrelated')
+        council.write(unrelated, 'keep')
+        council.write(os.path.join(self.wt, 'ipc.py'),
+                      'import os, pathlib, sys\n'
+                      'tmp = os.environ["TMPDIR"]\n'
+                      'assert len(tmp.encode()) < 40\n'
+                      'assert tmp == os.environ["TMP"] == os.environ["TEMP"]\n'
+                      f'marker = pathlib.Path({marker!r})\n'
+                      'if not marker.exists():\n'
+                      '    marker.write_text(tmp)\n'
+                      '    pathlib.Path(tmp, "amp-parallel-ipc-stale").touch()\n'
+                      '    print("SocketException: Could not create server unix://" + tmp + "/test.sock")\n'
+                      '    sys.exit(1)\n'
+                      'assert marker.read_text() != tmp\n'
+                      'assert not pathlib.Path(marker.read_text()).exists()\n'
+                      'print("recovered")\n')
+        council.write(os.path.join(self.rd, 'verify.sh'), 'python3 ipc.py')
+        self.config({'TMPDIR': self.path('very-long-' * 15)})
+        result = self.measure()['suite']
+        self.assertTrue(result['passed'])
+        self.assertEqual(len(result['attempts']), 2)
+        self.assertEqual(result['attempts'][0]['failureKind'], 'infrastructure')
+        self.assertIn('recovered', result['tail'])
+        for attempt in result['attempts']:
+            self.assertTrue(os.path.exists(attempt['log']))
+            self.assertFalse(os.path.exists(attempt['env']['TMPDIR']))
+        self.assertEqual(council.read(unrelated), 'keep')
+
+    def test_socket_failure_classification_is_narrow_and_retry_is_bounded(self):
+        for message, count, kind in [('SocketException: application TCP failure', 1, ''),
+                                     ('AF_UNIX path too long', 1, ''),
+                                     ('test expects socket path too long at $TMPDIR/test.sock', 1, ''),
+                                     ('SocketException: Could not create server unix:///unrelated/test.sock', 1, ''),
+                                     ('test expects SocketException: Could not create server unix://$TMPDIR/test.sock', 1, ''),
+                                     ('OSError: AF_UNIX path too long: $TMPDIR/test.sock', 2, 'infrastructure'),
+                                     ('Uncaught Amp\\Socket\\SocketException: Could not create server unix://$TMPDIR/test.sock', 2, 'infrastructure')]:
+            council.write(os.path.join(self.rd, 'verify.sh'), f'echo "{message}"; exit 1')
+            result = self.measure()['suite']
+            self.assertFalse(result['passed'])
+            self.assertEqual(len(result['attempts']), count)
+            self.assertEqual(result['failureKind'], kind)
+
+    def test_verification_falls_back_to_writable_sandbox_temp_and_cleans_only_its_directory(self):
+        # Both current sandbox TMPDIR and explicit verification roots can be the
+        # only writable location. No live host/model invocation is needed to test it.
+        temporary = council.tempfile.TemporaryDirectory
+        for source in ('sandbox', 'configured'):
+            root = self.path(source + '-long-root-' * 8)
+            os.makedirs(root)
+            council.write(os.path.join(root, 'keep'), 'unrelated')
+            calls = []
+
+            def create(*args, **kwargs):
+                calls.append(kwargs['dir'])
+                if kwargs['dir'] != root:
+                    raise PermissionError(13, 'sandbox denied')
+                return temporary(*args, **kwargs)
+
+            self.config({'FACTORY_GATE': 'serial', **({'TMPDIR': root} if source == 'configured' else {})})
+            with mock.patch.dict(os.environ, {'TMPDIR': root if source == 'sandbox' else '/unwritable'}), \
+                    mock.patch.object(council.tempfile, 'TemporaryDirectory', side_effect=create):
+                result = council.suite(self.run, self.wt, source, 'A', 10)
+            self.assertTrue(result['passed'], result)
+            actual = result['attempts'][0]['env']['TMPDIR']
+            self.assertEqual(os.path.dirname(actual), root)
+            self.assertFalse(os.path.exists(actual))
+            self.assertEqual(os.listdir(root), ['keep'])
+            self.assertIn('/tmp', calls)
+
+    def test_no_writable_temp_root_is_infrastructure_without_executing_the_gate(self):
+        with mock.patch.object(council.tempfile, 'TemporaryDirectory', side_effect=PermissionError(13, 'sandbox denied')), \
+                mock.patch.object(council, 'run_shell') as execute:
+            result = council.suite(self.run, self.wt, 'denied', 'A', 10)
+        execute.assert_not_called()
+        self.assertFalse(result['ran'])
+        self.assertFalse(result['passed'])
+        self.assertEqual(result['failureKind'], 'infrastructure')
+        self.assertIn('No writable verification temporary root', council.read(result['log']))
+
+    def test_apply_checks_snapshot_hash_and_preserves_untracked_baseline(self):
+        report = self.report()
+        result = self.cli('apply', '--run-dir', self.rd)
+        self.assertEqual(result['status'], 'applied')
+        self.assertEqual(council.git('write-tree', cwd=self.repo).strip(), result['snapshotTree'])
+        self.assertEqual(council.read(os.path.join(self.repo, 'value')), 'fixed\n')
+        self.assertEqual(self.delivery(report)['status'], 'delivered')
+
+    def test_delivery_helpers_refuse_a_summary_even_when_named_result_json(self):
+        report = self.report()
+        summary = json.loads(council.read(report))
+        summary['artifactType'] = 'dark-factory-summary'
+        council.write_json(report, summary)
+        for command in ('apply', 'verify-delivery'):
+            rejected = self.cli(command, '--run-dir', self.rd, '--result', report, error=True)
+            self.assertIn('informational only', rejected['error'])
+        self.assertEqual(council.read(os.path.join(self.repo, 'value')), 'broken\n')
+        self.assertFalse(self.git('diff', '--cached'))
+
+    def test_apply_refuses_dirty_checkout_and_untracked_collisions_before_mutation(self):
+        council.write(os.path.join(self.wt, 'new.txt'), 'reviewed')
+        self.report()
+        self.put('new.txt', 'local user file')
+        refused = self.cli('apply', '--run-dir', self.rd, error=True)
+        self.assertIn('local file', refused['error'])
+        self.assertEqual(council.read(os.path.join(self.repo, 'value')), 'broken\n')
+        self.put('value', 'user edits')
+        refused = self.cli('apply', '--run-dir', self.rd, error=True)
+        self.assertIn('clean tracked checkout', refused['error'])
+        self.assertEqual(council.read(os.path.join(self.repo, 'new.txt')), 'local user file')
+
+    def test_diagnostic_delivery_runs_gate_without_promoting_incomplete_readiness(self):
+        report = self.report()
+        value = json.loads(council.read(report))
+        value['final']['readiness'] = {'state': 'incomplete', 'blocked': [], 'incomplete': ['Replay evidence missing.']}
+        council.write_json(report, value)
+        self.put('value', 'fixed\n')
+        result = self.cli('verify-delivery', '--run-dir', self.rd, '--result', report,
+                          '--diagnostic-reason', 'Investigate missing replay evidence.', '--max-wait', '20')
+        self.assertEqual(result['status'], 'verified-diagnostic')
+        self.assertTrue(result['validation']['passed'])
+        self.assertEqual(result['factoryReadiness']['state'], 'incomplete')
+        self.assertFalse(os.path.exists(os.path.join(self.rd, 'delivery.json')))
+        self.assertTrue(os.path.exists(os.path.join(self.rd, 'delivery-diagnostic.json')))
+        self.assertIn('readiness has not passed', self.cli('verify-delivery', '--run-dir', self.rd, '--result', report, error=True)['error'])
+
+
+    def test_shared_file_replays_separate_changed_and_preserved_selections(self):
+        council.write(os.path.join(self.wt, 'tests/changed.py'),
+                      'import sys\nfrom pathlib import Path\n'
+                      'if sys.argv[1] == "changed": assert Path("value").read_text() == "fixed\\n"\n'
+                      'else: assert Path("unchanged").read_text() == "preserve\\n"\n')
+        mapping = [{'file': 'tests/changed.py', 'command': 'python3 tests/changed.py ' + purpose,
+                    'checkIds': [purpose], 'fixtures': []} for purpose in ('changed', 'preserved')]
+        records = self.replay_measure(mapping)['replay']['records']
+        self.assertEqual([(r['side'], r['checkIds'][0], r['passed']) for r in records],
+                         [('base', 'changed', False), ('final', 'changed', True),
+                          ('base', 'preserved', True), ('final', 'preserved', True)])
+
+    def test_infrastructure_retry_cannot_hide_gate_mutation(self):
+        council.write(os.path.join(self.rd, 'verify.sh'),
+                      'echo corrupt > value; echo "OSError: AF_UNIX path too long: $TMPDIR/test.sock"; exit 1')
+        result = self.measure()['suite']
+        self.assertFalse(result['passed'])
+        self.assertEqual(len(result['attempts']), 1)
+        self.assertIn('value', result['mutated'])
 
 
 if __name__ == '__main__':

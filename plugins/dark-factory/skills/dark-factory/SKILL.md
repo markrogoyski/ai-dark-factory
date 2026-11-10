@@ -39,14 +39,14 @@ spec, audit, and historical-evidence options belong to other workflows.
 Use `--workflow run-plan --plan-file /absolute/path/plan.json` when the user requests
 implementation of an entire plan with local commits. Run-plan owns task scheduling,
 delivery, commits, budgets, and final acceptance; do not reproduce that loop in chat. The
-versioned JSON plan must be tracked and committed on the intended branch with a clean checkout.
+versioned JSON plan may be untracked on the intended branch. Tracked code must be clean; local plans, named references, and root agent instruction files are frozen by hash and preserved.
 See the repository README's Run-plan section for its schema. Plan creation and committing it
 are within an authorized run-plan setup; preserve unrelated work. Model choices belong in
 the plan's defaults/task args. Both hosts use the standalone runtime's Codex profile for plan runs.
 Repeat the same command to resume, without `--resume`. For parked tasks, pass an args file with
 `planFile` and `answers: {taskId: "the user's answer"}`; structured answers can also select
 `tier` or `noSplit`. Existing authorization governs routine choices; scope changes and conflicting
-requirements remain parked. Answers do not reset attempts or budgets. Preserve `.council/run-plan-ID`
+requirements remain parked. Answers do not reset attempts or budgets. To increase limits on resume, keep the plan unchanged and pass `extendLimits: {reason: "recorded explanation", limits: {maxRunMin: 240, taskMaxRunMin: 90}}`. Limits may only increase and prior usage stays charged. Preserve `.council/run-plan-ID`
 and child runs. Never reset a dirty checkout or remove a journal to force resume. Run-plan output
 lists completed and parked tasks and remaining budgets. Required parked tasks or failed final
 acceptance mean incomplete work. Run-plan commits locally; publishing/deploying remains separate.
@@ -71,7 +71,7 @@ Keep the runner's process/session alive and poll it while reporting meaningful p
 Progress goes to stderr; the final stdout is JSON. The result includes `hostRunDir` and
 `hostEvents`; the host directory retains the arguments, events, and `result.json`. `--output`
 also saves the result at a chosen path. A run's worktrees and evidence are under `runDir`.
-Keep these artifacts for inspection, especially when a milestone will refer to its design.
+Read `summaryFile` when available for compact readiness, snapshot identity, findings, and evidence paths. Keep these artifacts for inspection, especially when a milestone will refer to its design.
 
 Exit 0 means a completed result whose readiness passed; exit 2 means a decision or unresolved
 readiness; exit 1 means an execution failure. Read the JSON in all cases. `status: done` alone
@@ -104,14 +104,14 @@ artifact paths. Preserve the report's facts and scorecards; do not recompute the
 The runner leaves implementation changes in `final.worktree` and supplies the diff and
 `final.snapshotRef`; it does not apply them to the main checkout. Deliver the reviewed change
 within the user's existing authorization, checking the main tree and patch applicability first.
-Preserve unrelated edits and rerun project checks after application. Creating a factory result
+Use `dark-factory apply --run-dir RUN` when the original base and tracked checkout are clean; it stages the reviewed snapshot and verifies its tree hash without committing. Supply `--result FILE` if needed. Preserve unrelated edits and rerun project checks after application. Creating a factory result
 does not itself authorize publishing or deploying it.
 
 Ready Factory and Pair results report delivery as pending. After application and required local-plan updates,
 use the shipped helper's `verify-delivery` command as described in
 [references/delivery.md](references/delivery.md). It compares the delivered bytes, records any
 reviewed adjustments and handoffs, and runs the shared gate in the main checkout. Report its
-`delivery.json` separately from factory readiness; a ready snapshot can still fail delivery.
+`delivery.json` separately from factory readiness; a ready snapshot can still fail delivery. For an incomplete run, `verify-delivery --diagnostic-reason "explanation"` can record gate results in `delivery-diagnostic.json`; it does not grant readiness or authorize delivery.
 
 Architecture returns a reviewed design and `milestones[]`, with arguments for later factory
 runs. Present those milestones and retain the design artifacts. Do not automatically launch

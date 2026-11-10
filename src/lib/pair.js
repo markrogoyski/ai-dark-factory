@@ -59,6 +59,8 @@ function pairContractError(S, contract) {
     if (c.kind === 'test') {
       if (!['changed', 'preserved'].includes(c.purpose) || !inside(c.file) || !String(c.command || '').trim() ||
           !Array.isArray(c.fixtures) || c.fixtures.some(f => !inside(f))) return `Executable check ${c.id} needs a purpose, test file, command, and fixtures under accepted test roots.`
+    } else if (c.kind === 'gate') {
+      if (c.purpose !== 'preserved' || !S.verify || c.command !== S.verify || c.file !== '' || !Array.isArray(c.fixtures) || c.fixtures.length) return `Gate check ${c.id} must preserve behavior using the exact designated gate, with no file or fixtures.`
     } else if (c.kind !== 'inspection' || !String(c.inspection || '').trim() || !String(c.reason || '').trim()) return `Check ${c.id} needs a concrete alternative inspection and reason.`
   }
   if (S.criteria.some(c => !contract.checks.some(check => check.criteria.includes(c.id)))) return 'The contract must cover every acceptance criterion.'
@@ -86,6 +88,19 @@ function pairReplayRequest(S) {
   return { testRoots: (S.pair.approvedContract?.testRoots || []).map(r => r.path), mapping: S.pair.replayMapping }
 }
 
+function pairMappingError(S) {
+  const checks = S.pair.approvedContract?.checks || []
+  const roots = (S.pair.approvedContract?.testRoots || []).map(r => r.path)
+  const inside = path => pairRelativePath(S, path) && roots.some(root => path.startsWith(root + '/'))
+  for (const e of S.pair.replayMapping) {
+    if (!inside(e.file) || !String(e.command || '').trim() || !Array.isArray(e.fixtures) || e.fixtures.some(f => !inside(f)) ||
+        !Array.isArray(e.checkIds) || !e.checkIds.length || new Set(e.checkIds).size !== e.checkIds.length ||
+        e.checkIds.some(id => !checks.some(c => c.id === id && c.kind === 'test'))) return 'Replay mappings require test files and fixtures under accepted roots, focused commands, and executable check IDs. Whole-suite obligations use kind=gate, never a directory mapping.'
+  }
+  const missing = checks.filter(c => c.kind === 'test' && !S.pair.replayMapping.some(e => e.checkIds.includes(c.id)))
+  return missing.length ? `No replay mapping for ${missing.map(c => c.id).join(', ')}.` : null
+}
+
 function pairReplayReadiness(S, blocked, incomplete) {
   const p = S.pair, replay = p.measurement?.replay, request = pairReplayRequest(S)
   const mappingIdentity = entries => JSON.stringify(entries?.map(e => [e.file, e.command, e.checkIds, e.fixtures]))
@@ -96,6 +111,10 @@ function pairReplayReadiness(S, blocked, incomplete) {
     return
   }
   const checks = p.approvedContract?.checks || []
+  for (const check of checks.filter(c => c.kind === 'gate')) {
+    if (check.command !== S.verify || p.measurement?.suite?.command !== check.command || !p.measurement.suite.ran) incomplete.push(`No designated gate execution for ${check.id}.`)
+    else if (!p.measurement.suite.passed) blocked.push(`Designated gate check ${check.id} failed.`)
+  }
   for (const entry of p.replayMapping) {
     if (!Array.isArray(entry.checkIds) || !entry.checkIds.length || entry.checkIds.some(id => !checks.some(c => c.id === id && c.kind === 'test'))) incomplete.push('Replay mapping contains unknown or non-executable check IDs.')
   }
@@ -145,6 +164,10 @@ function pairIngestReview(S, review) {
     f.history.push({ review: p.reviews.length + 1, ...r })
   }
   for (const f of review.findings || []) {
+    // Suppress literal repeats only. Reworded issues retain identity through resolutions,
+    // never by fuzzy matching that could merge distinct defects.
+    const same = p.findings.find(old => old.stage === p.stage && old.status === 'open' && old.statement.trim().replace(/\s+/g, ' ') === f.statement.trim().replace(/\s+/g, ' '))
+    if (same) { same.history.push({ review: p.reviews.length + 1, status: 'open', evidence: f.evidence }); continue }
     p.findings.push({ ...f, id: `P${p.findings.length + 1}`, stage: p.stage, status: 'open', resolution: '', history: [] })
   }
   p.lastReview = review
@@ -179,12 +202,19 @@ function pairReadiness(S) {
 
 function pairStalled(S) {
   const p = S.pair
+  if (pairReadiness(S).state === 'ready') return false
   const signature = JSON.stringify([pairVersion(S), pairOpen(S).map(f => [f.id, f.statement]),
     p.lastReview?.criteria.map(c => [c.criterion, c.status]), p.lastReview?.requiresDesignRevision,
     p.measurement?.suite?.ran, p.measurement?.suite?.passed, pairReplayRequest(S),
     p.measurement?.replay?.exclusions, p.measurement?.replay?.records?.map(r => [r.side, r.file, r.command, r.checkIds, r.attempted, r.ran, r.hasExitCode, r.exitCode, r.signal, r.timedOut, r.launchError, r.passed, r.mutated])])
   p.signatures.push(signature)
   return p.signatures.length >= 2 && p.signatures.at(-2) === signature
+}
+
+function pairReviewClean(S) {
+  const r = S.pair.lastReview
+  return r?.complete && r.version === pairVersion(S) && !r.requiresDesignRevision && !pairOpen(S).length &&
+    S.criteria.every(c => r.criteria.filter(a => a.criterion === c.id).length === 1 && r.criteria.some(a => a.criterion === c.id && a.status === 'met' && a.note?.trim()))
 }
 
 function pairResult(S, status = 'blocked') {
@@ -200,6 +230,7 @@ function pairResult(S, status = 'blocked') {
     ...ready.blocked, ...ready.incomplete,
     ...p.findings.map(f => `${f.id}: ${f.status} — ${f.statement}${f.resolution ? ` (${f.resolution})` : ''}`)].join('\n\n')
   return { status, workflow: 'pair', mode: 'implement', task: S.task, runDir: S.run?.runDir || null,
+    repositoryNotes: S.repositoryNotes || '',
     room: S.run?.room || null, refs: S.refs, stage: p.stage, stopReason: p.stop,
     design: p.design, testContract: p.approvedContract || p.testContract, replayMapping: p.replayMapping,
     author: S.pairOptions.author.name, reviewer: S.pairOptions.reviewer.name,

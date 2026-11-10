@@ -20,7 +20,9 @@ function parseControls(raw) {
 function factoryStrategy(S, intake) {
   const requested = S.raw.strategy || 'auto'
   if (!['auto', 'pair', 'independent'].includes(requested)) throw new Error('strategy must be auto, pair, or independent.')
-  const independentOptions = ['seats', 'simple', 'panel', 'spec', 'audit', 'roles', 'evidence'].filter(k => S.raw[k] !== undefined)
+  // Run-plan's request to ask about unresolved requirements also applies to Pair
+  // setup; it is not a request for a separate specification-review panel.
+  const independentOptions = ['seats', 'simple', 'panel', 'spec', 'audit', 'roles', 'evidence'].filter(k => S.raw[k] !== undefined && !(k === 'spec' && S.raw[k] === 'ask'))
   if (requested === 'pair' && independentOptions.length) throw new Error(`Pair strategy does not accept ${independentOptions.join(', ')}; configure participants with pair: {author, reviewer, maxReviews}.`)
   const tier = S.factory.tier
   if (requested === 'pair' && (intake.mode !== 'implement' || tier === 'architecture')) throw new Error('Pair strategy requires an implementation below Architecture.')

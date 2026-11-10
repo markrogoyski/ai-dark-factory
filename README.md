@@ -109,10 +109,10 @@ returns reviewed milestones and does not automatically build them.
 The `run-plan` workflow executes a suite of features or defects sequentially through Factory or Pair. Each task
 has fresh agent sessions, separate worktrees, and the existing independent review and readiness
 gates. A successful task is applied, checked with `verify-delivery`, and committed together with
-its progress record. Requesting a plan run authorizes those local commits. Use a clean checkout
+its progress record. Requesting a plan run authorizes those local commits. Use a checkout with clean tracked files
 on the intended feature branch; the plan run does not publish, deploy, or switch branches.
 
-Create and commit a plan such as `plan.json`:
+Create a plan such as `plan.json`. It may remain untracked; its bytes are frozen for the run. A tracked plan retains the existing behavior of committing progress with each task:
 
 ```json
 {
@@ -203,10 +203,10 @@ Answers may be strings or `{answer, tier?, noSplit?}`. A split proposal can be k
 with explicit `noSplit: true`; creating a different decomposition or changing requirements needs
 a revised plan with a new ID. Answers never reset attempts or budgets; new answers are rejected
 when the task has exhausted its attempts. The default two attempts allow one answered retry.
-The v1 plan definition and limits are immutable once started; budget exhaustion is reported,
+The plan definition remains immutable once started; budget exhaustion is reported,
 not silently extended.
 
-Completed code and the plan's controller-owned `progress` field share a commit, with
+For tracked plans, completed code and the controller-owned `progress` field share a commit, with
 `Factory-Plan` and `Factory-Task` trailers. `.council/run-plan-ID/state.json` also retains
 unsuccessful attempts, questions, decisions, and budget accounting. Keep it and child-run evidence.
 Before launching, the controller reserves an attempt's allowed turns and time. A completed
@@ -227,6 +227,31 @@ running after its host closes. Final acceptance checks the settled criteria with
 review; its Council must return ready with every criterion met on the integrated repository.
 Final acceptance failures are parked for inspection; v1 does not
 invent repair scope or weaken acceptance criteria.
+
+Untracked execution plans, named reference documents, and root-level local agent instruction files
+(`CLAUDE.md`, `CLAUDE.local.md`, `AGENTS.md`, `GEMINI.md`) are allowed without committing or excluding
+them. Their bytes are frozen and checked on resume; tracked edits and unrelated untracked files
+still stop the run. Untracked plans are never staged or rewritten: progress lives in the run's
+`state.json`. A task cannot overwrite these control files.
+
+To raise execution limits on resume, keep the plan unchanged and pass an args file:
+
+```json
+{
+  "planFile": "/absolute/path/plan.json",
+  "extendLimits": {
+    "reason": "Allow the reviewed implementation to finish verification.",
+    "limits": {"maxRunMin": 240, "taskMaxRunMin": 90, "maxAttempts": 3}
+  },
+  "answers": {"policy": "Retry with the increased allowance."}
+}
+```
+
+Limits may only increase. The journal records the reason, old and new limits, and prior usage;
+spent time, turns, and attempts remain charged. The new limits apply to subsequent attempts,
+not to an already running child process. The deadline remains a hard cap, including audits.
+Intake sees that cap and can warn when the selected process is unlikely to fit. Run-plan's
+request to ask about unresolved requirements does not force a council when intake selects Pair.
 
 ## Pair: one author, one reviewer
 
@@ -277,8 +302,10 @@ transport turn to run the same helper. Its existing CLI relay handles external p
 There is no council, panel, voting, or automatic escalation.
 
 Each implementation response maps approved check IDs to current files, focused commands, and
-fixtures. Each command must isolate one test file. Tests depending on new APIs belong in separate
-files from preserved-behavior tests, so a loading fatal cannot hide the preserved signal. Only
+fixtures. Each focused command must isolate one test file. Separate files are preferred for
+new-API and preserved-behavior tests; explicit user or plan file requirements take precedence.
+Shared files need focused selections and a review of base loadability. A whole-suite final
+obligation uses a designated-gate contract check without a replay mapping. Only
 added/modified regular test and fixture files under the reviewed test roots are overlaid, using
 snapshot bytes. Unchanged files use the base copy. Production/config/dependency changes, unsafe
 paths and symlinks are excluded; renames/deletions are reported explicitly and are not overlaid.
@@ -969,6 +996,52 @@ accepts:
   - `jobs/` holds Codex, Gemini and measurement jobs.
   - `usage.jsonl` records Codex and Gemini token use.
   - `retro.md` and `retro-data.md` hold the process retro and the notes it drew on.
+
+Factory and Pair results include a compact `summary` and, when saved, `summaryFile`. The
+Codex runtime writes `runDir/summary.json` directly and links it in the completion event;
+`runDir/result.json` and `hostRunDir/result.json` contain the full result. Native runs return the
+summary inline, without an extra model turn; save their full returned result for delivery.
+Full results identify themselves as `artifactType: "dark-factory-result"`, `artifactVersion: 1`;
+summaries use `artifactType: "dark-factory-summary"`. Summaries expose readiness, open findings,
+snapshot identity, and evidence paths without embedding the full conversation. They are
+informational and cannot be supplied to delivery helpers.
+
+For an authorized delivery of a ready snapshot, use:
+
+```sh
+dark-factory apply --run-dir <runDir>
+dark-factory verify-delivery --run-dir <runDir> --result <runDir>/result.json
+```
+
+`apply` requires the original base and a clean tracked checkout/index, refuses local file
+collisions, stages the snapshot, and checks its tree hash. It does not commit. Supply `--result`
+when the full saved result is elsewhere, including native runs. Delivery verification still runs the project gate.
+
+For diagnosis of an incomplete run whose snapshot has already been applied, add
+`--diagnostic-reason "explanation"` to `verify-delivery`. It checks snapshot identity and delivered
+bytes and runs the gate, but records `verified-diagnostic` in `delivery-diagnostic.json` rather
+than marking delivery complete. Factory readiness stays unchanged. `--max-wait` controls how
+long the invocation waits, not the gate deadline; omit the five-second override when a longer
+foreground wait is appropriate.
+
+Factory verification creates a private temporary directory for each gate/replay execution.
+It prefers short roots, tries the configured and host temporary roots as well as `/tmp` and
+`/var/tmp`, and falls back to a longer writable root when sandbox permissions require it.
+It sets `TMPDIR`, `TMP`, and `TEMP` and removes only its own directory. No writable root is
+reported as infrastructure failure. A recognized socket exception referencing that execution's
+directory retries the full gate once within its deadline, with separate logs, provided the
+tracked tree is unchanged. Other failures remain failures.
+
+Pair preserves the original task. Setup supplies repository observations and proposed
+interpretations; the author reconciles them during design, and the reviewer checks them against
+the original request, reference documents, and explicit decisions. Unresolved contradictions
+require user input. Explicit test-file requirements override the default preference for separate files;
+reviewers still check that focused commands preserve useful baseline evidence. Contracts may
+use `kind: "gate"`, `purpose: "preserved"`, the exact verification command, `file: ""`, and
+`fixtures: []` for a final whole-suite obligation. Gate checks need no replay mapping and do not
+replace changed-behavior baseline checks. A clean review with missing evidence returns a precise
+incomplete result without another author/reviewer cycle. Unchanged unmet criteria or failed
+verification can also stop a stalled run even without an open finding.
 
 ## After a run
 

@@ -26,7 +26,7 @@ const setup = () => ({ status: 'ok', mode: 'implement', runId: 'pair-test', runD
   criteria: [{ id: 'C1', text: 'The requested behavior works.' }], refs: [], dirty: [], verify: 'node test.cjs', baselinePasses: true })
 const measurement = (label, tree = 'a'.repeat(40)) => ({ status: 'done', error: '', snapshot: {
   ref: `refs/council/pair-test/A-${label}`, tree, diff: `/repo/.council/pair-test/room/${label}/A.diff`,
-}, suite: { ran: true, passed: true, tail: 'pass', command: 'node test.cjs' }, replay: replay(tree) })
+}, suite: { ran: true, passed: true, failureKind: '', tail: 'pass', command: 'node test.cjs' }, replay: replay(tree) })
 const finding = statement => ({ severity: 'minor', statement, evidence: 'src/example.js:12 lacks the required case.' })
 
 async function run(options = {}) {
@@ -107,6 +107,13 @@ test('pair completes design and code review in both hosts with fresh independent
     assert.equal(result.status, 'done')
     assert.equal(result.final.readiness.state, 'ready')
     assert.equal(result.delivery.status, 'pending')
+    assert.equal(result.artifactType, 'dark-factory-result')
+    assert.equal(result.artifactVersion, 1)
+    assert.equal(result.summary.artifactType, 'dark-factory-summary')
+    assert.equal(result.summary.artifactVersion, 1)
+    assert.equal(calls.filter(c => c.kind === 'author').length, 2)
+    assert.equal(calls.filter(c => c.kind === 'review').length, 2)
+    assert.equal(result.summaryFile, undefined, 'persistence belongs to the host adapter')
     assert.equal(result.final.snapshotTree, '1'.repeat(40))
     assert.equal(result.final.snapshotRef, 'refs/council/pair-test/A-pair-code-2')
     assert.deepEqual(result.reviews.map(r => r.stage), ['design', 'code'])
@@ -156,7 +163,7 @@ test('a clean review cannot hide failing or missing verification', async () => {
   for (const ran of [true, false]) {
     const { result } = await run({ args: { maxReviews: 3 }, measure: m => ({ ...m, suite: { ...m.suite, ran, passed: false, tail: 'failed' } }) })
     assert.notEqual(result.final.readiness.state, 'ready')
-    assert.match(result.stopReason, /budget exhausted/)
+    assert.match(result.stopReason, ran ? /budget exhausted/ : /verification evidence remains incomplete/)
     assert.ok([...result.final.readiness.blocked, ...result.final.readiness.incomplete].some(s => /verification/i.test(s)))
   }
 })
@@ -384,4 +391,109 @@ test('missing replay obligations and failed final executions prevent readiness d
     m.replay.mapping = []; m.replay.records = []; return m
   } })
   assert.match(result.final.readiness.incomplete.join(' '), /No replay mapping for T1/)
+})
+
+test('setup proposals preserve the original task for author and reviewer and conflicts park immediately', async () => {
+  const { result, calls } = await run({ setup: { repositoryNotes: 'CHANGELOG.md:3 already has the heading. Proposal: append to it.' } })
+  assert.equal(result.final.readiness.state, 'ready')
+  for (const c of calls.filter(c => ['author', 'review'].includes(c.kind))) {
+    assert.match(c.prompt, /# Task\n\nImplement the behavior/)
+    assert.match(c.prompt, /CHANGELOG.md:3/)
+  }
+  assert.equal(result.task, 'Implement the behavior')
+  assert.ok(!('effectiveTask' in calls[0].schema.properties))
+  assert.match(calls.find(c => c.kind === 'review').prompt, /setup notes cannot waive requirements/)
+  const blocked = await run({ setup: { status: 'needs-user', error: 'Two incompatible requirements.', questions: ['Which signature is required?'] } })
+  assert.equal(blocked.result.status, 'needs-user')
+  assert.deepEqual(blocked.result.questions, ['Which signature is required?'])
+  assert.equal(blocked.calls.filter(c => c.kind === 'author').length, 0)
+})
+
+test('a whole-suite preservation obligation uses exact snapshot gate evidence without a directory replay', async () => {
+  const author = value => {
+    value.testContract.checks.push({ ...value.testContract.checks[1], id: 'SUITE', kind: 'gate', file: '', command: 'node test.cjs' })
+    return value
+  }
+  const { result, measurements } = await run({ author })
+  assert.equal(result.final.readiness.state, 'ready', JSON.stringify(result.final.readiness))
+  assert.equal(measurements.length, 1)
+  assert.ok(measurements[0].replay.mapping.every(e => e.file !== 'tests'))
+  for (const command of ['', 'other gate']) {
+    const rejected = await run({ author: v => { author(v); v.testContract.checks.at(-1).command = command; return v } })
+    assert.notEqual(rejected.result.final.readiness.state, 'ready')
+    assert.equal(rejected.measurements.length, 0)
+  }
+})
+
+test('invalid executable mappings stop before measurement and cannot spend another review', async () => {
+  const { result, measurements } = await run({ author: v => { v.replayMapping[0].file = 'tests'; return v } })
+  assert.equal(measurements.length, 0)
+  assert.match(result.stopReason, /Whole-suite obligations use kind=gate/)
+  assert.notEqual(result.final.readiness.state, 'ready')
+})
+
+test('clean review with missing evidence returns incomplete without another author or reviewer', async () => {
+  const { result, calls, measurements } = await run({ args: { maxReviews: 8 }, measure: m => { m.replay.records = []; return m } })
+  assert.equal(result.final.readiness.state, 'incomplete')
+  assert.doesNotMatch(result.stopReason, /stalled/)
+  assert.equal(calls.filter(c => c.kind === 'review').length, 2)
+  assert.equal(calls.filter(c => c.kind === 'author').length, 2)
+  assert.equal(measurements.length, 1)
+})
+
+test('infrastructure-only failure does not cycle through further author turns', async () => {
+  const { result, calls } = await run({ measure: m => { m.suite.passed = false; m.suite.failureKind = 'infrastructure'; return m },
+    review: (r, n) => { if (n === 2) r.findings = [finding('Gate socket infrastructure failed.')]; return r } })
+  assert.match(result.stopReason, /Verification infrastructure failed/)
+  assert.equal(result.reviews.length, 2)
+  assert.equal(calls.filter(c => c.kind === 'author').length, 2)
+})
+
+test('repeated identical findings retain their identity and do not defeat stall detection', async () => {
+  const { result } = await run({ sameTree: true, review: r => { r.findings = [finding('Resolve the same conflict.')]; return r } })
+  assert.match(result.stopReason, /stalled/)
+  assert.equal(result.findings.length, 1)
+  assert.equal(result.findings[0].id, 'P1')
+})
+
+
+test('unchanged unmet criteria and failed checks stall even without findings', async () => {
+  for (const obligation of ['criterion', 'suite', 'replay']) {
+    const { result } = await run({ sameTree: true, args: { maxReviews: 8 },
+      review: (r, n) => { if (obligation === 'criterion' && n > 1) r.criteria[0].status = 'unmet'; return r },
+      measure: m => {
+        if (obligation === 'suite') m.suite.passed = false
+        if (obligation === 'replay') m.replay.records.find(r => r.side === 'final').passed = false
+        return m
+      } })
+    assert.match(result.stopReason, /stalled.*unmet criteria or verification results/, obligation)
+    assert.equal(result.reviews.length, 3, obligation)
+    assert.equal(result.findings.length, 0, obligation)
+    assert.notEqual(result.final.readiness.state, 'ready', obligation)
+  }
+})
+
+test('changed criterion and verification outcomes count as progress on the same tree', async () => {
+  for (const obligation of ['criterion', 'suite']) {
+    const { result } = await run({ sameTree: true, args: { maxReviews: 8 },
+      review: (r, n) => { if (obligation === 'criterion' && n === 2) r.criteria[0].status = 'unmet'; return r },
+      measure: (m, n) => { if (obligation === 'suite' && n === 1) m.suite.passed = false; return m } })
+    assert.equal(result.status, 'done', obligation)
+    assert.equal(result.reviews.length, 3, obligation)
+    assert.doesNotMatch(result.stopReason, /stalled/, obligation)
+  }
+})
+
+test('reviewers can reword an existing finding through its ID without duplicating it', async () => {
+  let revision = 0
+  const { result } = await run({ review: (r, n) => {
+    if (n === 1) r.findings = [finding('The boundary case lacks coverage.')]
+    if (n === 2) r.resolutions = [{ id: 'P1', status: 'open', evidence: 'The new case still accepts a wrong upper limit.' }]
+    if (n === 3) r.resolutions = [{ id: 'P1', status: 'fixed', evidence: 'The boundary assertion now rejects the upper-limit defect.' }]
+    return r
+  }, author: a => ({ ...a, design: a.design + ++revision }) })
+  assert.equal(result.status, 'done')
+  assert.equal(result.findings.length, 1)
+  assert.equal(result.findings[0].id, 'P1')
+  assert.equal(result.findings[0].status, 'fixed')
 })

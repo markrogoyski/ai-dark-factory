@@ -1774,7 +1774,7 @@ It prints JSON with runId, runDir, repoRoot, refs (the snapshots it made of thos
 ${S.allowDirty || (S.modeGiven && S.mode !== 'implement') ? '' : `- If ${S.modeGiven ? '' : 'the mode is implement and '}dirty is non-empty, stop and return status "dirty" with that list. The worktrees branch from HEAD, so uncommitted changes would be invisible to every seat.\n`}
 ## Step 3 — the verification command
 ${S.raw.verify ? `Use exactly: ${S.raw.verify}` : `${S.tier ? 'If the task or a document from step 1 names commands the change must pass (a "Done when" section, acceptance criteria, a checklist), the verification command runs all of them, joined with &&, even when they include static analysis or coverage: every role is measured against this command, and one that leaves a required check out makes each of them run it separately. Otherwise, find' : 'Find'}` + ' the project\'s standard command for checking a change: its test suite, from CLAUDE.md or AGENTS.md, a Makefile, composer.json, package.json, pyproject.toml and so on. Prefer the normal test run. Avoid full static-analysis sweeps and very slow suites unless the task is about them. If the project has no tests, there is no command.'}
-Write it to <runDir>/verify.sh as just the command, with no shebang line; it is run as \`bash verify.sh\` from the root of a worktree. Write an empty file if there is no command.${S.tier && S.tier !== 'architecture' ? `\nStore sandbox-compatible execution settings as explicit string overrides in <runDir>/verification.json: {"env": {"VARIABLE": "value"}}. Preserve all required checks. Prefer these run-owned overrides to changing project defaults. Preflight the exact command through neutral measurement below, including worker/socket/cache restrictions; shell-local exports are insufficient. Keep this configuration fixed for the run after specification review.` : ''}
+Write it to <runDir>/verify.sh as just the command, with no shebang line; it is run as \`bash verify.sh\` from the root of a worktree. Write an empty file if there is no command.${S.tier && S.tier !== 'architecture' ? `\nStore sandbox-compatible execution settings as explicit string overrides in <runDir>/verification.json: {"env": {"VARIABLE": "value"}}. Preserve all required checks. The helper supplies private TMPDIR/TMP/TEMP directories, preferring short writable roots, for every verification execution; do not point temporary files at the long run directory. Prefer these run-owned overrides to changing project defaults. Preflight the exact command through neutral measurement below, including worker/socket/cache restrictions; shell-local exports are insufficient. Keep this configuration fixed for the run after specification review.` : ''}
 ${S.modeGiven && S.mode !== 'implement'
     ? 'Set baselinePasses to false and baselineNote to "".'
     : `${S.modeGiven ? 'Then' : 'If the mode is implement,'} measure the baseline: ${S.cli} measure --run-dir <runDir> --seat ${A} --label base${S.tier ? '' : ' --no-snapshot'} (if it prints status "running", poll with ${S.cli} wait --run-dir <runDir> --job measure-${A}-base). Set baselinePasses to suite.passed. If the suite fails or doesn't run at baseline, put the reason and the failing tail in baselineNote.${S.modeGiven ? '' : ' Otherwise set baselinePasses to false and baselineNote to "".'}`}
@@ -1796,6 +1796,8 @@ Return the values from these steps.`
 // it can't anchor on one, and its prompt stays the same when the user confirms or switches,
 // which lets the resumed run replay it from cache.
 function intakePrompt(S) {
+  // Native intake is cached by prompt: mutable resume caps must not change it.
+  const limits = S.raw.intakeLimits || {}
   return `Choose collaboration separately from complexity: strategy=pair for a scoped implementation with one clear approach that benefits from repeated review; strategy=independent for competing root causes or plans. Keep the tier based on task complexity. Architecture and investigations always use independent attempts.
 
 You are the intake for a software factory. A task arrives, and you decide how much process it needs, before anyone works on it. Read; don't change anything, don't attempt the task, and don't run tests or builds. A few minutes of reading is enough: the task, any document it names, and the code it touches.
@@ -1808,7 +1810,7 @@ ${S.context ? `\n# Context from the user\n\n${S.context}\n` : ''}${S.plan.length
 
 If the task depends on a plan, checklist or other document, find it: the paths above, or a file the task names (resolved against the repository root, and ~/.claude/plans/ for a plan named there). If it depends on one you can't identify or find, including "the plan" with no file named, return status "needs-plan" with planMissing saying what is missing. Never pick a plan yourself. Otherwise planMissing is "", and status is "ok" (or "needs-split", below).
 
-# The tiers, cheapest first
+${limits.maxRunMin || limits.maxTurns ? `# Execution budget\nThe entire task has ${limits.maxRunMin || "unlimited"} minutes and ${limits.maxTurns || "unlimited"} model turns, including verification, audits and delivery. If the chosen process is unlikely to fit, explicitly warn in reasons. Preserve all required checks; do not call a risky task simple to fit a deadline. A fully specified implementation can use Pair at Feature complexity.\n\n` : ""}# The tiers, cheapest first
 
 - "simple": a change to the code that is small, contained and unambiguous: roughly 3 files or fewer and about 100 changed lines, no public API or schema change, no design choice the request leaves open, and for a bug, a cause that is already clear. One implementer, one reviewer.
 - "fix": a bug or a question whose cause is unknown or subtle, where the obvious answer may be wrong, but the eventual change is contained. Two independent attempts, cross-checked.
@@ -3152,6 +3154,20 @@ function needsUser(S, k, qs) {
   }
 }
 
+function compactResult(S, result) {
+  const f = result.final || {}
+  const snapshot = f.snapshotRef?.match(/\/([A-Z])-([^/]+)$/)
+  return { artifactType: 'dark-factory-summary', artifactVersion: 1, status: result.status, workflow: result.workflow || S.workflowName,
+    runDir: result.runDir, stopReason: result.stopReason || result.error || '',
+    final: { readiness: f.readiness, snapshotRef: f.snapshotRef || null, snapshotTree: f.snapshotTree || null,
+      post: f.post || null, diff: f.diff || null, worktree: f.worktree || null,
+      suite: f.suite ? { ran: f.suite.ran, passed: f.suite.passed, command: f.suite.command || S.verify, log: f.suite.log || null } : null },
+    findings: (result.findings || []).filter(f => f.status === 'open').map(f => ({ id: f.id, severity: f.severity, statement: f.statement })),
+    questions: result.questions || [], delivery: result.delivery || null,
+    artifacts: { room: result.room || S.run?.room || null, verification: result.runDir ? `${result.runDir}/verification.json` : null,
+      measurement: snapshot ? `${result.runDir}/jobs/measure-${snapshot[1]}-${snapshot[2]}/status.json` : null } }
+}
+
 // The factory's tiers: which one a run starts at, when the Simple tier hands the work up, and the
 // facts each run records so the router can be tuned. Pure, like the rest of lib/.
 //
@@ -3841,7 +3857,9 @@ function parseControls(raw) {
 function factoryStrategy(S, intake) {
   const requested = S.raw.strategy || 'auto'
   if (!['auto', 'pair', 'independent'].includes(requested)) throw new Error('strategy must be auto, pair, or independent.')
-  const independentOptions = ['seats', 'simple', 'panel', 'spec', 'audit', 'roles', 'evidence'].filter(k => S.raw[k] !== undefined)
+  // Run-plan's request to ask about unresolved requirements also applies to Pair
+  // setup; it is not a request for a separate specification-review panel.
+  const independentOptions = ['seats', 'simple', 'panel', 'spec', 'audit', 'roles', 'evidence'].filter(k => S.raw[k] !== undefined && !(k === 'spec' && S.raw[k] === 'ask'))
   if (requested === 'pair' && independentOptions.length) throw new Error(`Pair strategy does not accept ${independentOptions.join(', ')}; configure participants with pair: {author, reviewer, maxReviews}.`)
   const tier = S.factory.tier
   if (requested === 'pair' && (intake.mode !== 'implement' || tier === 'architecture')) throw new Error('Pair strategy requires an implementation below Architecture.')
@@ -4117,6 +4135,8 @@ function pairContractError(S, contract) {
     if (c.kind === 'test') {
       if (!['changed', 'preserved'].includes(c.purpose) || !inside(c.file) || !String(c.command || '').trim() ||
           !Array.isArray(c.fixtures) || c.fixtures.some(f => !inside(f))) return `Executable check ${c.id} needs a purpose, test file, command, and fixtures under accepted test roots.`
+    } else if (c.kind === 'gate') {
+      if (c.purpose !== 'preserved' || !S.verify || c.command !== S.verify || c.file !== '' || !Array.isArray(c.fixtures) || c.fixtures.length) return `Gate check ${c.id} must preserve behavior using the exact designated gate, with no file or fixtures.`
     } else if (c.kind !== 'inspection' || !String(c.inspection || '').trim() || !String(c.reason || '').trim()) return `Check ${c.id} needs a concrete alternative inspection and reason.`
   }
   if (S.criteria.some(c => !contract.checks.some(check => check.criteria.includes(c.id)))) return 'The contract must cover every acceptance criterion.'
@@ -4144,6 +4164,19 @@ function pairReplayRequest(S) {
   return { testRoots: (S.pair.approvedContract?.testRoots || []).map(r => r.path), mapping: S.pair.replayMapping }
 }
 
+function pairMappingError(S) {
+  const checks = S.pair.approvedContract?.checks || []
+  const roots = (S.pair.approvedContract?.testRoots || []).map(r => r.path)
+  const inside = path => pairRelativePath(S, path) && roots.some(root => path.startsWith(root + '/'))
+  for (const e of S.pair.replayMapping) {
+    if (!inside(e.file) || !String(e.command || '').trim() || !Array.isArray(e.fixtures) || e.fixtures.some(f => !inside(f)) ||
+        !Array.isArray(e.checkIds) || !e.checkIds.length || new Set(e.checkIds).size !== e.checkIds.length ||
+        e.checkIds.some(id => !checks.some(c => c.id === id && c.kind === 'test'))) return 'Replay mappings require test files and fixtures under accepted roots, focused commands, and executable check IDs. Whole-suite obligations use kind=gate, never a directory mapping.'
+  }
+  const missing = checks.filter(c => c.kind === 'test' && !S.pair.replayMapping.some(e => e.checkIds.includes(c.id)))
+  return missing.length ? `No replay mapping for ${missing.map(c => c.id).join(', ')}.` : null
+}
+
 function pairReplayReadiness(S, blocked, incomplete) {
   const p = S.pair, replay = p.measurement?.replay, request = pairReplayRequest(S)
   const mappingIdentity = entries => JSON.stringify(entries?.map(e => [e.file, e.command, e.checkIds, e.fixtures]))
@@ -4154,6 +4187,10 @@ function pairReplayReadiness(S, blocked, incomplete) {
     return
   }
   const checks = p.approvedContract?.checks || []
+  for (const check of checks.filter(c => c.kind === 'gate')) {
+    if (check.command !== S.verify || p.measurement?.suite?.command !== check.command || !p.measurement.suite.ran) incomplete.push(`No designated gate execution for ${check.id}.`)
+    else if (!p.measurement.suite.passed) blocked.push(`Designated gate check ${check.id} failed.`)
+  }
   for (const entry of p.replayMapping) {
     if (!Array.isArray(entry.checkIds) || !entry.checkIds.length || entry.checkIds.some(id => !checks.some(c => c.id === id && c.kind === 'test'))) incomplete.push('Replay mapping contains unknown or non-executable check IDs.')
   }
@@ -4203,6 +4240,10 @@ function pairIngestReview(S, review) {
     f.history.push({ review: p.reviews.length + 1, ...r })
   }
   for (const f of review.findings || []) {
+    // Suppress literal repeats only. Reworded issues retain identity through resolutions,
+    // never by fuzzy matching that could merge distinct defects.
+    const same = p.findings.find(old => old.stage === p.stage && old.status === 'open' && old.statement.trim().replace(/\s+/g, ' ') === f.statement.trim().replace(/\s+/g, ' '))
+    if (same) { same.history.push({ review: p.reviews.length + 1, status: 'open', evidence: f.evidence }); continue }
     p.findings.push({ ...f, id: `P${p.findings.length + 1}`, stage: p.stage, status: 'open', resolution: '', history: [] })
   }
   p.lastReview = review
@@ -4237,12 +4278,19 @@ function pairReadiness(S) {
 
 function pairStalled(S) {
   const p = S.pair
+  if (pairReadiness(S).state === 'ready') return false
   const signature = JSON.stringify([pairVersion(S), pairOpen(S).map(f => [f.id, f.statement]),
     p.lastReview?.criteria.map(c => [c.criterion, c.status]), p.lastReview?.requiresDesignRevision,
     p.measurement?.suite?.ran, p.measurement?.suite?.passed, pairReplayRequest(S),
     p.measurement?.replay?.exclusions, p.measurement?.replay?.records?.map(r => [r.side, r.file, r.command, r.checkIds, r.attempted, r.ran, r.hasExitCode, r.exitCode, r.signal, r.timedOut, r.launchError, r.passed, r.mutated])])
   p.signatures.push(signature)
   return p.signatures.length >= 2 && p.signatures.at(-2) === signature
+}
+
+function pairReviewClean(S) {
+  const r = S.pair.lastReview
+  return r?.complete && r.version === pairVersion(S) && !r.requiresDesignRevision && !pairOpen(S).length &&
+    S.criteria.every(c => r.criteria.filter(a => a.criterion === c.id).length === 1 && r.criteria.some(a => a.criterion === c.id && a.status === 'met' && a.note?.trim()))
 }
 
 function pairResult(S, status = 'blocked') {
@@ -4258,6 +4306,7 @@ function pairResult(S, status = 'blocked') {
     ...ready.blocked, ...ready.incomplete,
     ...p.findings.map(f => `${f.id}: ${f.status} — ${f.statement}${f.resolution ? ` (${f.resolution})` : ''}`)].join('\n\n')
   return { status, workflow: 'pair', mode: 'implement', task: S.task, runDir: S.run?.runDir || null,
+    repositoryNotes: S.repositoryNotes || '',
     room: S.run?.room || null, refs: S.refs, stage: p.stage, stopReason: p.stop,
     design: p.design, testContract: p.approvedContract || p.testContract, replayMapping: p.replayMapping,
     author: S.pairOptions.author.name, reviewer: S.pairOptions.reviewer.name,
@@ -4275,25 +4324,25 @@ function pairResult(S, status = 'blocked') {
 }
 
 function pairSetupPrompt(S) {
-  return setupPrompt(S) + '\n\nPair also requires head: copy the full original commit from the helper init output (head), or run.json. Do not use a later author commit or snapshot. This identity will be checked against every baseline replay.'
+  return setupPrompt(S) + '\n\nPair also requires head: copy the full original commit from the helper init output (head), or run.json. Do not use a later author commit or snapshot. This identity will be checked against every baseline replay.\nKeep the original task unchanged, including in TASK.md. Return repositoryNotes with observations from HEAD, configuration/tool paths, and proposed interpretations of outdated wording. These are proposals for the author and reviewer to check, not replacement requirements. Explicit user decisions and required plan filenames override the default separate-test-file preference. If substantive requirements conflict, return status needs-user with precise questions immediately. Leave questions=[] when none remain.'
 }
 
 function pairAuthorPrompt(S, label, correction = '') {
   const p = S.pair, design = p.stage === 'design'
   return `You are the sole author in a pair workflow. Own the task through completion; an independent reviewer checks each stage.
 
-${taskBlock(S, 99)}
+${taskBlock(S, 99)}\n# Setup observations and proposals (not requirements)\n${S.repositoryNotes || '(none)'}
 # Stage: ${design ? 'design' : 'implementation'}
 
 Your worktree: ${S.seats[0].wt}. Work only there; never edit the main checkout or reviewer checkouts.
 Read the repository instructions and the relevant code. Do not delegate or launch other models.
 ${correction ? `\n# Correct the previous output\nThe engine could not accept your design output: ${correction}\nReturn a complete corrected design and contract. This is the one correction attempt for this turn, not approval to implement. Preserve the task and substantive requirements.\n` : ''}
-${design ? `Return a complete short design in design: the approach, affected files, assumptions, risks, and how every acceptance criterion will be tested. Cite existing code where the approach depends on it. Revise the entire design in response to feedback. Do not implement yet. ${pairBaseline(S)}`
+${design ? `Return a complete short design in design: the approach, affected files, assumptions, risks, and how every acceptance criterion will be tested. Check setup observations against the original task, reference documents, explicit user decisions, and repository. Explain any reconciliation in the design, preserving every requirement; unresolved contradictions require needs-user. Cite existing code where the approach depends on it. Revise the entire design in response to feedback. Do not implement yet. ${pairBaseline(S)}`
     : `Implement the reviewed design, including the required tests and documentation. Run appropriate focused checks and the shared verification gate. Fix all open actionable findings and any failed verification. Return design as an empty string; the accepted design remains fixed until the reviewer requests design revision.`}
 
-${design ? `Return testContract alongside the design. testRoots are repository-relative test directories, each with evidence from the base project's configuration or established layout. Never use '.' or designate a production directory as a test root. Each check needs a stable local id, criterion IDs in criteria, a concrete scenario (inputs/setup), expected observable outcome, and boundaries (or a reason none apply). For kind=test, supply purpose=changed or preserved, the planned file, a focused command run from repository root, and required fixtures, all files under those roots. For kind=inspection, give a concrete inspection and reason automation is unsuitable; leave test execution fields empty. Cover every criterion without inventing meaningless tests. Return replayMapping=[] during design.
-Tests depending on a new API must live in their own files, separate from preserved-behavior tests: a fatal while loading the new API must not erase the preserved signal.`
-    : `The approved test contract below remains an obligation. Return testContract with empty testRoots/checks; return replayMapping for the CURRENT implementation: one entry per test file/focused command, with file, command, checkIds from the approved executable checks, and fixtures. Isolate commands at least by file; never group multiple test files into a command. Include every executable check, including preserved behavior. Omissions do not remove obligations. Keep tests relying on new APIs in separate files from preserved tests. The helper replays added/modified test files and fixtures from the snapshot onto the ORIGINAL base; production/config/dependency changes are excluded. Report unsupported replay dependencies and justified differences from the design in the handoff. Ordinary assertion/path adjustments do not need a separate contract amendment; only a materially different approach returns to design.`}
+${design ? `Return testContract alongside the design. testRoots are repository-relative test directories, each with evidence from the base project's configuration or established layout. Never use '.' or designate a production directory as a test root. Each check needs a stable local id, criterion IDs in criteria, a concrete scenario (inputs/setup), expected observable outcome, and boundaries (or a reason none apply). For kind=test, supply purpose=changed or preserved, the planned file, a focused command run from repository root, and required fixtures, all files under those roots. For kind=gate, use purpose=preserved and the EXACT designated verification command, with file="" and fixtures=[]; explain which whole-suite requirement it checks. A gate is measured on the final snapshot and needs no replay mapping; it cannot replace changed-behavior tests or their baseline evidence. For kind=inspection, give a concrete inspection and reason automation is unsuitable; leave test execution fields empty. Cover every criterion without inventing meaningless tests. Return replayMapping=[] during design.
+Prefer separate files for tests depending on a new API so load-time failures cannot erase preserved evidence. Explicit user decisions or required plan filenames override this layout preference. In shared files, give distinct focused commands for changed and preserved checks and verify that the preserved selection can load on base; a designated-gate check can cover the final whole-suite obligation. If isolation cannot work, report the limitation before contract approval instead of claiming a preserved baseline pass.`
+    : `The approved test contract below remains an obligation. Return testContract with empty testRoots/checks; return replayMapping for the CURRENT implementation: one entry per test file/focused command, with file, command, checkIds from the approved executable checks, and fixtures. Isolate commands at least by file; never group multiple test files into a command. Include every kind=test check, including preserved behavior; omit kind=gate and inspection checks from replayMapping. Never use a directory as file. Validate every mapping against the accepted test roots before returning. Omissions do not remove obligations. Follow the approved layout, including explicit user decisions on shared test files; preserve focused execution evidence. The helper replays added/modified test files and fixtures from the snapshot onto the ORIGINAL base; production/config/dependency changes are excluded. Report unsupported replay dependencies and justified differences from the design in the handoff. Ordinary assertion/path adjustments do not need a separate contract amendment; only a materially different approach returns to design.`}
 
 # Current design
 ${p.design || '(none yet)'}
@@ -4310,16 +4359,16 @@ ${JSON.stringify({ review: p.lastReview, measurement: p.measurement })}
 # Author continuity
 ${p.author?.notes || '(first author turn)'}
 
-For each open finding, return its ID with the change made or an evidence-backed disagreement in addressed. You cannot close a finding yourself. Do not weaken tests, criteria, or the verification configuration to obtain a pass. If the task requires a user decision, return status needs-user and specific questions; if execution is blocked, return blocked with the reason in summary. Otherwise return done.
+For each open finding, return its ID with the change made or an evidence-backed disagreement in addressed. You cannot close a finding yourself. If a finding needs a user decision, return needs-user now with its existing ID and question; do not spend another author turn restating the conflict. Do not weaken tests, criteria, or the verification configuration to obtain a pass. If the task requires a user decision, return status needs-user and specific questions; if execution is blocked, return blocked with the reason in summary. Otherwise return done.
 Write a concise handoff at ${S.run.room}/${label}/A.md (create the directory). Include the ${design ? 'full design' : 'change summary and actual checks'}, responses to findings, and important remaining work. Return private notes sufficient for a fresh author context to continue. Keep implementation and design artifacts inside this run until delivery.`
 }
 
 function pairReviewPrompt(S, label, checkout, correction = null) {
   const p = S.pair, design = p.stage === 'design'
   const tag = pairReviewTag(S)
-  return `You are the independent reviewer in a pair workflow. This is a fresh review context. You did not author the work. Review the current artifact yourself, using repository evidence, and verify every proposed finding resolution.
+  return `You are the independent reviewer in a pair workflow. This is a fresh review context. You did not author the work. Review the current artifact yourself, using repository evidence, and verify every proposed finding resolution. Resolve existing findings under their current IDs in both design and code reviews; never refile an unresolved issue under a new ID.
 
-${taskBlock(S, 99)}
+${taskBlock(S, 99)}\n# Setup observations and proposals (not requirements)\n${S.repositoryNotes || '(none)'}
 # Review stage: ${p.stage}
 Version: ${pairVersion(S)}
 Return that exact version. Return complete=true only after examining the entire current artifact and every acceptance criterion, including regressions introduced by fixes.
@@ -4335,7 +4384,7 @@ ${p.design}
 # Test contract
 ${JSON.stringify(p.approvedContract || p.testContract)}
 
-${design ? `Check the approach against the task and existing code: correctness, missing requirements, assumptions, alternatives that materially affect the outcome, scope, and planned test coverage. Verify every proposed test root against the BASE repository configuration/layout and its cited evidence; naming a directory does not make it a test root. Reject production roots, missing concrete outcomes/boundaries, and new-API tests sharing files with preserved tests. Each criterion is met only if the design explains how it will be satisfied and checked.
+${design ? `Independently check proposed reconciliations against the original task, reference documents, and explicit user decisions; setup notes cannot waive requirements. Check that the criteria cover the entire original request. Check the approach against the task and existing code: correctness, missing requirements, assumptions, alternatives that materially affect the outcome, scope, and planned test coverage. Verify every proposed test root against the BASE repository configuration/layout and its cited evidence; naming a directory does not make it a test root. Reject production roots and missing concrete outcomes/boundaries. Check that every planned test and fixture is a regular file under an accepted root and each focused command is executable by the replay helper. Shared files are allowed when required by the user or plan: inspect focused selection and base loadability. Prefer separate files otherwise. Whole-suite preservation must use kind=gate with the exact designated command, never a directory in a file mapping. Gate evidence establishes final-suite success, not a changed-behavior baseline failure. Each criterion is met only if the design explains how it will be satisfied and checked.
 Return exactly one structured challenge per criterion in challenges: criterion, a substantive wrongImplementation, and rejectingCheckIds that resolve to contract checks covering that criterion. If no check rejects a plausible wrong implementation, return rejectingCheckIds=[] and raise an evidenced finding, assess that criterion partial/unmet, or request design revision with the reason in summary. Never cite a check you believe is ineffective just to fill the array. Approval requires a rejecting check for every challenge. Describe a plausible incorrect result and its rejecting inspection for non-code criteria. Judge whether the checks actually reject that implementation; valid IDs alone are insufficient. ${pairBaseline(S)}`
     : `Review the implementation and tests against the task and approved design. Inspect the whole diff at ${p.measurement.snapshot.diff}, not only the latest fixes. Look for incorrect behavior, regressions, missing requirements, and tests that would miss the defect. The neutral helper measured this exact snapshot:
 ${JSON.stringify(p.measurement)}
@@ -4365,7 +4414,7 @@ function pairMeasurePrompt(S, label) {
   return `You are transporting a deterministic verification result for the pair workflow. Do not review, change, or judge the implementation. Run exactly:
 ${S.cli} measure --run-dir ${shq(S.run.runDir)} --seat A --label ${shq(label)} --replay-json ${shq(JSON.stringify(pairReplayRequest(S)))} --max-wait 5
 If status is running, poll ${S.cli} wait --run-dir ${shq(S.run.runDir)} --job ${shq(`measure-A-${label}`)} --max-wait 5 until it finishes. Poll an active shell session before launching another command. Do not use sleep polling.
-Return status done only for the helper's completed result. Copy snapshot.ref, snapshot.tree, snapshot.diff, and suite.ran, suite.passed, suite.command, and suite.tail exactly (empty command or tail if absent). Copy the ENTIRE replay object unchanged, including mapping, roots, identities, changes, exclusions, file/command records, launch errors, exit/signal/timeout fields, log paths, tails, and timings. Never summarize individual tests or interpret base failures. On failure return error with the actual message and empty snapshot/replay values. Do not substitute results from the live worktree or remove required checks.`
+Return status done only for the helper's completed result. Copy snapshot.ref, snapshot.tree, snapshot.diff, and suite.ran, suite.passed, suite.command, suite.failureKind (empty when absent), and suite.tail exactly (empty command or tail if absent). Copy the ENTIRE replay object unchanged, including mapping, roots, identities, changes, exclusions, file/command records, launch errors, exit/signal/timeout fields, log paths, tails, and timings. Never summarize individual tests or interpret base failures. On failure return error with the actual message and empty snapshot/replay values. Do not substitute results from the live worktree or remove required checks.`
 }
 
 // From here the script runs. `S` is the one state object: the lib/ functions take it as their first
@@ -4762,6 +4811,11 @@ async function controlledRun(work) {
   }
   result.plan = result.plan || executionPlan(S)
   result.metrics = evaluationFacts(S, result, requestControl.started !== null ? hostRuntime.now() - requestControl.started : null, requestControl.turns)
+  if ((S.factory || S.pairOptions) && result.runDir) {
+    result.artifactType = 'dark-factory-result'
+    result.artifactVersion = 1
+    result.summary = compactResult(S, result)
+  }
   return result
 }
 
@@ -5638,6 +5692,9 @@ async function synthesize(W, outcome, schema) {
 const PAIR_STRINGS = { type: 'array', items: { type: 'string' } }
 const PAIR_SETUP_SCHEMA = strict({ type: 'object', properties: {
   ...SETUP_SCHEMA.properties,
+  status: { type: 'string', enum: ['ok', 'dirty', 'needs-plan', 'needs-user', 'preflight', 'error'] },
+  repositoryNotes: { type: 'string', description: 'Repository observations, proposed interpretations, and actual tool/configuration paths; never replacement requirements.' },
+  questions: PAIR_STRINGS,
   head: { type: 'string', description: 'The original full base commit from init.head / run.json; never a later snapshot.' },
 } })
 const PAIR_CONTRACT = { type: 'object', properties: {
@@ -5646,7 +5703,7 @@ const PAIR_CONTRACT = { type: 'object', properties: {
   } } },
   checks: { type: 'array', items: { type: 'object', properties: {
     id: { type: 'string' }, criteria: PAIR_STRINGS,
-    kind: { type: 'string', enum: ['test', 'inspection'] },
+    kind: { type: 'string', enum: ['test', 'gate', 'inspection'] },
     purpose: { type: 'string', enum: ['changed', 'preserved'] },
     scenario: { type: 'string' }, expected: { type: 'string' }, boundaries: { type: 'string' },
     file: { type: 'string' }, command: { type: 'string' }, fixtures: PAIR_STRINGS,
@@ -5706,7 +5763,7 @@ const PAIR_REVIEW_SCHEMA = strict({ type: 'object', properties: {
 const PAIR_MEASURE_SCHEMA = strict({ type: 'object', properties: {
   status: { type: 'string', enum: ['done', 'error'] }, error: { type: 'string' },
   snapshot: { type: 'object', properties: { ref: { type: 'string' }, tree: { type: 'string' }, diff: { type: 'string' } } },
-  suite: { type: 'object', properties: { ...CHECK_SCHEMA.properties.suite.properties, command: { type: 'string' } } },
+  suite: { type: 'object', properties: { ...CHECK_SCHEMA.properties.suite.properties, command: { type: 'string' }, failureKind: { type: 'string' } } },
   replay: PAIR_REPLAY_RESULT,
 } })
 
@@ -5720,6 +5777,11 @@ async function pairRun() {
     model: transportModel, effort: 'medium' }, 'setup')
   if (setup?.status === 'needs-plan') return needsPlan(S, setup.planMissing, setup.runDir)
   if (setup?.status === 'preflight') return preflightStop(S, setup.preflight)
+  if (setup?.status === 'needs-user') {
+    S.pair.stop = setup.error || 'Setup found conflicting requirements.'
+    S.pair.questions = setup.questions || []
+    return pairResult(S, 'needs-user')
+  }
   if (!setup || setup.status === 'error' || !setup.runDir || !setup.runId || !setup.repoRoot || !/^[0-9a-f]{40,64}$/.test(setup.head || '')) {
     S.pair.stop = setup?.error || 'Setup did not return a run.'
     return pairResult(S, 'failed')
@@ -5731,6 +5793,7 @@ async function pairRun() {
     return pairResult(S)
   }
   S.criteria = setup.criteria || []
+  S.repositoryNotes = setup.repositoryNotes || ''
   S.verify = String(setup.verify || '').trim()
   S.baselineOk = !S.verify || !!setup.baselinePasses
   if (!S.baselineOk) S.baselineNote = oneLine(setup.baselineNote, 300) || 'no reason given'
@@ -5775,6 +5838,8 @@ async function pairRun() {
       if (error) { p.stop = error; return pairResult(S, 'blocked') }
     } else {
       p.replayMapping = author.replayMapping || []
+      const mappingError = pairMappingError(S)
+      if (mappingError) { p.stop = mappingError; return pairResult(S) }
       phase('Verify')
       try {
         p.measurement = hostRuntime ? await hostRuntime.measure({ run: S.run, seat: 'A', label, replay: pairReplayRequest(S) })
@@ -5811,7 +5876,21 @@ async function pairRun() {
       p.lastReview = null
       continue
     }
-    if (pairStalled(S)) { p.stop = 'Review stalled: the artifact and unresolved findings did not change.'; return pairResult(S) }
+    // A completed review of these bytes is still valid. Missing evidence must not
+    // send an already accepted implementation through another author/reviewer cycle.
+    if (p.stage === 'code' && p.measurement?.suite?.failureKind === 'infrastructure') {
+      p.stop = 'Verification infrastructure failed after bounded recovery. Preserve this snapshot and repair the execution environment before continuing.'
+      return pairResult(S)
+    }
+    if (p.stage === 'code' && ready.state === 'incomplete' && pairReviewClean(S)) {
+      p.stop = 'Implementation review passed; verification evidence remains incomplete. Inspect final.readiness and measurement artifacts.'
+      return pairResult(S)
+    }
+    if (pairStalled(S)) {
+      p.stop = pairOpen(S).length ? 'Review stalled: the artifact and unresolved findings did not change.'
+        : 'Review stalled: the artifact and unmet criteria or verification results did not change.'
+      return pairResult(S)
+    }
     if (p.stage === 'code' && review.requiresDesignRevision) {
       p.stage = 'design'
       p.approvedDesign = ''

@@ -459,3 +459,47 @@ test('packaged CLI runs a Pair task through stub model CLIs and real delivery', 
   assert.equal(output.budget.turns, 5)
   assert.equal(f.git('status', '--porcelain'), '')
 })
+
+test('untracked execution plans and instruction files remain frozen outside delivery commits', async t => {
+  const f = fixture(t, plan([task('one')]))
+  f.git('rm', '--cached', 'plan.json'); f.git('commit', '-qm', 'Keep plan local')
+  writeFileSync(join(f.repo, 'CLAUDE.md'), 'Keep local instructions.\n')
+  const original = readFileSync(f.file, 'utf8')
+  const result = await f.invoke()
+  assert.equal(result.final.readiness.state, 'ready', JSON.stringify(result))
+  assert.equal(readFileSync(f.file, 'utf8'), original)
+  assert.equal(f.git('ls-files', 'plan.json', 'CLAUDE.md'), '')
+  assert.match(f.git('status', '--porcelain'), /\?\? plan.json/)
+  assert.equal(f.state().tasks.one.status, 'done')
+  assert.equal(readFileSync(join(f.repo, '.council/one-1/wt/A/CLAUDE.md'), 'utf8'), 'Keep local instructions.\n')
+  writeFileSync(join(f.repo, 'CLAUDE.md'), 'Changed local instructions.\n')
+  assert.match((await f.invoke()).error, /control files changed/)
+})
+
+for (const boundary of ['after-apply', 'after-commit']) {
+  test(`untracked plan delivery recovers ${boundary} without staging the plan`, async t => {
+    const f = fixture(t, plan([task('one')]))
+    f.git('rm', '--cached', 'plan.json'); f.git('commit', '-qm', 'Keep plan local')
+    await f.invoke({ at: name => { if (name === boundary) throw new Error('interrupt') } })
+    const resumed = await f.invoke()
+    assert.equal(resumed.final.readiness.state, 'ready', JSON.stringify(resumed))
+    assert.equal(f.calls.filter(c => c.id === 'one').length, 1)
+    assert.equal(f.git('ls-files', 'plan.json'), '')
+  })
+}
+
+test('budget extensions require a reason, retain spent reservations, and do not change frozen scope', async t => {
+  const p = plan([task('one')]); p.limits = { maxTurns: 2, taskMaxTurns: 2, maxAttempts: 1 }
+  const f = fixture(t, p)
+  await f.invoke({ runTask: async () => ({ status: 'failed', error: 'Task timed out.', metrics: { turns: 2 } }) })
+  assert.equal(f.state().turns, 2)
+  assert.match((await f.invoke({}, { extendLimits: { limits: { maxTurns: 20 } } })).error, /requires a reason/)
+  assert.match((await f.invoke({}, { extendLimits: { reason: 'Invalid decrease.', limits: { maxTurns: 1 } } })).error, /only increase/)
+  const result = await f.invoke({}, { extendLimits: { reason: 'Allow reviewed work to finish.', limits: { maxTurns: 20, taskMaxTurns: 10, maxAttempts: 2 } }, answers: { one: 'Retry with the increased allowance.' } })
+  assert.equal(result.final.readiness.state, 'ready', JSON.stringify(result))
+  assert.equal(result.tasks.one.attempts, 2)
+  assert.equal(result.budget.turns, 7)
+  assert.equal(result.limitChanges[0].spentTurns, 2)
+  assert.equal(result.limitChanges[0].reason, 'Allow reviewed work to finish.')
+  assert.equal((await f.invoke()).final.readiness.state, 'ready')
+})

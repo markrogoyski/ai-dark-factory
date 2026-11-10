@@ -19,7 +19,7 @@ const alive = pid => {
 const inside = (root, path) => { const rel = relative(root, path); return rel !== '..' && !rel.startsWith('../') && !isAbsolute(rel) }
 
 export async function runPlan(options, dependencies = {}) {
-  let state, stateDir, planPath, planRel, repo, lock, lockOwned = false, branch
+  let state, stateDir, planPath, planRel, repo, lock, lockOwned = false, branch, controlFiles = {}
   let interrupted = false, stopChild = null
   const now = dependencies.now || Date.now
   const emit = dependencies.progress || (message => process.stderr.write(message + '\n'))
@@ -34,7 +34,9 @@ export async function runPlan(options, dependencies = {}) {
     return resolved
   }
   const clean = () => {
-    if (git(['status', '--porcelain', '--untracked-files=all'])) throw new Error('Run-plan checkout is dirty; preserve and resolve its changes before resuming. No files were reset.')
+    for (const [path, hash] of Object.entries(controlFiles)) if (!existsSync(join(repo, path)) || lstatSync(join(repo, path)).isSymbolicLink() || digest(readFileSync(join(repo, path))) !== hash) throw new Error(`Run-plan control file changed: ${path}`)
+    const rows = git(['status', '--porcelain', '-z', '--untracked-files=all']).split('\0').filter(Boolean)
+    if (rows.some(row => row.slice(0, 3) !== '?? ' || !Object.hasOwn(controlFiles, row.slice(3)))) throw new Error('Run-plan checkout is dirty; preserve and resolve its changes before resuming. No files were reset.')
   }
   const unchanged = S => {
     if (head() !== S.head || git(['symbolic-ref', '--short', 'HEAD']) !== S.branch) throw new Error('Run-plan branch or HEAD changed; no saved completion was reused.')
@@ -46,6 +48,7 @@ export async function runPlan(options, dependencies = {}) {
     const env = { ...process.env, GIT_INDEX_FILE: index }
     git(['read-tree', 'HEAD'], { env })
     git(['add', '-A', '--', '.'], { env })
+    for (const path of Object.keys(controlFiles)) git(['update-index', '--force-remove', '--', path], { env })
     return git(['write-tree'], { env })
   }
   const millisecondsLeft = S => {
@@ -137,7 +140,7 @@ export async function runPlan(options, dependencies = {}) {
       // Stage the known tree directly: a deletion already staged by commit has no path
       // left for `git add <path>`, but restore can still recover it from the base.
       git(['read-tree', currentTree])
-      git(['restore', '--source', d.base, '--staged', '--worktree', '--', ...d.paths, planRel])
+      git(['restore', '--source', d.base, '--staged', '--worktree', '--', ...d.paths, ...(d.planBytes ? [planRel] : [])])
     }
     await point('after-delivery-rollback')
     await finish(S, { id: a.task }, { ...json(d.result), error: d.failure }, 'parked')
@@ -174,7 +177,7 @@ export async function runPlan(options, dependencies = {}) {
     } else if (current !== d.snapshotTree && current !== d.tree) {
       throw new Error('Interrupted delivery has unexpected checkout changes; no files were reset. Restore the recorded base or reviewed delivery bytes before resuming.')
     }
-    writeFileSync(planPath, d.planBytes)
+    if (d.planBytes) writeFileSync(planPath, d.planBytes)
     if (workspaceTree() !== d.tree) throw new Error('Delivery differs from the prepared tree')
     await point('before-verify-delivery')
     try {
@@ -190,11 +193,11 @@ export async function runPlan(options, dependencies = {}) {
     }
     if (head() !== d.base || workspaceTree() !== d.tree) throw new Error('Delivery verification changed the checkout')
     // Stage only the reviewed files and deterministic run-plan progress. Hooks remain enabled.
-    git(['add', '-A', '--', ...d.paths, planRel])
+    if (d.paths.length || d.planBytes) git(['add', '-A', '--', ...d.paths, ...(d.planBytes ? [planRel] : [])])
     if (git(['write-tree']) !== d.tree) throw new Error('The index differs from the verified delivery')
     await point('before-commit')
     try {
-      git(['commit', '-F', d.message], { timeout: Math.max(1, Math.floor(millisecondsLeft(S))) })
+      git(['commit', '--allow-empty', '-F', d.message], { timeout: Math.max(1, Math.floor(millisecondsLeft(S))) })
     } catch (error) {
       if (head() !== d.base || interrupted) throw error
       await parkDelivery(S, new Error(`Delivery commit failed: ${error.message}`)); return
@@ -209,7 +212,7 @@ export async function runPlan(options, dependencies = {}) {
 
   const runtime = {
     async open(input, normalize) {
-      for (const key of Object.keys(input)) if (!['planFile', 'repo', 'answers'].includes(key)) throw new Error(`Run-plan option ${key} belongs in the plan file, not runner arguments`)
+      for (const key of Object.keys(input)) if (!['planFile', 'repo', 'answers', 'extendLimits'].includes(key)) throw new Error(`Run-plan option ${key} belongs in the plan file, not runner arguments`)
       repo = realpathSync(git(['rev-parse', '--show-toplevel']))
       const requestedPlan = resolve(repo, input.planFile)
       if (!existsSync(requestedPlan) || !lstatSync(requestedPlan).isFile()) throw new Error('Run-plan file must be a regular file inside the repository')
@@ -217,7 +220,7 @@ export async function runPlan(options, dependencies = {}) {
       if (!inside(repo, planPath)) throw new Error('Run-plan file must be a regular file inside the repository')
       planRel = relative(repo, planPath)
       if (planRel.startsWith('.council/') || planRel.startsWith('.git/')) throw new Error('Execution plan must be outside .git and .council')
-      git(['ls-files', '--error-unmatch', '--', planRel])
+      const planTracked = !!git(['ls-files', '--', planRel])
       branch = git(['symbolic-ref', '--short', 'HEAD'])
       const common = resolve(repo, git(['rev-parse', '--git-common-dir']))
       lock = join(common, 'dark-factory-run-plan.lock')
@@ -246,18 +249,25 @@ export async function runPlan(options, dependencies = {}) {
         if (path === planPath) throw new Error('Use task criteria and decisions for the execution plan; it cannot also be a changing reference input')
         return [path, digest(readFileSync(path))]
       }))
+      const candidates = [planRel, 'CLAUDE.md', 'CLAUDE.local.md', 'AGENTS.md', 'GEMINI.md',
+        ...Object.keys(references).filter(p => inside(repo, p)).map(p => relative(repo, p))]
+      controlFiles = Object.fromEntries([...new Set(candidates)].filter(p => existsSync(join(repo, p)) && !git(['ls-files', '--', p])).map(p => {
+        if (!lstatSync(join(repo, p)).isFile() || lstatSync(join(repo, p)).isSymbolicLink()) throw new Error(`Run-plan control file must be regular: ${p}`)
+        return [p, digest(readFileSync(join(repo, p)))]
+      }))
       stateDir = assertLocation(join(base, `run-plan-${plan.id}`))
       mkdirSync(stateDir, { recursive: true })
       const file = join(stateDir, 'state.json')
       if (existsSync(file)) {
         const S = json(file)
         if (S.version !== 1 || S.repo !== repo || S.branch !== branch || S.planPath !== planPath || S.definition !== fingerprint(plan) || fingerprint(S.references) !== fingerprint(references)) throw new Error('Run-plan definition, references, repository, or branch changed; saved state was not reused. Keep existing artifacts and use a new plan for changed scope.')
+        if (fingerprint(S.controlFiles || {}) !== fingerprint(controlFiles)) throw new Error('Run-plan control files changed; saved state was not reused.')
         state = S
         return S
       }
       clean()
       if (raw.progress || readdirSync(stateDir).length) throw new Error('Run-plan journal is missing but progress or artifacts remain; cannot reconstruct spent budgets safely')
-      const S = { version: 1, repo, branch, planPath, plan, references, definition: fingerprint(plan), head: head(), turns: 0, elapsedMs: 0,
+      const S = { version: 1, repo, branch, planPath, planTracked, controlFiles, plan, references, definition: fingerprint(plan), head: head(), turns: 0, elapsedMs: 0,
         tasks: Object.fromEntries([...plan.tasks.map(t => t.id), 'acceptance'].map(id => [id, { status: 'pending', attempts: 0 }])), decisions: [], active: null }
       await save(S)
       return S
@@ -361,7 +371,7 @@ export async function runPlan(options, dependencies = {}) {
       const tree = git(['rev-parse', `${ref}^{tree}`])
       if (tree !== result.final.snapshotTree) throw new Error('Reviewed snapshot changed')
       const paths = git(['diff', '--no-renames', '--name-only', '-z', a.base, ref]).split('\0').filter(Boolean)
-      const frozen = new Set(Object.keys(S.references).filter(p => inside(repo, p)).map(p => relative(repo, p)))
+      const frozen = new Set([...Object.keys(S.references).filter(p => inside(repo, p)).map(p => relative(repo, p)), ...Object.keys(controlFiles)])
       if (paths.some(p => p === planRel || frozen.has(p) || p === '.council' || p.startsWith('.council/') || p.startsWith('.git/'))) throw new Error('Task changed run-plan-owned files or frozen reference inputs')
       const patch = join(a.directory, 'delivery.patch')
       writeFileSync(patch, git(['diff', '--binary', '--no-ext-diff', a.base, ref]) + (paths.length ? '\n' : ''))
@@ -371,15 +381,17 @@ export async function runPlan(options, dependencies = {}) {
       writeJsonAtomic(designFile, { design: result.design || result.plan?.post || null }, 2)
       S.tasks[task.id].decision = { design: designFile, post: result.final.post || null, result: resultFile }
       const progress = { completed: { ...(json(planPath).progress?.completed || {}), [task.id]: { result: resultFile, snapshotRef: ref, snapshotTree: tree } }, decisions: S.decisions }
-      const planBytes = JSON.stringify({ ...json(planPath), progress }, null, 2) + '\n'
+      const planBytes = S.planTracked === false ? null : JSON.stringify({ ...json(planPath), progress }, null, 2) + '\n'
       const index = join(a.directory, 'delivery.index'), env = { ...process.env, GIT_INDEX_FILE: index }
       git(['read-tree', ref], { env })
-      const blob = git(['hash-object', '-w', '--stdin'], { input: planBytes })
-      const mode = git(['ls-tree', a.base, '--', planRel]).split(' ')[0]
-      git(['update-index', '--add', '--cacheinfo', mode, blob, planRel], { env })
+      if (planBytes) {
+        const blob = git(['hash-object', '-w', '--stdin'], { input: planBytes })
+        const mode = git(['ls-tree', a.base, '--', planRel]).split(' ')[0]
+        git(['update-index', '--add', '--cacheinfo', mode, blob, planRel], { env })
+      }
       const expected = git(['write-tree'], { env })
       const manifest = join(a.directory, 'manifest.json')
-      writeJsonAtomic(manifest, { adjustments: [], handoffs: [{ path: planRel, reason: 'Record the verified task and run-plan decisions', sha256: digest(planBytes) }] }, 2)
+      writeJsonAtomic(manifest, { adjustments: [], handoffs: planBytes ? [{ path: planRel, reason: 'Record the verified task and run-plan decisions', sha256: digest(planBytes) }] : [] }, 2)
       const trailers = `Factory-Plan: ${S.plan.id}\nFactory-Task: ${task.id}`
       const message = join(a.directory, 'commit-message.txt')
       writeFileSync(message, `${task.title.replace(/[\r\n]/g, ' ')}\n\n${trailers}\n`)

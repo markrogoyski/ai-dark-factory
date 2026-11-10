@@ -43,3 +43,21 @@ error, inspect the mismatches and gate log, fix within the authorized scope, and
 the factory's readiness and the delivery outcome distinct in the final report. Older runs
 without a delivery baseline need manual verification; do not manufacture a new baseline
 after applying their changes.
+
+For a ready result on the unchanged base, the helper can apply and stage the reviewed snapshot:
+
+```sh
+dark-factory apply --run-dir <runDir> --result <saved-result.json>
+```
+
+It checks the snapshot identity and resulting index tree, refuses tracked edits and local-file
+collisions, and leaves committing to the caller. Supply the full workflow result
+(`artifactType: "dark-factory-result"`, `artifactVersion: 1`), never the compact summary.
+Codex saves it as `runDir/result.json`, allowing `--result` to be omitted. Native runs return
+it inline; save that full result and pass its path.
+Use the resolved helper path described above when it is not on PATH.
+
+To investigate an incomplete result after its snapshot has been applied, add
+`--diagnostic-reason "the reason"` to `verify-delivery`. This records the gate and byte checks
+in `delivery-diagnostic.json`, leaves factory readiness unchanged, and never reports `delivered`.
+A diagnostic pass does not authorize delivery. Use the normal command after readiness is resolved.

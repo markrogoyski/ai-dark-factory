@@ -305,3 +305,22 @@ test('evaluation counts specification amendments and advisory candidates separat
   assert.equal(group.candidates, 2); assert.equal(group.readyCandidates, 0); assert.equal(group.ready, 0)
   assert.equal(group.turnsPerReadyCandidate, null)
 })
+
+test('run-plan specification questions do not force independent attempts after intake selects Pair', async () => {
+  const { result, calls } = await simulate('factory', { spec: 'ask' }, { pair: true })
+  assert.equal(result.strategy, 'pair')
+  assert.equal(result.final.readiness.state, 'ready')
+  assert.ok(!calls.some(c => ['panel', 'auditor'].includes(c.role)))
+})
+
+
+test('intake prompts remain stable when resume caps increase on either host', () => {
+  for (const host of ['claude', 'codex']) {
+    const intakeLimits = host === 'codex' ? { maxTurns: 20, maxRunMin: 60 } : undefined
+    const state = maxTurns => makeRun({ args: { host, maxTurns, ...(intakeLimits ? { intakeLimits } : {}) } }).S
+    const before = L.intakePrompt(state(20)), after = L.intakePrompt(state(40))
+    assert.equal(after, before)
+    if (host === 'codex') assert.match(before, /60 minutes and 20 model turns/)
+    else assert.doesNotMatch(before, /# Execution budget/)
+  }
+})

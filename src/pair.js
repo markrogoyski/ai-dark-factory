@@ -8,6 +8,11 @@ async function pairRun() {
     model: transportModel, effort: 'medium' }, 'setup')
   if (setup?.status === 'needs-plan') return needsPlan(S, setup.planMissing, setup.runDir)
   if (setup?.status === 'preflight') return preflightStop(S, setup.preflight)
+  if (setup?.status === 'needs-user') {
+    S.pair.stop = setup.error || 'Setup found conflicting requirements.'
+    S.pair.questions = setup.questions || []
+    return pairResult(S, 'needs-user')
+  }
   if (!setup || setup.status === 'error' || !setup.runDir || !setup.runId || !setup.repoRoot || !/^[0-9a-f]{40,64}$/.test(setup.head || '')) {
     S.pair.stop = setup?.error || 'Setup did not return a run.'
     return pairResult(S, 'failed')
@@ -19,6 +24,7 @@ async function pairRun() {
     return pairResult(S)
   }
   S.criteria = setup.criteria || []
+  S.repositoryNotes = setup.repositoryNotes || ''
   S.verify = String(setup.verify || '').trim()
   S.baselineOk = !S.verify || !!setup.baselinePasses
   if (!S.baselineOk) S.baselineNote = oneLine(setup.baselineNote, 300) || 'no reason given'
@@ -63,6 +69,8 @@ async function pairRun() {
       if (error) { p.stop = error; return pairResult(S, 'blocked') }
     } else {
       p.replayMapping = author.replayMapping || []
+      const mappingError = pairMappingError(S)
+      if (mappingError) { p.stop = mappingError; return pairResult(S) }
       phase('Verify')
       try {
         p.measurement = hostRuntime ? await hostRuntime.measure({ run: S.run, seat: 'A', label, replay: pairReplayRequest(S) })
@@ -99,7 +107,21 @@ async function pairRun() {
       p.lastReview = null
       continue
     }
-    if (pairStalled(S)) { p.stop = 'Review stalled: the artifact and unresolved findings did not change.'; return pairResult(S) }
+    // A completed review of these bytes is still valid. Missing evidence must not
+    // send an already accepted implementation through another author/reviewer cycle.
+    if (p.stage === 'code' && p.measurement?.suite?.failureKind === 'infrastructure') {
+      p.stop = 'Verification infrastructure failed after bounded recovery. Preserve this snapshot and repair the execution environment before continuing.'
+      return pairResult(S)
+    }
+    if (p.stage === 'code' && ready.state === 'incomplete' && pairReviewClean(S)) {
+      p.stop = 'Implementation review passed; verification evidence remains incomplete. Inspect final.readiness and measurement artifacts.'
+      return pairResult(S)
+    }
+    if (pairStalled(S)) {
+      p.stop = pairOpen(S).length ? 'Review stalled: the artifact and unresolved findings did not change.'
+        : 'Review stalled: the artifact and unmet criteria or verification results did not change.'
+      return pairResult(S)
+    }
     if (p.stage === 'code' && review.requiresDesignRevision) {
       p.stage = 'design'
       p.approvedDesign = ''

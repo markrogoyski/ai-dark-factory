@@ -37,6 +37,11 @@ async function controlledRun(work) {
   }
   result.plan = result.plan || executionPlan(S)
   result.metrics = evaluationFacts(S, result, requestControl.started !== null ? hostRuntime.now() - requestControl.started : null, requestControl.turns)
+  if ((S.factory || S.pairOptions) && result.runDir) {
+    result.artifactType = 'dark-factory-result'
+    result.artifactVersion = 1
+    result.summary = compactResult(S, result)
+  }
   return result
 }
 

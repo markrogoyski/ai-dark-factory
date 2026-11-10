@@ -1,6 +1,9 @@
 const PAIR_STRINGS = { type: 'array', items: { type: 'string' } }
 const PAIR_SETUP_SCHEMA = strict({ type: 'object', properties: {
   ...SETUP_SCHEMA.properties,
+  status: { type: 'string', enum: ['ok', 'dirty', 'needs-plan', 'needs-user', 'preflight', 'error'] },
+  repositoryNotes: { type: 'string', description: 'Repository observations, proposed interpretations, and actual tool/configuration paths; never replacement requirements.' },
+  questions: PAIR_STRINGS,
   head: { type: 'string', description: 'The original full base commit from init.head / run.json; never a later snapshot.' },
 } })
 const PAIR_CONTRACT = { type: 'object', properties: {
@@ -9,7 +12,7 @@ const PAIR_CONTRACT = { type: 'object', properties: {
   } } },
   checks: { type: 'array', items: { type: 'object', properties: {
     id: { type: 'string' }, criteria: PAIR_STRINGS,
-    kind: { type: 'string', enum: ['test', 'inspection'] },
+    kind: { type: 'string', enum: ['test', 'gate', 'inspection'] },
     purpose: { type: 'string', enum: ['changed', 'preserved'] },
     scenario: { type: 'string' }, expected: { type: 'string' }, boundaries: { type: 'string' },
     file: { type: 'string' }, command: { type: 'string' }, fixtures: PAIR_STRINGS,
@@ -69,6 +72,6 @@ const PAIR_REVIEW_SCHEMA = strict({ type: 'object', properties: {
 const PAIR_MEASURE_SCHEMA = strict({ type: 'object', properties: {
   status: { type: 'string', enum: ['done', 'error'] }, error: { type: 'string' },
   snapshot: { type: 'object', properties: { ref: { type: 'string' }, tree: { type: 'string' }, diff: { type: 'string' } } },
-  suite: { type: 'object', properties: { ...CHECK_SCHEMA.properties.suite.properties, command: { type: 'string' } } },
+  suite: { type: 'object', properties: { ...CHECK_SCHEMA.properties.suite.properties, command: { type: 'string' }, failureKind: { type: 'string' } } },
   replay: PAIR_REPLAY_RESULT,
 } })
