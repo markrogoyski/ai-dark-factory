@@ -4,6 +4,7 @@ import { createHash } from 'node:crypto'
 import { readFileSync, writeFileSync, renameSync, existsSync, lstatSync, readlinkSync, readdirSync, realpathSync, appendFileSync, truncateSync } from 'node:fs'
 import { join, resolve, relative, isAbsolute } from 'node:path'
 import { execFileSync } from 'node:child_process'
+import { engineIdentityIssues } from './policy.mjs'
 
 export const digest = value => createHash('sha256').update(value).digest('hex')
 const canonical = value => Array.isArray(value) ? value.map(canonical) : value && typeof value === 'object'
@@ -75,9 +76,10 @@ function artifacts(repo, runs) {
   return { files, worktrees, refs }
 }
 
-export function loadCheckpoint(path, { repo, args, engine }) {
+export function loadCheckpoint(path, { repo, args, engine, executor }) {
   const saved = JSON.parse(readFileSync(join(path, 'checkpoint.json'), 'utf8'))
   if (saved.version !== 1 || saved.engine !== engine) throw new Error('Checkpoint engine changed; start a new run.')
+  if (executor && (!saved.executor || engineIdentityIssues({}, saved.executor, executor).length)) throw new Error('Checkpoint executor identity changed; no migration or reset was performed.')
   if (fingerprint(saved.repository) !== fingerprint(repositoryIdentity(repo, args))) throw new Error('Checkpoint repository or reference inputs changed; start a new run.')
   const current = artifacts(repo, saved.runs)
   for (const [file, hash] of Object.entries(saved.artifacts.files)) {
@@ -90,7 +92,7 @@ export function loadCheckpoint(path, { repo, args, engine }) {
   return saved
 }
 
-export function journalRuntime(runtime, { repo, hostRunDir, args, engine, saved, emit }) {
+export function journalRuntime(runtime, { repo, hostRunDir, args, engine, executor, saved, emit }) {
   const entries = saved?.entries || [], runs = new Set(saved?.runs || [])
   const repository = saved?.repository || repositoryIdentity(repo, args)
   let cursor = 0, active = 0, broken = false, fatal = null
@@ -100,6 +102,7 @@ export function journalRuntime(runtime, { repo, hostRunDir, args, engine, saved,
   function commit() {
     if (active || broken) return
     const data = { version: 1, engine, repository, runs: [...runs], entries,
+      ...(executor ? { executor } : {}),
       runtime: runtime.checkpointState(), artifacts: artifacts(repo, runs) }
     const file = join(hostRunDir, 'checkpoint.json')
     writeJsonAtomic(file, data)

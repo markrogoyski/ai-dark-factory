@@ -2511,6 +2511,39 @@ function applyAmend(S, res, todo) {
   return true
 }
 
+// Identity is supplied by adapters; policy never opens files or discovers authority.
+function engineIdentityIssues(S, expected, observed) {
+  const issues = []
+  const valid = x => x && x.version === 1 && x.algorithm === 'sha256-path-content-mode-v1' &&
+    /^[a-f0-9]{64}$/.test(x.packageDigest || '') && ['live', 'pinned'].includes(x.mode) &&
+    typeof x.root === 'string' && ['node', 'python', 'git'].every(k => typeof x.runtimeVersions?.[k] === 'string') &&
+    (x.mode !== 'pinned' || /^[a-f0-9]{40,64}$/.test(x.sourceRevision || ''))
+  if (!valid(observed)) issues.push('Unsupported or missing executor identity')
+  if (expected) {
+    if (!valid(expected)) issues.push('Unsupported saved executor identity')
+    for (const key of ['packageDigest', 'algorithm', 'mode']) {
+      if (expected[key] !== observed?.[key]) issues.push(`Executor ${key} changed`)
+    }
+    if (expected.mode === 'pinned' && observed?.mode === 'pinned' && expected.sourceRevision !== observed.sourceRevision) issues.push('Executor sourceRevision changed')
+    if (JSON.stringify(expected.runtimeVersions) !== JSON.stringify(observed?.runtimeVersions)) issues.push('Executor runtime changed')
+  }
+  return issues
+}
+
+function pinnedOperationIssues(S, expected, observed) {
+  const issues = engineIdentityIssues(S, expected, observed?.executor)
+  if (observed?.unknown?.length) issues.push(...observed.unknown.map(x => `Unknown write bounds: ${x}`))
+  for (const root of observed?.overlaps || []) issues.push(`Export overlaps writable root: ${root}`)
+  if (observed?.settingsChanged) issues.push('Admitted provider settings changed')
+  return issues
+}
+
+function provenanceFacts(S, facts) {
+  return { version: 1, executor: facts?.executor || null, evaluator: facts?.evaluator || null,
+    invocation: facts?.invocation || null, candidate: facts?.candidate || null,
+    inputs: facts?.inputs || null }
+}
+
 // The text the run hands back: the report, the retro payload and prompt, and the early-stop
 // results. Pure functions of the state.
 
@@ -3130,6 +3163,7 @@ function compactResult(S, result) {
   const f = result.final || {}
   const snapshot = f.snapshotRef?.match(/\/([A-Z])-([^/]+)$/)
   return { artifactType: 'dark-factory-summary', artifactVersion: 1, status: result.status, workflow: result.workflow || S.workflowName,
+    ...(result.provenance ? { provenance: provenanceFacts(S, result.provenance) } : {}),
     runDir: result.runDir, stopReason: result.stopReason || result.error || '',
     final: { readiness: f.readiness, snapshotRef: f.snapshotRef || null, snapshotTree: f.snapshotTree || null,
       post: f.post || null, diff: f.diff || null, worktree: f.worktree || null,
@@ -3471,6 +3505,7 @@ function simpleResult(S, o) {
     final: {
       author: W.L, model: W.name, summary: S.pos[W.L].summary, post: S.pos[W.L].post,
       diff: `${S.run.room}/${tag}/${W.L}.diff`, snapshotRef: `refs/council/${S.run.runId}/${W.L}-${tag}`, worktree: W.wt,
+      snapshotTree: S.pos[W.L].tree?.hash || null,
       check: finalSummary(S, W.L), readiness: ready, suite: S.pos[W.L].suite, criteria: S.pos[W.L].criteria, fixPass: audit.fixPass,
     },
     audit: auditResult(S, audit),
@@ -4829,7 +4864,7 @@ function requestClock() {
 }
 
 function fatalTurnError(error) {
-  return error?.code === 'CHECKPOINT_MISMATCH' || error?.code === 'RUN_LIMIT'
+  return error?.code === 'CHECKPOINT_MISMATCH' || error?.code === 'RUN_LIMIT' || error?.code === 'ENGINE_DRIFT'
 }
 
 function reserveTurn() {

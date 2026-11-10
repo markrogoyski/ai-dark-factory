@@ -1,3 +1,6 @@
 #!/usr/bin/env node
-import { evaluationMain } from '../lib/evaluate.mjs'
-try { evaluationMain(process.argv.slice(2)) } catch (error) { process.stderr.write(error.message + '\n'); process.exitCode = 1 }
+import { bootstrap } from '../lib/engine.mjs'
+try {
+  const argv = await bootstrap(process.argv.slice(2), 'bin/dark-factory-evaluate')
+  if (argv) (await import('../lib/evaluate.mjs')).evaluationMain(argv)
+} catch (error) { process.stderr.write(error.message + '\n'); process.exitCode = 1 }

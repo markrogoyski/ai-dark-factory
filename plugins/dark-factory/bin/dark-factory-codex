@@ -1,6 +1,9 @@
 #!/usr/bin/env node
 // Keep the executable usable without a package.json or a particular module default.
-import('../lib/codex-runner.mjs').then(({ main }) => main()).catch(error => {
-  console.error(error.message)
+import('../lib/engine.mjs').then(async ({ bootstrap }) => {
+  const argv = await bootstrap(process.argv.slice(2))
+  if (argv) await (await import('../lib/codex-runner.mjs')).main(argv)
+}).catch(error => {
+  console.log(JSON.stringify({ status: 'failed', error: error.message, code: error.code }))
   process.exitCode = 1
 })

@@ -617,6 +617,7 @@ function compactResult(S, result) {
   const f = result.final || {}
   const snapshot = f.snapshotRef?.match(/\/([A-Z])-([^/]+)$/)
   return { artifactType: 'dark-factory-summary', artifactVersion: 1, status: result.status, workflow: result.workflow || S.workflowName,
+    ...(result.provenance ? { provenance: provenanceFacts(S, result.provenance) } : {}),
     runDir: result.runDir, stopReason: result.stopReason || result.error || '',
     final: { readiness: f.readiness, snapshotRef: f.snapshotRef || null, snapshotTree: f.snapshotTree || null,
       post: f.post || null, diff: f.diff || null, worktree: f.worktree || null,

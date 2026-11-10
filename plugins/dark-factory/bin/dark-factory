@@ -34,6 +34,7 @@ import json
 import os
 import re
 import shutil
+import shlex
 import signal
 import struct
 import subprocess
@@ -64,6 +65,7 @@ TAIL_LINES = 40
 # variables belong in verification.json; a builder's shell exports must not leak into a gate.
 VERIFICATION_BASE_ENV = ('PATH', 'HOME', 'USER', 'LOGNAME', 'SHELL', 'TMPDIR', 'TMP', 'TEMP',
                          'LANG', 'LC_ALL', 'LC_CTYPE', 'SYSTEMROOT')
+EXECUTOR_CONTEXT = ('DARK_FACTORY_PIN', 'DARK_FACTORY_INVOCATION', 'DARK_FACTORY_SEAT_SPEC')
 
 
 class CouncilError(Exception):
@@ -78,7 +80,7 @@ def emit(obj):
 
 
 def fail(msg):
-    emit({'status': 'error', 'error': msg})
+    emit({'status': 'error', 'error': msg, **({'code': 'ENGINE_DRIFT', 'errorClass': 'engine'} if str(msg).startswith('ENGINE_DRIFT:') else {})})
     sys.exit(1)
 
 
@@ -130,6 +132,51 @@ def git(*args, cwd=None, env=None, check=True):
 def read(path):
     with open(path, encoding='utf-8') as f:
         return f.read()
+
+
+def pin_guard(run_dir=None, spec=None, repo=None, final=None):
+    """Every process, including detached jobs, validates its own shipped executor."""
+    pin = json.loads(os.environ['DARK_FACTORY_PIN']) if os.environ.get('DARK_FACTORY_PIN') else None
+    if spec and spec.get('pin'):
+        saved = spec['pin']
+        if pin and any(pin.get(k) != saved.get(k) for k in ('packageDigest', 'sourceRevision', 'algorithm')):
+            raise CouncilError('ENGINE_DRIFT: job executor differs from environment')
+        pin = pin or saved
+    if run_dir and os.path.isfile(os.path.join(run_dir, 'run.json')):
+        metadata = json.loads(read(os.path.join(run_dir, 'run.json')))
+        saved = metadata.get('pin')
+        repo = repo or metadata.get('repoRoot')
+        if saved:
+            if pin and any(pin.get(k) != saved.get(k) for k in ('packageDigest', 'sourceRevision', 'algorithm')):
+                raise CouncilError('ENGINE_DRIFT: run executor differs from environment')
+            pin = pin or saved
+    own_root = os.path.realpath(os.path.join(os.path.dirname(SELF), '..'))
+    own_export = os.path.basename(own_root) == 'plugin' and os.path.isfile(os.path.join(os.path.dirname(own_root), 'manifest.json'))
+    if not pin and not own_export:
+        return None
+    if pin and own_export:
+        pin = dict(pin, root=own_root)
+    adapter = os.path.join(os.path.dirname(SELF), '..', 'lib', 'engine.mjs')
+    request = {'pin': pin, 'executable': SELF, 'spec': spec, 'repo': repo, 'final': final}
+    r = subprocess.run(['node', adapter, 'guard'], input=json.dumps(request), text=True, capture_output=True)
+    try:
+        out = json.loads(r.stdout.strip().splitlines()[-1])
+    except (ValueError, IndexError):
+        raise CouncilError('ENGINE_DRIFT: executor validator did not return a result: ' + r.stderr[-1000:])
+    if r.returncode or out.get('status') == 'error':
+        raise CouncilError('ENGINE_DRIFT: ' + out.get('error', 'executor validation failed'))
+    os.environ['DARK_FACTORY_PIN'] = json.dumps(out['executor'])
+    os.environ['PATH'] = os.path.join(out['executor']['root'], 'bin') + os.pathsep + os.environ.get('PATH', '')
+    return out
+
+
+def subject_environment(env=None):
+    """Executor context belongs to control processes, never the candidate under test."""
+    return {k: v for k, v in (os.environ if env is None else env).items() if k not in EXECUTOR_CONTEXT}
+
+
+def turn_pin_identity(pin):
+    return {k: v for k, v in (pin or {}).items() if k not in ('root', 'locations')}
 
 
 def write(path, text):
@@ -191,6 +238,7 @@ def run_shell(cmd, cwd, timeout, log_path, env=None):
     measurement job. Removing this sidecar on every exit avoids signalling an unrelated process
     after the operating system reuses its PID.
     """
+    env = subject_environment(env)
     os.makedirs(os.path.dirname(log_path), exist_ok=True)
     started = time.time()
     pid_path, p = log_path + '.pid', None
@@ -347,6 +395,8 @@ def cmd_init(a):
 
     run = {'runId': run_id, 'runDir': run_dir, 'repoRoot': root, 'head': head, 'seats': seats,
            'room': os.path.join(run_dir, 'room'), 'cli': SELF, 'refs': refs}
+    if os.environ.get('DARK_FACTORY_PIN'):
+        run['pin'] = json.loads(os.environ['DARK_FACTORY_PIN'])
     if getattr(a, 'factory', False):
         run['factory'] = True
         run['verificationBaseEnv'] = {k: os.environ[k] for k in VERIFICATION_BASE_ENV if k in os.environ}
@@ -393,6 +443,9 @@ def job_state(jd):
 
 
 def start_job(jd, spec):
+    checked = pin_guard(spec.get('runDir'))
+    if checked:
+        spec['pin'] = checked['executor']
     os.makedirs(jd, exist_ok=True)
     write_json(os.path.join(jd, 'spec.json'), spec)
     with open(os.path.join(jd, 'runner.err'), 'w') as err:
@@ -600,11 +653,21 @@ def ensure_agy_grant(grant_dir):
 
 
 def cmd_seat_run(a):
+    checked = pin_guard(getattr(a, 'run_dir', None))
+    if checked:
+        bounds = {'kind': a.vendor, 'cwd': os.path.abspath(a.cwd), 'writable': [os.path.abspath(w) for w in (a.writable or [])],
+                  'runDir': os.path.abspath(a.run_dir), 'job': a.job, 'sandbox': a.sandbox}
+        bounds['gitRoots'] = seat_git_dirs(bounds)
+        if a.vendor == 'claude':
+            bounds['writable'] += [claude_tmp_dir(bounds)]
+        elif a.vendor == 'gemini':
+            bounds['writable'] += [os.path.join(tempfile.gettempdir(), 'council-agy')]
+        checked = pin_guard(a.run_dir, bounds)
     blocked = vendor_blocked(a.vendor)   # first: inside the sandbox, the transcripts may be unreadable too
     if blocked:
         emit({'status': 'sandboxed', 'error': blocked})
         return
-    if a.vendor == 'gemini':
+    if a.vendor == 'gemini' and not checked:
         ensure_agy_grant(os.path.dirname(os.path.abspath(a.run_dir)))   # fails now, not inside the job
     if a.checkout:
         # An auditor works in a checkout of the version under review, made here, outside the
@@ -637,10 +700,13 @@ def cmd_seat_run(a):
         'fresh': bool(a.fresh), 'timeout': a.timeout_min * 60, 'schema': schema is not None,
         'resumeSession': getattr(a, 'resume_session', None),
     }
+    if checked:
+        spec.update(writable=bounds['writable'], gitRoots=bounds['gitRoots'], settingsHash=checked['settings']['settingsHash'], settingsSources=checked['settings']['sources'], pin=checked['executor'])
     jd = job_dir(a.run_dir, a.job)
 
     def decide(old, state):
-        same = all(old.get(k) == spec[k] for k in TURN_IDENTITY)
+        same = (all(old.get(k) == spec.get(k) for k in TURN_IDENTITY)
+                and turn_pin_identity(old.get('pin')) == turn_pin_identity(spec.get('pin')))
         status = state and state.get('status')
         if same and status in ('running', 'done'):
             return 'wait'                                # the same turn: reuse the result or keep waiting
@@ -662,7 +728,7 @@ def cmd_seat_run(a):
 
 
 # What makes two seat-run calls the same turn: a job is reused only when all of these match.
-TURN_IDENTITY = ('kind', 'hash', 'model', 'effort', 'sandbox', 'cwd', 'writable', 'fresh', 'schema', 'resumeSession')
+TURN_IDENTITY = ('kind', 'hash', 'model', 'effort', 'sandbox', 'cwd', 'writable', 'fresh', 'schema', 'resumeSession', 'settingsHash')
 RERUN_WINDOW = 1800      # a failure older than this may be retried again (after a quota reset, say)
 
 
@@ -768,7 +834,7 @@ def run_codex_job(jd, spec):
     events_path, err_path = os.path.join(jd, 'events.jsonl'), os.path.join(jd, 'stderr.txt')
     timed_out = False
     with open(os.path.join(jd, 'prompt.md'), 'rb') as stdin, open(events_path, 'w') as so, open(err_path, 'w') as se:
-        p = subprocess.Popen(cmd, cwd=cwd, stdin=stdin, stdout=so, stderr=se, start_new_session=True)
+        p = subprocess.Popen(cmd, cwd=cwd, stdin=stdin, stdout=so, stderr=se, start_new_session=True, env=subject_environment())
         write(os.path.join(jd, 'codex.pid'), str(p.pid))
         try:
             code = p.wait(timeout=spec['timeout'])
@@ -860,7 +926,7 @@ def claude_env(spec):
     os.makedirs(cache, exist_ok=True)
     # Worktrees share project auto-memory. Disable it for this process, including resumes.
     # https://code.claude.com/docs/en/memory#enable-or-disable-auto-memory
-    return {**os.environ, 'XDG_CACHE_HOME': cache, 'CLAUDE_CODE_DISABLE_AUTO_MEMORY': '1'}
+    return {**subject_environment(), 'XDG_CACHE_HOME': cache, 'CLAUDE_CODE_DISABLE_AUTO_MEMORY': '1'}
 
 
 def claude_command(jd, spec, session):
@@ -890,6 +956,9 @@ def claude_command(jd, spec, session):
             'autoAllowBashIfSandboxed': True, 'allowUnsandboxedCommands': False,
             'filesystem': {'disabled': False, 'allowWrite': roots},
         }
+    if spec.get('pin'):
+        settings['hooks'] = {'PreToolUse': [{'matcher': 'Bash|Edit|Write', 'hooks': [{'type': 'command',
+            'command': shlex.join(['node', os.path.join(spec['pin']['root'], 'lib', 'engine.mjs'), 'hook', os.path.join(jd, 'spec.json')]) + ' || exit 2'}]}]}
     cmd += ['--settings', json.dumps(settings)]
     if spec['schema']:
         cmd += ['--json-schema', read(os.path.join(jd, 'schema.json'))]
@@ -1016,7 +1085,7 @@ def run_gemini_job(jd, spec):
         if conversation:
             cmd += ['--conversation', conversation]
         with open(out_path, 'w') as so, open(err_path, 'a') as se:
-            p = subprocess.Popen(cmd, cwd=cwd, stdin=subprocess.DEVNULL, stdout=so, stderr=se, start_new_session=True)
+            p = subprocess.Popen(cmd, cwd=cwd, stdin=subprocess.DEVNULL, stdout=so, stderr=se, start_new_session=True, env=subject_environment())
             write(os.path.join(jd, 'agy.pid'), str(p.pid))
             try:
                 code = p.wait(timeout=max(60, spec['timeout'] - (time.time() - started)))
@@ -1200,7 +1269,7 @@ def verification_settings(run):
 
 
 def verification_environment(settings):
-    return dict(settings.get('baseEnv', os.environ), **settings['env'])
+    return subject_environment(dict(settings.get('baseEnv', os.environ), **settings['env']))
 
 
 class VerificationInfrastructureError(CouncilError):
@@ -1962,6 +2031,14 @@ def run_delivery_job(jd, spec):
         gate_ok = result['validation'].get('passed') or not spec['verification']['command']
         if gate_ok and not result['problems']:
             result['status'] = 'verified-diagnostic' if reason else 'delivered'
+    checked = pin_guard(run['runDir'], repo=run['repoRoot'], final=spec['final'])
+    if checked:
+        candidate = checked['candidate']
+        candidate['baseCommit'] = run['head']
+        candidate['baseTree'] = git('rev-parse', run['head'] + '^{tree}', cwd=run['repoRoot']).strip()
+        candidate['deliveredTree'] = worktree_tree(run, run['repoRoot'], 'index-delivery-provenance', result['mainHead']) if result['status'] == 'delivered' else None
+        candidate['deliveredCommit'] = result['mainHead'] if candidate['deliveredTree'] == git('rev-parse', 'HEAD^{tree}', cwd=run['repoRoot']).strip() else None
+        result['provenance'] = {'version': 1, 'executor': checked['executor'], 'evaluator': {'packageDigest': checked['executor']['packageDigest'], 'entrypoint': 'bin/dark-factory'}, 'candidate': candidate}
     write_json(os.path.join(run['runDir'], 'delivery-diagnostic.json' if reason else 'delivery.json'), result)
     return result
 
@@ -2391,6 +2468,9 @@ def transient(result):
 def cmd_job(jd):
     spec = json.loads(read(os.path.join(jd, 'spec.json')))
     try:
+        if spec.get('pin') and not os.environ.get('DARK_FACTORY_PIN'):
+            os.environ['DARK_FACTORY_PIN'] = json.dumps(spec['pin'])
+        pin_guard(spec.get('runDir'), spec if spec['kind'] in ('codex', 'gemini', 'claude') else None)
         if spec['kind'] in ('codex', 'gemini', 'claude'):
             if spec.get('resumeSession'):
                 session_name = {'claude': 'claude-session', 'codex': 'thread', 'gemini': 'conversation'}[spec['kind']]
@@ -2402,6 +2482,7 @@ def cmd_job(jd):
             if transient(result) and not spec.get('resumeSession'):
                 first = result['error']
                 time.sleep(float(os.environ.get('COUNCIL_RETRY_WAIT', '90')))
+                pin_guard(spec.get('runDir'), spec)
                 result = run(jd, spec)
                 result['retried'] = oneline(first)[:300]
             if result.get('status') == 'error':
@@ -2414,8 +2495,13 @@ def cmd_job(jd):
             result = run_delivery_job(jd, spec)
         else:
             result = {'status': 'error', 'error': f'unknown job kind {spec["kind"]}'}
+        checked = pin_guard(spec.get('runDir'), spec if spec['kind'] in ('codex', 'gemini', 'claude') else None)
+        if checked:
+            result['executor'] = checked['executor']
+            if checked.get('settings'):
+                result['settingsHash'] = checked['settings']['settingsHash']
     except Exception as e:                                # the status file must always get written
-        result = {'status': 'error', 'error': f'{type(e).__name__}: {e}'}
+        result = {'status': 'error', 'error': f'{type(e).__name__}: {e}', **({'code': 'ENGINE_DRIFT', 'errorClass': 'engine'} if 'ENGINE_DRIFT:' in str(e) else {})}
         if spec['kind'] == 'delivery':
             write_json(os.path.join(spec['runDir'], 'delivery.json'), result)
     write_json(os.path.join(jd, 'status.json'), result)
@@ -2544,6 +2630,7 @@ def main():
                 'materialize': cmd_materialize, 'usage': cmd_usage, 'jobs': cmd_jobs,
                 'cleanup': cmd_cleanup, 'retro': cmd_retro, 'hash': cmd_hash, 'preflight': cmd_preflight}
     try:
+        pin_guard(getattr(a, 'run_dir', None), repo=getattr(a, 'repo', None))
         handlers[a.cmd](a)
     except (CouncilError, OSError, ValueError) as e:
         fail(str(e))

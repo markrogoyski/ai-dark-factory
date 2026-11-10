@@ -67,6 +67,15 @@ conversation history to blind attempts or fresh reviews.
 
 ## Monitor and handle results
 
+For a requested pinned single run, pass `--pin-engine DIRECTORY` through the installed-relative
+launcher. New exports require committed clean shipped inputs. Existing exports retain their
+original executor; never replace them with the candidate or install/promote the candidate.
+Choose a directory outside the candidate and all effective seat write grants, including temp
+defaults and merged user/project/managed settings. Unknown bounds or unavailable mandatory
+Claude hooks refuse; do not change account settings to get past that refusal. Resume validates
+the saved executor/evidence and retains usage. A relocated export must have the same identity.
+Pinning does not support Run-plan or launch preparation. Keep old artifacts when drift refuses.
+
 Keep the runner's process/session alive and poll it while reporting meaningful progress.
 Progress goes to stderr; the final stdout is JSON. The result includes `hostRunDir` and
 `hostEvents`; the host directory retains the arguments, events, and `result.json`. `--output`

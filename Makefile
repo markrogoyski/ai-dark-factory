@@ -24,6 +24,7 @@ test:
 
 host-test:
 	$(NODE) --test test/host-logic.mjs test/codex-runner.mjs test/codex-install.mjs test/checkpoint.mjs test/run-plan.mjs
+	$(NODE) --test test/engine-identity.mjs test/engine-isolation.mjs test/engine-closure.mjs test/provenance.mjs test/policy-bundle.mjs test/engine-bootstrap.mjs test/pinned-providers.mjs test/pinned-state.mjs test/pinned-delivery.mjs
 
 static:
 	$(NODE) test/static.mjs

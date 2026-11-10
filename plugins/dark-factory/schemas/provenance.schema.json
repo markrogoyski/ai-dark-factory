@@ -1,0 +1,34 @@
+{
+  "type": "object",
+  "required": ["version", "executor", "evaluator", "invocation", "candidate", "inputs"],
+  "properties": {
+    "version": {"type": "integer", "enum": [1]},
+    "executor": {"type": ["object", "null"], "properties": {
+      "version": {"type": "integer", "enum": [1]},
+      "algorithm": {"type": "string", "enum": ["sha256-path-content-mode-v1"]},
+      "mode": {"type": "string", "enum": ["live", "pinned"]},
+      "packageDigest": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+      "sourceRevision": {"type": ["string", "null"]},
+      "root": {"type": "string"},
+      "runtimeVersions": {"type": "object"}
+    }, "required": ["version", "algorithm", "mode", "packageDigest", "sourceRevision", "root", "runtimeVersions"]},
+    "evaluator": {"type": ["object", "null"]},
+    "invocation": {"type": ["object", "null"]},
+    "candidate": {"type": ["object", "null"]},
+    "inputs": {"type": ["object", "null"]}
+  },
+  "additionalProperties": false,
+  "definitions": {
+    "manifest": {
+      "type": "object", "required": ["version", "algorithm", "sourceRevision", "sourceTree", "packageDigest", "entries"],
+      "properties": {
+        "version": {"type": "integer", "enum": [1]},
+        "algorithm": {"type": "string", "enum": ["sha256-path-content-mode-v1"]},
+        "sourceRevision": {"type": "string", "pattern": "^[a-f0-9]{40,64}$"},
+        "sourceTree": {"type": "string", "pattern": "^[a-f0-9]{40,64}$"},
+        "packageDigest": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+        "entries": {"type": "array", "items": {"type": "array", "items": {"type": "string"}}}
+      }, "additionalProperties": false
+    }
+  }
+}

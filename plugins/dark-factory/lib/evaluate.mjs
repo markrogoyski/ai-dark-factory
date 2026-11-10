@@ -1,6 +1,7 @@
 // Offline comparisons. No models, network, pricing assumptions, or account configuration.
 import { readFileSync, existsSync, writeFileSync } from 'node:fs'
 import { resolve, join } from 'node:path'
+import { guardEngine, environmentPin } from './engine.mjs'
 
 export function tokenUsage(directories) {
   const byModel = {}
@@ -76,12 +77,20 @@ export function summarize(results) {
 }
 
 export function evaluateFiles(files, observations = {}) {
-  return summarize(files.map(source => {
+  let evaluator = null
+  const summary = summarize(files.map(source => {
     const result = JSON.parse(readFileSync(source, 'utf8'))
+    const pin = result.provenance?.executor
+    if (pin?.mode === 'pinned') {
+      const own = guardEngine(environmentPin() || pin)
+      if (own.packageDigest !== pin.packageDigest) throw new Error('Authoritative evaluator differs from recorded executor')
+      evaluator = { packageDigest: own.packageDigest, entrypoint: 'lib/evaluate.mjs' }
+    }
     const path = result.runDir && join(result.runDir, 'delivery.json')
     const delivery = path && existsSync(path) ? JSON.parse(readFileSync(path, 'utf8')) : null
     return { source, result, delivery, observation: observations[result.hostRunDir] || observations[result.runDir] }
   }))
+  return evaluator ? { ...summary, evaluator } : summary
 }
 
 export function evaluationMain(argv) {

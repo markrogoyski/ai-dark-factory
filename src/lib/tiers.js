@@ -329,6 +329,7 @@ function simpleResult(S, o) {
     final: {
       author: W.L, model: W.name, summary: S.pos[W.L].summary, post: S.pos[W.L].post,
       diff: `${S.run.room}/${tag}/${W.L}.diff`, snapshotRef: `refs/council/${S.run.runId}/${W.L}-${tag}`, worktree: W.wt,
+      snapshotTree: S.pos[W.L].tree?.hash || null,
       check: finalSummary(S, W.L), readiness: ready, suite: S.pos[W.L].suite, criteria: S.pos[W.L].criteria, fixPass: audit.fixPass,
     },
     audit: auditResult(S, audit),

@@ -8,6 +8,7 @@ export const LIB = [
   'src/lib/state.js',
   'src/lib/prompts.js',
   'src/lib/ledger.js',
+  'src/lib/provenance.js',
   'src/lib/report.js',
   'src/lib/tiers.js',
   'src/lib/controls.js',
@@ -24,8 +25,11 @@ const SHARED = [
 ]
 export const PAIR_LIB = ['src/lib/pair.js', 'src/lib/pair-prompts.js']
 export const RUN_PLAN_LIB = ['src/lib/run-plan.js']
+export const POLICY_LIB = ['src/lib/provenance.js']
+export const POLICY_EXPORTS = ['engineIdentityIssues', 'pinnedOperationIssues', 'provenanceFacts']
 // meta first: the runtime reads `export const meta` from the top of the file.
 export const TARGETS = {
+  policy: { output: 'plugins/dark-factory/lib/policy.mjs', order: POLICY_LIB, trailer: `export { ${POLICY_EXPORTS.join(', ')} }\n` },
   'run-plan': { output: 'plugins/dark-factory/workflows/run-plan.js', order: ['src/00-meta-run-plan.js', ...RUN_PLAN_LIB, 'src/main-run-plan.js'] },
   ensemble: { output: 'plugins/dark-factory/workflows/ensemble.js', order: ['src/00-meta-ensemble.js', ...LIB, 'src/boot-ensemble.js', 'src/schemas.js', 'src/ensemble-schemas.js', 'src/turns.js', 'src/repair.js', 'src/council.js', 'src/main-ensemble.js'] },
   council: { output: 'plugins/dark-factory/workflows/council.js', order: ['src/00-meta.js', ...LIB, ...SHARED, 'src/main-council.js'] },

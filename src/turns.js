@@ -9,7 +9,7 @@ function requestClock() {
 }
 
 function fatalTurnError(error) {
-  return error?.code === 'CHECKPOINT_MISMATCH' || error?.code === 'RUN_LIMIT'
+  return error?.code === 'CHECKPOINT_MISMATCH' || error?.code === 'RUN_LIMIT' || error?.code === 'ENGINE_DRIFT'
 }
 
 function reserveTurn() {

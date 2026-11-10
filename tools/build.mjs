@@ -9,7 +9,7 @@ import { TARGETS } from './sources.mjs'
 const root = join(dirname(fileURLToPath(import.meta.url)), '..')
 
 export function build(target) {
-  return TARGETS[target].order.map(f => readFileSync(join(root, f), 'utf8').replace(/\n+$/, '\n')).join('\n')
+  return TARGETS[target].order.map(f => readFileSync(join(root, f), 'utf8').replace(/\n+$/, '\n')).join('\n') + (TARGETS[target].trailer || '')
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {

@@ -351,6 +351,48 @@ authorization, then use the delivery verification below. Pair does not automatic
 
 ## Process controls, explanation, and resume
 
+For a self-update, the standalone runner can execute a committed plugin exported outside the
+source, candidate repository and every seat write grant. Choose a named directory whose parents
+are not writable by seats (including their implicit `/tmp` and `$TMPDIR` grants):
+
+```sh
+node plugins/dark-factory/bin/dark-factory-codex --pin-engine /path/to/frozen-engine --cwd /path/to/candidate --workflow pair "Implement the change"
+```
+
+A new export reads Git blobs and modes from the source checkout's HEAD. Commit generated plugin
+files first; dirty, untracked or ignored shipped inputs refuse. The export contains `plugin/` and
+an external `manifest.json`. Its versioned SHA-256 digest covers raw relative paths, content and
+Git modes, including symlink targets. Escaping or unresolved links refuse. No installation is
+performed. Reusing an existing directory validates and retains that executor, even when the
+invoking checkout has advanced; it never promotes the candidate. Keep the export and manifest.
+
+The same package guards helper calls, detached jobs, checkpoints, delivery and authoritative
+evaluation. Complete exports can be relocated; explicitly select the relocated directory with
+the resume command. Package/runtime/evidence drift refuses and preserves previous artifacts and
+spent usage. Legacy results remain readable; an active unpinned run cannot migrate into pinning.
+
+Pinned seats conservatively inspect provider defaults and merged local, project, user and managed
+write grants. Unknown settings, unsupported provider versions, broad grants that overlap the
+export, or disabled/unenforceable Claude hooks refuse before work. Known temporary-root overlap
+refuses before provider version probes, host-setting reads or export writes. Those default grants
+remain even when a later provider probe fails. Managed Claude drop-in directories currently
+refuse as unsupported; pinned agy also refuses until its configuration semantics are supported.
+Configuration support is deliberately limited; pinning does not guarantee authentication or host approval. It does not edit
+account settings, create missing agy grants, prepare a launch, or support Run-plan yet. Ordinary
+unpinned execution retains its existing behavior. Parsing pinned TOML settings needs Python 3.11+.
+
+Pinned headless Claude validates its package/settings in a process-local tool hook and prefixes
+the frozen helper's bin directory in the actual Bash input. This handles provider-side PATH
+replacement; it is not a defense against deliberately rewritten shell commands or a compromised
+interpreter/account. The offline regressions use provider stubs and test-only interpreter
+preloads of raw host observations. Those synthetic bounds are labeled separately from real
+provider defaults; the shipped adapter has no test-profile option or environment selector.
+Hook validation failures block the tool with exit 2. Executor context is passed only to control
+processes; seats and gates can run the candidate as the subject without redirecting it to the
+executor. Bare exported helpers recover their pin from their package/run metadata, and Claude
+hooks receive their job specification directly. Relocated resumes retain prior executor locations
+and compare cached turns by package identity rather than location.
+
 Use `--explain` to inspect the resolved process before implementation:
 
 ```text

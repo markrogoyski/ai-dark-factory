@@ -5,6 +5,7 @@ import { spawn, execFileSync } from 'node:child_process'
 import { appendFileSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync, realpathSync, existsSync, readdirSync, lstatSync, openSync, closeSync, unlinkSync } from 'node:fs'
 import { dirname, join, resolve, relative, isAbsolute } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { environmentPin, guardEngine, liveIdentity, runProvenance, validateAdmissions, isolationIssues, drift } from './engine.mjs'
 
 const plugin = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const helper = join(plugin, 'bin', 'dark-factory')
@@ -38,6 +39,7 @@ Git, and authenticated CLIs for the selected models.
   --max-run-min N            Run-wide active-time limit
   --repair-passes N          Opt into bounded repairs with fresh review after every pass
   --resume DIR               Continue a validated checkpoint in a previous hostRunDir
+  --pin-engine DIRECTORY     Export/reuse committed plugin outside candidate/seat write roots
   --help                     Show help without starting a run
 
 Progress goes to stderr; the final result is JSON on stdout. The host log and
@@ -58,7 +60,7 @@ function positiveInteger(value, name) {
 export function parseCLI(argv, cwd = process.cwd()) {
   const out = { workflow: 'factory', cwd, concurrency: 3, timeoutMin: 90, concurrencyGiven: false, timeoutMinGiven: false, args: {} }
   const task = []
-  const values = new Set(['workflow', 'cwd', 'tier', 'seats', 'author', 'reviewer', 'max-reviews', 'args-file', 'output', 'concurrency', 'timeout-min', 'strategy', 'max-turns', 'max-run-min', 'repair-passes', 'resume', 'candidates', 'reviewers', 'mode', 'plan-file'])
+  const values = new Set(['workflow', 'cwd', 'tier', 'seats', 'author', 'reviewer', 'max-reviews', 'args-file', 'output', 'concurrency', 'timeout-min', 'strategy', 'max-turns', 'max-run-min', 'repair-passes', 'resume', 'candidates', 'reviewers', 'mode', 'plan-file', 'pin-engine'])
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i]
     if (arg === '--') { task.push(...argv.slice(i + 1)); break }
@@ -75,6 +77,7 @@ export function parseCLI(argv, cwd = process.cwd()) {
     else if (name === 'max-run-min') out.args.maxRunMin = positiveInteger(value, '--max-run-min')
     else if (name === 'repair-passes') out.args.repair = { maxPasses: positiveInteger(value, '--repair-passes') }
     else if (name === 'resume') out.resume = resolve(cwd, value)
+    else if (name === 'pin-engine') out.pinEngine = resolve(cwd, value)
     else if (name === 'plan-file') out.args.planFile = resolve(cwd, value)
     else if (name === 'workflow') { out.workflow = value; out.workflowGiven = true }
     else if (name === 'max-reviews') out.args.maxReviews = positiveInteger(value, '--max-reviews')
@@ -189,6 +192,7 @@ export function createLimiter(max) {
 }
 
 function callHelper(argv, { cwd, env, signal }) {
+  guardEngine(environmentPin(env))
   return new Promise((done, reject) => {
     const child = spawn(helper, argv, { cwd, env, signal, stdio: ['ignore', 'pipe', 'pipe'] })
     let stdout = '', stderr = ''
@@ -200,6 +204,7 @@ function callHelper(argv, { cwd, env, signal }) {
       try {
         const result = JSON.parse(line)
         if (!result || typeof result !== 'object' || !result.status) throw new Error('no status')
+        if (result.code === 'ENGINE_DRIFT' || result.errorClass === 'engine') { reject(drift(result.error)); return }
         done(code && result.status !== 'error' ? { status: 'error', error: `helper exited ${code}: ${stderr || line}` } : result)
       } catch {
         reject(new Error(`helper exited ${code} without a JSON result: ${stderr || stdout.slice(-2000)}`))
@@ -291,6 +296,7 @@ export function createRuntime({ repo, hostRunDir, concurrency = 3, timeoutMin = 
           error: result.error, permissionDenials: result.permissionDenials })
         return result
       } catch (error) {
+        if (error.code === 'ENGINE_DRIFT') throw error
         emit({ type: 'turn.failed', label: request.label, job: key, error: error.message })
         if (signal?.aborted) throw error
         return { status: 'error', error: error.message, errorClass: 'runtime' }
@@ -415,6 +421,10 @@ export function createRuntime({ repo, hostRunDir, concurrency = 3, timeoutMin = 
 }
 
 export async function runWorkflow(options, dependencies = {}) {
+  const pin = environmentPin()
+  if (options.pinEngine) throw drift('Use the shipped CLI bootstrap for --pin-engine')
+  if (pin && options.workflow === 'run-plan') throw drift('Run-plan does not support pinned execution yet')
+  const executor = pin ? guardEngine(pin) : liveIdentity()
   if (options.workflow === 'run-plan') {
     const { runPlan } = await import('./run-plan-runner.mjs')
     return runPlan(options, dependencies.runPlan)
@@ -425,6 +435,7 @@ export async function runWorkflow(options, dependencies = {}) {
     if (options.workflowGiven && options.workflow !== resumeMeta.workflow) throw new Error('Cannot change workflow on resume.')
     options = { ...options, cwd: resumeMeta.repo, workflow: resumeMeta.workflow }
   }
+  executor.locations = [...new Set([...(resumeMeta?.provenance?.executor?.locations || []), resumeMeta?.pin?.root, executor.root].filter(Boolean))]
   const runtimeOptions = {}
   for (const [key, fallback] of Object.entries({ concurrency: 3, timeoutMin: 90 })) {
     // Direct API callers may supply values without the CLI's explicit-option markers.
@@ -432,6 +443,7 @@ export async function runWorkflow(options, dependencies = {}) {
     runtimeOptions[key] = positiveInteger(given ? options[key] : resumeMeta?.runtimeOptions?.[key] ?? options[key] ?? fallback, key)
   }
   const repo = realpathSync(gitRoot(resolve(options.cwd), '--show-toplevel'))
+  if (pin && isolationIssues(dirname(pin.root), [repo]).length) throw drift('Pinned export overlaps candidate checkout')
   const commonGit = resolve(repo, gitRoot(repo, '--git-common-dir'))
   const worktreeGit = resolve(repo, gitRoot(repo, '--git-dir'))
   const hostBase = join(repo, '.council')
@@ -458,7 +470,7 @@ export async function runWorkflow(options, dependencies = {}) {
       ;(dependencies.progress || (line => process.stderr.write(line + '\n')))(JSON.stringify(record))
     }
     const source = readFileSync(join(plugin, 'workflows', `${options.workflow}.js`), 'utf8').replace(/^export const meta\s*=/m, 'const meta =')
-    const engine = digest(source + readFileSync(helper) + readFileSync(fileURLToPath(import.meta.url)) + readFileSync(join(plugin, 'lib/checkpoint.mjs')))
+    const engine = executor.packageDigest
     const previous = options.resume ? JSON.parse(readFileSync(join(hostRunDir, 'args.json'), 'utf8')) : {}
     const args = { ...previous, ...options.args, host: 'codex', repo, cli: 'dark-factory', hostRunId: hostRunDir.split('/').at(-1) }
     // Intake is replayed on resume, including after an authorized cap increase.
@@ -480,18 +492,20 @@ export async function runWorkflow(options, dependencies = {}) {
         if (typeof prior.round === 'number') answer.afterRound = prior.round
       }
     }
-    const saved = options.resume ? loadCheckpoint(hostRunDir, { repo, args, engine }) : null
+    const initialProvenance = await runProvenance(repo, args, executor)
+    const saved = options.resume ? loadCheckpoint(hostRunDir, { repo, args, engine, executor }) : null
+    if (saved && pin) await validateAdmissions(hostRunDir, pin)
     const elapsedBefore = Math.max(resumeMeta?.elapsedMs || 0, saved?.runtime.elapsedMs || 0)
     const recordedTurns = readEventLog(events, true).filter(e => e.type === 'turn.started').length
     const spentBefore = Math.max(resumeMeta?.spentTurns || 0, saved?.runtime.spentTurns || 0, recordedTurns)
     const attempt = (resumeMeta?.attempt || 0) + (options.resume ? 1 : 0)
-    const hostInfo = { repo, workflow: options.workflow, attempt, runtimeOptions }
+    const hostInfo = { repo, workflow: options.workflow, attempt, runtimeOptions, pin, provenance: initialProvenance }
     writeJsonAtomic(join(hostRunDir, 'host.json'), { ...hostInfo, elapsedMs: elapsedBefore, spentTurns: spentBefore })
     writeJsonAtomic(join(hostRunDir, 'args.json'), args, 2)
     const controller = new AbortController()
     const rawRuntime = createRuntime({ repo, hostRunDir, ...runtimeOptions,
       initialSequence: saved?.runtime.sequence || 0, attempt, elapsedBefore, spentBefore, maxTurns: args.maxTurns, gitDirs: [...new Set([commonGit, worktreeGit])], emit, signal: controller.signal, ...dependencies.runtime })
-    const runtime = journalRuntime(rawRuntime, { repo, hostRunDir, args, engine, saved, emit })
+    const runtime = journalRuntime(rawRuntime, { repo, hostRunDir, args, engine, executor, saved, emit })
     let timedOut = false
     const interrupt = () => { runtime.cancel(); controller.abort() }
     const timer = args.maxRunMin ? setTimeout(() => { timedOut = true; interrupt() }, Math.max(1, positiveInteger(args.maxRunMin, 'maxRunMin') * 60000 - elapsedBefore)) : null
@@ -517,6 +531,9 @@ export async function runWorkflow(options, dependencies = {}) {
     writeJsonAtomic(join(hostRunDir, 'host.json'), { ...hostInfo, ...runtimeStats })
     if (runtime.budgetStop() && result.final?.readiness?.state !== 'ready') result = { ...result, status: 'blocked', stopReason: runtime.budgetStop(), final: { ...result.final, readiness: { state: 'incomplete', blocked: result.final?.readiness?.blocked || [], incomplete: [runtime.budgetStop()] } } }
     result = { ...result, host: 'codex', hostRunDir, hostEvents: events, checkpoint: existsSync(join(hostRunDir, 'checkpoint.json')) ? join(hostRunDir, 'checkpoint.json') : null }
+    if (pin) guardEngine(pin)
+    result.provenance = await runProvenance(repo, { ...args, design: result.design || args.design }, executor, { ...result.final, runDir: result.runDir, hostRunDir })
+    if (result.summary) result.summary.provenance = result.provenance
     // An interruption may bypass the engine's final report. Keep measured effort, leaving
     // phase-specific findings and decisions unknown instead of dropping the failed run.
     result.metrics ||= { version: 1, taskId: args.evaluation?.taskId || null, variant: args.evaluation?.variant || null,
