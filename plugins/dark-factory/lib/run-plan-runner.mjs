@@ -21,6 +21,7 @@ const inside = (root, path) => { const rel = relative(root, path); return rel !=
 export async function runPlan(options, dependencies = {}) {
   let state, stateDir, planPath, planRel, repo, lock, lockOwned = false, branch, controlFiles = {}
   let interrupted = false, stopChild = null
+  const engine = options.engine || null
   const now = dependencies.now || Date.now
   const emit = dependencies.progress || (message => process.stderr.write(message + '\n'))
   const git = (argv, extra = {}) => execFileSync('git', ['-C', repo || options.cwd, ...argv], { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024, stdio: ['pipe', 'pipe', 'pipe'], ...extra,
@@ -266,12 +267,15 @@ export async function runPlan(options, dependencies = {}) {
         const S = json(file)
         if (S.version !== 1 || S.repo !== repo || S.branch !== branch || S.planPath !== planPath || S.definition !== fingerprint(plan) || fingerprint(S.references) !== fingerprint(references)) throw new Error('Run-plan definition, references, repository, or branch changed; saved state was not reused. Keep existing artifacts and use a new plan for changed scope.')
         if (fingerprint(S.controlFiles || {}) !== fingerprint(controlFiles)) throw new Error('Run-plan control files changed; saved state was not reused.')
+        // A plugin update mid-plan would silently continue on different code; refuse instead.
+        if (engine && S.engine && S.engine !== engine) throw new Error(`Run-plan ${S.plan.id} started on engine ${S.engine}, but the installed engine is ${engine}. Finish it with the original plugin or start a new plan.`)
+        if (engine && !S.engine) emit(`run-plan ${S.plan.id}: journal predates engine recording; resuming on the installed engine ${engine}`)
         state = S
         return S
       }
       clean()
       if (raw.progress || readdirSync(stateDir).length) throw new Error('Run-plan journal is missing but progress or artifacts remain; cannot reconstruct spent budgets safely')
-      const S = { version: 1, repo, branch, planPath, planTracked, controlFiles, plan, references, definition: fingerprint(plan), head: head(), turns: 0, elapsedMs: 0,
+      const S = { version: 1, engine, repo, branch, planPath, planTracked, controlFiles, plan, references, definition: fingerprint(plan), head: head(), turns: 0, elapsedMs: 0,
         tasks: Object.fromEntries([...plan.tasks.map(t => t.id), 'acceptance'].map(id => [id, { status: 'pending', attempts: 0 }])), decisions: [], active: null }
       await save(S)
       return S
@@ -329,7 +333,7 @@ export async function runPlan(options, dependencies = {}) {
       const milliseconds = Math.min(S.plan.limits.taskMaxRunMin * 60000, S.plan.limits.maxRunMin * 60000 - S.elapsedMs)
       const directory = assertLocation(join(stateDir, `${task.id}-${record.attempts + 1}`))
       if (existsSync(directory)) throw new Error('Attempt artifacts already exist without an active reservation; preserve them and inspect the journal')
-      record.attempts++; record.status = 'running'
+      record.attempts++; record.status = 'running'; record.base = S.head
       S.turns += turns; S.elapsedMs += milliseconds
       S.active = { task: task.id, base: S.head, directory, turns, milliseconds, startedAt: now(), pid: null }
       S.active.decisionsFile = join(directory, 'decisions.json')

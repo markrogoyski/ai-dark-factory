@@ -160,6 +160,23 @@ test('an interrupted delivery whose verification passed commits on resume withou
   assert.equal(f.state().tasks.one.commit, f.git('rev-parse', 'HEAD'))
 })
 
+test('the journal records its engine and task bases; resume refuses a different engine', async t => {
+  const f = fixture(t, plan([task('one')]))
+  const [x, y] = ['a'.repeat(64), 'b'.repeat(64)], base = f.git('rev-parse', 'HEAD'), messages = []
+  const start = (engine, deps = {}) => runPlan({ ...f.options, engine }, { progress: m => messages.push(m), runTask: f.runTask, ...deps })
+  await start(x, { at: name => { if (name === 'after-reserve') throw new Error('crash') } })
+  assert.equal(f.state().engine, x)
+  assert.equal(f.state().tasks.one.base, base)
+  const refused = await start(y)
+  assert.equal(refused.error, `Run-plan test started on engine ${x}, but the installed engine is ${y}. Finish it with the original plugin or start a new plan.`)
+  assert.equal(f.state().active.task, 'one')
+  const old = f.state(); delete old.engine
+  writeFileSync(join(f.stateDir, 'state.json'), JSON.stringify(old, null, 2))
+  const resumed = await start(y)
+  assert.equal(resumed.tasks.one.status, 'parked', JSON.stringify(resumed))
+  assert.ok(messages.some(m => /journal predates engine recording/.test(m)))
+})
+
 test('interrupted attempts retain their reservation and park without resetting checkout', async t => {
   const p = plan([task('one')]); p.limits = { maxTurns: 10, taskMaxTurns: 4 }
   const f = fixture(t, p)

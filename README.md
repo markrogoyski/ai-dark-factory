@@ -209,6 +209,9 @@ not silently extended.
 For tracked plans, completed code and the controller-owned `progress` field share a commit, with
 `Factory-Plan` and `Factory-Task` trailers. `.council/run-plan-ID/state.json` also retains
 unsuccessful attempts, questions, decisions, and budget accounting. Keep it and child-run evidence.
+It records the engine's package digest and each task's base commit. Resuming after a plugin
+update is refused: finish the plan with the plugin that started it, or start a new plan. Older
+journals without the digest resume with a warning.
 Before launching, the controller reserves an attempt's allowed turns and time. A completed
 attempt settles to measured usage; an interrupted attempt conservatively retains its full
 reservation, so restarting cannot replenish its budget. Interrupted delivery reserves additional

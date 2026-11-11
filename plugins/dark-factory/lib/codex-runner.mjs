@@ -403,7 +403,7 @@ export async function runWorkflow(options, dependencies = {}) {
   const executor = pin ? guardEngine(pin) : liveIdentity()
   if (options.workflow === 'run-plan') {
     const { runPlan } = await import('./run-plan-runner.mjs')
-    return runPlan(options, dependencies.runPlan)
+    return runPlan({ ...options, engine: executor.packageDigest }, dependencies.runPlan)
   }
   let resumeMeta = null
   if (options.resume) {
