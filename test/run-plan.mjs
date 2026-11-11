@@ -148,6 +148,18 @@ test('a delivery commit that landed before its journal write is adopted without 
   assert.equal(f.state().tasks.one.commit, landed)
 })
 
+test('an interrupted delivery whose verification passed commits on resume without reverifying', async t => {
+  const f = fixture(t, plan([task('one')]))
+  await f.invoke({ at: name => { if (name === 'before-commit') throw new Error('interrupt before-commit') } })
+  const d = f.state().active.delivery
+  assert.equal(read(join(d.runDir, 'delivery.json')).status, 'delivered')
+  const resumed = await f.invoke({ verifyDelivery: () => { throw new Error('Must not reverify a passed delivery') } })
+  assert.equal(resumed.final.readiness.state, 'ready', JSON.stringify(resumed))
+  assert.equal(f.git('rev-list', '--count', 'HEAD'), '2')
+  assert.equal(f.git('rev-parse', 'HEAD^{tree}'), d.tree)
+  assert.equal(f.state().tasks.one.commit, f.git('rev-parse', 'HEAD'))
+})
+
 test('interrupted attempts retain their reservation and park without resetting checkout', async t => {
   const p = plan([task('one')]); p.limits = { maxTurns: 10, taskMaxTurns: 4 }
   const f = fixture(t, p)

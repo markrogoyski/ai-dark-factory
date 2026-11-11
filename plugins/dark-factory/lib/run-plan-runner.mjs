@@ -179,8 +179,12 @@ export async function runPlan(options, dependencies = {}) {
     }
     if (d.planBytes) writeFileSync(planPath, d.planBytes)
     if (workspaceTree() !== d.tree) throw new Error('Delivery differs from the prepared tree')
+    // A verification that passed before an interruption covers these exact bytes on this base:
+    // its run is unique to this delivery, and the checkout still equals the prepared tree.
+    const deliveryFile = join(d.runDir, 'delivery.json')
+    const verified = existsSync(deliveryFile) && json(deliveryFile).status === 'delivered' && json(deliveryFile).mainHead === d.base
     await point('before-verify-delivery')
-    try {
+    if (!verified) try {
       const outcome = dependencies.verifyDelivery ? await dependencies.verifyDelivery(S, d) : await helperCall(S, [
         'verify-delivery', '--run-dir', d.runDir, '--result', d.result, '--manifest', d.manifest, '--max-wait', '5',
         '--suite-timeout', String(Math.max(1, Math.floor(millisecondsLeft(S) / 1000))),
