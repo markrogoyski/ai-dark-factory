@@ -29,12 +29,18 @@ test('merged settings and implicit grants cannot be narrowed by application prof
     return { ...r, json: JSON.parse(r.stdout) }
   }
   assert.equal(call().status, 0)
+  f.update({ sources: { [join(f.env.CODEX_HOME, 'config.toml')]: { status: 'file', text: `model = \"ordinary-model\"\n[profiles.inactive.sandbox_workspace_write]\nwritable_roots = [${JSON.stringify(f.output)}]` } } })
+  assert.equal(call().status, 0, 'inactive profiles do not grant write access')
+  f.update({ sources: {} })
   for (const [path, text] of [
     [join(f.env.CODEX_HOME, 'config.toml'), `sandbox_workspace_write = { writable_roots = [${JSON.stringify(f.output)}] }`],
+    [join(f.env.CODEX_HOME, 'config.toml'), `profile = "wide"\n[profiles.wide.sandbox_workspace_write]\nwritable_roots = [${JSON.stringify(f.output)}]`],
     [join(f.target, '.codex/config.toml'), `[profiles.wide.sandbox_workspace_write]\nwritable_roots = [${JSON.stringify(f.output)}]`],
     ['/etc/codex/managed_config.toml', `sandbox_workspace_write = { writable_roots = [${JSON.stringify(f.dir)}] }`]
   ]) {
-    f.update({ sources: { [path]: { status: 'file', text } } })
+    const sources = { [path]: { status: 'file', text } }
+    if (path === join(f.target, '.codex/config.toml')) sources[join(f.env.CODEX_HOME, 'config.toml')] = { status: 'file', text: `[projects.${JSON.stringify(f.target)}]\ntrust_level="trusted"` }
+    f.update({ sources })
     assert.match(call({ DARK_FACTORY_TEST_PROFILE: 'bounded' }).json.error, /overlaps/)
   }
   request.spec.kind = 'claude'

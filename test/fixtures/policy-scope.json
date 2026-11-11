@@ -1,0 +1,31 @@
+{
+  "valid": [
+    "function a(S, {x = 1, ...rest} = {}) { let sum=0; for (const n of [x]) { sum += n }; try { throw sum } catch (e) { return [e,rest] } }",
+    "function a(S) { const words=['require','process']; return `${words.map(String).join(':')}` }",
+    "function a(S) { return Math.max(...Array.from(new Set([1,2])).map(Number)) }",
+    "function a(S) { const recur=n=>n ? recur(n-1) : 0; return recur(2) }",
+    "function a(S) { const { value: v } = S; return { v, [v]: v } }"
+  ],
+  "invalid": [
+    "function a(S) { return missingPureDependency(S) }",
+    "function a(S) { return console.log(S) }",
+    "function a(S) { return Math.random() }",
+    "function a(S) { return Math['random']() }",
+    "function a(S) { const m=Math; return m.random() }",
+    "function a(S) { const {random}=Math; return random() }",
+    "function a(S) { return Math[S.key]() }",
+    "function a(S) { const O=Object; return O.setPrototypeOf(S,{}) }",
+    "function a(S) { Object.keys=()=>[] }",
+    "function a(S) { delete Object.keys }",
+    "function a(S) { return performance.now() }",
+    "function a(S) { return crypto.randomUUID() }",
+    "function a(S) { return setTimeout(()=>{},1) }",
+    "function a(S) { return Buffer.from('x') }",
+    "function a(S) { return `${process.env.HOME}` }",
+    "function a(S) { return import('node:fs') }",
+    "function a(S) { return ({}).constructor.constructor('return process')() }",
+    "function a(S) { const f=require; return f('node:fs') }",
+    "function a(S) { return agent(S) }",
+    "function a(S) { return S.runtime.agent() }"
+  ]
+}

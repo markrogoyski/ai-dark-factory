@@ -1,0 +1,857 @@
+{
+  "escapes": [
+    {
+      "name": "await module destructuring",
+      "ext": "mjs",
+      "source": "const{createRequire:load}=await import('node:module');console.log(load(import.meta.url)('../outside.cjs'))"
+    },
+    {
+      "name": "namespace module destructuring",
+      "ext": "mjs",
+      "source": "import * as mod from 'node:module';const{createRequire:load}=mod;console.log(load(import.meta.url)('../outside.cjs'))"
+    },
+    {
+      "name": "CJS module destructuring",
+      "ext": "cjs",
+      "source": "const{createRequire:load}=require('node:module');console.log(load(__filename)('../outside.cjs'))"
+    },
+    {
+      "name": "default module object",
+      "ext": "mjs",
+      "source": "import mod from 'node:module';console.log(mod.createRequire(import.meta.url)('../outside.cjs'))"
+    },
+    {
+      "name": "named Module class",
+      "ext": "mjs",
+      "source": "import{Module}from'node:module';console.log(Module.createRequire(import.meta.url)('../outside.cjs'))"
+    },
+    {
+      "name": "renamed factory",
+      "ext": "mjs",
+      "source": "import{createRequire as load}from'node:module';console.log(load(import.meta.url)('../outside.cjs'))"
+    },
+    {
+      "name": "mjs builtin module module destructure",
+      "ext": "mjs",
+      "source": "const{createRequire:load}=process.getBuiltinModule('module');console.log(load(import.meta.url)('../outside.cjs'))"
+    },
+    {
+      "name": "mjs builtin module module member",
+      "ext": "mjs",
+      "source": "const load=process.getBuiltinModule('module').createRequire;console.log(load(import.meta.url)('../outside.cjs'))"
+    },
+    {
+      "name": "mjs builtin module module computed",
+      "ext": "mjs",
+      "source": "const k='getBuiltin'+'Module',f='create'+'Require';const load=process[k]('module')[f];console.log(load(import.meta.url)('../outside.cjs'))"
+    },
+    {
+      "name": "mjs builtin module node:module destructure",
+      "ext": "mjs",
+      "source": "const{createRequire:load}=process.getBuiltinModule('node:module');console.log(load(import.meta.url)('../outside.cjs'))"
+    },
+    {
+      "name": "mjs builtin module node:module member",
+      "ext": "mjs",
+      "source": "const load=process.getBuiltinModule('node:module').createRequire;console.log(load(import.meta.url)('../outside.cjs'))"
+    },
+    {
+      "name": "mjs builtin module node:module computed",
+      "ext": "mjs",
+      "source": "const k='getBuiltin'+'Module',f='create'+'Require';const load=process[k]('node:module')[f];console.log(load(import.meta.url)('../outside.cjs'))"
+    },
+    {
+      "name": "mjs carrier globalThis.process",
+      "ext": "mjs",
+      "source": "const p=globalThis.process;const k='getBuiltin'+'Module',f='create'+'Require';console.log(p[k]('module')[f](import.meta.url)('../outside.cjs'))"
+    },
+    {
+      "name": "mjs carrier global.process",
+      "ext": "mjs",
+      "source": "const p=global.process;const k='getBuiltin'+'Module',f='create'+'Require';console.log(p[k]('module')[f](import.meta.url)('../outside.cjs'))"
+    },
+    {
+      "name": "mjs carrier self.process",
+      "ext": "mjs",
+      "source": "const self=globalThis;const p=self.process;const k='getBuiltin'+'Module',f='create'+'Require';console.log(p[k]('module')[f](import.meta.url)('../outside.cjs'))"
+    },
+    {
+      "name": "mjs global alias",
+      "ext": "mjs",
+      "source": "const root=globalThis;const p=root.process;console.log(p['getBuiltinModule']('module')['createRequire'](import.meta.url)('../outside.cjs'))"
+    },
+    {
+      "name": "mjs Function evaluator",
+      "ext": "mjs",
+      "source": "const load=Function('return process.getBuiltin'+'Module(\"module\").createRequire')();console.log(load(import.meta.url)('../outside.cjs'))"
+    },
+    {
+      "name": "cjs builtin module module destructure",
+      "ext": "cjs",
+      "source": "const{createRequire:load}=process.getBuiltinModule('module');console.log(load(__filename)('../outside.cjs'))"
+    },
+    {
+      "name": "cjs builtin module module member",
+      "ext": "cjs",
+      "source": "const load=process.getBuiltinModule('module').createRequire;console.log(load(__filename)('../outside.cjs'))"
+    },
+    {
+      "name": "cjs builtin module module computed",
+      "ext": "cjs",
+      "source": "const k='getBuiltin'+'Module',f='create'+'Require';const load=process[k]('module')[f];console.log(load(__filename)('../outside.cjs'))"
+    },
+    {
+      "name": "cjs builtin module node:module destructure",
+      "ext": "cjs",
+      "source": "const{createRequire:load}=process.getBuiltinModule('node:module');console.log(load(__filename)('../outside.cjs'))"
+    },
+    {
+      "name": "cjs builtin module node:module member",
+      "ext": "cjs",
+      "source": "const load=process.getBuiltinModule('node:module').createRequire;console.log(load(__filename)('../outside.cjs'))"
+    },
+    {
+      "name": "cjs builtin module node:module computed",
+      "ext": "cjs",
+      "source": "const k='getBuiltin'+'Module',f='create'+'Require';const load=process[k]('node:module')[f];console.log(load(__filename)('../outside.cjs'))"
+    },
+    {
+      "name": "cjs carrier globalThis.process",
+      "ext": "cjs",
+      "source": "const p=globalThis.process;const k='getBuiltin'+'Module',f='create'+'Require';console.log(p[k]('module')[f](__filename)('../outside.cjs'))"
+    },
+    {
+      "name": "cjs carrier global.process",
+      "ext": "cjs",
+      "source": "const p=global.process;const k='getBuiltin'+'Module',f='create'+'Require';console.log(p[k]('module')[f](__filename)('../outside.cjs'))"
+    },
+    {
+      "name": "cjs carrier self.process",
+      "ext": "cjs",
+      "source": "const self=globalThis;const p=self.process;const k='getBuiltin'+'Module',f='create'+'Require';console.log(p[k]('module')[f](__filename)('../outside.cjs'))"
+    },
+    {
+      "name": "cjs global alias",
+      "ext": "cjs",
+      "source": "const root=globalThis;const p=root.process;console.log(p['getBuiltinModule']('module')['createRequire'](__filename)('../outside.cjs'))"
+    },
+    {
+      "name": "cjs Function evaluator",
+      "ext": "cjs",
+      "source": "const load=Function('return process.getBuiltin'+'Module(\"module\").createRequire')();console.log(load(__filename)('../outside.cjs'))"
+    },
+    {
+      "name": "process mainModule",
+      "ext": "cjs",
+      "source": "const m=process.mainModule;console.log(m.constructor._load('../outside.cjs',m,false))"
+    },
+    {
+      "name": "wrapper module constructor",
+      "ext": "cjs",
+      "source": "console.log(module.constructor._load('../outside.cjs',module,false))"
+    },
+    {
+      "name": "wrapper module alias",
+      "ext": "cjs",
+      "source": "const m=module;console.log(m.constructor._load('../outside.cjs',m,false))"
+    },
+    {
+      "name": "wrapper Object recovery",
+      "ext": "cjs",
+      "source": "console.log(Object.getPrototypeOf(module).constructor._load('../outside.cjs',module,false))"
+    },
+    {
+      "name": "wrapper Reflect recovery",
+      "ext": "cjs",
+      "source": "console.log(Reflect.get(module,'constructor')._load('../outside.cjs',module,false))"
+    },
+    {
+      "name": "direct eval",
+      "ext": "cjs",
+      "source": "console.log(eval('req'+'uire')('../outside.cjs'))"
+    },
+    {
+      "name": "indirect eval global loader",
+      "ext": "cjs",
+      "source": "const run=(0,eval);const load=run('process.getBuiltin'+'Module(\"module\").createRequire');console.log(load(__filename)('../outside.cjs'))"
+    },
+    {
+      "name": "wrapper arguments require",
+      "ext": "cjs",
+      "source": "console.log(arguments[1]('../outside.cjs'))"
+    },
+    {
+      "name": "wrapper arguments module",
+      "ext": "cjs",
+      "source": "const m=arguments[2];console.log(m.constructor._load('../outside.cjs',m,false))"
+    },
+    {
+      "name": "wrapper arguments arrow",
+      "ext": "cjs",
+      "source": "console.log((()=>arguments[1])()('../outside.cjs'))"
+    },
+    {
+      "name": "var module constructor",
+      "ext": "cjs",
+      "source": "var module;console.log(module.constructor._load('../outside.cjs',module,false))"
+    },
+    {
+      "name": "var arguments require",
+      "ext": "cjs",
+      "source": "var arguments;console.log(arguments[1]('../outside.cjs'))"
+    },
+    {
+      "name": "block var arguments arrow",
+      "ext": "cjs",
+      "source": "{var arguments}const f=()=>arguments[1];console.log(f()('../outside.cjs'))"
+    },
+    {
+      "name": "var require computed",
+      "ext": "cjs",
+      "source": "var require;console.log(require('../out'+'side.cjs'))"
+    },
+    {
+      "name": "var module self initializer",
+      "ext": "cjs",
+      "source": "var module=module;console.log(module.require('../outside.cjs'))"
+    },
+    {
+      "name": "for var module",
+      "ext": "cjs",
+      "source": "for(var module;false;){}console.log(module.constructor._load('../outside.cjs',module,false))"
+    },
+    {
+      "name": "conditional var arguments",
+      "ext": "cjs",
+      "source": "if(false){var arguments}console.log(arguments[1]('../outside.cjs'))"
+    },
+    {
+      "name": "with process loader",
+      "ext": "cjs",
+      "source": "with(process){console.log(getBuiltinModule('node:module').createRequire(__filename)('../outside.cjs'))}"
+    },
+    {
+      "name": "vm evaluator",
+      "ext": "mjs",
+      "source": "import vm from'node:vm';const load=vm.runInThisContext('process.getBuiltin'+'Module(\"module\").createRequire');console.log(load(import.meta.url)('../outside.cjs'))"
+    },
+    {
+      "name": "inspector evaluator",
+      "ext": "mjs",
+      "source": "import{Session}from'node:inspector';const s=new Session();s.connect();try{await new Promise((resolve,reject)=>s.post('Runtime.evaluate',{expression:'process.getBuiltin'+'Module(\"module\").createRequire('+JSON.stringify(import.meta.url)+')('+JSON.stringify('../outside.cjs')+')',returnByValue:true},(err,r)=>{if(err||r.exceptionDetails)return reject(err||new Error(JSON.stringify(r.exceptionDetails)));console.log(r.result.value);resolve()}))}finally{s.disconnect()}"
+    }
+  ],
+  "refusals": [
+    {
+      "name": "factory exported",
+      "ext": "mjs",
+      "source": "import{createRequire}from'node:module';export{createRequire}"
+    },
+    {
+      "name": "factory passed",
+      "ext": "mjs",
+      "source": "import{createRequire}from'node:module';void [createRequire]"
+    },
+    {
+      "name": "factory alternate origin",
+      "ext": "mjs",
+      "source": "import{createRequire}from'node:module';const require=createRequire('file:///tmp/entry.mjs');require('./inside.cjs')"
+    },
+    {
+      "name": "factory chained direct",
+      "ext": "mjs",
+      "source": "import{createRequire}from'node:module';createRequire(import.meta.url)('./inside.cjs')"
+    },
+    {
+      "name": "loader alias",
+      "ext": "mjs",
+      "source": "import{createRequire}from'node:module';const require=createRequire(import.meta.url);const load=require;load('./inside.cjs')"
+    },
+    {
+      "name": "loader escaped spelling",
+      "ext": "mjs",
+      "source": "import{createRequire}from'node:module';const require=createRequire(import.meta.url);const load=requ\\u0069re;load('./inside.cjs')"
+    },
+    {
+      "name": "loader exported",
+      "ext": "mjs",
+      "source": "import{createRequire}from'node:module';const require=createRequire(import.meta.url);export{require}"
+    },
+    {
+      "name": "loader rebound",
+      "ext": "mjs",
+      "source": "import{createRequire}from'node:module';const require=createRequire(import.meta.url);require=()=>0"
+    },
+    {
+      "name": "loader shadow",
+      "ext": "mjs",
+      "source": "import{createRequire}from'node:module';const require=createRequire(import.meta.url);function f(require){return require('./inside.cjs')}"
+    },
+    {
+      "name": "loader bind",
+      "ext": "mjs",
+      "source": "import{createRequire}from'node:module';const require=createRequire(import.meta.url);require.bind(null)('./inside.cjs')"
+    },
+    {
+      "name": "loader optional",
+      "ext": "mjs",
+      "source": "import{createRequire}from'node:module';const require=createRequire(import.meta.url);require?.('./inside.cjs')"
+    },
+    {
+      "name": "loader constructor",
+      "ext": "mjs",
+      "source": "import{createRequire}from'node:module';const require=createRequire(import.meta.url);new require('./inside.cjs')"
+    },
+    {
+      "name": "loader tagged",
+      "ext": "mjs",
+      "source": "import{createRequire}from'node:module';const require=createRequire(import.meta.url);require`./inside.cjs`"
+    },
+    {
+      "name": "inside namespace module",
+      "ext": "mjs",
+      "source": "import * as mod from'node:module';const{createRequire:load}=mod;load(import.meta.url)('./inside.cjs')"
+    },
+    {
+      "name": "factory reexport",
+      "ext": "mjs",
+      "source": "export{createRequire}from'node:module'"
+    },
+    {
+      "name": "escaped evaluator",
+      "ext": "mjs",
+      "source": "const run=ev\\u0061l;void run"
+    },
+    {
+      "name": "computed evaluator member",
+      "ext": "mjs",
+      "source": "const run=globalThis['eval'];void run"
+    },
+    {
+      "name": "destructured evaluator",
+      "ext": "mjs",
+      "source": "const{Function:run}=globalThis;void run"
+    },
+    {
+      "name": "global alias escape",
+      "ext": "mjs",
+      "source": "const g=globalThis;console.log(g)"
+    },
+    {
+      "name": "conditional global alias escape",
+      "ext": "mjs",
+      "source": "const g=true?globalThis:{};console.log(g)"
+    },
+    {
+      "name": "global computed key",
+      "ext": "mjs",
+      "source": "const g=globalThis;void g['pro'+'cess']"
+    },
+    {
+      "name": "process alias",
+      "ext": "mjs",
+      "source": "const p=process"
+    },
+    {
+      "name": "process destructuring",
+      "ext": "mjs",
+      "source": "const{env}=process"
+    },
+    {
+      "name": "process dlopen shape",
+      "ext": "mjs",
+      "source": "process.dlopen({exports:{}},'../outside.node')"
+    },
+    {
+      "name": "process computed dlopen shape",
+      "ext": "mjs",
+      "source": "process['dlopen']({exports:{}},'../outside.node')"
+    },
+    {
+      "name": "process binding shape",
+      "ext": "mjs",
+      "source": "process.binding('natives')"
+    },
+    {
+      "name": "process linked binding shape",
+      "ext": "mjs",
+      "source": "process._linkedBinding('natives')"
+    },
+    {
+      "name": "process unknown member",
+      "ext": "mjs",
+      "source": "void process.futureMember"
+    },
+    {
+      "name": "process computed member",
+      "ext": "mjs",
+      "source": "void process['c'+'wd']"
+    },
+    {
+      "name": "global process unknown member",
+      "ext": "mjs",
+      "source": "void globalThis.process.futureMember"
+    },
+    {
+      "name": "builtin getter arbitrary receiver",
+      "ext": "mjs",
+      "source": "void data.getBuiltinModule"
+    },
+    {
+      "name": "wrapper require declaration var",
+      "ext": "cjs",
+      "source": "var require;",
+      "reason": "wrapper declaration"
+    },
+    {
+      "name": "wrapper require declaration var branch",
+      "ext": "cjs",
+      "source": "if(false){var require;}",
+      "reason": "wrapper declaration"
+    },
+    {
+      "name": "wrapper require declaration for var",
+      "ext": "cjs",
+      "source": "for(var require;false;){}",
+      "reason": "wrapper declaration"
+    },
+    {
+      "name": "wrapper require declaration root function",
+      "ext": "cjs",
+      "source": "function require(){}",
+      "reason": "wrapper declaration"
+    },
+    {
+      "name": "wrapper require declaration block function",
+      "ext": "cjs",
+      "source": "{function require(){}}",
+      "reason": "wrapper declaration"
+    },
+    {
+      "name": "wrapper require write assignment",
+      "ext": "cjs",
+      "source": "require=null",
+      "reason": "assignment"
+    },
+    {
+      "name": "wrapper require write closure write",
+      "ext": "cjs",
+      "source": "function f(){require=null}",
+      "reason": "assignment"
+    },
+    {
+      "name": "wrapper require write destructure",
+      "ext": "cjs",
+      "source": "({require}={})",
+      "reason": "assignment"
+    },
+    {
+      "name": "wrapper require write array destructure",
+      "ext": "cjs",
+      "source": "[require]=[]",
+      "reason": "assignment"
+    },
+    {
+      "name": "wrapper require write update",
+      "ext": "cjs",
+      "source": "require++",
+      "reason": "assignment"
+    },
+    {
+      "name": "wrapper module declaration var",
+      "ext": "cjs",
+      "source": "var module;",
+      "reason": "wrapper declaration"
+    },
+    {
+      "name": "wrapper module declaration var branch",
+      "ext": "cjs",
+      "source": "if(false){var module;}",
+      "reason": "wrapper declaration"
+    },
+    {
+      "name": "wrapper module declaration for var",
+      "ext": "cjs",
+      "source": "for(var module;false;){}",
+      "reason": "wrapper declaration"
+    },
+    {
+      "name": "wrapper module declaration root function",
+      "ext": "cjs",
+      "source": "function module(){}",
+      "reason": "wrapper declaration"
+    },
+    {
+      "name": "wrapper module declaration block function",
+      "ext": "cjs",
+      "source": "{function module(){}}",
+      "reason": "wrapper declaration"
+    },
+    {
+      "name": "wrapper module write assignment",
+      "ext": "cjs",
+      "source": "module=null",
+      "reason": "assignment"
+    },
+    {
+      "name": "wrapper module write closure write",
+      "ext": "cjs",
+      "source": "function f(){module=null}",
+      "reason": "assignment"
+    },
+    {
+      "name": "wrapper module write destructure",
+      "ext": "cjs",
+      "source": "({module}={})",
+      "reason": "assignment"
+    },
+    {
+      "name": "wrapper module write array destructure",
+      "ext": "cjs",
+      "source": "[module]=[]",
+      "reason": "assignment"
+    },
+    {
+      "name": "wrapper module write update",
+      "ext": "cjs",
+      "source": "module++",
+      "reason": "assignment"
+    },
+    {
+      "name": "wrapper exports declaration var",
+      "ext": "cjs",
+      "source": "var exports;",
+      "reason": "wrapper declaration"
+    },
+    {
+      "name": "wrapper exports declaration var branch",
+      "ext": "cjs",
+      "source": "if(false){var exports;}",
+      "reason": "wrapper declaration"
+    },
+    {
+      "name": "wrapper exports declaration for var",
+      "ext": "cjs",
+      "source": "for(var exports;false;){}",
+      "reason": "wrapper declaration"
+    },
+    {
+      "name": "wrapper exports declaration root function",
+      "ext": "cjs",
+      "source": "function exports(){}",
+      "reason": "wrapper declaration"
+    },
+    {
+      "name": "wrapper exports declaration block function",
+      "ext": "cjs",
+      "source": "{function exports(){}}",
+      "reason": "wrapper declaration"
+    },
+    {
+      "name": "wrapper exports write assignment",
+      "ext": "cjs",
+      "source": "exports=null",
+      "reason": "assignment"
+    },
+    {
+      "name": "wrapper exports write closure write",
+      "ext": "cjs",
+      "source": "function f(){exports=null}",
+      "reason": "assignment"
+    },
+    {
+      "name": "wrapper exports write destructure",
+      "ext": "cjs",
+      "source": "({exports}={})",
+      "reason": "assignment"
+    },
+    {
+      "name": "wrapper exports write array destructure",
+      "ext": "cjs",
+      "source": "[exports]=[]",
+      "reason": "assignment"
+    },
+    {
+      "name": "wrapper exports write update",
+      "ext": "cjs",
+      "source": "exports++",
+      "reason": "assignment"
+    },
+    {
+      "name": "wrapper arguments declaration var",
+      "ext": "cjs",
+      "source": "var arguments;",
+      "reason": "wrapper declaration"
+    },
+    {
+      "name": "wrapper arguments declaration var branch",
+      "ext": "cjs",
+      "source": "if(false){var arguments;}",
+      "reason": "wrapper declaration"
+    },
+    {
+      "name": "wrapper arguments declaration for var",
+      "ext": "cjs",
+      "source": "for(var arguments;false;){}",
+      "reason": "wrapper declaration"
+    },
+    {
+      "name": "wrapper arguments declaration root function",
+      "ext": "cjs",
+      "source": "function arguments(){}",
+      "reason": "wrapper declaration"
+    },
+    {
+      "name": "wrapper arguments declaration block function",
+      "ext": "cjs",
+      "source": "{function arguments(){}}",
+      "reason": "wrapper declaration"
+    },
+    {
+      "name": "wrapper arguments write assignment",
+      "ext": "cjs",
+      "source": "arguments=null",
+      "reason": "assignment"
+    },
+    {
+      "name": "wrapper arguments write closure write",
+      "ext": "cjs",
+      "source": "const f=()=>{arguments=null}",
+      "reason": "assignment"
+    },
+    {
+      "name": "wrapper arguments write destructure",
+      "ext": "cjs",
+      "source": "({arguments}={})",
+      "reason": "assignment"
+    },
+    {
+      "name": "wrapper arguments write array destructure",
+      "ext": "cjs",
+      "source": "[arguments]=[]",
+      "reason": "assignment"
+    },
+    {
+      "name": "wrapper arguments write update",
+      "ext": "cjs",
+      "source": "arguments++",
+      "reason": "assignment"
+    },
+    {
+      "name": "root lexical module",
+      "ext": "cjs",
+      "source": "const module={};",
+      "reason": "wrapper declaration"
+    },
+    {
+      "name": "benign with",
+      "ext": "cjs",
+      "source": "with({value:1}){void value}",
+      "reason": "dynamic scope"
+    },
+    {
+      "name": "free module alias",
+      "ext": "cjs",
+      "source": "const m=module"
+    },
+    {
+      "name": "wrapper argument destructure",
+      "ext": "cjs",
+      "source": "const[first]=arguments"
+    },
+    {
+      "name": "wrapper arrow argument",
+      "ext": "cjs",
+      "source": "const f=()=>arguments"
+    },
+    {
+      "name": "wrapper module destructure",
+      "ext": "cjs",
+      "source": "const{exports}=module"
+    },
+    {
+      "name": "direct require computed",
+      "ext": "cjs",
+      "source": "require('./in'+'side.cjs')"
+    },
+    {
+      "name": "anonymous default function body still checked",
+      "ext": "mjs",
+      "source": "export default function(){return process.getBuiltinModule('module')}"
+    },
+    {
+      "name": "anonymous async default function dependency still checked",
+      "ext": "mjs",
+      "source": "export default async function(){return import('../outside.cjs')}"
+    }
+  ],
+  "controls": [
+    {
+      "name": "canonical ESM loader",
+      "ext": "mjs",
+      "source": "import{createRequire}from'node:module';const require=createRequire(import.meta.url);console.log(require('./inside.cjs'))"
+    },
+    {
+      "name": "canonical percent loader",
+      "ext": "mjs",
+      "source": "import{createRequire}from'node:module';const require=createRequire(import.meta.url);console.log(require('./%2e%2e/inside.cjs'))"
+    },
+    {
+      "name": "CJS literal loader",
+      "ext": "cjs",
+      "source": "console.log(require('./inside.cjs'))"
+    },
+    {
+      "name": "CJS literal percent loader",
+      "ext": "cjs",
+      "source": "console.log(require('./%2e%2e/inside.cjs'))"
+    },
+    {
+      "name": "CJS exports property",
+      "ext": "cjs",
+      "source": "exports.value='inside-inventory';console.log(module.exports.value)"
+    },
+    {
+      "name": "CJS module typeof",
+      "ext": "cjs",
+      "source": "if(typeof module==='object')module['exports'].value='inside-inventory';console.log(module.exports.value)"
+    },
+    {
+      "name": "function arguments",
+      "ext": "cjs",
+      "source": "function f(){return arguments[0]}console.log(f('inside-inventory'))"
+    },
+    {
+      "name": "function var arguments",
+      "ext": "cjs",
+      "source": "function f(){var arguments;return arguments[0]}console.log(f('inside-inventory'))"
+    },
+    {
+      "name": "method arguments",
+      "ext": "cjs",
+      "source": "const data={value(){return arguments[0]}};console.log(data.value('inside-inventory'))"
+    },
+    {
+      "name": "nested arrow arguments",
+      "ext": "cjs",
+      "source": "function f(){return(()=>arguments[0])()}console.log(f('inside-inventory'))"
+    },
+    {
+      "name": "nested module parameter",
+      "ext": "cjs",
+      "source": "function f(module){return module.value}console.log(f({value:'inside-inventory'}))"
+    },
+    {
+      "name": "nested module local",
+      "ext": "cjs",
+      "source": "function f(){const module={value:'inside-inventory'};return module.value}console.log(f())"
+    },
+    {
+      "name": "function lexical arguments",
+      "ext": "cjs",
+      "source": "function f(){let arguments='inside-inventory';return arguments}console.log(f())"
+    },
+    {
+      "name": "nested lexical arguments",
+      "ext": "cjs",
+      "source": "{const arguments='inside-inventory';console.log(arguments)}"
+    },
+    {
+      "name": "factory local exports",
+      "ext": "cjs",
+      "source": "function factory(){var exports=Object.create(null);exports.value='inside-inventory';return exports}console.log(factory().value)"
+    },
+    {
+      "name": "ESM local module",
+      "ext": "mjs",
+      "source": "const module={value:'inside-inventory'};console.log(module.value)"
+    },
+    {
+      "name": "inert properties",
+      "ext": "mjs",
+      "source": "const data={process:'inside-inventory',arguments:'with (process)',module:1,eval:'inert',Function:3};console.log(data.process)"
+    },
+    {
+      "name": "process data access",
+      "ext": "mjs",
+      "source": "void process.env['NOT_SET'];void globalThis.process.version;console.log('inside-inventory')"
+    },
+    {
+      "name": "UMD lexical alias",
+      "ext": "cjs",
+      "source": "(function(global,factory){typeof exports==='object'&&typeof module!=='undefined'?factory(exports):typeof define==='function'&&define.amd?define(['exports'],factory):(global=typeof globalThis!=='undefined'?globalThis:global||self,factory(global.acorn={}))})(this,(function(exports){'use strict';exports.value='inside-inventory'}));console.log(exports.value)"
+    },
+    {
+      "name": "global alias receiver",
+      "ext": "mjs",
+      "source": "const g=globalThis;void g.process.pid;console.log('inside-inventory')"
+    },
+    {
+      "name": "evaluator constructor",
+      "ext": "mjs",
+      "source": "const AsyncFunction=Object.getPrototypeOf(async function(){}).constructor;console.log(await new AsyncFunction('return \"inside-inventory\"')())"
+    },
+    {
+      "name": "allowed builtin child_process",
+      "ext": "mjs",
+      "source": "import 'node:child_process';console.log('inside-inventory')"
+    },
+    {
+      "name": "allowed builtin crypto",
+      "ext": "mjs",
+      "source": "import 'node:crypto';console.log('inside-inventory')"
+    },
+    {
+      "name": "allowed builtin fs",
+      "ext": "mjs",
+      "source": "import 'node:fs';console.log('inside-inventory')"
+    },
+    {
+      "name": "allowed builtin module",
+      "ext": "mjs",
+      "source": "import 'node:module';console.log('inside-inventory')"
+    },
+    {
+      "name": "allowed builtin os",
+      "ext": "mjs",
+      "source": "import 'node:os';console.log('inside-inventory')"
+    },
+    {
+      "name": "allowed builtin path",
+      "ext": "mjs",
+      "source": "import 'node:path';console.log('inside-inventory')"
+    },
+    {
+      "name": "allowed builtin url",
+      "ext": "mjs",
+      "source": "import 'node:url';console.log('inside-inventory')"
+    },
+    {
+      "name": "own function arguments assignment",
+      "ext": "cjs",
+      "source": "function f(){arguments=['inside-inventory'];return arguments[0]}console.log(f())"
+    },
+    {
+      "name": "anonymous default function",
+      "ext": "mjs",
+      "source": "import value from './inside.cjs';export default function(){return value};console.log(value)"
+    },
+    {
+      "name": "anonymous default async function",
+      "ext": "mjs",
+      "source": "import value from './inside.cjs';export default async function(){return value};console.log(value)"
+    },
+    {
+      "name": "anonymous default class",
+      "ext": "mjs",
+      "source": "export default class{};console.log('inside-inventory')"
+    }
+  ],
+  "dataControls": [
+    {
+      "name": "inert loader property key",
+      "ext": "mjs",
+      "source": "const data={process:'inside-inventory',arguments:'with (process)',module:1,require:2,eval:'inert',Function:3};console.log(data.process)"
+    }
+  ]
+}

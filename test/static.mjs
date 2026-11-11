@@ -7,10 +7,11 @@
 //   node test/static.mjs
 
 import { readFileSync, readdirSync } from 'node:fs'
-import { LIB, PAIR_LIB, RUN_PLAN_LIB, POLICY_LIB } from '../tools/sources.mjs'
+import { LIB, PAIR_LIB, RUN_PLAN_LIB, POLICY_LIB, POLICY_EXPORTS, TARGETS } from '../tools/sources.mjs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import assert from 'node:assert/strict'
+import { assertPolicy } from '../tools/policy-static.mjs'
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..')
 const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor
@@ -78,7 +79,7 @@ for (const file of readdirSync(join(root, 'plugins', 'dark-factory', 'workflows'
 for (const file of new Set([...LIB, ...PAIR_LIB, ...RUN_PLAN_LIB, ...POLICY_LIB])) {
   const lines = readFileSync(join(root, file), 'utf8').split('\n')
   const bad = []
-  if (POLICY_LIB.includes(file) && /\b(?:import|require|process|globalThis|fetch|Date|eval)\b|\bnew\s+Function\b|\bnode:/.test(lines.filter(l => !/^\s*\/\//.test(l)).join('\n'))) bad.push(`${file}: policy accesses I/O or ambient runtime`)
+
   for (let i = 0; i < lines.length; i++) {
     const m = lines[i].match(/^(?:async )?function (\w+)\(([^)]*)\)/)
     if (!m) continue
@@ -92,6 +93,8 @@ for (const file of new Set([...LIB, ...PAIR_LIB, ...RUN_PLAN_LIB, ...POLICY_LIB]
   for (const [l, n] of runtime) bad.push(`${file}:${n} calls the runtime: ${l.trim().slice(0, 80)}`)
   if (bad.length) { failed++; console.log(`FAIL ${file}:\n  ${bad.join('\n  ')}`) } else console.log(`ok   ${file}: pure (state passed in, no runtime calls)`)
 }
+
+try { assertPolicy(POLICY_LIB.map(file => ({ file, text: readFileSync(join(root, file), 'utf8') })), POLICY_EXPORTS, TARGETS.policy.trailer) } catch (e) { failed++; console.log(`FAIL ${e.message}`) }
 
 // The checker itself: it must reject what it is there to reject.
 for (const [label, text, ok] of [

@@ -33,7 +33,7 @@ export function readEventLog(path, repairTail = false) {
   return events
 }
 
-const git = (repo, ...args) => execFileSync('git', ['-C', repo, ...args], { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 })
+const git = (repo, ...args) => execFileSync('git', ['-C', repo, ...args], { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024, stdio: ['pipe', 'pipe', 'pipe'] })
 const fileHash = path => {
   try { return lstatSync(path).isSymbolicLink() ? `link:${readlinkSync(path)}` : digest(readFileSync(path)) } catch (error) { if (error.code === 'ENOENT') return 'absent'; throw error }
 }

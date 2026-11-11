@@ -2525,7 +2525,7 @@ function engineIdentityIssues(S, expected, observed) {
       if (expected[key] !== observed?.[key]) issues.push(`Executor ${key} changed`)
     }
     if (expected.mode === 'pinned' && observed?.mode === 'pinned' && expected.sourceRevision !== observed.sourceRevision) issues.push('Executor sourceRevision changed')
-    if (JSON.stringify(expected.runtimeVersions) !== JSON.stringify(observed?.runtimeVersions)) issues.push('Executor runtime changed')
+    if (expected.mode === 'pinned' && observed?.mode === 'pinned' && JSON.stringify(expected.runtimeVersions) !== JSON.stringify(observed.runtimeVersions)) issues.push('Executor runtime changed')
   }
   return issues
 }

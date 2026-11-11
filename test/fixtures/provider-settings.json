@@ -1,0 +1,87 @@
+{
+  "codex": {
+    "model": "gpt-6.1-sol",
+    "personality": "pragmatic",
+    "model_reasoning_effort": "high",
+    "approvals_reviewer": "user",
+    "approval_policy": "on-request",
+    "sandbox_mode": "workspace-write",
+    "tui": {
+      "animations": false
+    },
+    "projects": {
+      "/example/project": {
+        "trust_level": "trusted"
+      }
+    },
+    "notice": {
+      "hide_full_access_warning": true,
+      "model_migrations": {
+        "old": "new"
+      }
+    },
+    "plugins": {
+      "inactive@example": {
+        "enabled": false
+      }
+    },
+    "marketplaces": {
+      "example": {
+        "source": "https://example.invalid/catalog.git",
+        "source_type": "git",
+        "ref": "main",
+        "sparse_paths": [
+          "catalog"
+        ]
+      }
+    }
+  },
+  "claude": {
+    "model": "opus",
+    "effortLevel": "high",
+    "theme": "dark",
+    "permissions": {
+      "allow": [
+        "Read(/docs/**)",
+        "Bash(ack:*)"
+      ],
+      "deny": [
+        "Read(.env)"
+      ]
+    },
+    "enabledPlugins": {
+      "dark-factory@example": true
+    },
+    "outputStyle": "concise",
+    "statusLine": {
+      "type": "command",
+      "command": "printf status"
+    },
+    "tui": "fullscreen",
+    "autoMode": {
+      "allow": [
+        "Read documentation"
+      ],
+      "hard_deny": [
+        "Never publish"
+      ],
+      "classifyAllShell": true
+    },
+    "extraKnownMarketplaces": {
+      "example": {
+        "source": {
+          "source": "github",
+          "repo": "example/catalog"
+        }
+      }
+    }
+  },
+  "gemini": {
+    "toolPermission": "proceed-in-sandbox",
+    "permissions": {
+      "allow": [
+        "write_file(/example/scratch)"
+      ]
+    }
+  }
+}

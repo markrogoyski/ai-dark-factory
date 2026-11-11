@@ -4,11 +4,13 @@
 import { readFileSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { TARGETS } from './sources.mjs'
+import { assertPolicy } from './policy-static.mjs'
+import { POLICY_EXPORTS, TARGETS } from './sources.mjs'
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..')
 
 export function build(target) {
+  if (target === 'policy') assertPolicy(TARGETS.policy.order.map(file => ({ file, text: readFileSync(join(root, file), 'utf8') })), POLICY_EXPORTS, TARGETS.policy.trailer)
   return TARGETS[target].order.map(f => readFileSync(join(root, f), 'utf8').replace(/\n+$/, '\n')).join('\n') + (TARGETS[target].trailer || '')
 }
 

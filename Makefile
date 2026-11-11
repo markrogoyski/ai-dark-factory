@@ -25,6 +25,8 @@ test:
 host-test:
 	$(NODE) --test test/host-logic.mjs test/codex-runner.mjs test/codex-install.mjs test/checkpoint.mjs test/run-plan.mjs
 	$(NODE) --test test/engine-identity.mjs test/engine-isolation.mjs test/engine-closure.mjs test/provenance.mjs test/policy-bundle.mjs test/engine-bootstrap.mjs test/pinned-providers.mjs test/pinned-state.mjs test/pinned-delivery.mjs
+	$(NODE) --test test/provider-policy.mjs test/provider-settings.mjs test/provider-routing.mjs test/live-compatibility.mjs test/engine-imports.mjs test/engine-loader-bindings.mjs test/engine-loader-controls.mjs test/engine-publication.mjs test/validation-overhead.mjs
+	$(NODE) --test test/pin-diagnostics.mjs test/engine-links.mjs test/engine-descriptors.mjs test/provider-refusal.mjs
 
 static:
 	$(NODE) test/static.mjs
@@ -38,7 +40,7 @@ unit:
 syntax:
 	@for f in test/*.mjs test/fixtures/*.cjs tools/*.mjs plugins/dark-factory/lib/*.mjs plugins/dark-factory/skills/dark-factory/scripts/*.mjs plugins/dark-factory/bin/dark-factory-codex plugins/dark-factory/bin/dark-factory-evaluate; do $(NODE) --check $$f || exit 1; done
 	@bash -n install-codex.sh
-	@$(PYTHON) -B -c "import sys; [compile(open(f).read(), f, 'exec') for f in sys.argv[1:]]" plugins/dark-factory/bin/dark-factory $(wildcard test/*.py)
+	@$(PYTHON) -B -c "import sys; [compile(open(f).read(), f, 'exec') for f in sys.argv[1:]]" plugins/dark-factory/bin/dark-factory plugins/dark-factory/lib/engine-publish.py $(wildcard test/*.py)
 	@echo "syntax: ok"
 
 # A plugin installed from a local folder is read from it live, so there is nothing to copy; this checks

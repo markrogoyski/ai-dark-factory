@@ -1,0 +1,503 @@
+[
+  {
+    "workflow": "factory",
+    "args": {
+      "task": "Implement example",
+      "tier": "simple",
+      "strategy": "auto"
+    },
+    "vendors": [
+      "claude",
+      "codex"
+    ],
+    "error": false
+  },
+  {
+    "workflow": "factory",
+    "args": {
+      "task": "Implement example",
+      "tier": "simple",
+      "strategy": "pair"
+    },
+    "vendors": [
+      "claude",
+      "codex"
+    ],
+    "error": false
+  },
+  {
+    "workflow": "factory",
+    "args": {
+      "task": "Implement example",
+      "tier": "simple",
+      "strategy": "independent"
+    },
+    "vendors": [
+      "claude",
+      "codex"
+    ],
+    "error": false
+  },
+  {
+    "workflow": "factory",
+    "args": {
+      "task": "Implement example",
+      "tier": "fix",
+      "strategy": "auto"
+    },
+    "vendors": [
+      "claude",
+      "codex"
+    ],
+    "error": false
+  },
+  {
+    "workflow": "factory",
+    "args": {
+      "task": "Implement example",
+      "tier": "fix",
+      "strategy": "pair"
+    },
+    "vendors": [
+      "claude",
+      "codex"
+    ],
+    "error": false
+  },
+  {
+    "workflow": "factory",
+    "args": {
+      "task": "Implement example",
+      "tier": "fix",
+      "strategy": "independent"
+    },
+    "vendors": [
+      "claude",
+      "codex"
+    ],
+    "error": false
+  },
+  {
+    "workflow": "factory",
+    "args": {
+      "task": "Implement example",
+      "tier": "feature",
+      "strategy": "auto"
+    },
+    "vendors": [
+      "claude",
+      "codex"
+    ],
+    "error": false
+  },
+  {
+    "workflow": "factory",
+    "args": {
+      "task": "Implement example",
+      "tier": "feature",
+      "strategy": "pair"
+    },
+    "vendors": [
+      "claude",
+      "codex"
+    ],
+    "error": false
+  },
+  {
+    "workflow": "factory",
+    "args": {
+      "task": "Implement example",
+      "tier": "feature",
+      "strategy": "independent"
+    },
+    "vendors": [
+      "claude",
+      "codex"
+    ],
+    "error": false
+  },
+  {
+    "workflow": "factory",
+    "args": {
+      "task": "Implement example",
+      "tier": "architecture",
+      "strategy": "auto"
+    },
+    "vendors": [
+      "claude",
+      "codex"
+    ],
+    "error": false
+  },
+  {
+    "workflow": "factory",
+    "args": {
+      "task": "Implement example",
+      "tier": "architecture",
+      "strategy": "pair"
+    },
+    "vendors": [
+      "claude",
+      "codex"
+    ],
+    "error": true
+  },
+  {
+    "workflow": "factory",
+    "args": {
+      "task": "Implement example",
+      "tier": "architecture",
+      "strategy": "independent"
+    },
+    "vendors": [
+      "claude",
+      "codex"
+    ],
+    "error": false
+  },
+  {
+    "workflow": "pair",
+    "args": {
+      "task": "Fix",
+      "author": "sol",
+      "reviewer": "astra"
+    },
+    "vendors": [
+      "codex"
+    ]
+  },
+  {
+    "workflow": "pair",
+    "args": {
+      "task": "Fix",
+      "author": "sol",
+      "reviewer": "opus"
+    },
+    "vendors": [
+      "claude",
+      "codex"
+    ]
+  },
+  {
+    "workflow": "ensemble",
+    "args": {
+      "task": "Fix",
+      "seats": "sol,astra",
+      "candidates": 2,
+      "models": {
+        "review": "sol",
+        "compare": "opus"
+      }
+    },
+    "vendors": [
+      "claude",
+      "codex"
+    ]
+  },
+  {
+    "workflow": "council",
+    "args": {
+      "task": "Fix",
+      "seats": "astra,sol",
+      "panel": "astra,sol",
+      "roles": {
+        "checker": "opus"
+      }
+    },
+    "vendors": [
+      "claude",
+      "codex"
+    ]
+  },
+  {
+    "workflow": "factory",
+    "args": {
+      "task": "Fix",
+      "strategy": "pair",
+      "pair": {
+        "author": "sol",
+        "reviewer": "astra"
+      }
+    },
+    "vendors": [
+      "codex"
+    ]
+  },
+  {
+    "workflow": "factory",
+    "args": {
+      "task": "Fix",
+      "strategy": "independent",
+      "seats": "astra,sol"
+    },
+    "vendors": [
+      "codex"
+    ]
+  },
+  {
+    "workflow": "factory",
+    "args": {
+      "task": "Fix",
+      "strategy": "pair",
+      "seats": "astra,sol"
+    },
+    "error": true
+  },
+  {
+    "workflow": "factory",
+    "args": {
+      "task": "Fix",
+      "strategy": "invalid"
+    },
+    "error": true
+  },
+  {
+    "workflow": "factory",
+    "args": {
+      "task": "Fix",
+      "strategy": "independent",
+      "seats": "astra,sol",
+      "roles": {
+        "intake": "opus"
+      }
+    },
+    "vendors": [
+      "claude",
+      "codex"
+    ]
+  },
+  {
+    "workflow": "factory",
+    "args": {
+      "task": "Fix",
+      "strategy": "independent",
+      "seats": "astra,sol",
+      "roles": {
+        "setup": "opus"
+      }
+    },
+    "vendors": [
+      "claude",
+      "codex"
+    ]
+  },
+  {
+    "workflow": "factory",
+    "args": {
+      "task": "Fix",
+      "strategy": "independent",
+      "seats": "astra,sol",
+      "roles": {
+        "checker": "opus"
+      }
+    },
+    "vendors": [
+      "claude",
+      "codex"
+    ]
+  },
+  {
+    "workflow": "factory",
+    "args": {
+      "task": "Fix",
+      "strategy": "independent",
+      "seats": "astra,sol",
+      "roles": {
+        "questions": "opus"
+      }
+    },
+    "vendors": [
+      "claude",
+      "codex"
+    ]
+  },
+  {
+    "workflow": "factory",
+    "args": {
+      "task": "Fix",
+      "strategy": "independent",
+      "seats": "astra,sol",
+      "roles": {
+        "spec": "opus"
+      }
+    },
+    "vendors": [
+      "claude",
+      "codex"
+    ]
+  },
+  {
+    "workflow": "factory",
+    "args": {
+      "task": "Fix",
+      "strategy": "independent",
+      "seats": "astra,sol",
+      "roles": {
+        "retro": "opus"
+      }
+    },
+    "vendors": [
+      "claude",
+      "codex"
+    ]
+  },
+  {
+    "workflow": "factory",
+    "args": {
+      "task": "Fix",
+      "strategy": "independent",
+      "seats": "astra,sol",
+      "roles": {
+        "record": "opus"
+      }
+    },
+    "vendors": [
+      "claude",
+      "codex"
+    ]
+  },
+  {
+    "workflow": "council",
+    "args": {
+      "task": "Fix",
+      "seats": "astra,sol",
+      "panel": "astra,sol",
+      "spec": false,
+      "retro": false,
+      "roles": {
+        "intake": "opus",
+        "spec": "opus",
+        "record": "opus",
+        "retro": "opus"
+      }
+    },
+    "vendors": [
+      "codex"
+    ]
+  },
+  {
+    "workflow": "ensemble",
+    "args": {
+      "task": "Fix",
+      "seats": "astra,sol",
+      "candidates": 2,
+      "roles": {
+        "intake": "opus",
+        "spec": "opus",
+        "questions": "opus",
+        "retro": "opus",
+        "record": "opus"
+      }
+    },
+    "vendors": [
+      "codex"
+    ]
+  },
+  {
+    "workflow": "factory",
+    "args": {
+      "task": "Fix",
+      "tier": "feature",
+      "strategy": "independent",
+      "seats": "astra,sol",
+      "simple": {
+        "implementer": "opus"
+      }
+    },
+    "vendors": [
+      "codex"
+    ]
+  },
+  {
+    "workflow": "factory",
+    "args": {
+      "task": "Fix",
+      "tier": "fix",
+      "strategy": "independent",
+      "seats": "astra,sol",
+      "retro": false,
+      "roles": {
+        "record": "opus"
+      }
+    },
+    "vendors": [
+      "claude",
+      "codex"
+    ]
+  },
+  {
+    "workflow": "factory",
+    "args": {
+      "task": "Fix",
+      "strategy": "pair",
+      "mode": "investigate"
+    },
+    "error": true
+  },
+  {
+    "workflow": "council",
+    "args": {
+      "task": "Inspect",
+      "mode": "investigate",
+      "seats": "astra,sol",
+      "panel": "astra,sol",
+      "spec": false,
+      "retro": false,
+      "audit": {
+        "design": "opus"
+      }
+    },
+    "vendors": [
+      "codex"
+    ]
+  },
+  {
+    "workflow": "factory",
+    "args": {
+      "task": "Investigate example",
+      "mode": "investigate",
+      "tier": "feature",
+      "strategy": "independent",
+      "seats": "astra,sol",
+      "audit": {
+        "tests": "opus"
+      }
+    },
+    "vendors": [
+      "claude",
+      "codex"
+    ]
+  },
+  {
+    "workflow": "ensemble",
+    "args": {
+      "task": "Inspect",
+      "mode": "investigate",
+      "seats": "sol,astra",
+      "models": {
+        "review": "opus",
+        "compare": "sol"
+      }
+    },
+    "vendors": [
+      "claude",
+      "codex"
+    ]
+  },
+  {
+    "workflow": "ensemble",
+    "args": {
+      "task": "Inspect",
+      "mode": "implement",
+      "seats": "sol,astra",
+      "models": {
+        "review": "opus",
+        "compare": "sol"
+      }
+    },
+    "vendors": [
+      "claude",
+      "codex"
+    ]
+  }
+]

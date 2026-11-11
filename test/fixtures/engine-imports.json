@@ -1,0 +1,29 @@
+{
+  "valid": [
+    "import {\n value\n} from './local.mjs';",
+    "export {\n value\n} from './local.mjs';",
+    "export * from './local.mjs';",
+    "const x = import('./local.mjs');",
+    "const text = `import bad from 'external'`; // import('external')\nconst re=/import\\('external'\\)/;",
+    "const x = `${await import('./local.mjs')}`;"
+  ],
+  "invalid": [
+    "import x from 'external';",
+    "export * from '../outside.mjs';",
+    "const x=import(name);",
+    "const x=import(`./local.mjs`);",
+    "const x=`${import('external')}`;",
+    "const x=require('external');",
+    "const x=require(name);",
+    "const x=import('node:not-a-real-builtin');",
+    "import './missing.mjs';",
+    "function {",
+    "const r=require; r('external');",
+    "import {createRequire as r} from 'node:module'; const x=r(import.meta.url); x('external');",
+    "const x=module.require('external');"
+  ],
+  "cjs": [
+    "const x=require('./local.mjs'); module.exports=x;",
+    "/* import bad from 'external' */ module.exports='text';"
+  ]
+}

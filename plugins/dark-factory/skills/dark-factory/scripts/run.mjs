@@ -7,7 +7,7 @@ import { fileURLToPath } from 'node:url'
 
 const here = dirname(realpathSync(fileURLToPath(import.meta.url)))
 const runner = resolve(here, '../../../bin/dark-factory-codex')
-const child = spawn(process.execPath, [runner, ...process.argv.slice(2)], { stdio: 'inherit' })
+const child = spawn(process.execPath, [runner, ...process.argv.slice(2)], { stdio: ['inherit', 'inherit', 'inherit'] })
 
 const signals = ['SIGINT', 'SIGTERM']
 const forward = new Map(signals.map(signal => [signal, () => child.kill(signal)]))

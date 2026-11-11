@@ -15,7 +15,7 @@
     "evaluator": {"type": ["object", "null"]},
     "invocation": {"type": ["object", "null"]},
     "candidate": {"type": ["object", "null"]},
-    "inputs": {"type": ["object", "null"]}
+    "inputs": {"type": ["object", "null"], "properties": {"providerSettings": {"type": "array", "items": {"type": "object", "properties": {"settingsVersion": {"type": "integer", "enum": [1]}}}}}}
   },
   "additionalProperties": false,
   "definitions": {
