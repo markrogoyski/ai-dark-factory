@@ -606,7 +606,7 @@ async function inspectBounds(executor, spec, env) {
           } else if (raw.status === 'file') {
             if (/^\s*(hooks|mcpServers|agent):/m.test(raw.text) && /\.md$/.test(path)) plugin.unknown.push('executable component frontmatter')
             if (!presentation) plugin.executable.push([relative(location, path), sha256(raw.text), raw.mode ?? null])
-          } else plugin.unknown.push(`unreadable component: ${path}`)
+          } else plugin.unknown.push('unreadable component')
         }
         for (const path of ['bin', 'lib', 'workflows', 'skills', 'commands', 'agents']) walk(join(location, path))
         walk(join(location, 'output-styles'), true)
