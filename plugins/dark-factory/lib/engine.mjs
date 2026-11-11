@@ -723,10 +723,20 @@ export async function bootstrap(argv, entry = 'bin/dark-factory-codex') {
     const inputs = []
     for (let i = 0; i < rest.length; i++) {
       if (['--output', '--outcomes'].includes(rest[i])) { i++; continue }
-      if (!rest[i].startsWith('-')) inputs.push(rest[i])
+      // Collected runs bind the evaluator exactly as listed ones do; unreadable ones are skipped later.
+      if (rest[i] === '--collect' && rest[i + 1]) {
+        const council = existsSync(join(resolve(rest[++i]), '.council')) ? join(resolve(rest[i]), '.council') : resolve(rest[i])
+        for (const name of existsSync(council) ? readdirSync(council) : []) {
+          const file = join(council, name, 'result.json')
+          if (name.startsWith('host-') && existsSync(file)) inputs.push({ file, optional: true })
+        }
+        continue
+      }
+      if (!rest[i].startsWith('-')) inputs.push({ file: rest[i] })
     }
-    for (const input of inputs) {
-      const recorded = JSON.parse(readFileSync(resolve(input), 'utf8')).provenance?.executor
+    for (const { file, optional } of inputs) {
+      let recorded
+      try { recorded = JSON.parse(readFileSync(resolve(file), 'utf8')).provenance?.executor } catch (error) { if (optional) continue; throw error }
       if (recorded?.mode !== 'pinned') continue
       if (pin && (pin.packageDigest !== recorded.packageDigest || pin.sourceRevision !== recorded.sourceRevision)) throw drift('Evaluation inputs declare different executors')
       pin ||= recorded

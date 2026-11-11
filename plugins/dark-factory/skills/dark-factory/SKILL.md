@@ -23,7 +23,7 @@ arguments. The launcher finds the shipped runner and helper itself; neither need
 Node, Python 3, and an authenticated Codex CLI must be available. Mixed-vendor runs additionally
 need their selected CLIs and authentication.
 
-Use `--explain` to resolve a process without starting implementation (Factory performs intake only). Preserve requested `--strategy`, `--max-turns`, `--max-run-min`, and `--repair-passes`; full repair and evaluation options can be passed through `--args-file`.
+Use `--explain` to resolve a process without starting implementation (Factory performs intake only). Use `--prepare` to check offline, with no model turn and no run directory, that each reachable vendor's CLI answers and every absolute `plan` document exists; it reports roles per vendor, warns about tracked changes absent from HEAD, and leaves authentication unknown. Every new single run makes this check first and returns status `preflight` before intake when something is missing. It does not cover `--resume` or Run-plan. Preserve requested `--strategy`, `--max-turns`, `--max-run-min`, and `--repair-passes`; full repair and evaluation options can be passed through `--args-file`.
 
 Use `--workflow ensemble` for independently reviewed alternatives. Its overall result remains advisory; inspect each candidate's readiness and missing reviews before selecting one. A merge requires fresh verification and review. An unchanged ready candidate can be saved as the result for delivery verification.
 

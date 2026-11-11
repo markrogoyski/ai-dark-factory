@@ -35,6 +35,7 @@ Git, and authenticated CLIs for the selected models.
   --mode MODE                implement, investigate, or design (workflow dependent)
   --strategy NAME            Factory: auto, pair, or independent
   --explain                  Resolve the process without setup or implementation (Factory runs intake)
+  --prepare                  Check CLIs and plan documents offline, then stop; no model turn
   --max-turns N              Run-wide model turn budget, including retries
   --max-run-min N            Run-wide active-time limit
   --repair-passes N          Opt into bounded repairs with fresh review after every pass
@@ -47,6 +48,8 @@ result are retained under <repo>/.council/host-*/. Exit codes: 0 ready, 2 needs
 input/blocked/incomplete, 1 failed. Results stay in their worktrees. This command
 does not apply, commit, or merge them into the main checkout, except run-plan,
 which applies and commits verified tasks within its explicitly requested plan.
+Every new single run makes the --prepare check first and stops with status
+"preflight" before intake when a prerequisite is missing.
 Resume retains concurrency and per-turn timeout settings unless explicitly overridden.
 `
 
@@ -55,7 +58,7 @@ export function resultExitCode(result) {
   if (!result || ['error', 'failed', 'preflight'].includes(result.status)) return 1
   if (result.preflight?.some(check => !check.ok)) return 1
   if (String(result.status).startsWith('needs-') || result.status === 'blocked') return 2
-  if (result.status === 'explained') return 0
+  if (result.status === 'explained' || result.status === 'prepared') return 0
   const readiness = result.final?.readiness || result.readiness
   return readiness?.state === 'ready' ? 0 : 2
 }
@@ -161,6 +164,23 @@ function callHelper(argv, { cwd, env, signal }) {
       }
     })
   })
+}
+
+// Offline launch check: each reachable vendor's CLI answers --version and every named plan
+// document exists. It writes nothing and starts no model turn; authentication stays unknown.
+export async function prepareLaunch(options, repo) {
+  const policy = await import('./policy.mjs')
+  let requirements
+  // Invalid arguments stay the workflow's failure to report, with its metrics, unless asked here.
+  try { requirements = policy.launchRequirements({}, { workflow: options.workflow, args: options.args }) }
+  catch (error) { if (options.prepare) throw error; return null }
+  const vendors = Object.keys(requirements.vendors)
+  const checked = vendors.length ? await callHelper(['preflight', '--vendors', vendors.join(',')], { cwd: repo, env: process.env }) : { vendors: {} }
+  const status = execFileSync('git', ['-C', repo, 'status', '--porcelain', '--untracked-files=no'], { encoding: 'utf8' })
+  return policy.launchReport({}, requirements, {
+    vendors: checked.vendors || Object.fromEntries(vendors.map(vendor => [vendor, { ok: false, error: checked.error || checked.status }])),
+    missing: requirements.references.filter(path => !existsSync(path)),
+    dirty: status.split('\n').filter(Boolean).map(line => line.slice(3)) })
 }
 
 function gitRoot(cwd, ...args) {
@@ -400,6 +420,10 @@ export async function runWorkflow(options, dependencies = {}) {
   }
   const repo = realpathSync(gitRoot(resolve(options.cwd), '--show-toplevel'))
   if (pin && isolationIssues(dirname(pin.root), [repo]).length) throw drift('Pinned export overlaps candidate checkout')
+  // Prepare before intake, so a missing CLI or document costs no model turn and no run directory.
+  const prepared = options.resume ? null : await (dependencies.prepare || prepareLaunch)(options, repo)
+  if (options.prepare) return { status: prepared.status === 'ready' ? 'prepared' : 'preflight', prepared }
+  if (prepared?.status === 'blocked') return { status: 'preflight', error: `Launch preparation found unmet prerequisites; no model turn ran: ${prepared.blocking.join('; ')}`, prepared }
   const commonGit = resolve(repo, gitRoot(repo, '--git-common-dir'))
   const worktreeGit = resolve(repo, gitRoot(repo, '--git-dir'))
   const hostBase = join(repo, '.council')
@@ -473,6 +497,7 @@ export async function runWorkflow(options, dependencies = {}) {
     process.once('SIGINT', interrupt); process.once('SIGTERM', interrupt)
     let result
     try {
+      if (prepared) emit({ type: 'prepare', ...prepared })
       emit({ type: 'run.started', workflow: options.workflow, repo, hostRunDir, resumed: !!saved })
       const execute = new AsyncFunction('agent', 'parallel', 'pipeline', 'phase', 'log', 'args', 'budget', 'workflow', 'factoryRuntime', source)
       const unsupported = () => { throw new Error('The workflow called a runtime function without a host adapter') }

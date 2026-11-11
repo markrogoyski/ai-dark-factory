@@ -1,5 +1,5 @@
 // Offline comparisons. No models, network, pricing assumptions, or account configuration.
-import { readFileSync, existsSync, writeFileSync } from 'node:fs'
+import { readFileSync, existsSync, writeFileSync, readdirSync, statSync } from 'node:fs'
 import { resolve, join } from 'node:path'
 import { guardEngine, environmentPin } from './engine.mjs'
 
@@ -93,20 +93,42 @@ export function evaluateFiles(files, observations = {}) {
   return evaluator ? { ...summary, evaluator } : summary
 }
 
+// Find every host run under a repository's .council, so failed and interrupted runs are counted
+// next to the completed ones rather than left out because nobody listed them.
+export function collectResults(directory) {
+  const base = existsSync(join(directory, '.council')) ? join(directory, '.council') : directory
+  const files = [], incomplete = []
+  for (const name of readdirSync(base).sort()) {
+    const run = join(base, name)
+    if (!name.startsWith('host-') || !statSync(run).isDirectory() || !existsSync(join(run, 'host.json'))) continue
+    const file = join(run, 'result.json')
+    if (!existsSync(file)) { incomplete.push({ hostRunDir: run, reason: existsSync(join(run, 'host.lock')) ? 'running or killed without a result' : 'no result recorded' }); continue }
+    let result = null
+    try { result = JSON.parse(readFileSync(file, 'utf8')) } catch { incomplete.push({ hostRunDir: run, reason: 'unreadable result.json' }); continue }
+    if (result?.metrics?.version !== 1) { incomplete.push({ hostRunDir: run, reason: 'result has no supported metrics' }); continue }
+    files.push(file)
+  }
+  return { base, files, incomplete }
+}
+
 export function evaluationMain(argv) {
   if (argv.includes('--help') || !argv.length) {
-    process.stdout.write('Usage: dark-factory-evaluate [--output summary.json] [--outcomes outcomes.json] result.json ...\nOffline aggregation of recorded outcomes, turns, tokens, findings and delivery checks. Use evaluation: {taskId, variant, repetition} in run arguments for matched comparisons.\n')
+    process.stdout.write('Usage: dark-factory-evaluate [--output summary.json] [--outcomes outcomes.json] [--collect REPO] [result.json ...]\nOffline aggregation of recorded outcomes, turns, tokens, findings and delivery checks. --collect adds every host run under REPO/.council and lists runs without a usable result. Use evaluation: {taskId, variant, repetition} in run arguments for matched comparisons.\n')
     return
   }
-  const files = [], options = {}
+  const files = [], options = {}, collected = []
   for (let i = 0; i < argv.length; i++) {
     if (argv[i] === '--output') { if (!argv[i + 1]) throw new Error('--output needs a path'); options.output = resolve(argv[++i]) }
     else if (argv[i] === '--outcomes') { if (!argv[i + 1]) throw new Error('--outcomes needs a path'); options.observations = JSON.parse(readFileSync(resolve(argv[++i]), 'utf8')) }
+    else if (argv[i] === '--collect') { if (!argv[i + 1]) throw new Error('--collect needs a directory'); collected.push(collectResults(resolve(argv[++i]))) }
     else if (argv[i].startsWith('--')) throw new Error(`Unknown option: ${argv[i]}`)
     else files.push(resolve(argv[i]))
   }
+  for (const found of collected) files.push(...found.files)
   if (!files.length) throw new Error('Provide at least one result.json.')
-  const json = JSON.stringify(evaluateFiles(files, options.observations), null, 2) + '\n'
+  const summary = evaluateFiles([...new Set(files)], options.observations)
+  if (collected.length) summary.collected = collected.map(({ base, files, incomplete }) => ({ base, results: files.length, incomplete }))
+  const json = JSON.stringify(summary, null, 2) + '\n'
   if (options.output) writeFileSync(options.output, json)
   process.stdout.write(json)
 }

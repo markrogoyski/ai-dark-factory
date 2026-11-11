@@ -7,7 +7,7 @@ import { spawnSync } from 'node:child_process'
 import { fixture, root, api } from './fixtures/engine-package.mjs'
 
 // Keep this allowlist independent of the generator's export list.
-const exports = ['engineIdentityIssues', 'pinnedOperationIssues', 'provenanceFacts', 'providerConfiguration', 'reachableProviders']
+const exports = ['engineIdentityIssues', 'launchReport', 'launchRequirements', 'pinnedOperationIssues', 'provenanceFacts', 'providerConfiguration', 'reachableProviders']
 test('policy closure, deterministic intrinsics and native target boundaries', async t => {
   await api(); const f = fixture(t)
   const policy = await import(pathToFileURL(join(f.plugin, 'lib/policy.mjs')))

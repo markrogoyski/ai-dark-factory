@@ -4629,6 +4629,36 @@ function reachableProviders(S, request) {
   return routes.filter((r, i) => routes.findIndex(x => x.vendor === r.vendor && x.role === r.role && x.reason === r.reason) === i)
 }
 
+// What a single run needs before its first model turn: the vendors its reachable routes use,
+// and the plan documents it names. Adapters observe these offline; this only reads the request.
+function launchRequirements(S, request) {
+  if (request.workflow === 'run-plan') throw new Error('Preparation does not support run-plan; prepare its tasks individually')
+  const routes = reachableProviders(S, request), raw = request.args || {}, vendors = {}
+  for (const route of routes) (vendors[route.vendor] ||= []).includes(route.role) || vendors[route.vendor].push(route.role)
+  const plan = Array.isArray(raw.plan) ? raw.plan : raw.plan ? [raw.plan] : []
+  return { workflow: request.workflow || 'factory', vendors, routes,
+    references: plan.map(p => String(p).trim()).filter(p => p.startsWith('/')),
+    worktreesFromHead: !raw.explain && !raw.allowDirty && (!raw.mode || raw.mode === 'implement') }
+}
+
+// Judge the adapter's observations. A missing CLI or document blocks before any model turn;
+// tracked changes only warn, because setup decides them for the mode the run settles on.
+function launchReport(S, requirements, observed) {
+  const blocking = [], warnings = []
+  for (const [vendor, roles] of Object.entries(requirements.vendors)) {
+    const check = observed.vendors?.[vendor]
+    if (!check?.ok) blocking.push(`${vendor} CLI (${roles.join(', ')}): ${check?.error || 'not checked'}`)
+  }
+  for (const path of observed.missing || []) blocking.push(`Plan document not found: ${path}`)
+  if (requirements.worktreesFromHead && observed.dirty?.length) {
+    warnings.push(`Tracked changes are not in HEAD, which seats start from: ${observed.dirty.slice(0, 10).join(', ')}`)
+  }
+  return { version: 1, status: blocking.length ? 'blocked' : 'ready', workflow: requirements.workflow,
+    vendors: Object.fromEntries(Object.entries(requirements.vendors).map(([vendor, roles]) =>
+      [vendor, { roles, ok: !!observed.vendors?.[vendor]?.ok, version: observed.vendors?.[vendor]?.version || null }])),
+    references: requirements.references, blocking, warnings, authentication: 'unknown' }
+}
+
 // This projection contains labels and categories only, never source values or absolute paths.
 function providerDiagnostic(S, observations, unknown) {
   return { type: 'pin.admission', vendor: ['codex', 'claude', 'gemini'].includes(observations.vendor) ? observations.vendor : 'unknown',
@@ -4639,4 +4669,4 @@ function providerDiagnostic(S, observations, unknown) {
     invalidation: 'Persistent approvals changing watched capabilities invalidate this run; one-time approvals without source changes do not.',
     reasons: unknown.length ? ['unknown-capabilities'] : [] }
 }
-export { engineIdentityIssues, pinnedOperationIssues, provenanceFacts, providerConfiguration, reachableProviders }
+export { engineIdentityIssues, launchReport, launchRequirements, pinnedOperationIssues, provenanceFacts, providerConfiguration, reachableProviders }

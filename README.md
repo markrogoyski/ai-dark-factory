@@ -542,6 +542,14 @@ reviewers, required CLIs, verification setting, limits, and expected deliverable
 split decisions, and tier disagreements still take precedence. Explanation of an explicit Pair,
 Council, or Ensemble performs no model turns. It does not run setup, preflight, or verification,
 and does not claim readiness. Architecture explicitly says it returns a plan without building.
+
+`--prepare` is the offline counterpart: no model turn, no run directory, no account change.
+It lists each vendor reachable from the request with the roles it could fill, checks that its
+CLI answers `--version` (the same sandbox and Gemini-settings probe setup makes), and checks
+that absolute `plan` documents exist. Tracked changes absent from HEAD are a warning, because
+setup decides them for the run's mode. Authentication is reported as unknown. Every new single
+run makes the same check first and stops with status `preflight` before intake when anything
+blocks, so a missing CLI no longer costs an intake turn. Resume and Run-plan are not prepared.
 The same controls are available as object arguments in Claude Code.
 
 `maxTurns` (`--max-turns`) limits workflow model turns, including orchestration and explicit
@@ -659,6 +667,11 @@ unknown revisions are labeled. Use several representative tasks and repetitions 
 small changes, ambiguous bugs, scoped features, and architecture work. Compare like-for-like
 inputs and inspect the actual defects found before tuning defaults. Readiness is process
 evidence, not proof of correctness, and duplicate findings are not independent discoveries.
+
+`--collect REPO` adds every `host-*` run under `REPO/.council` instead of a hand-picked list,
+so failed and interrupted runs are counted beside the successful ones. Runs with no result, an
+unreadable one, or no supported metrics are listed under `collected[].incomplete` with the
+reason rather than silently dropped. It can be combined with explicit result files.
 
 For failures discovered after delivery, pass `--outcomes outcomes.json`. This is an explicit
 observation map keyed by `hostRunDir` (or `runDir` for native runs), with values such as

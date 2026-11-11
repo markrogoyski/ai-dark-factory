@@ -26,7 +26,7 @@ host-test:
 	$(NODE) --test test/host-logic.mjs test/codex-runner.mjs test/codex-install.mjs test/checkpoint.mjs test/run-plan.mjs
 	$(NODE) --test test/engine-identity.mjs test/engine-isolation.mjs test/engine-closure.mjs test/provenance.mjs test/policy-bundle.mjs test/engine-bootstrap.mjs test/pinned-providers.mjs test/pinned-state.mjs test/pinned-delivery.mjs
 	$(NODE) --test test/provider-policy.mjs test/provider-settings.mjs test/provider-routing.mjs test/live-compatibility.mjs test/engine-imports.mjs test/engine-loader-bindings.mjs test/engine-loader-controls.mjs test/engine-publication.mjs test/validation-overhead.mjs
-	$(NODE) --test test/pin-diagnostics.mjs test/engine-links.mjs test/engine-descriptors.mjs test/provider-refusal.mjs
+	$(NODE) --test test/pin-diagnostics.mjs test/engine-links.mjs test/engine-descriptors.mjs test/provider-refusal.mjs test/launch-prepare.mjs
 
 static:
 	$(NODE) test/static.mjs

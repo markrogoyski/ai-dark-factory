@@ -26,7 +26,7 @@ const SHARED = [
 export const PAIR_LIB = ['src/lib/pair.js', 'src/lib/pair-prompts.js']
 export const RUN_PLAN_LIB = ['src/lib/run-plan.js']
 export const POLICY_LIB = [...new Set([...LIB, ...PAIR_LIB, 'src/lib/provider-policy.js'])]
-export const POLICY_EXPORTS = ['engineIdentityIssues', 'pinnedOperationIssues', 'provenanceFacts', 'providerConfiguration', 'reachableProviders']
+export const POLICY_EXPORTS = ['engineIdentityIssues', 'launchReport', 'launchRequirements', 'pinnedOperationIssues', 'provenanceFacts', 'providerConfiguration', 'reachableProviders']
 // meta first: the runtime reads `export const meta` from the top of the file.
 export const TARGETS = {
   policy: { output: 'plugins/dark-factory/lib/policy.mjs', order: POLICY_LIB, trailer: `export { ${POLICY_EXPORTS.join(', ')} }\n` },
