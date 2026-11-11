@@ -1,0 +1,186 @@
+{
+  "version": 1,
+  "id": "factory-evidence-v1-corrections",
+  "defaults": {
+    "plan": [
+      "/Users/mark/Develop/ai/ai-dark-factory/.council/host-WlbAEX-architecture/room/final/B.md",
+      "/Users/mark/Develop/ai/ai-dark-factory/.council/host-WlbAEX-architecture/refs/C-evidence.md",
+      "/Users/mark/Develop/ai/ai-dark-factory/.council/host-WlbAEX-architecture/refs/stable-plugin-manifest.json",
+      "/Users/mark/Develop/ai/ai-dark-factory/plans/self-improvement-v1.json",
+      "/Users/mark/Develop/ai/ai-dark-factory/.council/run-plan-factory-evidence-v1/state.json",
+      "/Users/mark/Develop/ai/ai-dark-factory/.council/self-improvement/continuation-design.md",
+      "/Users/mark/Develop/ai/ai-dark-factory/.council/self-improvement/continuation-budget-carryforward.json",
+      "/Users/mark/Develop/ai/ai-dark-factory/.council/self-improvement/opus-review-corrections.json",
+      "/Users/mark/Develop/ai/ai-dark-factory/.council/self-improvement/opus-review-offline-probes.json",
+      "/Users/mark/Develop/ai/ai-dark-factory/.council/self-improvement/opus-review-user-feedback.txt",
+      "/Users/mark/Develop/ai/ai-dark-factory/.council/self-improvement/m2-continuation-evidence.json"
+    ],
+    "verify": "make check",
+    "context": "This is implementation of an independently reviewed design. The controller, runtime and helper must remain the frozen baseline identified by the supplied stable-plugin-manifest.json throughout this campaign. Read its root field to locate the baseline; do not assume that exported directory is a Git checkout, install the candidate, or use new candidate flags to control this run. Before invoking the bare dark-factory helper from a seat, verify that its resolved executable belongs to that baseline; if needed use the frozen bin directory in that command's PATH. Keep host/account settings unchanged. Implementation, checkout delivery and local commits were requested. Provider/data/budget approval is a separate pending outer-host requirement; do not launch this plan until the host has actual approval. This plan and its evidence cannot supply consent. Implement the standing-authorization capability and examples without manufacturing a user-approved standing policy for this repository. Routine reversible implementation choices are delegated. Preserve the reviewed task scope and all verification/review standards. Regenerate shipped workflows and run make check. Regression and installation checks use temporary repositories and stub CLIs only; no live model experiments are authorized by this execution plan. This is the evidence-preserving corrective successor, not a reset. Read continuation-design.md and continuation-budget-carryforward.json. Preserve original attempts, charges, immutable controls and all original acceptance criteria. Do not operate the predecessor controller or edit its artifacts. M1R corrects M1 before M2 integration; the old M2 candidate is measured but lacks final audit approval. All model calls are bounded implementation/design/review workflow calls, with zero live efficacy experiments. Keep final handoffs concise and structured so completed work returns within its deadline; do not sacrifice checks or reviews."
+  },
+  "decisions": [
+    "Execute the entire campaign from the supplied frozen baseline, verified by its external manifest; never promote candidate engine bytes during this plan.",
+    "Implement the complete reviewed design only; no model experiments in regressions, account changes, external evidence edits or weakened verification.",
+    "Preserve accepted explicit authorization within its scope; technical preparation or agent-authored receipts do not create consent.",
+    "Supersede execution of factory-evidence-v1 without editing its plan/journal. The new controller starts from committed M1 and corrects it before integrating M2. Preserve all original requirements and historical failures.",
+    "Carry prior charged 159 turns and 25,944,375 ms separately from the successor ledger. Successor limits are additional ceilings only, yielding at most 400 charged turns and 1199.40625 minutes for Run-plan work. Architecture usage is separate. No budget refund or reset.",
+    "Allow one additional attempt per task initially. M1R is cumulative M1 attempt 4 and M2 is cumulative M2 attempt 2. Any later limit extension must retain both ledgers and respect actual campaign approval.",
+    "The first Pair design review must assess the continuation mapping and M1 correction design. Keep M2 independent design assessment and fresh correctness/design/tests audits; prior interrupted audits confer no readiness.",
+    "Never infer authorization from this plan, diagnostic artifacts or copied quotes. The outer host must resolve its recorded provider/payload approval rejection before launch."
+  ],
+  "limits": {
+    "maxTurns": 241,
+    "maxRunMin": 767,
+    "maxAttempts": 1,
+    "taskMaxTurns": 70,
+    "taskMaxRunMin": 300
+  },
+  "tasks": [
+    {
+      "id": "M1R",
+      "title": "Correct pinned configuration admission and execution identity",
+      "task": "Read the complete reviewed Architecture design, original M1 criteria, continuation-design.md, verified Opus corrections and offline probes. This is cumulative M1 attempt 4, correcting the committed M1 before any M2 integration. Pair must first independently review the corrective design and continuation mapping; implement only after design approval. Correct effective provider configuration admission and reachable provider selection, ordinary live resume compatibility, syntax-aware import validation, atomic export publication and semantic security-relevant settings drift. Follow the detailed requirements and qualifications in the continuation brief. Inspect current source and current primary provider documentation/local implementation as needed. Shared decisions belong in src/; host I/O stays in adapters. Keep original isolation, fresh review, exact-snapshot readiness, strict pinned drift checks and Claude behavior. Use sanitized realistic configuration fixtures and temporary repositories/stub CLIs, never account changes or models in tests. Measure validation overhead offline before any optimization; no unmeasured speed claims or weakened execution-boundary checks. At most four reviewed implementation increments; make build and make check. Do not implement M2-M6, install/promote the candidate, alter the old journal/control plan, or hand-edit generated outputs.",
+      "criteria": [
+        "Exported package and committed source agree by versioned path/content/mode digest; sidecar manifest is outside its own hash. Relocation works; escaping symlinks and modified dependencies refuse before operations.",
+        "Executor identity covers workflows, helper, runner, checkpoint, evaluator and imports. Candidate edits cannot replace N; engine and candidate digests may legitimately be equal.",
+        "Provider stubs, including headless Claude invoking bare dark-factory with a competing live plugin on PATH, resolve N or refuse a mismatched helper before work.",
+        "Generated policy.mjs exports only implemented pure functions via a target-only trailer; native bundles retain literal metadata. Static purity coverage includes its source list; no runtime I/O enters src/lib.",
+        "Identity adapters, schema, temporary-package tests and bootstrap recipe ship together. Old artifacts stay inspectable; drift preserves evidence and refuses resume. make build and make check pass.",
+        "Documented effective provider configurations admit supported ordinary settings through shared policy with adapter observations. Sanitized realistic Codex/Claude shapes cover presentation fields, trust, permission rules and plugins/hooks without blanket acceptance of unknown executable/write capabilities. Only actually reachable providers are required, including conditional control/review/audit/recovery roles; a genuinely Codex-only route succeeds despite irrelevant invalid Claude settings.",
+        "Ordinary live checkpoints with identical package inputs remain resumable after incidental runtime-version changes, while pinned runtime or package drift still refuses. README accurately describes whole-package fingerprints and old-checkpoint incompatibility; no evidence or checkpoints are reset/migrated.",
+        "Executable dependency validation is syntax-aware: multiline static/re-export imports and supported literal dynamic imports are checked; prompt strings/comments/template text do not create dependencies; external, escaping or unsupported computed dependencies refuse. The shipped dependency closure is complete.",
+        "Export publication validates a complete owned staging package before atomic publication. Fault-injection, retry and race fixtures prove no partial public export, no overwrite/deletion of preexisting user data, and cleanup limited to owned staging.",
+        "Settings identity reflects canonical effective capabilities. Whitespace/unrelated presentation edits preserve admission; substantive write-bound, executable capability or hook-enforcement changes still refuse at tool and resume boundaries. Unsupported/unreadable security-relevant settings have specific diagnostics and invalidation is explained before launch.",
+        "Fresh Pair design review covers the correction and continuation mapping, and fresh code review covers the final exact snapshot. All original M1 criteria remain met; make build/make check and native Claude goldens pass. Any performance change has offline measurements and preserved drift detection; no live benefit is claimed from stub timings."
+      ],
+      "after": [],
+      "workflow": "pair",
+      "args": {}
+    },
+    {
+      "id": "M2",
+      "title": "Integrate stable execution across dependent tasks",
+      "task": "Read the supplied complete reviewed design and predecessor results. Implement this milestone only under frozen N: shared src policy, adapter I/O, isolated worktrees, fresh reviews, exact-snapshot readiness and verified delivery. Run make build and make check with temporary repositories/stub CLIs; no models, network or account changes in regressions. Factory feature with strategy independent; at most four increments. Compare integration approaches at child, review, recovery and delivery boundaries, then implement executor identity propagation in shared Run-plan policy and its runtime adapter. Carry candidate bases and immutable reviewed references separately. Include final acceptance and evaluator provenance. Preserve existing scheduling, budgets and crash recovery; no authorization system yet. This is continuation of the retained independent M2 design/implementation, not a greenfield rebuild. Read m2-continuation-evidence.json, the exact approved M2 design and final handoff it references, and the accepted M1R result. Preserve Factory independent attempts and assess only integration choices that changed with corrected M1. After design agreement, import/reconcile candidate commit 56ab216a13c8b7f12d006f0c809097c155dfaf62 (tree 31080e7bbaa84de8008bd2e4c6a94530e2697957, base b1a0038dc484327cb8baf4b00cd01fb6bcc9eae0) into the selected NEW isolated worktree. Preserve old worktree/ref/evidence. Resolve source conflicts, regenerate outputs, and obtain fresh correctness/design/tests audits and exact-snapshot gate/verified delivery. The prior 11 checker claims are reusable evidence of the old bytes only; all three final audits aborted and supplied no approval. Never reintroduce a corrected M1 defect.",
+      "criteria": [
+        "Two dependent stub tasks edit candidate engine files while controller, children, fresh reviewers, helpers and authoritative evaluator retain N. Candidate bases advance only after accepted delivered commits.",
+        "Journal executor identity and immutable reviewed references. Resuming through a changed installation selects the validated existing N or refuses; old unpinned active self-improvement journals are not silently migrated.",
+        "Engine checks surround open, recovery, child execution and delivery under shared policy. Unexpected files or identity drift are preserved; no checkpoint rewriting.",
+        "Prepared-delivery recovery neither duplicates commits nor restores spent budgets; final gate and fresh independent acceptance remain required. Shared policy, adapter integration, provenance journals and adversarial resume/delivery fixtures ship; make build and make check pass.",
+        "The exact retained M2 delta is reconciled against accepted corrected M1 in a new isolated worktree; the old candidate and all failed audit evidence remain intact. Final corrected bytes pass fresh exact-snapshot measurement and independent correctness/design/tests audits before delivery.",
+        "Integrated regression coverage preserves all added M1R configuration, provider selection, live/pinned compatibility, dependency validation, export publication and semantic drift criteria across Run-plan child/review/recovery/delivery/evaluator boundaries."
+      ],
+      "after": [
+        "M1R"
+      ],
+      "workflow": "factory",
+      "args": {
+        "tier": "feature",
+        "strategy": "independent"
+      }
+    },
+    {
+      "id": "M3",
+      "title": "M3 Prepare single runs before intake",
+      "task": "Read the supplied complete reviewed design and predecessor results. Implement this milestone only under frozen N: shared src policy, adapter I/O, isolated worktrees, fresh reviews, exact-snapshot readiness and verified delivery. Run make build and make check with temporary repositories/stub CLIs; no models, network or account changes in regressions. Pair; at most three increments. Add --prepare and pure launchRequirements/scopeDifference policy exported through policy.mjs, host read-only inspection, launch-manifest schema and native prerequisite handling. Cover Factory, Pair, Council and Ensemble entrypoints; explicitly reject Run-plan preparation until M4. Keep --explain documented as model-using. A pure native descriptor may return unknown host facts before intake; it is diagnostic only, never execution readiness or consent.",
+      "criteria": [
+        "Prepare invokes zero model/session/prompt/relay calls, including intake and setup; stub CLIs fail on such invocation. No gates, worktrees, account writes, home creation, network or login; only explicit report output may be written.",
+        "Manifest includes selected/default and reachable conditional providers, intake, reviews, audit, recovery, native transport, referenced evidence and operations with reasons. Missing tools/references/grants or stale inputs block; authentication stays unknown when not observable offline.",
+        "Native prepared entry inspects in the outer host before any transport/model call; without capability it returns an unmet prerequisite. Native defaults do not acquire Codex requirements; ordinary Claude behavior remains.",
+        "Execution revalidates prepared inputs and guards route/scope expansion before access or calls. Synthetic missing CODEX_HOME stays absent and agy settings stay byte-identical; prepared execution requires existing grants.",
+        "Launch schema, generated policy, prepare adapter/CLI, diagnostics, help and host-parity/negative stub fixtures ship together. Unsupported Run-plan prepare cannot fall through to execution. make build and make check pass."
+      ],
+      "after": [
+        "M1R",
+        "M2"
+      ],
+      "workflow": "pair",
+      "args": {}
+    },
+    {
+      "id": "M4",
+      "title": "M4 Reuse actual scoped authorization",
+      "task": "Read the supplied complete reviewed design and predecessor results. Implement this milestone only under frozen N: shared src policy, adapter I/O, isolated worktrees, fresh reviews, exact-snapshot readiness and verified delivery. Run make build and make check with temporary repositories/stub CLIs; no models, network or account changes in regressions. Pair; at most four increments. Add installed-relative skill launch procedure, authorization scope comparison and diagnostic/receipt schemas. Prepare the union of Run-plan defaults, tasks and final acceptance; persist grant linkage across children/resume. Optional repository standing policy requires actual user approval of its hash or displayed exact scope. Host/skill attests the original trusted user source; CLI computes coverage only. No receipt can establish consent.",
+      "criteria": [
+        "Covered explicit user authority causes no repeated request; uncovered initial scope produces one consolidated request. Resume and dependent tasks reuse covered scope; material new provider, evidence root or operation parks before access/call.",
+        "A user-request grant binds exact policy hash, scope, source reference and approval quote. Trusted same-hash cold-session reuse works; changed hash, revocation or unavailable trusted provenance is uncovered.",
+        "Agent-written policy, approved:true, receipt, copied quote, clean Git or absent commit trailer alone cannot create consent. Tests include script-authored policy and missing-grant counterexamples.",
+        "Keep technical readiness, authorization coverage and final readiness separate. Host rejection remains possible and is surfaced without retries that switch providers or bypass controls. No settings changes.",
+        "Installed-relative skill, diagnostic/receipt schemas, continuity journal and examples ship together. Run-plan linkage and union manifest survive resume/delivery; fixtures prove reuse, expansion and external refusal. make build and make check pass."
+      ],
+      "after": [
+        "M2",
+        "M3"
+      ],
+      "workflow": "pair",
+      "args": {}
+    },
+    {
+      "id": "M5",
+      "title": "M5 Collect evidence and compare outcomes",
+      "task": "Read the supplied complete reviewed design and predecessor results. Implement this milestone only under frozen N: shared src policy, adapter I/O, isolated worktrees, fresh reviews, exact-snapshot readiness and verified delivery. Run make build and make check with temporary repositories/stub CLIs; no models, network or account changes in regressions. Pair; at most four increments. Add pure improvement-pack validation, normalization and cohort rules; extend evaluation facts additively and existing evaluator with --manifest input. Emit versioned reference/hash inventory, candidate register and comparison report using only declared inputs. Preserve legacy metrics/output semantics and historical files. Implement snapshot, delivery and post-delivery observation stages; no crawler, automatic policy selection or prompt tuning.",
+      "criteria": [
+        "Canonical attempts and explicit aliases deduplicate host/result copies and parent/child usage. Conflicts stay visible; overlapping review events and distinct annotated defects are reported separately.",
+        "Failed, preflight and interrupted attempts stay in inclusive totals alongside completed matched pairs. Readiness, delivery and observed outcomes differ; source scope remains visible after explicit original delivery joins.",
+        "Unknown timing, costs, usage, intervention and identities remain unknown with coverage. Count admitted turns separately from observed provider calls; cached input is not added twice.",
+        "Cohorts compare task/base, requirements/probes, models/effort, host, environment/dependencies, budgets and engines. Drift or missing fields means exploratory evidence; no causal improvement claim.",
+        "Fixtures reproduce six completed five-turn trial arms, three zero-turn preflight failures, 25 base/25 final replay records, 38 frozen probes per arm and later delivered-versus-not-recorded joins. Snapshot probes never become post-delivery; legacy evaluator behavior stays compatible.",
+        "Pack records synthesis-timeout/missing-milestones failure separately from correct strict-resume refusal, without reset or extra milestone. Pack schema, CLI, candidate register/template and comparison report cover all six outcome dimensions and decision outcomes. make build and make check pass."
+      ],
+      "after": [
+        "M1R",
+        "M4"
+      ],
+      "workflow": "pair",
+      "args": {}
+    },
+    {
+      "id": "M6",
+      "title": "M6 Integrate acceptance and operator handoff",
+      "task": "Read the supplied complete reviewed design and predecessor results. Implement this milestone only under frozen N: shared src policy, adapter I/O, isolated worktrees, fresh reviews, exact-snapshot readiness and verified delivery. Run make build and make check with temporary repositories/stub CLIs; no models, network or account changes in regressions. Pair; at most three increments. Add generic README/pack/Run-plan examples and an offline integrated synthetic successor exercise covering collect, assess, implement and evaluate with two dependent tasks. Preserve the reviewed design hash and executor/candidate/reference chain. Check complete C1-C7 traceability and emit an offline acceptance report. Document continuation after synthesis failure: preserve all artifacts, start a fresh reviewed run with frozen references, and never alter checkpoint state. No historical external project edits, automatic installation, default-policy tuning or live effectiveness experiment.",
+      "criteria": [
+        "Temporary-package stubs cover prepared self-update, fresh reviews, resume, delivery and unchanged authoritative N evaluator; candidate execution is explicitly labeled subject under test.",
+        "All original C1-C7 requirements trace to design, milestone artifacts and regression evidence. Preserve existing readiness, exact snapshots, budgets, delivery checks and strict evidence validation.",
+        "Legacy Claude checks pass without Codex; generated outputs match source and existing prompt goldens remain byte-identical. Run make build and make check without models/network/logins/account changes.",
+        "Run-plan final acceptance separately runs make check and a fresh independent Council on the integrated commit, requiring every task and final criterion met. This authorized review is not a regression experiment.",
+        "Integration regressions, offline report, operator recipe, design/engine hashes and examples ship. Normalized milestones agree with the post and Run-plan; decisions are execution-only and references exclude architecture-only tasks. Report enforcement separately from unmeasured benefit."
+      ],
+      "after": [
+        "M1R",
+        "M2",
+        "M3",
+        "M4",
+        "M5"
+      ],
+      "workflow": "pair",
+      "args": {}
+    }
+  ],
+  "acceptance": {
+    "verify": "make check",
+    "args": {
+      "plan": [
+        "/Users/mark/Develop/ai/ai-dark-factory/.council/host-WlbAEX-architecture/room/final/B.md",
+        "/Users/mark/Develop/ai/ai-dark-factory/.council/host-WlbAEX-architecture/refs/C-evidence.md",
+        "/Users/mark/Develop/ai/ai-dark-factory/.council/host-WlbAEX-architecture/refs/stable-plugin-manifest.json",
+        "/Users/mark/Develop/ai/ai-dark-factory/plans/self-improvement-v1.json",
+        "/Users/mark/Develop/ai/ai-dark-factory/.council/run-plan-factory-evidence-v1/state.json",
+        "/Users/mark/Develop/ai/ai-dark-factory/.council/self-improvement/continuation-design.md",
+        "/Users/mark/Develop/ai/ai-dark-factory/.council/self-improvement/continuation-budget-carryforward.json",
+        "/Users/mark/Develop/ai/ai-dark-factory/.council/self-improvement/opus-review-corrections.json",
+        "/Users/mark/Develop/ai/ai-dark-factory/.council/self-improvement/opus-review-offline-probes.json",
+        "/Users/mark/Develop/ai/ai-dark-factory/.council/self-improvement/opus-review-user-feedback.txt",
+        "/Users/mark/Develop/ai/ai-dark-factory/.council/self-improvement/m2-continuation-evidence.json"
+      ]
+    },
+    "criteria": [
+      "C1: Evidence inventory spans the original dates, trial raw artifacts and continuation failure, classifies candidates against current coverage and preserves unavailable evidence.",
+      "C2: Offline evidence loop separates correctness, reliability, review, intervention, elapsed/model usage, failed attempts, comparability, readiness and actual outcomes with unknowns retained.",
+      "C3: Stable N remains executor and authoritative evaluator across every dependent candidate commit, resume, fresh review, delivery and final acceptance; identity drift refuses safely.",
+      "C4: Offline preparation precedes intake and every transport; actual scoped user authority is reused, material expansion parks, receipts cannot create consent and host controls remain effective.",
+      "C5: Exact-snapshot gates, fresh independent reviews after fixes, isolation, source/runtime boundaries and Claude behavior remain enforced without reduced checks.",
+      "C6: All six reviewed milestones are delivered in local commits with frozen complete design and lossless structured Run-plan mapping; final acceptance is fresh and independent.",
+      "C7: Generated outputs, make build and make check pass; temporary-repository stub regressions consume zero models/network/logins/account changes and prove launch and authority boundaries.",
+      "C8: Every original task/final criterion remains represented verbatim, corrected M1 precedes integrated M2, all additive correction criteria pass, old plan/journal/snapshots/reviews remain unchanged, and campaign reporting includes both ledgers and prior attempt counts without claiming interrupted audits as approval."
+    ]
+  }
+}

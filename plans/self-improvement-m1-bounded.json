@@ -1,0 +1,111 @@
+{
+  "version": 1,
+  "id": "factory-evidence-m1-bounded",
+  "defaults": {
+    "plan": [
+      "/Users/mark/Develop/ai/ai-dark-factory/.council/host-WlbAEX-architecture/room/final/B.md",
+      "/Users/mark/Develop/ai/ai-dark-factory/.council/host-WlbAEX-architecture/refs/C-evidence.md",
+      "/Users/mark/Develop/ai/ai-dark-factory/.council/host-WlbAEX-architecture/refs/stable-plugin-manifest.json",
+      "/Users/mark/Develop/ai/ai-dark-factory/plans/self-improvement-v1.json",
+      "/Users/mark/Develop/ai/ai-dark-factory/.council/run-plan-factory-evidence-v1/state.json",
+      "/Users/mark/Develop/ai/ai-dark-factory/.council/self-improvement/continuation-design.md",
+      "/Users/mark/Develop/ai/ai-dark-factory/.council/self-improvement/continuation-budget-carryforward.json",
+      "/Users/mark/Develop/ai/ai-dark-factory/.council/self-improvement/opus-review-corrections.json",
+      "/Users/mark/Develop/ai/ai-dark-factory/.council/self-improvement/opus-review-offline-probes.json",
+      "/Users/mark/Develop/ai/ai-dark-factory/.council/self-improvement/opus-review-user-feedback.txt",
+      "/Users/mark/Develop/ai/ai-dark-factory/.council/self-improvement/m2-continuation-evidence.json",
+      "/Users/mark/Develop/ai/ai-dark-factory/plans/self-improvement-v1-corrections.json",
+      "/Users/mark/Develop/ai/ai-dark-factory/.council/run-plan-factory-evidence-v1-corrections/state.json",
+      "/Users/mark/Develop/ai/ai-dark-factory/.council/host-E4G9aQ-pair/room/pair-design-4/A.md",
+      "/Users/mark/Develop/ai/ai-dark-factory/.council/host-E4G9aQ-pair/room/pair-code-5/A.md",
+      "/Users/mark/Develop/ai/ai-dark-factory/.council/host-E4G9aQ-pair/room/pair-code-6/A.md",
+      "/Users/mark/Develop/ai/ai-dark-factory/.council/host-E4G9aQ-pair/jobs/review-pair-code-5/out.json",
+      "/Users/mark/Develop/ai/ai-dark-factory/.council/host-3IWaQu-architecture/room/final3/C.md",
+      "/Users/mark/Develop/ai/ai-dark-factory/.council/host-3IWaQu-architecture/room/final3/C-milestones.json",
+      "/Users/mark/Develop/ai/ai-dark-factory/.council/host-3IWaQu-architecture/jobs/reaudit-grounding/out.json",
+      "/Users/mark/Develop/ai/ai-dark-factory/.council/self-improvement/m1-boundary-architecture-settlement.json",
+      "/Users/mark/Develop/ai/ai-dark-factory/.council/self-improvement/m1-bounded-campaign-criteria.json",
+      "/Users/mark/Develop/ai/ai-dark-factory/.council/self-improvement/m1-bounded-continuation.md",
+      "/Users/mark/Develop/ai/ai-dark-factory/.council/self-improvement/m1r-exact-snapshot-import-escape.json",
+      "/Users/mark/Develop/ai/ai-dark-factory/.council/self-improvement/reproduce-encoded-import-escape.mjs",
+      "/Users/mark/Develop/ai/ai-dark-factory/.council/self-improvement/m1r-host-sleep-observation.json",
+      "/Users/mark/Develop/ai/ai-dark-factory/.council/self-improvement/m1-boundary-checkpoint-preflight.json"
+    ],
+    "verify": "make build && make check",
+    "context": "Read m1-bounded-continuation.md as the current scoped execution brief. Older pending-approval/phase statements in historical references are superseded by actual conversation authorization and the settlement, never by invented consent. The focused Architecture is incomplete; perform fresh scoped Pair design review before code. Preserve the frozen executor and retained evidence. This plan can accept only bounded corrective work; overall M1 and campaign remain incomplete. Do not implement M2-M6 or conditional boundary work. Existing user authorization permits routine choices and same-scope restarts, implementation, reviewed delivery and local commits; no account changes or live efficacy experiments."
+  },
+  "decisions": [
+    "Use unchanged frozen e494 for every controller, helper, review, verification and delivery operation.",
+    "Fresh Pair design review is required before bounded implementation; final3 Architecture is proposal/evidence, not an approved design.",
+    "Preserve all 46 original/additive campaign obligations and all old controls, candidates, evidence and charges. Partial bounded acceptance is not M1 or campaign acceptance; M2 is blocked.",
+    "One initial bounded implementation increment plus at most two reviewed correction increments consumes the remaining three of the existing four-total M1R cap; no new architecture or fifth increment.",
+    "70 turns/210 minutes are allocated from the actual remaining 191 turns/27,735,917 ms; settle and deduct before any further campaign run. Prior original Architecture usage is retained separately."
+  ],
+  "limits": {
+    "maxTurns": 70,
+    "maxRunMin": 210,
+    "maxAttempts": 1,
+    "taskMaxTurns": 50,
+    "taskMaxRunMin": 170
+  },
+  "tasks": [
+    {
+      "id": "M1B",
+      "title": "Correct bounded pinned-engine defects",
+      "task": "Read the complete scoped continuation brief and referenced evidence. Independently review a concrete bounded design and its partial-delivery mapping through Pair before implementing. Reconcile the retained b082d3d delta into a new isolated worktree, fix the evidenced import/configuration/routing/layer/diagnostic/link/descriptor defects, and preserve verified publication/live-compatibility work. Follow the brief and criteria exactly. Fresh code review, exact-snapshot verification, verified delivery and local commit are required. The full Claude policy requirement remains unresolved; specific production refusal is retained and cannot count as whole M1 completion. No M2, broker, VM, invented provider attestation, account change or candidate promotion. Use at most three additional reviewed code increments including fixes, retaining the one already consumed.",
+      "criteria": [
+        "Real Node regression reproduces the retained ESM percent-encoded escape and proves corrected validation refuses the uninventoried target before execution; literal CJS percent-directory imports, supported syntax and shipped closure pass.",
+        "Typed presentation changes preserve canonical identity; substantive grants/executable/enforcement changes and unknown sources refuse at covered execution/resume boundaries. Project profiles cannot mask user grants; explicit Ensemble investigate reviewers are included; success/refusal diagnostics are redacted and precede startup.",
+        "Every regular N/export/sidecar file is an independently copied, ownership-checked single-link file at publication/reuse and guarded boundaries. An added hardlink refuses without deleting existing artifacts. Actual children cannot use extra inherited writable descriptors; legitimate stdio, workspace and linked-worktree Git operations succeed.",
+        "make build && make check passes; native goldens, installed-relative packaging, normal Claude without Codex, helper routing, publication race/fault controls and live/pinned resume behavior remain valid.",
+        "Fresh code review and awake exact-snapshot neutral checks/replays bind the delivered bytes under unchanged frozen e494. Historical failures, sleep observations, denominators, overhead and charges remain recorded; regression/installation checks use no live models or account changes; authorized workflow author/reviewer calls remain separately charged.",
+        "Delivery distinguishes passing bounded criteria from unmet M1R.6/M1R.10, P9 and overall M1/campaign readiness. Production pinned Claude retains its specific refusal; ordinary unpinned behavior is preserved. No failed gate is overridden, no promotion or M2 integration occurs, and the existing total budget/four-total implementation-increment cap remain enforced with all prior charges and 46 obligations retained."
+      ],
+      "after": [],
+      "workflow": "pair",
+      "args": {
+        "maxReviews": 8
+      }
+    }
+  ],
+  "acceptance": {
+    "verify": "make build && make check",
+    "args": {
+      "plan": [
+        "/Users/mark/Develop/ai/ai-dark-factory/.council/host-WlbAEX-architecture/room/final/B.md",
+        "/Users/mark/Develop/ai/ai-dark-factory/.council/host-WlbAEX-architecture/refs/C-evidence.md",
+        "/Users/mark/Develop/ai/ai-dark-factory/.council/host-WlbAEX-architecture/refs/stable-plugin-manifest.json",
+        "/Users/mark/Develop/ai/ai-dark-factory/plans/self-improvement-v1.json",
+        "/Users/mark/Develop/ai/ai-dark-factory/.council/run-plan-factory-evidence-v1/state.json",
+        "/Users/mark/Develop/ai/ai-dark-factory/.council/self-improvement/continuation-design.md",
+        "/Users/mark/Develop/ai/ai-dark-factory/.council/self-improvement/continuation-budget-carryforward.json",
+        "/Users/mark/Develop/ai/ai-dark-factory/.council/self-improvement/opus-review-corrections.json",
+        "/Users/mark/Develop/ai/ai-dark-factory/.council/self-improvement/opus-review-offline-probes.json",
+        "/Users/mark/Develop/ai/ai-dark-factory/.council/self-improvement/opus-review-user-feedback.txt",
+        "/Users/mark/Develop/ai/ai-dark-factory/.council/self-improvement/m2-continuation-evidence.json",
+        "/Users/mark/Develop/ai/ai-dark-factory/plans/self-improvement-v1-corrections.json",
+        "/Users/mark/Develop/ai/ai-dark-factory/.council/run-plan-factory-evidence-v1-corrections/state.json",
+        "/Users/mark/Develop/ai/ai-dark-factory/.council/host-E4G9aQ-pair/room/pair-design-4/A.md",
+        "/Users/mark/Develop/ai/ai-dark-factory/.council/host-E4G9aQ-pair/room/pair-code-5/A.md",
+        "/Users/mark/Develop/ai/ai-dark-factory/.council/host-E4G9aQ-pair/room/pair-code-6/A.md",
+        "/Users/mark/Develop/ai/ai-dark-factory/.council/host-E4G9aQ-pair/jobs/review-pair-code-5/out.json",
+        "/Users/mark/Develop/ai/ai-dark-factory/.council/host-3IWaQu-architecture/room/final3/C.md",
+        "/Users/mark/Develop/ai/ai-dark-factory/.council/host-3IWaQu-architecture/room/final3/C-milestones.json",
+        "/Users/mark/Develop/ai/ai-dark-factory/.council/host-3IWaQu-architecture/jobs/reaudit-grounding/out.json",
+        "/Users/mark/Develop/ai/ai-dark-factory/.council/self-improvement/m1-boundary-architecture-settlement.json",
+        "/Users/mark/Develop/ai/ai-dark-factory/.council/self-improvement/m1-bounded-campaign-criteria.json",
+        "/Users/mark/Develop/ai/ai-dark-factory/.council/self-improvement/m1-bounded-continuation.md",
+        "/Users/mark/Develop/ai/ai-dark-factory/.council/self-improvement/m1r-exact-snapshot-import-escape.json",
+        "/Users/mark/Develop/ai/ai-dark-factory/.council/self-improvement/reproduce-encoded-import-escape.mjs",
+        "/Users/mark/Develop/ai/ai-dark-factory/.council/self-improvement/m1r-host-sleep-observation.json",
+        "/Users/mark/Develop/ai/ai-dark-factory/.council/self-improvement/m1-boundary-checkpoint-preflight.json"
+      ],
+      "context": "Read m1-bounded-continuation.md as the current scoped execution brief. Older pending-approval/phase statements in historical references are superseded by actual conversation authorization and the settlement, never by invented consent. The focused Architecture is incomplete; perform fresh scoped Pair design review before code. Preserve the frozen executor and retained evidence. This plan can accept only bounded corrective work; overall M1 and campaign remain incomplete. Do not implement M2-M6 or conditional boundary work. Existing user authorization permits routine choices and same-scope restarts, implementation, reviewed delivery and local commits; no account changes or live efficacy experiments."
+    },
+    "criteria": [
+      "The bounded task is implemented in committed delivered bytes with fresh Pair design/code reviews, exact-snapshot gates and delivery verification under unchanged e494. Inspect every bounded criterion independently.",
+      "All original plans/journals/candidates and 46 campaign obligations remain intact. Evidence explicitly reports P9/M1R.6/.10 and full M1/campaign incompleteness; M2 is unintegrated and no unsupported production pinning guarantee is claimed.",
+      "Generated outputs and native goldens remain correct, make build && make check passes, regression/installation tests use temporary repositories/stub CLIs, and remaining limitations and offline overhead are reported honestly."
+    ]
+  }
+}
