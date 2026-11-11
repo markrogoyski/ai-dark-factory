@@ -134,6 +134,20 @@ for (const boundary of ['after-prepare', 'after-apply', 'before-commit', 'after-
   })
 }
 
+test('a delivery commit that landed before its journal write is adopted without recommitting or reverifying', async t => {
+  const f = fixture(t, plan([task('one')]))
+  await f.invoke({ at: name => { if (name === 'after-commit') throw new Error('interrupt after-commit') } })
+  const landed = f.git('rev-parse', 'HEAD')
+  assert.equal(f.state().tasks.one.status, 'running')
+  assert.equal(f.state().tasks.one.commit, undefined)
+  const resumed = await f.invoke({ verifyDelivery: () => { throw new Error('Must not reverify a landed commit') } })
+  assert.equal(resumed.final.readiness.state, 'ready', JSON.stringify(resumed))
+  assert.equal(f.git('rev-parse', 'HEAD'), landed)
+  assert.equal(f.git('log', '--format=%B').split('\n').filter(line => line === 'Factory-Task: one').length, 1)
+  assert.equal(f.state().tasks.one.status, 'done')
+  assert.equal(f.state().tasks.one.commit, landed)
+})
+
 test('interrupted attempts retain their reservation and park without resetting checkout', async t => {
   const p = plan([task('one')]); p.limits = { maxTurns: 10, taskMaxTurns: 4 }
   const f = fixture(t, p)
