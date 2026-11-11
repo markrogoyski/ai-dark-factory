@@ -2528,7 +2528,8 @@ function engineIdentityIssues(S, expected, observed) {
 function pinnedOperationIssues(S, expected, observed) {
   const issues = engineIdentityIssues(S, expected, observed?.executor)
   if (observed?.unknown?.length) issues.push(...observed.unknown.map(x => `Unknown write bounds: ${x}`))
-  for (const root of observed?.overlaps || []) issues.push(`Export overlaps writable root: ${root}`)
+  // Configured roots are private; the refusal names the reason, never the path.
+  if (observed?.overlaps?.length) issues.push('Export overlaps writable root')
   if (observed?.settingsChanged) issues.push('Admitted provider settings changed')
   return issues
 }

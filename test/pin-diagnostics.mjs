@@ -62,3 +62,19 @@ test('diagnostics survive real cache and resume paths without rewriting refusal 
   assert.equal(diagnostics(refused).at(-1).status, 'refused'); assert.ok(diagnostics(refused).at(-1).reasons.includes('capabilities-changed')); assert.match(jsonResult(refused).error, /settings changed/)
   assert.deepEqual(readFileSync(p.first.checkpoint), before)
 })
+test('overlap refusals withhold configured write roots at guard, hook and launch boundaries', async t => {
+  const E = await api(), f = harness(t), pin = E.exportEngine(f.source, f.output, f.target)
+  const secret = 'PRIVATE_CONFIGURATION_PATH_77921', grant = join(f.output, secret)
+  writeFileSync(join(f.env.CODEX_HOME, 'config.toml'), `[sandbox_workspace_write]\nwritable_roots=[${JSON.stringify(grant)}]\n`)
+  const input = JSON.stringify({ pin, spec: { kind: 'codex', cwd: f.target, writable: [] } })
+  const run = mode => spawnSync(process.execPath, [join(pin.root, 'lib/engine.mjs'), mode], { env: f.env, input, encoding: 'utf8' })
+  const launch = f.launch(['--pin-engine', f.output, '--workflow', 'pair', '--author', 'sol', '--reviewer', 'sol', 'Check fixture'])
+  for (const r of [run('guard'), launch]) {
+    assert.notEqual(r.status, 0); assert.match(jsonResult(r).error, /Export overlaps writable root/)
+    assert.ok(diagnostics(r).at(-1).reasons.includes('write-root-overlap'))
+    assert.equal((r.stdout + r.stderr).includes(secret), false)
+  }
+  const hook = run('hook')
+  assert.equal(hook.stderr.includes(secret), false); assert.equal(hook.stdout.includes(secret), false)
+  assert.equal(existsSync(f.env.FACTORY_TEST_LOG), false)
+})
