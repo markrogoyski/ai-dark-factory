@@ -1280,7 +1280,13 @@ def verification_settings(run):
 
 
 def verification_environment(settings):
-    return subject_environment(dict(settings.get('baseEnv', os.environ), **settings['env']))
+    env = dict(settings.get('baseEnv', os.environ))
+    pin = os.environ.get('DARK_FACTORY_PIN')
+    if pin and 'PATH' in env:
+        # A pinned gate tests the candidate, so it must not resolve the frozen export's helpers.
+        frozen = os.path.realpath(os.path.join(json.loads(pin)['root'], 'bin'))
+        env['PATH'] = os.pathsep.join(e for e in env['PATH'].split(os.pathsep) if not os.path.isabs(e) or os.path.realpath(e) != frozen)
+    return subject_environment(dict(env, **settings['env']))
 
 
 class VerificationInfrastructureError(CouncilError):
