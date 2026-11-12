@@ -599,3 +599,28 @@ class Verification(TmpDirCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class CloneDeps(TmpDirCase):
+    def test_copy_skips_only_sandbox_protected_files_it_is_refused(self):
+        src = self.path('vendor')
+        os.makedirs(os.path.join(src, 'amphp', 'serialization'))
+        for rel in ('amphp/serialization/.gitmodules', 'amphp/serialization/Serializer.php', 'autoload.php'):
+            with open(os.path.join(src, rel), 'w') as f:
+                f.write(rel)
+        real = council.shutil.copy2
+
+        def refuse(a, b, **kw):
+            if os.path.basename(a) == '.gitmodules' or a.endswith('autoload.php') and self.refuse_all:
+                raise PermissionError(1, 'Operation not permitted', b)
+            return real(a, b, **kw)
+
+        self.refuse_all = False
+        with mock.patch.object(council.shutil, 'copy2', refuse), mock.patch('sys.stderr'):
+            skipped = council.copy_skipping_protected(src, self.path('wt', 'vendor'))
+        self.assertEqual(skipped, [os.path.join('amphp', 'serialization', '.gitmodules')])
+        self.assertTrue(os.path.exists(self.path('wt', 'vendor', 'amphp', 'serialization', 'Serializer.php')))
+        self.assertFalse(os.path.exists(self.path('wt', 'vendor', 'amphp', 'serialization', '.gitmodules')))
+        self.refuse_all = True
+        with mock.patch.object(council.shutil, 'copy2', refuse), self.assertRaises(OSError):
+            council.copy_skipping_protected(src, self.path('wt2', 'vendor'))

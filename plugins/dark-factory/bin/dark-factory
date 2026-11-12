@@ -231,9 +231,37 @@ def clone_deps(src_root, dst_root):
         r = subprocess.run(['cp', '-cR', src, dst], stdin=subprocess.DEVNULL, capture_output=True, close_fds=True)
         if r.returncode != 0:
             shutil.rmtree(dst, ignore_errors=True)
-            subprocess.run(['cp', '-R', src, dst], stdin=subprocess.DEVNULL, check=True, close_fds=True)
+            r = subprocess.run(['cp', '-R', src, dst], stdin=subprocess.DEVNULL, capture_output=True, close_fds=True)
+        if r.returncode != 0:
+            shutil.rmtree(dst, ignore_errors=True)
+            copy_skipping_protected(src, dst)
         cloned.append(d)
     return cloned
+
+
+# Claude Code's sandbox always denies writing files with these names, wherever they are, so a
+# Claude setup turn on the standalone runner can't copy them (vendor/amphp/serialization ships a
+# .gitmodules). None of them is loaded by a dependency at run time.
+SANDBOX_PROTECTED = frozenset(('.gitmodules', '.gitconfig', '.bashrc', '.bash_profile', '.zshrc', '.zprofile', '.profile', '.ripgreprc', '.mcp.json'))
+
+
+def copy_skipping_protected(src, dst):
+    """Copy a dependency tree, leaving out the sandbox-protected files the copy is refused."""
+    skipped = []
+
+    def copy(a, b):
+        try:
+            return shutil.copy2(a, b)
+        except PermissionError:
+            if os.path.basename(a) not in SANDBOX_PROTECTED:
+                raise
+            skipped.append(os.path.relpath(a, src))
+            return b
+
+    shutil.copytree(src, dst, symlinks=True, copy_function=copy)
+    for rel in skipped:
+        print(f'dark-factory: skipped sandbox-protected {os.path.join(os.path.basename(src), rel)}', file=sys.stderr)
+    return skipped
 
 
 def run_shell(cmd, cwd, timeout, log_path, env=None):
