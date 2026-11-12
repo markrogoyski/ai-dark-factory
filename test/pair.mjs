@@ -507,8 +507,11 @@ test('setup that finds a criterion unverifiable inside the run stops before any 
     assert.equal(calls.filter(c => c.kind === 'author').length, 0)
     assert.notEqual(result.final.readiness.state, 'ready')
   }
-  const { result } = await run({ setup: { unverifiable: [] } })
+  const { result, calls } = await run({ setup: { unverifiable: [] } })
   assert.equal(result.status, 'done')
+  // On the standalone runner a Claude setup turn's sandbox refused phpstan's local port bind, and
+  // setup called the gate unverifiable though the helper runs it outside that sandbox.
+  assert.match(calls.find(c => c.kind === 'setup').prompt, /fails only inside your own sandbox \(a refused port bind.*does not make a criterion unverifiable/)
 })
 
 test('codex-host pair setup runs as the author at medium effort unless effort is given', async () => {
