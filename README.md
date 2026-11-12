@@ -280,10 +280,13 @@ using the existing model names. An unspecified reviewer defaults to the other ve
 default pair needs both authenticated CLIs. Explicit `--author sol --reviewer astra` uses only
 Codex models in the Codex host.
 
-1. The author establishes acceptance criteria, reference documents, and the verification gate.
-   In the Codex host and the standalone runtime this setup turn runs on the author's model at
-   `medium` effort (an explicit `effort` applies instead); in Claude Code it runs on the Claude
-   participant's model at `medium`. Every requirement the task or its documents state that the
+1. A setup turn establishes acceptance criteria, reference documents, and the verification gate.
+   The run inherits their quality, so setup runs on Claude Opus at `medium` effort whatever the
+   participants are: Sonnet setup dropped stated criteria and stopped on guesses where Opus setup
+   didn't. The one exception is a Codex author in the Codex host or the standalone runtime, whose
+   setup runs on the author's own model at `medium`. On those runtimes an explicit `effort` applies
+   instead of `medium`; natively in Claude Code setup always runs at `medium`. Factory's pair
+   strategy follows the same rule. Every requirement the task or its documents state that the
    gate can't check, such as "run coverage and inspect the report", becomes its own criterion,
    citing document and line. A criterion that no evidence inside the run can meet (it needs
    post-delivery, production or live-service evidence) stops the run with `needs-user` before

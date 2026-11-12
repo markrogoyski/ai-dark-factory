@@ -525,6 +525,37 @@ test('codex-host pair setup runs as the author at medium effort unless effort is
   assert.equal(L.parsePairConfig({ task: 'x', host: 'codex', effort: 'high' }).roles.setup.effort, 'high')
 })
 
+// Sonnet setup dropped a stated coverage criterion and stopped on a guessed-missing tool where Opus
+// setup did neither, so setup runs on Opus unless a Codex author sets up on the standalone runtime.
+test('pair setup runs on Opus for Claude Code and for weaker Claude authors on the runner', async () => {
+  for (const args of [{}, { author: 'sonnet' }, { author: 'sol', reviewer: 'astra' }, { author: 'haiku', reviewer: 'sonnet' }]) {
+    const { calls } = await run({ native: true, args })
+    const setupCall = calls.find(c => c.kind === 'setup')
+    assert.deepEqual([setupCall.model, setupCall.effort], ['opus', 'medium'], JSON.stringify(args))
+    // The measurement transport still prefers a selected Claude participant, else Haiku.
+    const native = [args.author || 'opus', args.reviewer].find(k => ['opus', 'sonnet', 'haiku'].includes(k))
+    assert.equal(calls.find(c => c.kind === 'measure').model, native || 'haiku', JSON.stringify(args))
+    assert.equal(L.parsePairConfig({ task: 'x', ...args }).roles.setup.key, 'opus')
+  }
+  for (const args of [{ author: 'sonnet' }, { author: 'opus' }, { author: 'haiku', reviewer: 'astra' }]) {
+    const { calls } = await run({ args })
+    const setupCall = calls.find(c => c.kind === 'setup')
+    assert.deepEqual([setupCall.model, setupCall.effort], ['opus', 'medium'], JSON.stringify(args))
+  }
+  // A Codex author keeps its own setup, and an explicit effort still sets setup's effort.
+  let { calls } = await run({ args: { author: 'sol' } })
+  assert.deepEqual([calls.find(c => c.kind === 'setup').model, calls.find(c => c.kind === 'setup').effort], ['gpt-6.1-sol', 'medium'])
+  assert.equal(L.parsePairConfig({ task: 'x', host: 'codex' }).roles.setup.key, 'sol')
+  ;({ calls } = await run({ args: { author: 'sonnet', effort: 'xhigh' } }))
+  assert.deepEqual([calls.find(c => c.kind === 'setup').model, calls.find(c => c.kind === 'setup').effort], ['opus', 'xhigh'])
+  assert.deepEqual(['key', 'effort'].map(k => L.parsePairConfig({ task: 'x', host: 'codex', author: 'sonnet', effort: { sonnet: 'low' } }).roles.setup[k]), ['opus', 'low'])
+  // Factory's pair strategy builds its config through the same rule.
+  for (const [host, author, expected] of [['claude', undefined, 'opus'], ['claude', 'sol', 'opus'], ['codex', 'sonnet', 'opus'], ['codex', undefined, 'sol']]) {
+    const S = { raw: { task: 'x', host, ...(author ? { pair: { author } } : {}) }, roles: {}, retro: false }
+    assert.equal(L.factoryPairConfig(S).roles.setup.key, expected, `${host} ${author}`)
+  }
+})
+
 test('runtime "cli" hands the whole native run to one transport turn with explicit participants', async () => {
   const calls = []
   const agent = async (prompt, opts) => { calls.push({ prompt, opts }); return { result: JSON.stringify({ status: 'done', host: 'codex' }), error: '' } }

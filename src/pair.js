@@ -1,11 +1,12 @@
 async function pairRun() {
   phase('Setup')
-  // Native Claude workflows need a native transport for setup and measurements. Prefer one
-  // of the two selected participants; CLI seats and all Codex-host turns use their adapters.
+  // Native Claude workflows need a native transport for measurements. Prefer one of the two
+  // selected participants; CLI seats and all Codex-host turns use their adapters. Setup is not a
+  // transport: it runs on its role's model (Opus natively), since the run inherits its criteria.
   const native = [S.pairOptions.author, S.pairOptions.reviewer].find(s => s.vendor === 'claude')
   const transportModel = native ? native.model : 'haiku'
   const setup = await ask(pairSetupPrompt(S), { label: 'setup', phase: 'Setup', schema: PAIR_SETUP_SCHEMA,
-    model: transportModel, effort: 'medium' }, 'setup')
+    model: S.roles.setup.model, effort: 'medium' }, 'setup')
   if (setup?.status === 'needs-plan') return needsPlan(S, setup.planMissing, setup.runDir)
   if (setup?.status === 'preflight') return preflightStop(S, setup.preflight)
   if (setup?.status === 'needs-user') {

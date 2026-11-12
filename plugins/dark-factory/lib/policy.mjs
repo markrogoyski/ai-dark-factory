@@ -4096,11 +4096,16 @@ function parsePairConfig(args) {
   if (!Number.isSafeInteger(maxReviews) || maxReviews < 2 || maxReviews > 100) throw new Error('pair: maxReviews must be an integer from 2 to 100.')
   const config = parseConfig({ ...raw, mode: 'implement', retro: false,
     simple: { implementer: author.key, reviewer: reviewer.key } }, { workflow: 'pair', tier: 'simple' })
+  // Setup writes the criteria and the gate, and the run inherits their quality: Sonnet setup dropped
+  // a stated criterion and stopped on a guess where Opus setup did neither. So setup runs on Opus,
+  // except that a Codex (or Gemini) author on the standalone runtime sets up as itself. Effort is the
+  // shared setup default unless the user chose one; then setup runs at the author's effort. Native
+  // setup reads only the model and always runs at medium.
+  const setupKey = config.host === 'codex' && author.vendor !== 'claude' ? author.key : 'opus'
+  const setup = raw.effort === undefined ? parseSeat(setupKey, ROLE_EFFORT.setup) : setupKey === author.key ? author : parseSeat(setupKey, author.effort)
   // Reuse setup and transport, without acquiring council roles or Simple escalation rules.
   return { ...config, raw, tier: 'pair', simple: null, panel: [], specReviewers: [],
-    // Setup writes criteria and the gate: the author's model, at the shared setup effort unless the
-    // user chose one. Only the host runtime reads roles; native setup picks its own model.
-    roles: { setup: raw.effort === undefined ? parseSeat(author.key, ROLE_EFFORT.setup) : author }, lineup: [hostSeat(config.host, author)],
+    roles: { setup }, lineup: [hostSeat(config.host, author)],
     auditors: [{ ...hostSeat(config.host, reviewer), lens: 'review', id: 'PR' }],
     pairOptions: { author, reviewer, maxReviews } }
 }
