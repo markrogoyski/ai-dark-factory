@@ -687,9 +687,24 @@ retro` writes it into the facts as `elapsedMs` with `elapsedSource: "helper-time
 `elapsedByRole` breakdown (`author`, `reviewer`, `measure`, from job labels; a native author's
 own turn is not a job, so it shows only in the total). The evaluator uses the timeline when a
 native result has no `elapsedMs`, counts each group's `elapsedSources`, and always prefers the
-Codex host's exact `elapsedMs`. Intake and setup run before `init`, so their time isn't counted.
-The evaluator still excludes older estimates derived from `run.json` modification time. Token facts
-use the same `records`/`byModel` format in both hosts; older native facts are also accepted.
+Codex host's exact `elapsedMs`, which covers the whole run. A native timeline starts at `init`,
+except in Pair (and Factory's pair strategy): its setup agent runs `date -u` before anything
+else and passes the time to `init --started-at`, which records a `setup-start` event first (an
+ISO time with an offset from the last hour; anything else is ignored). In eight runtime `"cli"`
+Pair runs, 19-140 seconds of setup (30% of it) came before `init`. So native Pair time covers
+setup from its start and the rest of the run. Factory intake, and setup before `init` in the
+other native workflows, aren't counted. The evaluator still excludes older estimates derived
+from `run.json` modification time.
+
+Token facts use the same `records`/`byModel` format in both hosts; older native facts are also
+accepted. A Codex-host result, including runtime `"cli"`, records every turn, the Claude CLI
+turns among them. A native result records `tokens: null`, since the workflow can't read files; the
+evaluator then reads `<runDir>/usage.jsonl`, which the helper writes only for external CLI turns
+(Codex, Gemini), and labels the metrics `tokenSource: "helper-usage"` and
+`nativeClaudeTurnsIncluded: false`. Each group counts its `tokenSources`; a `helper-usage` total
+leaves out every native Claude turn (author, setup, relays, measurement transports), so it is not
+comparable with a recorded one. `dark-factory retro` adds those turns to Factory facts from Claude
+Code's saved transcripts, and the evaluator keeps facts that already carry tokens as recorded.
 
 Run-plan reports aggregate budget accounting separately. Its child results retain these metrics
 and can be passed to the evaluator individually; interrupted reservations are conservative limits,

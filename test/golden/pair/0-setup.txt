@@ -6,6 +6,9 @@ Implement the behavior
 
 Mode: implement. Return it as `mode`.
 
+## Before you start — the time
+Before anything else, run `date -u +%Y-%m-%dT%H:%M:%SZ` and keep what it prints. Step 2 passes it to init, so the run's timeline counts setup from its start.
+
 ## Step 0 — can the other vendors' CLIs run?
 Some seats run through the Codex CLI. Check that they can start from here before anything is created. Make one Bash call with the sandbox disabled (dangerouslyDisableSandbox: true), exactly as written:
 dark-factory preflight --vendors codex
@@ -17,7 +20,7 @@ Read the task for any other document it tells the seats to follow or read, for e
 - If the task depends on a plan or document you can't identify or find, don't guess and don't proceed: return status "needs-plan" with planMissing saying what is missing, and empty values elsewhere. That includes a task that refers to "the plan" without naming a file: only the session that started the council knows which plan is meant, so never pick one yourself.
 
 ## Step 2 — create the run
-Run: dark-factory init --repo '/repo' --seats A --factory followed by --ref <path> for each other document from step 1
+Run: dark-factory init --repo '/repo' --seats A --factory --started-at <the time you read before you started> followed by --ref <path> for each other document from step 1
 It prints JSON with runId, runDir, repoRoot, refs (the snapshots it made of those documents) and dirty (tracked files with uncommitted changes).
 - If it fails, return status "error" with its message, and empty values elsewhere.
 - If dirty is non-empty, stop and return status "dirty" with that list. The worktrees branch from HEAD, so uncommitted changes would be invisible to every seat.

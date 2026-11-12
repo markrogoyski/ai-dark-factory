@@ -440,6 +440,9 @@ def cmd_init(a):
     run_path = os.path.join(run_dir, 'run.json')
     if not os.path.exists(run_path):
         write_json(run_path, dict(run, created=time.strftime('%Y-%m-%dT%H:%M:%S')))
+    started = setup_started(getattr(a, 'started_at', None))
+    if started:
+        timeline_event(run_dir, 'setup-start', at=started)
     timeline_event(run_dir, 'init')
     emit(dict(run, status='ok', worktrees=worktrees, depsCloned=deps, agentDocs=docs,
               dirty=dirty, untrackedCount=len(untracked)))
@@ -2460,9 +2463,9 @@ TIMELINE_GAP_SEC = 15 * 60
 TIMELINE_COMMANDS = ('init', 'measure', 'seat-run', 'wait', 'materialize', 'verify-delivery', 'retro')
 
 
-def timeline_event(run_dir, event, job=None):
+def timeline_event(run_dir, event, job=None, at=None):
     """Append one line to <run>/timeline.jsonl. Best effort: a clock must never fail a command."""
-    line = json.dumps({'at': datetime.now(timezone.utc).isoformat(timespec='milliseconds'), 'event': event, 'job': job})
+    line = json.dumps({'at': (at or datetime.now(timezone.utc)).isoformat(timespec='milliseconds'), 'event': event, 'job': job})
     try:
         fd = os.open(os.path.join(run_dir, 'timeline.jsonl'), os.O_WRONLY | os.O_APPEND | os.O_CREAT, 0o644)
         try:
@@ -2471,6 +2474,23 @@ def timeline_event(run_dir, event, job=None):
             os.close(fd)
     except OSError:
         pass
+
+
+def setup_started(value):
+    """The time a native setup agent started, which it read with `date -u` before anything else and
+    passed to init as --started-at: the native workflow has no replay-safe clock of its own. An ISO
+    time with an offset, from the last hour and not in the future; anything else is ignored, since
+    a clock must never fail a command."""
+    if not isinstance(value, str) or not value.strip():
+        return None
+    try:
+        at = datetime.fromisoformat(value.strip().replace('Z', '+00:00'))
+    except ValueError:
+        return None
+    if at.tzinfo is None:
+        return None
+    age = (datetime.now(timezone.utc) - at).total_seconds()
+    return at.astimezone(timezone.utc) if -5 <= age <= 3600 else None
 
 
 def timeline_role(job):
@@ -2483,8 +2503,9 @@ def timeline_role(job):
 
 def timeline_elapsed(run_dir):
     """Active time from <run>/timeline.jsonl: a job counts in full from start to end, and any other
-    gap between consecutive events counts up to TIMELINE_GAP_SEC. Intake and setup run before
-    init, so they are not counted. None without a timeline."""
+    gap between consecutive events counts up to TIMELINE_GAP_SEC. A native Pair setup passes its
+    start to init (a setup-start event), so its time before init counts; otherwise, and for intake,
+    the time before init is not counted. None without a timeline."""
     path = os.path.join(run_dir, 'timeline.jsonl')
     if not os.path.isfile(path):
         return None
@@ -2755,6 +2776,7 @@ def main():
     p.add_argument('--run-id')
     p.add_argument('--factory', action='store_true', help='capture delivery baseline and publish verification evidence')
     p.add_argument('--ref', action='append', help='a plan or other document the work follows; copied into <run>/refs/')
+    p.add_argument('--started-at', help="the setup agent's own start time (ISO, from `date -u`); recorded as the timeline's setup-start")
 
     p = sub.add_parser('seat-run')
     p.add_argument('--run-dir', required=True)

@@ -532,6 +532,23 @@ test('setup lists only criteria it checked cannot be met, and design asserts spe
   assert.doesNotMatch(L.setupPrompt(L.newState(L.parseConfig({ task: 'Fix it' }))), /unverifiable|exception or error message/)
 })
 
+// A native timeline starts at init, and in the runtime "cli" runs 19-140 s of setup came before it.
+test('native Pair setup reads the time first and passes it to init; the runner and other workflows do not', () => {
+  const start = /run `date -u \+%Y-%m-%dT%H:%M:%SZ` and keep what it prints/
+  const init = /init --repo '\/repo' --seats A --factory --started-at <the time you read before you started>/
+  const native = L.pairSetupPrompt(L.newState(L.parsePairConfig({ task: 'Fix it', repo: '/repo' })))
+  assert.match(native, start)
+  assert.match(native, init)
+  assert.ok(native.search(start) < native.indexOf('## Step 0'), 'the time is read before preflight')
+  const factoryPair = L.pairSetupPrompt(L.newState(L.factoryPairConfig({ raw: { task: 'Fix it', repo: '/repo' }, roles: {}, retro: false })))
+  assert.match(factoryPair, init)
+  for (const prompt of [
+    L.pairSetupPrompt(L.newState(L.parsePairConfig({ task: 'Fix it', repo: '/repo', host: 'codex' }))),
+    L.setupPrompt(L.newState(L.parseConfig({ task: 'Fix it', repo: '/repo' }))),
+    L.setupPrompt(L.newState(L.parseConfig({ task: 'Fix it', repo: '/repo' }, { workflow: 'factory', tier: 'simple' }))),
+  ]) assert.doesNotMatch(prompt, /started-at|date -u/)
+})
+
 test('codex-host pair setup runs as the author at medium effort unless effort is given', async () => {
   let { calls } = await run()
   let setupCall = calls.find(c => c.kind === 'setup')

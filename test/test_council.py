@@ -4,7 +4,11 @@ subprocess calls and a whole simulated run; here each one is a table.
     python3 -B -m unittest discover -s test -p 'test_*.py'
 """
 
+import argparse
+import contextlib
 import importlib.machinery
+import io
+from datetime import timedelta
 import importlib.util
 import json
 import os
@@ -522,6 +526,36 @@ class Timeline(TmpDirCase):
         elapsed = council.timeline_elapsed(self.tmp)
         self.assertEqual(elapsed['elapsedMs'], (5 + 45 + 2 + 10 + 15) * 60_000)
         self.assertEqual(elapsed['byRole'], {'reviewer': 45 * 60_000, 'measure': 8 * 60_000, 'author': 7 * 60_000})
+
+    def test_init_records_the_setup_agents_start_before_its_own_event(self):
+        repo = self.path('repo')
+        os.makedirs(repo)
+        git = lambda *args: council.git('-c', 'user.name=t', '-c', 'user.email=t@t', *args, cwd=repo)
+        git('init', '-q')
+        with open(os.path.join(repo, 'f'), 'w') as f:
+            f.write('a\n')
+        git('add', 'f')
+        git('commit', '-qm', 'init')
+        now = council.datetime.now(council.timezone.utc)
+        ago = lambda seconds: (now - timedelta(seconds=seconds)).strftime('%Y-%m-%dT%H:%M:%SZ')
+
+        def init(run_id, started_at):
+            args = argparse.Namespace(repo=repo, seats='A', run_id=run_id, factory=False, ref=None, started_at=started_at)
+            with contextlib.redirect_stdout(io.StringIO()) as out:
+                council.cmd_init(args)
+            self.assertEqual(json.loads(out.getvalue())['status'], 'ok')
+            lines = [json.loads(l) for l in council.read(os.path.join(repo, '.council', run_id, 'timeline.jsonl')).splitlines()]
+            return [(l['event'], l['at']) for l in lines]
+
+        events = init('R1', ago(90))
+        self.assertEqual([e for e, _ in events], ['setup-start', 'init'])
+        self.assertEqual(events[0][1], ago(90).replace('Z', '.000+00:00'))
+        with open(os.path.join(repo, '.council', 'R1', 'timeline.jsonl'), 'a') as f:
+            f.write(json.dumps({'at': now.isoformat(timespec='milliseconds'), 'event': 'retro', 'job': None}) + '\n')
+        self.assertGreaterEqual(council.timeline_elapsed(os.path.join(repo, '.council', 'R1'))['elapsedMs'], 89_000)
+        # No time, or one that is malformed, naive, in the future or over an hour old, is ignored.
+        for n, value in enumerate([None, 'soon', '2026-11-12T10:00:00', ago(-600), ago(7200)]):
+            self.assertEqual([e for e, _ in init(f'R{n + 2}', value)], ['init'], value)
 
     def test_retro_facts_take_timeline_elapsed_only_when_none_was_recorded(self):
         self.write_events([(0, 'init', None), (10, 'retro', None)])

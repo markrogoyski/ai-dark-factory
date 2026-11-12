@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { loadLib, makeRun, addItem } from './lib.mjs'
 import { validateResult } from '../plugins/dark-factory/lib/codex-runner.mjs'
-import { summarize, evaluateFiles } from '../plugins/dark-factory/lib/evaluate.mjs'
+import { summarize, evaluateFiles, fillNativeMetrics } from '../plugins/dark-factory/lib/evaluate.mjs'
 import { mkdtempSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -353,4 +353,39 @@ test('evaluation times a native result from its helper timeline and prefers a re
   group = Object.values(evaluateFiles([recorded]).groups)[0]
   assert.equal(group.elapsedMs, 1234)
   assert.deepEqual(group.elapsedSources, { recorded: 1 })
+})
+
+// Native results record tokens: null; the helper's usage.jsonl holds the external CLI turns only.
+test('evaluation reads a native result\'s helper usage, labelled as excluding native Claude turns', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'df-eval-'))
+  writeFileSync(join(dir, 'usage.jsonl'), [
+    { job: 'review-pair-design-1', seat: 'PR', model: 'gpt-6-astra', usage: { input_tokens: 100, cached_input_tokens: 40, output_tokens: 10 }, seconds: 30 },
+    { job: 'review-pair-code-2', seat: 'PR', model: 'gpt-6-astra', usage: { input_tokens: 50, cached_input_tokens: 20, output_tokens: 5 }, seconds: 20 },
+  ].map(r => JSON.stringify(r)).join('\n') + '\n')
+  const base = { version: 1, workflow: 'pair', strategy: 'pair', turns: 4, readiness: 'ready', elapsedMs: 1000 }
+  const write = (name, result) => { const file = join(dir, name); writeFileSync(file, JSON.stringify({ runDir: dir, ...result })); return file }
+  const native = fillNativeMetrics({ runDir: dir, metrics: { ...base, host: 'claude', tokens: null } }).metrics
+  assert.deepEqual(native.tokens, { records: 2, byModel: { 'gpt-6-astra': { input_tokens: 150, cached_input_tokens: 60, output_tokens: 15 } } })
+  assert.equal(native.tokenSource, 'helper-usage')
+  assert.equal(native.nativeClaudeTurnsIncluded, false)
+  let group = Object.values(evaluateFiles([write('native.json', { metrics: { ...base, host: 'claude', tokens: null } })]).groups)[0]
+  assert.equal(group.tokenMeasuredRuns, 1)
+  assert.deepEqual(group.tokenSources, { 'helper-usage': 1 })
+  assert.deepEqual(group.tokensByModel, { 'gpt-6-astra': { input_tokens: 150, cached_input_tokens: 60, output_tokens: 15 } })
+  // Recorded totals (the Codex host and runtime "cli", or native facts already filled by retro) stay as recorded.
+  const recordedTokens = { records: 3, byModel: { opus: { input_tokens: 7, output_tokens: 2 } } }
+  for (const host of ['codex', 'claude']) {
+    group = Object.values(evaluateFiles([write(`${host}.json`, { metrics: { ...base, host, tokens: recordedTokens } })]).groups)[0]
+    assert.deepEqual(group.tokensByModel, recordedTokens.byModel, host)
+    assert.deepEqual(group.tokenSources, { recorded: 1 }, host)
+  }
+  // A Codex result without tokens is not filled from the run directory.
+  group = Object.values(evaluateFiles([write('codex-null.json', { metrics: { ...base, host: 'codex', tokens: null } })]).groups)[0]
+  assert.equal(group.tokenMeasuredRuns, 0)
+  assert.deepEqual(group.tokenSources, {})
+  // An unreadable usage.jsonl is reported, not fatal.
+  writeFileSync(join(dir, 'usage.jsonl'), '{not json\n')
+  const broken = fillNativeMetrics({ runDir: dir, metrics: { ...base, host: 'claude', tokens: null } }).metrics
+  assert.equal(broken.tokens, null)
+  assert.match(broken.tokenError, /JSON/)
 })

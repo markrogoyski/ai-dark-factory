@@ -28,7 +28,7 @@ export function summarize(results) {
     if (!m || m.version !== 1) throw new Error(`Missing supported metrics in ${source}`)
     const key = [m.host, m.workflow, m.tier || '-', m.strategy, m.variant || 'default', m.scope || 'complete'].join('/')
     const group = groups[key] || (groups[key] = { runs: 0, ready: 0, delivered: 0, deliveryFailed: 0, deliveryUnknown: 0, postDeliveryObserved: 0, postDeliveryRegressions: 0, escalated: 0,
-      turns: 0, timedRuns: 0, elapsedMs: 0, elapsedSources: {}, failedTurns: 0, candidates: 0, readyCandidates: 0, runsWithReadyCandidate: 0, findingsByStage: {}, tokensByModel: {}, tokenMeasuredRuns: 0, taskIds: new Set() })
+      turns: 0, timedRuns: 0, elapsedMs: 0, elapsedSources: {}, failedTurns: 0, candidates: 0, readyCandidates: 0, runsWithReadyCandidate: 0, findingsByStage: {}, tokensByModel: {}, tokenMeasuredRuns: 0, tokenSources: {}, taskIds: new Set() })
     group.runs++; group.ready += m.readiness === 'ready' ? 1 : 0
     group.turns += m.turns || 0; group.failedTurns += m.failedTurns || 0; group.escalated += m.escalated ? 1 : 0
     group.candidates += m.candidates?.total || 0; group.readyCandidates += m.candidates?.ready || 0
@@ -62,6 +62,8 @@ export function summarize(results) {
     const tokenGroups = m.tokens?.byModel ? [m.tokens.byModel] : [m.tokens?.external, m.tokens?.claude].filter(Boolean)
     if (tokenGroups.some(models => Object.keys(models).length)) {
       group.tokenMeasuredRuns++
+      const source = m.tokenSource || 'recorded'
+      group.tokenSources[source] = (group.tokenSources[source] || 0) + 1
       for (const models of tokenGroups) for (const [model, usage] of Object.entries(models)) {
         const row = group.tokensByModel[model] || (group.tokensByModel[model] = {})
         for (const [field, value] of Object.entries(usage)) if (!['turns', 'messages'].includes(field) && Number.isFinite(value) && value >= 0) row[field] = (row[field] || 0) + value
@@ -77,7 +79,7 @@ export function summarize(results) {
     group.elapsedMsPerReadyResult = group.ready && group.timedRuns === group.runs ? group.elapsedMs / group.ready : null
   }
   return { version: 1, runs: seen.size, groups, matchedTasks: paired,
-    interpretation: 'Compare repeated runs on the same task IDs and repository revisions. Readiness is process evidence, not proof of correctness. Delivery failures are measured only when delivery.json exists; missing token, time and dollar costs remain unknown. Findings may overlap across reviewers. No default tuning is performed.' }
+    interpretation: 'Compare repeated runs on the same task IDs and repository revisions. Readiness is process evidence, not proof of correctness. Delivery failures are measured only when delivery.json exists; missing token, time and dollar costs remain unknown, and helper-usage token totals (tokenSources) omit native Claude turns. Findings may overlap across reviewers. No default tuning is performed.' }
 }
 
 // Native results have no exact clock; the helper's timeline gives their active time. Mirrors
@@ -106,16 +108,30 @@ export function timelineElapsed(runDir) {
   return Math.round(total)
 }
 
+// A native workflow can read no files, so its result has no clock and tokens: null. Fill both from
+// what the helper wrote to the run directory. The Codex host's recorded values always win. The
+// helper's usage.jsonl holds only the external CLI turns (Codex, Gemini), not the native Claude
+// turns, so those totals are labelled and must not be read as the run's complete usage.
+export function fillNativeMetrics(result) {
+  const m = result?.metrics
+  if (!m || m.host === 'codex') return result
+  if (m.elapsedMs === null || m.elapsedMs === undefined || m.elapsedFrom === 'setup') {
+    const elapsed = timelineElapsed(result.runDir)
+    if (elapsed !== null) { Object.assign(m, { elapsedMs: elapsed, elapsedSource: 'helper-timeline' }); delete m.elapsedFrom }
+  }
+  if ((m.tokens === null || m.tokens === undefined) && result.runDir) {
+    try {
+      const tokens = tokenUsage([result.runDir])
+      if (tokens) Object.assign(m, { tokens, tokenSource: 'helper-usage', nativeClaudeTurnsIncluded: false })
+    } catch (error) { m.tokenError = error.message }
+  }
+  return result
+}
+
 export function evaluateFiles(files, observations = {}) {
   let evaluator = null
   const summary = summarize(files.map(source => {
-    const result = JSON.parse(readFileSync(source, 'utf8'))
-    const m = result.metrics
-    // The Codex host's exact elapsedMs always wins; a native result falls back to its timeline.
-    if (m && (m.elapsedMs === null || m.elapsedMs === undefined || m.elapsedFrom === 'setup') && m.host !== 'codex') {
-      const elapsed = timelineElapsed(result.runDir)
-      if (elapsed !== null) { Object.assign(m, { elapsedMs: elapsed, elapsedSource: 'helper-timeline' }); delete m.elapsedFrom }
-    }
+    const result = fillNativeMetrics(JSON.parse(readFileSync(source, 'utf8')))
     const pin = result.provenance?.executor
     if (pin?.mode === 'pinned') {
       const own = guardEngine(environmentPin() || pin)

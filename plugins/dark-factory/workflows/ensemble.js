@@ -1712,6 +1712,9 @@ function setupPrompt(S) {
   const letters = S.letters.join(',')
   const A = S.letters[0]
   const vendors = externalVendors(S)
+  // A native Pair's timeline would start at init; the workflow has no replay-safe clock, so the
+  // setup agent reads the time itself and init records it.
+  const startedAt = !!S.pairOptions && S.host !== 'codex'
   const what = S.workflowName === 'ensemble' ? 'an ensemble run: independent candidates in separate worktrees, measured and reviewed before an advisory ranking; no debate or automatic selection'
     : S.workflowName === 'pair' ? 'a pair run: one author will design and implement the task in its own git worktree, with independent review of the design and each implementation revision'
     : S.tier === 'simple' ? 'a factory run of a simple change: one AI model will make the change below in its own git worktree, and another will review it'
@@ -1724,7 +1727,10 @@ function setupPrompt(S) {
 
 ${S.task}
 ${S.context ? `\n# Context from the user\n\n${S.context}\n` : ''}${S.escalation ? `\n# An earlier attempt\n\nThis task was first ${S.escalation.from === 'feature' ? 'planned as one feature' : 'tried as a simple change'} and handed up because ${S.escalation.why}. Its acceptance criteria were:\n${S.escalation.criteria.map(c => `- ${c}`).join('\n') || '- (none)'}\n${S.escalation.from === 'feature' ? 'Start from them: they describe the whole of the work, which this run designs and breaks into milestones.' : 'Start from them, and widen them where the reason above shows they fell short.'}\n` : ''}
-${S.modeGiven ? `Mode: ${S.mode}. Return it as \`mode\`.\n` : ''}${vendors.length ? `
+${S.modeGiven ? `Mode: ${S.mode}. Return it as \`mode\`.\n` : ''}${startedAt ? `
+## Before you start — the time
+Before anything else, run \`date -u +%Y-%m-%dT%H:%M:%SZ\` and keep what it prints. Step 2 passes it to init, so the run's timeline counts setup from its start.
+` : ''}${vendors.length ? `
 ## Step 0 — can the other vendors' CLIs run?
 ${S.host === 'codex' ? `The host runtime already checked the required CLIs (${vendors.join(',')}) before starting this setup turn. Use the attached preflight JSON; do not run preflight again from inside your sandbox. Copy its vendors entries into \`preflight\` (vendor, ok, error). If status is not "ok", return status "preflight" with those entries and empty values elsewhere, and do not create anything. Otherwise continue to step 1.` : `Some seats run through the ${vendors.map(v => VENDOR_CLI[v]).join(' and the ')}. Check that they can start from here before anything is created. Make one Bash call with the sandbox disabled (dangerouslyDisableSandbox: true), exactly as written:
 ${S.cli} preflight --vendors ${vendors.join(',')}
@@ -1743,7 +1749,7 @@ Read the task together with the part of those documents it points to, and decide
 When the work would end with a change someone commits, choose implement.
 `}
 ## Step 2 — create the run
-Run: ${S.cli} init --repo ${S.raw.repo ? shq(S.raw.repo) : '"$PWD"'} --seats ${letters}${S.tier ? ' --factory' : ''}${setupRunId(S) ? ` --run-id ${shq(setupRunId(S))}` : ''}${S.plan.map(p => ` --ref ${shq(p)}`).join('')} followed by --ref <path> for each other document from step 1
+Run: ${S.cli} init --repo ${S.raw.repo ? shq(S.raw.repo) : '"$PWD"'} --seats ${letters}${S.tier ? ' --factory' : ''}${setupRunId(S) ? ` --run-id ${shq(setupRunId(S))}` : ''}${startedAt ? ' --started-at <the time you read before you started>' : ''}${S.plan.map(p => ` --ref ${shq(p)}`).join('')} followed by --ref <path> for each other document from step 1
 It prints JSON with runId, runDir, repoRoot, refs (the snapshots it made of those documents) and dirty (tracked files with uncommitted changes).
 - If it fails, return status "error" with its message, and empty values elsewhere.
 ${S.allowDirty || (S.modeGiven && S.mode !== 'implement') ? '' : `- If ${S.modeGiven ? '' : 'the mode is implement and '}dirty is non-empty, stop and return status "dirty" with that list. The worktrees branch from HEAD, so uncommitted changes would be invisible to every seat.\n`}
