@@ -291,10 +291,14 @@ Codex models in the Codex host.
    citing document and line. A criterion that no evidence inside the run can meet (it needs
    post-delivery, production or live-service evidence) stops the run with `needs-user` before
    any author turn, with one question per criterion: rewrite it so the run can check it, or drop
-   it.
+   it. Setup lists only what it has established: a tool that might be missing is checked with one
+   command first, and doubt, or a check refused only in setup's own sandbox, goes into the
+   repository notes instead.
 2. The author drafts a design and concrete test contract: criterion IDs, inputs, expected
    outcomes, boundaries, changed/preserved purpose, test files, commands, and fixtures. Criteria
-   unsuitable for tests name an inspection and reason. The reviewer verifies test roots against
+   unsuitable for tests name an inspection and reason. An exception or error message that the
+   task, a plan or a criterion specifies is asserted exactly, never by substring or a pattern
+   anchored only at its end. The reviewer verifies test roots against
    the base configuration/layout and supplies a plausible wrong implementation plus rejecting
    check IDs for every criterion. The engine requires complete, valid challenges before approval.
    A reviewer who finds no rejecting check can return empty IDs with an evidenced finding,

@@ -514,6 +514,24 @@ test('setup that finds a criterion unverifiable inside the run stops before any 
   assert.match(calls.find(c => c.kind === 'setup').prompt, /fails only inside your own sandbox \(a refused port bind.*does not make a criterion unverifiable/)
 })
 
+// Sonnet setup stopped a run as unverifiable on "make coverage ... may not be runnable" with pcov
+// installed; reviews flagged substring exception-message assertions in 8 of 24 runs.
+test('setup lists only criteria it checked cannot be met, and design asserts specified messages exactly', async () => {
+  const state = L.newState(L.parsePairConfig('Fix it'))
+  const setup = L.pairSetupPrompt(state)
+  assert.match(setup, /List in unverifiable only the criteria, supplied or written by you, that you have established cannot be fully met/)
+  assert.match(setup, /post-delivery, production or live-service evidence/)
+  assert.match(setup, /might be missing, check it with one command first \(for example `php -m \| grep -i pcov`/)
+  assert.match(setup, /Doubt alone \("may not be runnable"\) is not a reason: record it in repositoryNotes/)
+  const { calls } = await run({ native: true })
+  const [design, code] = [calls.find(c => c.kind === 'author' && /# Stage: design/.test(c.prompt)), calls.find(c => c.kind === 'author' && /# Stage: implementation/.test(c.prompt))]
+  const rule = /specifies an exception or error message, the planned check asserts that exact message: equality on the caught message, a match anchored at both ends, or the framework's exact-equality form \(in PHPUnit, assertSame on the caught exception's getMessage\(\)\)\. Substring matchers \(PHPUnit's expectExceptionMessage among them\) and unanchored or \$-anchored patterns do not count/
+  assert.match(design.prompt, rule)
+  assert.doesNotMatch(code.prompt, rule)
+  // Neither rule reaches the council's setup.
+  assert.doesNotMatch(L.setupPrompt(L.newState(L.parseConfig({ task: 'Fix it' }))), /unverifiable|exception or error message/)
+})
+
 test('codex-host pair setup runs as the author at medium effort unless effort is given', async () => {
   let { calls } = await run()
   let setupCall = calls.find(c => c.kind === 'setup')
