@@ -5,6 +5,7 @@ import { spawn, execFileSync } from 'node:child_process'
 import { appendFileSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync, realpathSync, existsSync, readdirSync, lstatSync, openSync, closeSync, unlinkSync } from 'node:fs'
 import { dirname, join, resolve, relative, isAbsolute } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { platform as osPlatform } from 'node:os'
 import { environmentPin, guardEngine, liveIdentity, runProvenance, validateAdmissions, inspectSeat, isolationIssues, drift } from './engine.mjs'
 
 const plugin = resolve(dirname(fileURLToPath(import.meta.url)), '..')
@@ -551,7 +552,7 @@ export async function runWorkflow(options, dependencies = {}) {
 
 // Idle sleep on a Mac stalls a standalone run's turns and measurements. `caffeinate -w` exits
 // with this process; -i prevents idle sleep only, so closing the lid still sleeps the machine.
-export function keepAwake({ platform = process.platform, env = process.env, pid = process.pid, start = spawn } = {}) {
+export function keepAwake({ platform = osPlatform(), env = process.env, pid = process.pid, start = spawn } = {}) {
   if (platform !== 'darwin' || env.DARK_FACTORY_KEEP_AWAKE === '0') return null
   try {
     const child = start('caffeinate', ['-i', '-w', String(pid)], { detached: true, stdio: 'ignore' })
