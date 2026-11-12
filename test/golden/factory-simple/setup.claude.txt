@@ -30,6 +30,7 @@ Then measure the baseline: dark-factory measure --run-dir <runDir> --seat A --la
 
 ## Step 4 — acceptance criteria
 Write 1 to 3 acceptance criteria for this simple change: concrete, checkable statements of what a correct result must satisfy, derived from the task and the code, not from any particular solution. Read the relevant code before writing them. Number them C1, C2, ….
+Every requirement in the task or its reference documents that the verification command from step 3 doesn't cover becomes a criterion of its own, including inspections and report reviews (for example "run the coverage target and inspect the report"). Name the evidence in the criterion and cite its source as document and line. Don't drop a requirement because no command can check it. Such required checks don't count toward the number above: add them beyond it rather than leaving out a behavioural criterion to make room.
 Every criterion must be checkable by the route seats and verifiers actually have: reading files, and running commands from a worktree inside a sandbox, with no subagents, no `claude -p`, no network and no logins. Name the evidence in the criterion itself where it isn't obvious (a test, a command, a file to read). Don't write a criterion only a capability the seats lack could check.
 
 ## Step 5 — the task file

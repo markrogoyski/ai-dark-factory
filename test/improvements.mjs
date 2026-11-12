@@ -324,3 +324,13 @@ test('intake prompts remain stable when resume caps increase on either host', ()
     else assert.doesNotMatch(before, /# Execution budget/)
   }
 })
+
+test('factory and pair setup turn uncovered required checks into criteria; council and supplied criteria do not', () => {
+  const rule = /Don't drop a requirement because no command can check it/
+  const pair = L.newState(L.parsePairConfig('Fix it'))
+  assert.match(L.pairSetupPrompt(pair), rule)
+  const simple = L.newState(L.parseConfig({ task: 'Fix it' }, { workflow: 'factory', tier: 'simple' }))
+  assert.match(L.setupPrompt(simple), rule)
+  assert.doesNotMatch(L.setupPrompt(L.newState(L.parseConfig({ task: 'Fix it' }))), rule)
+  assert.doesNotMatch(L.pairSetupPrompt(L.newState(L.parsePairConfig({ task: 'Fix it', criteria: ['It works.'] }))), rule)
+})
