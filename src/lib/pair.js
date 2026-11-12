@@ -248,3 +248,4 @@ function pairResult(S, status = 'blocked') {
       'Deliver only within the user\'s authorization, preserving unrelated edits; use dark-factory verify-delivery afterward. ' +
       'Do not start a council automatically. The Codex host can resume a validated checkpoint with --resume hostRunDir; changed inputs or evidence require a new run.' }
 }
+

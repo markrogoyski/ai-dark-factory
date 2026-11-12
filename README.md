@@ -313,6 +313,19 @@ fresh each time. Codex's runner executes measurements directly; Claude's workflo
 transport turn to run the same helper. Its existing CLI relay handles external participants.
 There is no council, panel, voting, or automatic escalation.
 
+In Claude Code, `runtime: "cli"` (or `--runtime cli` at the start of a string task) runs the
+whole Pair on the standalone runner instead: one Sonnet transport agent writes the arguments to
+a file, runs `dark-factory-codex --workflow pair --args-file FILE [--cwd REPO]` in the
+background, and returns its final JSON. There are no per-turn relays or measurement
+transports; the Claude author resumes its CLI session between turns, and the result records
+exact `elapsedMs` and a checkpoint. The transport names the participants explicitly (Opus author
+and Astra reviewer unless you choose others), so the runner's Codex defaults don't apply. To
+resume an interrupted run, repeat the same arguments and add `resume` with the earlier result's
+`hostRunDir`: `{"task": "…", "runtime": "cli", "resume": "/repo/.council/host-abc123"}`. Changed
+arguments are refused on resume. The native path stays the default. The option is refused in the
+Codex host, which always runs this runtime. Factory doesn't support it yet: its runner path
+applies Codex role defaults to intake and the tiers.
+
 Each implementation response maps approved check IDs to current files, focused commands, and
 fixtures. Each focused command must isolate one test file. Separate files are preferred for
 new-API and preserved-behavior tests; explicit user or plan file requirements take precedence.

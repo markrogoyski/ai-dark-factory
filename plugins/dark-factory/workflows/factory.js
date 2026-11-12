@@ -126,7 +126,7 @@ const countsOf = (xs, f) => Object.entries(xs.reduce((m, x) => { const k = f(x);
 function parseArgs(a) {
   if (typeof a !== 'string') return a || {}
   const out = {}, names = { seats: 'seats', tier: 'tier', strategy: 'strategy', author: 'author', reviewer: 'reviewer',
-    'max-reviews': 'maxReviews', 'max-turns': 'maxTurns', 'max-run-min': 'maxRunMin', candidates: 'candidates', reviewers: 'reviewers', mode: 'mode' }
+    'max-reviews': 'maxReviews', 'max-turns': 'maxTurns', 'max-run-min': 'maxRunMin', candidates: 'candidates', reviewers: 'reviewers', mode: 'mode', runtime: 'runtime' }
   let rest = a, match
   while (true) {
     if (/^\s*--explain(?:\s|$)/.test(rest)) { out.explain = true; rest = rest.replace(/^\s*--explain(?:\s+|$)/, ''); continue }
@@ -5985,6 +5985,32 @@ function pairReviewTurn(label, correction = null) {
     sandbox: 'workspace-write', cwd: checkout, writable: [`${S.run.runDir}/jobs`, `${S.run.runDir}/logs`],
     timeoutKind: 'audit', checkout: `A-${pairReviewTag(S)}`,
   }, prompt, PAIR_REVIEW_SCHEMA, `review ${label}`, ph)
+}
+
+// The participants are named so the runner's Codex defaults (a Sol author) don't replace the
+// Claude Code profile.
+function pairCliPrompt() {
+  const q = v => "'" + String(v).replace(/'/g, "'\\''") + "'"
+  const { explain, ...rest } = S.raw
+  const cliArgs = { ...rest, author: S.pairOptions.author.key, reviewer: S.pairOptions.reviewer.key }
+  const cmd = `dark-factory-codex --workflow pair --args-file <that-file>${S.raw.repo ? ' --cwd ' + q(S.raw.repo) : ''}${transport.cli.resume ? ' --resume ' + q(transport.cli.resume) : ''}`
+  return `Run one Pair workflow on the shipped standalone runtime. You are only its transport: you do not work on the task.
+
+Write this JSON verbatim to a new temporary args file using your file tool:
+${JSON.stringify(cliArgs)}
+
+Then run, using Bash with run_in_background=true:
+${cmd}
+
+Retain the returned task_id and wait with TaskOutput(block=true, timeout=300000); repeat TaskOutput on that same task until it exits. The run can take longer than Bash's foreground timeout. Do not restart the command while it is running, and do not poll with sleep. Do not read or change the repository, review the work, or interpret the outcome: a blocked or needs-user result is a result, not a failure. Return the exact final stdout JSON as the result string; on transport failure explain the failure in error.`
+}
+
+async function pairCliRun() {
+  phase('Pair')
+  const relay = await agent(pairCliPrompt(), { model: 'sonnet', label: 'pair transport',
+    schema: { type: 'object', properties: { result: { type: 'string' }, error: { type: 'string' } }, required: ['result', 'error'], additionalProperties: false } })
+  if (!relay?.result) return { status: 'failed', error: relay?.error || 'Pair transport returned no result; rerun with the same arguments and resume: <hostRunDir> to recover.' }
+  try { return JSON.parse(relay.result) } catch { return { status: 'failed', error: 'Pair transport returned output that is not the runner JSON.', output: relay.result.slice(0, 2000) } }
 }
 
 // ---------------------------------------------------------------- the Simple tier

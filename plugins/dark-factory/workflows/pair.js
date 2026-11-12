@@ -98,7 +98,7 @@ const countsOf = (xs, f) => Object.entries(xs.reduce((m, x) => { const k = f(x);
 function parseArgs(a) {
   if (typeof a !== 'string') return a || {}
   const out = {}, names = { seats: 'seats', tier: 'tier', strategy: 'strategy', author: 'author', reviewer: 'reviewer',
-    'max-reviews': 'maxReviews', 'max-turns': 'maxTurns', 'max-run-min': 'maxRunMin', candidates: 'candidates', reviewers: 'reviewers', mode: 'mode' }
+    'max-reviews': 'maxReviews', 'max-turns': 'maxTurns', 'max-run-min': 'maxRunMin', candidates: 'candidates', reviewers: 'reviewers', mode: 'mode', runtime: 'runtime' }
   let rest = a, match
   while (true) {
     if (/^\s*--explain(?:\s|$)/.test(rest)) { out.explain = true; rest = rest.replace(/^\s*--explain(?:\s+|$)/, ''); continue }
@@ -4435,7 +4435,19 @@ If status is running, poll ${S.cli} wait --run-dir ${shq(S.run.runDir)} --job ${
 Return status done only for the helper's completed result. Copy snapshot.ref, snapshot.tree, snapshot.diff, and suite.ran, suite.passed, suite.command, suite.failureKind (empty when absent), and suite.tail exactly (empty command or tail if absent). Copy the ENTIRE replay object unchanged, including mapping, roots, identities, changes, exclusions, file/command records, launch errors, exit/signal/timeout fields, log paths, tails, and timings. Never summarize individual tests or interpret base failures. On failure return error with the actual message and empty snapshot/replay values. Do not substitute results from the live worktree or remove required checks.`
 }
 
-let S = newState(parsePairConfig(args))
+// runtime: "cli" (Claude Code only) hands the whole run to the standalone runner. It is a
+// transport choice, not a Pair option, so it is taken off before the engine parses the args.
+function pairTransport(input, hosted) {
+  const raw = parseArgs(input)
+  const { runtime, resume, ...rest } = raw
+  if (runtime === undefined && resume === undefined) return { args: input, cli: null }
+  if (runtime !== 'cli') throw new Error(runtime === undefined ? 'pair: resume takes the hostRunDir of an earlier runtime: "cli" run, with runtime: "cli".' : 'pair: runtime must be "cli" (the standalone runtime) or omitted.')
+  if (hosted || raw.host === 'codex') throw new Error('pair: runtime applies only in Claude Code; the Codex host already runs the standalone runtime.')
+  if (resume !== undefined && (typeof resume !== 'string' || !resume.trim())) throw new Error('pair: resume takes the hostRunDir of an earlier runtime: "cli" run.')
+  return { args: rest, cli: { resume: resume || '' } }
+}
+const transport = pairTransport(args, typeof factoryRuntime !== 'undefined')
+let S = newState(parsePairConfig(transport.args))
 const hostRuntime = typeof factoryRuntime === 'undefined' ? null : factoryRuntime
 S.pair = newPairState()
 const requestControl = { started: requestClock(), turns: 0, ...S.controls }
@@ -5563,4 +5575,33 @@ function pairReviewTurn(label, correction = null) {
   }, prompt, PAIR_REVIEW_SCHEMA, `review ${label}`, ph)
 }
 
+// The participants are named so the runner's Codex defaults (a Sol author) don't replace the
+// Claude Code profile.
+function pairCliPrompt() {
+  const q = v => "'" + String(v).replace(/'/g, "'\\''") + "'"
+  const { explain, ...rest } = S.raw
+  const cliArgs = { ...rest, author: S.pairOptions.author.key, reviewer: S.pairOptions.reviewer.key }
+  const cmd = `dark-factory-codex --workflow pair --args-file <that-file>${S.raw.repo ? ' --cwd ' + q(S.raw.repo) : ''}${transport.cli.resume ? ' --resume ' + q(transport.cli.resume) : ''}`
+  return `Run one Pair workflow on the shipped standalone runtime. You are only its transport: you do not work on the task.
+
+Write this JSON verbatim to a new temporary args file using your file tool:
+${JSON.stringify(cliArgs)}
+
+Then run, using Bash with run_in_background=true:
+${cmd}
+
+Retain the returned task_id and wait with TaskOutput(block=true, timeout=300000); repeat TaskOutput on that same task until it exits. The run can take longer than Bash's foreground timeout. Do not restart the command while it is running, and do not poll with sleep. Do not read or change the repository, review the work, or interpret the outcome: a blocked or needs-user result is a result, not a failure. Return the exact final stdout JSON as the result string; on transport failure explain the failure in error.`
+}
+
+async function pairCliRun() {
+  phase('Pair')
+  const relay = await agent(pairCliPrompt(), { model: 'sonnet', label: 'pair transport',
+    schema: { type: 'object', properties: { result: { type: 'string' }, error: { type: 'string' } }, required: ['result', 'error'], additionalProperties: false } })
+  if (!relay?.result) return { status: 'failed', error: relay?.error || 'Pair transport returned no result; rerun with the same arguments and resume: <hostRunDir> to recover.' }
+  try { return JSON.parse(relay.result) } catch { return { status: 'failed', error: 'Pair transport returned output that is not the runner JSON.', output: relay.result.slice(0, 2000) } }
+}
+
+// runtime: "cli" (Claude Code only): one transport agent runs the whole Pair on the standalone
+// runner, which resumes the author's CLI session and records exact elapsed time.
+if (!S.raw.explain && transport.cli) return await pairCliRun()
 return await controlledRun(async () => S.raw.explain ? explanation(S) : pairRun())

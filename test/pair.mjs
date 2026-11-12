@@ -521,3 +521,22 @@ test('codex-host pair setup runs as the author at medium effort unless effort is
   assert.equal(L.parsePairConfig({ task: 'x', host: 'codex' }).roles.setup.effort, 'medium')
   assert.equal(L.parsePairConfig({ task: 'x', host: 'codex', effort: 'high' }).roles.setup.effort, 'high')
 })
+
+test('runtime "cli" hands the whole native run to one transport turn with explicit participants', async () => {
+  const calls = []
+  const agent = async (prompt, opts) => { calls.push({ prompt, opts }); return { result: JSON.stringify({ status: 'done', host: 'codex' }), error: '' } }
+  const go = args => execute(agent, () => { throw new Error('no panel') }, null, () => {}, () => {}, args, {}, null, undefined)
+  const result = await go({ task: 'Implement the behavior', repo: '/repo', runtime: 'cli', resume: '/repo/.council/host-x' })
+  assert.deepEqual(result, { status: 'done', host: 'codex' })
+  assert.equal(calls.length, 1)
+  assert.equal(calls[0].opts.model, 'sonnet')
+  const json = JSON.parse(calls[0].prompt.match(/^\{.*\}$/m)[0])
+  assert.deepEqual(json, { task: 'Implement the behavior', repo: '/repo', author: 'opus', reviewer: 'astra' })
+  assert.match(calls[0].prompt, /dark-factory-codex --workflow pair --args-file <that-file> --cwd '\/repo' --resume '\/repo\/.council\/host-x'/)
+  calls.length = 0
+  await go('--runtime cli --author sonnet Implement it')
+  assert.deepEqual(JSON.parse(calls[0].prompt.match(/^\{.*\}$/m)[0]), { task: 'Implement it', author: 'sonnet', reviewer: 'astra' })
+  await assert.rejects(go({ task: 'x', runtime: 'native' }), /runtime must be "cli"/)
+  await assert.rejects(go({ task: 'x', resume: '/r' }), /resume/)
+  await assert.rejects(execute(agent, null, null, () => {}, () => {}, { task: 'x', runtime: 'cli' }, {}, null, { agent() {}, turn() {}, measure() {} }), /only in Claude Code/)
+})

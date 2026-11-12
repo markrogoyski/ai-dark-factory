@@ -143,7 +143,7 @@ const countsOf = (xs, f) => Object.entries(xs.reduce((m, x) => { const k = f(x);
 function parseArgs(a) {
   if (typeof a !== 'string') return a || {}
   const out = {}, names = { seats: 'seats', tier: 'tier', strategy: 'strategy', author: 'author', reviewer: 'reviewer',
-    'max-reviews': 'maxReviews', 'max-turns': 'maxTurns', 'max-run-min': 'maxRunMin', candidates: 'candidates', reviewers: 'reviewers', mode: 'mode' }
+    'max-reviews': 'maxReviews', 'max-turns': 'maxTurns', 'max-run-min': 'maxRunMin', candidates: 'candidates', reviewers: 'reviewers', mode: 'mode', runtime: 'runtime' }
   let rest = a, match
   while (true) {
     if (/^\s*--explain(?:\s|$)/.test(rest)) { out.explain = true; rest = rest.replace(/^\s*--explain(?:\s+|$)/, ''); continue }
