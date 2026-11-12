@@ -35,6 +35,15 @@ async function pairRun() {
     S.pair.stop = 'Setup omitted criteria, reference snapshots, or the requested verification command.'
     return pairResult(S)
   }
+  // A criterion no evidence inside the run can meet would block readiness after all the work, so
+  // the user rewrites or drops it before any author turn.
+  const unverifiable = (setup.unverifiable || []).filter(u => String(u?.criterion || '').trim())
+  if (unverifiable.length) {
+    const text = id => S.criteria.find(c => c.id === id)?.text
+    S.pair.stop = `Setup found ${unverifiable.length === 1 ? 'a criterion' : 'criteria'} this run cannot verify: ${unverifiable.map(u => u.criterion).join(', ')}.`
+    S.pair.questions = unverifiable.map(u => `${u.criterion}${text(u.criterion) ? ` ("${oneLine(text(u.criterion), 200)}")` : ''} cannot be verified inside the run: ${oneLine(u.reason, 300) || 'no reason given'}. Rewrite it so the run can check it, or drop it?`)
+    return pairResult(S, 'needs-user')
+  }
   const p = S.pair
   log(`pair: ${S.pairOptions.author.name} authors; ${S.pairOptions.reviewer.name} reviews; budget ${S.pairOptions.maxReviews} reviews`)
   while (p.reviews.length < S.pairOptions.maxReviews) {

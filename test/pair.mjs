@@ -497,3 +497,16 @@ test('reviewers can reword an existing finding through its ID without duplicatin
   assert.equal(result.findings[0].id, 'P1')
   assert.equal(result.findings[0].status, 'fixed')
 })
+
+test('setup that finds a criterion unverifiable inside the run stops before any author turn', async () => {
+  for (const native of [false, true]) {
+    const { result, calls } = await run({ native, setup: { unverifiable: [{ criterion: 'C1', reason: 'Needs the deployed service to answer.' }] } })
+    assert.equal(result.status, 'needs-user')
+    assert.equal(result.questions.length, 1)
+    assert.match(result.questions[0], /^C1 .*The requested behavior works.*deployed service.*Rewrite it/)
+    assert.equal(calls.filter(c => c.kind === 'author').length, 0)
+    assert.notEqual(result.final.readiness.state, 'ready')
+  }
+  const { result } = await run({ setup: { unverifiable: [] } })
+  assert.equal(result.status, 'done')
+})

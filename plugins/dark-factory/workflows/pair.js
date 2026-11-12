@@ -4340,7 +4340,7 @@ function pairResult(S, status = 'blocked') {
 }
 
 function pairSetupPrompt(S) {
-  return setupPrompt(S) + '\n\nPair also requires head: copy the full original commit from the helper init output (head), or run.json. Do not use a later author commit or snapshot. This identity will be checked against every baseline replay.\nKeep the original task unchanged, including in TASK.md. Return repositoryNotes with observations from HEAD, configuration/tool paths, and proposed interpretations of outdated wording. These are proposals for the author and reviewer to check, not replacement requirements. Explicit user decisions and required plan filenames override the default separate-test-file preference. If substantive requirements conflict, return status needs-user with precise questions immediately. Leave questions=[] when none remain.'
+  return setupPrompt(S) + '\n\nPair also requires head: copy the full original commit from the helper init output (head), or run.json. Do not use a later author commit or snapshot. This identity will be checked against every baseline replay.\nKeep the original task unchanged, including in TASK.md. Return repositoryNotes with observations from HEAD, configuration/tool paths, and proposed interpretations of outdated wording. These are proposals for the author and reviewer to check, not replacement requirements. Explicit user decisions and required plan filenames override the default separate-test-file preference. If substantive requirements conflict, return status needs-user with precise questions immediately. Leave questions=[] when none remain.\nList in unverifiable every criterion, supplied or written by you, that cannot be fully met with evidence available inside this run: anything that needs downstream, post-delivery, production or live-service evidence, or a capability the author and reviewer lack. Give the criterion ID and the reason. Return unverifiable=[] when every criterion can be checked here.'
 }
 
 function pairAuthorPrompt(S, label, correction = '') {
@@ -4791,6 +4791,8 @@ const PAIR_SETUP_SCHEMA = strict({ type: 'object', properties: {
   repositoryNotes: { type: 'string', description: 'Repository observations, proposed interpretations, and actual tool/configuration paths; never replacement requirements.' },
   questions: PAIR_STRINGS,
   head: { type: 'string', description: 'The original full base commit from init.head / run.json; never a later snapshot.' },
+  unverifiable: { type: 'array', description: 'Criteria (supplied or written) that evidence available inside this run cannot fully meet; [] when every criterion can be checked.',
+    items: { type: 'object', properties: { criterion: { type: 'string' }, reason: { type: 'string' } } } },
 } })
 const PAIR_CONTRACT = { type: 'object', properties: {
   testRoots: { type: 'array', items: { type: 'object', properties: {
@@ -5423,6 +5425,15 @@ async function pairRun() {
       (S.raw.verify && S.verify !== String(S.raw.verify).trim())) {
     S.pair.stop = 'Setup omitted criteria, reference snapshots, or the requested verification command.'
     return pairResult(S)
+  }
+  // A criterion no evidence inside the run can meet would block readiness after all the work, so
+  // the user rewrites or drops it before any author turn.
+  const unverifiable = (setup.unverifiable || []).filter(u => String(u?.criterion || '').trim())
+  if (unverifiable.length) {
+    const text = id => S.criteria.find(c => c.id === id)?.text
+    S.pair.stop = `Setup found ${unverifiable.length === 1 ? 'a criterion' : 'criteria'} this run cannot verify: ${unverifiable.map(u => u.criterion).join(', ')}.`
+    S.pair.questions = unverifiable.map(u => `${u.criterion}${text(u.criterion) ? ` ("${oneLine(text(u.criterion), 200)}")` : ''} cannot be verified inside the run: ${oneLine(u.reason, 300) || 'no reason given'}. Rewrite it so the run can check it, or drop it?`)
+    return pairResult(S, 'needs-user')
   }
   const p = S.pair
   log(`pair: ${S.pairOptions.author.name} authors; ${S.pairOptions.reviewer.name} reviews; budget ${S.pairOptions.maxReviews} reviews`)
