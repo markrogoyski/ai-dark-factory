@@ -531,3 +531,16 @@ class Timeline(TmpDirCase):
         kept = council.fill_metrics(run, {'metrics': {'elapsedMs': 5, 'tokens': {}}})['metrics']
         self.assertEqual(kept['elapsedMs'], 5)
         self.assertNotIn('elapsedSource', kept)
+
+
+class ClaudeCommand(TmpDirCase):
+    def test_every_headless_claude_turn_can_read_the_run_room_and_refs_without_editing_them(self):
+        jd = self.path('jobs', 'review-pair-code-3')
+        os.makedirs(jd)
+        for sandbox in ('read-only', 'workspace-write'):
+            spec = {'runDir': self.tmp, 'job': 'review-pair-code-3', 'model': 'opus', 'effort': 'high', 'sandbox': sandbox,
+                    'writable': [self.path('jobs')], 'cwd': self.path('snap'), 'schema': None, 'gitRoots': []}
+            cmd, _ = council.claude_command(jd, spec, None)
+            settings = json.loads(cmd[cmd.index('--settings') + 1])
+            self.assertEqual(settings['permissions']['allow'], [f'Read(/{self.tmp}/refs/**)', f'Read(/{self.tmp}/room/**)'])
+            self.assertNotIn(self.path('room'), cmd)

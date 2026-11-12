@@ -970,9 +970,11 @@ def claude_command(jd, spec, session):
            '--permission-mode', 'plan' if readonly else 'acceptEdits', '--permission-prompts', 'none',
            '--append-system-prompt', CLAUDE_HEADLESS,
            '--tools', 'Read,Glob,Grep' if readonly else 'Bash,Read,Glob,Grep,Edit,Write']
-    # The run's reference files are read-only for every seat. A permission rule rather than
-    # --add-dir, which under acceptEdits would also make them editable.
-    settings = {'permissions': {'allow': [f'Read(/{os.path.join(spec["runDir"], "refs")}/**)']}}
+    # The run's reference files and its room (the diffs, stats and posts a prompt names) are
+    # readable for every seat, including a reviewer whose cwd is a snapshot checkout outside the
+    # room. A permission rule rather than --add-dir, which under acceptEdits would also make them
+    # editable. Seats that may write to the room get it as a writable root below.
+    settings = {'permissions': {'allow': [f'Read(/{os.path.join(spec["runDir"], d)}/**)' for d in ('refs', 'room')]}}
     if not readonly:
         roots = list(dict.fromkeys(spec['writable'] + seat_git_dirs(spec) + [claude_tmp_dir(spec)]))
         for root in roots:
