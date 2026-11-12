@@ -455,3 +455,34 @@ class SmallHelpers(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class KeepAwake(TmpDirCase):
+    def setUp(self):
+        super().setUp()
+        bin_dir = self.path('bin')
+        os.makedirs(bin_dir)
+        self.record = self.path('caffeinate.args')
+        fake = os.path.join(bin_dir, 'caffeinate')
+        council.write(fake, f'#!/bin/sh\necho "$@" > {self.record}\n')
+        os.chmod(fake, 0o755)
+        self.env = {'PATH': bin_dir + os.pathsep + os.environ['PATH']}
+
+    def start(self, env):
+        jd = self.path('jobs', 'job')
+        with mock.patch.object(council.sys, 'platform', 'darwin'), mock.patch.dict(os.environ, env):
+            council.start_job(jd, {'kind': 'noop'})
+        return council.read(os.path.join(jd, 'pid')).strip()
+
+    def test_started_job_keeps_the_mac_awake_until_it_exits(self):
+        pid = self.start(self.env)
+        for _ in range(200):
+            if os.path.exists(self.record) and council.read(self.record).strip():
+                break
+            council.time.sleep(0.01)
+        self.assertEqual(council.read(self.record).split(), ['-i', '-w', pid])
+
+    def test_keep_awake_can_be_disabled(self):
+        self.start(dict(self.env, DARK_FACTORY_KEEP_AWAKE='0'))
+        council.time.sleep(0.2)
+        self.assertFalse(os.path.exists(self.record))

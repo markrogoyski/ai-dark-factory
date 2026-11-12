@@ -1376,6 +1376,10 @@ repository has a Gemini seat.
 
 ## Gotchas
 
+- On macOS every helper job and every standalone run starts `caffeinate -i -w <pid>`, so idle
+  sleep doesn't stall a long measurement or CLI turn; it exits when the job does. `-i` prevents
+  idle sleep only: closing the lid still sleeps the machine. Set `DARK_FACTORY_KEEP_AWAKE=0` to
+  turn it off.
 - agy reports `SUCCESS` with exit code 0 in several failures, so `bin/dark-factory` checks every
   Gemini result. It catches:
   - a command or edit it denied, which ends the turn. The runner resumes the conversation once,

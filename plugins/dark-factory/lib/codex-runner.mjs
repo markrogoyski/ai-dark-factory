@@ -549,11 +549,24 @@ export async function runWorkflow(options, dependencies = {}) {
   }
 }
 
+// Idle sleep on a Mac stalls a standalone run's turns and measurements. `caffeinate -w` exits
+// with this process; -i prevents idle sleep only, so closing the lid still sleeps the machine.
+export function keepAwake({ platform = process.platform, env = process.env, pid = process.pid, start = spawn } = {}) {
+  if (platform !== 'darwin' || env.DARK_FACTORY_KEEP_AWAKE === '0') return null
+  try {
+    const child = start('caffeinate', ['-i', '-w', String(pid)], { detached: true, stdio: 'ignore' })
+    child.on?.('error', () => {})
+    child.unref?.()
+    return child
+  } catch { return null }
+}
+
 export async function main(argv = process.argv.slice(2)) {
   let result
   try {
     const options = parseCLI(argv)
     if (options.help) { process.stdout.write(HELP); return }
+    keepAwake()
     result = await runWorkflow(options)
   } catch (error) { result = { status: 'failed', error: error.message } }
   process.stdout.write(JSON.stringify(result, null, 2) + '\n')

@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os'
 import { join, resolve, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { execFileSync, spawn } from 'node:child_process'
-import { parseCLI, resultExitCode, validateResult, createLimiter, createRuntime, runWorkflow } from '../plugins/dark-factory/lib/codex-runner.mjs'
+import { parseCLI, resultExitCode, validateResult, createLimiter, createRuntime, runWorkflow, keepAwake } from '../plugins/dark-factory/lib/codex-runner.mjs'
 import { LIB } from '../tools/sources.mjs'
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
@@ -488,4 +488,15 @@ test('Ensemble uses real isolated snapshots and fresh reviewers through stub CLI
   assert.equal(reviews.length, 4)
   assert.equal(new Set(reviews.map(c => c.thread)).size, 4)
   assert.ok(reviews.every(c => c.cwd.includes('/snap/ensemble-')))
+})
+
+test('a standalone run keeps the Mac awake with caffeinate unless disabled or off macOS', () => {
+  const calls = []
+  const start = (cmd, args, opts) => { calls.push([cmd, args, opts]); return { unref() { calls.push('unref') } } }
+  keepAwake({ platform: 'darwin', env: {}, pid: 42, start })
+  assert.deepEqual(calls, [['caffeinate', ['-i', '-w', '42'], { detached: true, stdio: 'ignore' }], 'unref'])
+  calls.length = 0
+  assert.equal(keepAwake({ platform: 'darwin', env: { DARK_FACTORY_KEEP_AWAKE: '0' }, pid: 42, start }), null)
+  assert.equal(keepAwake({ platform: 'linux', env: {}, pid: 42, start }), null)
+  assert.deepEqual(calls, [])
 })
