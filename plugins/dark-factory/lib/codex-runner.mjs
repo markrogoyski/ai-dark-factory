@@ -29,6 +29,8 @@ Git, and authenticated CLIs for the selected models.
   --max-reviews N            Pair review budget across design and code (default: 8)
   --args-file FILE           Full workflow arguments as a JSON object
   --output FILE              Also write the final result JSON to this path
+  --brief                    Print a compact result on stdout (status, readiness, findings,
+                             metrics, hostRunDir); the full result stays in result.json
   --concurrency N            Maximum simultaneous model turns (default: 3)
   --timeout-min N            Default deadline per model turn (default: 90)
   --candidates N             Ensemble candidate count (2–6, default: 4)
@@ -562,14 +564,27 @@ export function keepAwake({ platform = osPlatform(), env = process.env, pid = pr
   } catch { return null }
 }
 
+// A transport agent relays stdout through its own tool output, which a full Pair result (tens of
+// kilobytes of design and contract text) overflows. --brief keeps what a caller acts on and points
+// at the full result on disk.
+const BRIEF_DROPPED = ['task', 'design', 'testContract', 'replayMapping', 'reviews', 'report', 'repositoryNotes', 'forTheOrchestrator', 'provenance', 'plan', 'refs']
+export function briefResult(result) {
+  const brief = Object.fromEntries(Object.entries(result || {}).filter(([key]) => !BRIEF_DROPPED.includes(key)))
+  if (Array.isArray(result?.findings)) brief.findings = result.findings.map(f => ({ id: f.id, stage: f.stage, severity: f.severity, status: f.status, statement: String(f.statement || '').slice(0, 300) }))
+  if (result?.final && typeof result.final === 'object') brief.final = Object.fromEntries(['author', 'model', 'worktree', 'snapshotRef', 'snapshotTree', 'readiness'].filter(key => key in result.final).map(key => [key, result.final[key]]))
+  if (result?.hostRunDir) brief.resultFile = join(result.hostRunDir, 'result.json')
+  return brief
+}
+
 export async function main(argv = process.argv.slice(2)) {
-  let result
+  let result, brief = false
   try {
     const options = parseCLI(argv)
     if (options.help) { process.stdout.write(HELP); return }
+    brief = !!options.brief
     keepAwake()
     result = await runWorkflow(options)
   } catch (error) { result = { status: 'failed', error: error.message } }
-  process.stdout.write(JSON.stringify(result, null, 2) + '\n')
+  process.stdout.write(brief ? JSON.stringify(briefResult(result)) + '\n' : JSON.stringify(result, null, 2) + '\n')
   process.exitCode = resultExitCode(result)
 }

@@ -532,7 +532,12 @@ test('runtime "cli" hands the whole native run to one transport turn with explic
   assert.equal(calls[0].opts.model, 'sonnet')
   const json = JSON.parse(calls[0].prompt.match(/^\{.*\}$/m)[0])
   assert.deepEqual(json, { task: 'Implement the behavior', repo: '/repo', author: 'opus', reviewer: 'astra' })
-  assert.match(calls[0].prompt, /dark-factory-codex --workflow pair --args-file <that-file> --cwd '\/repo' --resume '\/repo\/.council\/host-x'/)
+  assert.match(calls[0].prompt, /dark-factory-codex --workflow pair --brief --args-file ARGS --cwd '\/repo' --resume '\/repo\/.council\/host-x' < \/dev\/null > ARGS.out 2> ARGS.log; echo \$\? > ARGS.exit/)
+  // The runner starts vendor CLIs that the Bash tool's sandbox blocks, and this Claude Code build
+  // has no TaskOutput tool: an improvised pgrep wait matched its own command line until timeout.
+  assert.equal((calls[0].prompt.match(/dangerouslyDisableSandbox: true/g) || []).length, 2)
+  assert.match(calls[0].prompt, /\[ -s ARGS.exit \]/)
+  assert.doesNotMatch(calls[0].prompt, /TaskOutput/)
   calls.length = 0
   await go('--runtime cli --author sonnet Implement it')
   assert.deepEqual(JSON.parse(calls[0].prompt.match(/^\{.*\}$/m)[0]), { task: 'Implement it', author: 'sonnet', reviewer: 'astra' })

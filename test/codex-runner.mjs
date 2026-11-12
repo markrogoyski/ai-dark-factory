@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os'
 import { join, resolve, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { execFileSync, spawn } from 'node:child_process'
-import { parseCLI, resultExitCode, validateResult, createLimiter, createRuntime, runWorkflow, keepAwake } from '../plugins/dark-factory/lib/codex-runner.mjs'
+import { parseCLI, resultExitCode, validateResult, createLimiter, createRuntime, runWorkflow, keepAwake, briefResult } from '../plugins/dark-factory/lib/codex-runner.mjs'
 import { LIB } from '../tools/sources.mjs'
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
@@ -499,4 +499,17 @@ test('a standalone run keeps the Mac awake with caffeinate unless disabled or of
   assert.equal(keepAwake({ platform: 'darwin', env: { DARK_FACTORY_KEEP_AWAKE: '0' }, pid: 42, start }), null)
   assert.equal(keepAwake({ platform: 'linux', env: {}, pid: 42, start }), null)
   assert.deepEqual(calls, [])
+})
+
+test('--brief prints what a transport relays and points at the full result', () => {
+  assert.equal(parseCLI(['--workflow', 'pair', '--brief', '--', 'Do it'], '/repo').brief, true)
+  const result = { status: 'ready', stage: 'code', design: 'x'.repeat(50000), testContract: { checks: [] }, reviews: [{}], task: 'long',
+    findings: [{ id: 'P1', stage: 'design', severity: 'minor', status: 'fixed', statement: 's'.repeat(400), evidence: 'e', history: [] }],
+    final: { worktree: '/wt', snapshotRef: 'r', diff: 'd'.repeat(20000), readiness: { state: 'ready' } }, metrics: { turns: 9 }, hostRunDir: '/repo/.council/host-a' }
+  const brief = briefResult(result)
+  assert.deepEqual(Object.keys(brief).sort(), ['final', 'findings', 'hostRunDir', 'metrics', 'resultFile', 'stage', 'status'])
+  assert.deepEqual(brief.final, { worktree: '/wt', snapshotRef: 'r', readiness: { state: 'ready' } })
+  assert.deepEqual(brief.findings, [{ id: 'P1', stage: 'design', severity: 'minor', status: 'fixed', statement: 's'.repeat(300) }])
+  assert.equal(brief.resultFile, '/repo/.council/host-a/result.json')
+  assert.ok(JSON.stringify(brief).length < 1000)
 })

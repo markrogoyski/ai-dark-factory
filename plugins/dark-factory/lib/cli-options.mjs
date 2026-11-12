@@ -19,6 +19,7 @@ export function parseCLI(argv, cwd = process.cwd()) {
     if (arg === '--') { task.push(...argv.slice(i + 1)); break }
     if (arg === '--explain') { out.args.explain = true; continue }
     if (arg === '--prepare') { out.prepare = true; continue }
+    if (arg === '--brief') { out.brief = true; continue }
     if (arg === '--help' || arg === '-h') { out.help = true; continue }
     if (!arg.startsWith('-')) { task.push(arg); continue }
     const match = /^--([^=]+)(?:=(.*))?$/.exec(arg)

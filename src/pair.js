@@ -175,16 +175,23 @@ function pairCliPrompt() {
   const q = v => "'" + String(v).replace(/'/g, "'\\''") + "'"
   const { explain, ...rest } = S.raw
   const cliArgs = { ...rest, author: S.pairOptions.author.key, reviewer: S.pairOptions.reviewer.key }
-  const cmd = `dark-factory-codex --workflow pair --args-file <that-file>${S.raw.repo ? ' --cwd ' + q(S.raw.repo) : ''}${transport.cli.resume ? ' --resume ' + q(transport.cli.resume) : ''}`
+  const cmd = `dark-factory-codex --workflow pair --brief --args-file ARGS${S.raw.repo ? ' --cwd ' + q(S.raw.repo) : ''}${transport.cli.resume ? ' --resume ' + q(transport.cli.resume) : ''} < /dev/null > ARGS.out 2> ARGS.log; echo $? > ARGS.exit`
   return `Run one Pair workflow on the shipped standalone runtime. You are only its transport: you do not work on the task.
 
-Write this JSON verbatim to a new temporary args file using your file tool:
+Step 1. Write this JSON verbatim to a new temporary file using your file tool. Below, ARGS stands for that file's absolute path:
 ${JSON.stringify(cliArgs)}
 
-Then run, using Bash with run_in_background=true:
+Step 2. Make one Bash call with run_in_background: true and dangerouslyDisableSandbox: true (the runner starts Claude and Codex CLIs, which can't run inside the Bash tool's sandbox), with ARGS replaced by the path:
 ${cmd}
 
-Retain the returned task_id and wait with TaskOutput(block=true, timeout=300000); repeat TaskOutput on that same task until it exits. The run can take longer than Bash's foreground timeout. Do not restart the command while it is running, and do not poll with sleep. Do not read or change the repository, review the work, or interpret the outcome: a blocked or needs-user result is a result, not a failure. Return the exact final stdout JSON as the result string; on transport failure explain the failure in error.`
+Step 3. Wait for ARGS.exit to exist. Make one Bash call with timeout: 600000 and dangerouslyDisableSandbox: true:
+for i in $(seq 1 110); do [ -s ARGS.exit ] && break; sleep 5; done; cat ARGS.exit 2>/dev/null || echo running
+If it prints "running", make the same call again; repeat until it prints an exit code. The run usually takes 15-60 minutes. Don't start the command again, don't use pgrep or other process checks, and don't wait any other way.
+
+Step 4. Make one Bash call: cat ARGS.out
+It prints one line of JSON. Return that line exactly as the result string: don't shorten, reformat or summarize it. If ARGS.out is empty or isn't JSON, set result to "" and put the exit code and the last 20 lines of ARGS.log in error.
+
+Do not read or change the repository, review the work, or interpret the outcome: a blocked or needs-user result is a result, not a failure.`
 }
 
 async function pairCliRun() {
