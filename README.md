@@ -211,7 +211,8 @@ For tracked plans, completed code and the controller-owned `progress` field shar
 unsuccessful attempts, questions, decisions, and budget accounting. Keep it and child-run evidence.
 It records the engine's package digest and each task's base commit. Resuming after a plugin
 update is refused: finish the plan with the plugin that started it, or start a new plan. Older
-journals without the digest resume with a warning.
+journals without the digest resume with a warning. When the engine lives inside the target
+repository, its digest follows the plan's own commits, so a change only warns; use a frozen export.
 Before launching, the controller reserves an attempt's allowed turns and time. A completed
 attempt settles to measured usage; an interrupted attempt conservatively retains its full
 reservation, so restarting cannot replenish its budget. Interrupted delivery reserves additional

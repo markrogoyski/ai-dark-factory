@@ -177,6 +177,17 @@ test('the journal records its engine and task bases; resume refuses a different 
   assert.ok(messages.some(m => /journal predates engine recording/.test(m)))
 })
 
+test('an engine inside the target repository does not refuse resume', async t => {
+  const f = fixture(t, plan([task('one')]))
+  const [x, y] = ['a'.repeat(64), 'b'.repeat(64)], messages = []
+  const start = (engine, deps = {}) => runPlan({ ...f.options, engine }, { progress: m => messages.push(m), runTask: f.runTask, engineRoot: join(f.repo, 'plugin'), ...deps })
+  await start(x, { at: name => { if (name === 'after-reserve') throw new Error('crash') } })
+  const resumed = await start(y)
+  assert.equal(resumed.tasks.one.status, 'parked', JSON.stringify(resumed))
+  assert.ok(messages.some(m => /engine is part of the target repository/.test(m)))
+  assert.equal(f.state().engine, x)
+})
+
 test('interrupted attempts retain their reservation and park without resetting checkout', async t => {
   const p = plan([task('one')]); p.limits = { maxTurns: 10, taskMaxTurns: 4 }
   const f = fixture(t, p)

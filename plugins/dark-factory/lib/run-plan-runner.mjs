@@ -268,7 +268,12 @@ export async function runPlan(options, dependencies = {}) {
         if (S.version !== 1 || S.repo !== repo || S.branch !== branch || S.planPath !== planPath || S.definition !== fingerprint(plan) || fingerprint(S.references) !== fingerprint(references)) throw new Error('Run-plan definition, references, repository, or branch changed; saved state was not reused. Keep existing artifacts and use a new plan for changed scope.')
         if (fingerprint(S.controlFiles || {}) !== fingerprint(controlFiles)) throw new Error('Run-plan control files changed; saved state was not reused.')
         // A plugin update mid-plan would silently continue on different code; refuse instead.
-        if (engine && S.engine && S.engine !== engine) throw new Error(`Run-plan ${S.plan.id} started on engine ${S.engine}, but the installed engine is ${engine}. Finish it with the original plugin or start a new plan.`)
+        if (engine && S.engine && S.engine !== engine) {
+          const real = p => existsSync(p) ? realpathSync(p) : resolve(p)
+          // An engine inside the target repo changes with the plan's own commits, so a digest change is expected there.
+          if (inside(real(repo), real(dependencies.engineRoot || plugin))) emit(`run-plan ${S.plan.id}: the engine is part of the target repository, so its digest follows the plan's own commits; continuing on the current checkout's engine ${engine} (started on ${S.engine}). A frozen engine export avoids this.`)
+          else throw new Error(`Run-plan ${S.plan.id} started on engine ${S.engine}, but the installed engine is ${engine}. Finish it with the original plugin or start a new plan.`)
+        }
         if (engine && !S.engine) emit(`run-plan ${S.plan.id}: journal predates engine recording; resuming on the installed engine ${engine}`)
         state = S
         return S
