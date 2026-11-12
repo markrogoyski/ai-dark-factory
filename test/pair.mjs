@@ -532,11 +532,12 @@ test('runtime "cli" hands the whole native run to one transport turn with explic
   assert.equal(calls[0].opts.model, 'sonnet')
   const json = JSON.parse(calls[0].prompt.match(/^\{.*\}$/m)[0])
   assert.deepEqual(json, { task: 'Implement the behavior', repo: '/repo', author: 'opus', reviewer: 'astra' })
-  assert.match(calls[0].prompt, /dark-factory-codex --workflow pair --brief --args-file ARGS --cwd '\/repo' --resume '\/repo\/.council\/host-x' < \/dev\/null > ARGS.out 2> ARGS.log; echo \$\? > ARGS.exit/)
+  assert.match(calls[0].prompt, /rm -f ARGS.out ARGS.log ARGS.exit; dark-factory-codex --workflow pair --brief --args-file ARGS --cwd '\/repo' --resume '\/repo\/.council\/host-x' < \/dev\/null > ARGS.out 2> ARGS.log; echo \$\? > ARGS.exit/)
   // The runner starts vendor CLIs that the Bash tool's sandbox blocks, and this Claude Code build
   // has no TaskOutput tool: an improvised pgrep wait matched its own command line until timeout.
   assert.equal((calls[0].prompt.match(/dangerouslyDisableSandbox: true/g) || []).length, 2)
-  assert.match(calls[0].prompt, /\[ -s ARGS.exit \]/)
+  // A reused args path left the last run's exit code beside it, and the wait returned at once.
+  assert.match(calls[0].prompt, /\[ -s ARGS.exit \] && \[ ARGS.exit -nt ARGS \]/)
   assert.doesNotMatch(calls[0].prompt, /TaskOutput/)
   calls.length = 0
   await go('--runtime cli --author sonnet Implement it')

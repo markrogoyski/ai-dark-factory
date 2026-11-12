@@ -5993,17 +5993,17 @@ function pairCliPrompt() {
   const q = v => "'" + String(v).replace(/'/g, "'\\''") + "'"
   const { explain, ...rest } = S.raw
   const cliArgs = { ...rest, author: S.pairOptions.author.key, reviewer: S.pairOptions.reviewer.key }
-  const cmd = `dark-factory-codex --workflow pair --brief --args-file ARGS${S.raw.repo ? ' --cwd ' + q(S.raw.repo) : ''}${transport.cli.resume ? ' --resume ' + q(transport.cli.resume) : ''} < /dev/null > ARGS.out 2> ARGS.log; echo $? > ARGS.exit`
+  const cmd = `rm -f ARGS.out ARGS.log ARGS.exit; dark-factory-codex --workflow pair --brief --args-file ARGS${S.raw.repo ? ' --cwd ' + q(S.raw.repo) : ''}${transport.cli.resume ? ' --resume ' + q(transport.cli.resume) : ''} < /dev/null > ARGS.out 2> ARGS.log; echo $? > ARGS.exit`
   return `Run one Pair workflow on the shipped standalone runtime. You are only its transport: you do not work on the task.
 
-Step 1. Write this JSON verbatim to a new temporary file using your file tool. Below, ARGS stands for that file's absolute path:
+Step 1. Write this JSON verbatim to a temporary file using your file tool. Below, ARGS stands for that file's absolute path. An earlier transport may have left ARGS.exit beside a file of the same name; the commands below ignore it:
 ${JSON.stringify(cliArgs)}
 
 Step 2. Make one Bash call with run_in_background: true and dangerouslyDisableSandbox: true (the runner starts Claude and Codex CLIs, which can't run inside the Bash tool's sandbox), with ARGS replaced by the path:
 ${cmd}
 
 Step 3. Wait for ARGS.exit to exist. Make one Bash call with timeout: 600000 and dangerouslyDisableSandbox: true:
-for i in $(seq 1 110); do [ -s ARGS.exit ] && break; sleep 5; done; cat ARGS.exit 2>/dev/null || echo running
+for i in $(seq 1 110); do [ -s ARGS.exit ] && [ ARGS.exit -nt ARGS ] && break; sleep 5; done; cat ARGS.exit 2>/dev/null || echo running
 If it prints "running", make the same call again; repeat until it prints an exit code. The run usually takes 15-60 minutes. Don't start the command again, don't use pgrep or other process checks, and don't wait any other way.
 
 Step 4. Make one Bash call: cat ARGS.out
