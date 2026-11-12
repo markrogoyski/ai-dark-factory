@@ -710,6 +710,18 @@ cannot replace a failed snapshot check, and a gate that alters tracked snapshot 
 Codex checkers poll running shell sessions and helper jobs, while `--suite-timeout` controls
 the gate deadline.
 
+A Pair measurement replays the changed test files on base and on the final snapshot. Those
+executions run in parallel with each other and with the gate, each in its own disposable
+checkout and private TMPDIR, and their records keep mapping order (base before final), so the
+evidence doesn't depend on which one finished first. At most `concurrency` run at once:
+`min(4, max(1, cpus / 2))` by default. Set it in `verification.json` beside `env`, for example
+`{"env": {}, "concurrency": 1}`, for tests that share a fixed port, a database or a global
+cache; `1` restores the fully serial order (replay, then gate). A base execution that ran and
+finished (no launch error, no timeout) is cached in `<runDir>/cache/replay-base/`, keyed by the
+base commit, the command, the overlaid file and fixture bytes, the test timeout and the
+verification settings. A later round with the same key copies its log and marks the record
+`reused: true` instead of running it again. The final side always runs.
+
 The historical-evidence check is off unless a factory run passes `evidence: true`. With it on,
 builders place raw historical artifacts under `room/evidence/SEAT/` with an ordered
 `manifest.json` array of `{ "path": "inc1/red.log", "criterion": "C5", "stage": "inc1-red" }`

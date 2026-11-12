@@ -14,5 +14,5 @@ export const replay = tree => ({ base: 'b'.repeat(40), snapshot: 'c'.repeat(40),
     side, revision: (side === 'base' ? 'b' : 'c').repeat(40), tree: side === 'base' ? 'd'.repeat(40) : tree,
     file: m.file, command: m.command, checkIds: m.checkIds, cwd: `/scratch/${side}/${i}`, attempted: true, ran: true,
     passed: side === 'final' || i === 1, hasExitCode: true, exitCode: side === 'base' && i === 0 ? 1 : 0,
-    signal: 0, timedOut: false, seconds: 0.1, log: `/logs/${side}-${i}.log`, logSha256: 'e'.repeat(64), tail: 'raw output', launchError: '', mutated: [],
+    signal: 0, timedOut: false, seconds: 0.1, log: `/logs/${side}-${i}.log`, logSha256: 'e'.repeat(64), tail: 'raw output', launchError: '', mutated: [], reused: false,
   }))) })

@@ -380,6 +380,47 @@ class Verification(TmpDirCase):
         self.assertEqual(mutated['status'], 'incomplete')
         self.assertIn('project checks changed delivery files', mutated['problems'])
 
+    def sleeping_replay(self, concurrency, label):
+        council.write_json(os.path.join(self.rd, 'verification.json'), {'env': {'FACTORY_GATE': 'serial'}, 'concurrency': concurrency})
+        for n in range(4):
+            council.write(os.path.join(self.wt, f'tests/s{n}.py'), f'import time\ntime.sleep(1)\n# {n}\n')
+        mapping = [{'file': f'tests/s{n}.py', 'command': f'python3 tests/s{n}.py', 'checkIds': [f'T{n}'], 'fixtures': []} for n in range(4)]
+        return self.replay_measure(mapping, label=label)['replay']
+
+    def test_replay_runs_in_parallel_in_serial_order_and_concurrency_one_stays_serial(self):
+        serial = self.sleeping_replay(1, 'serial')
+        council.shutil.rmtree(os.path.join(self.rd, 'cache'))
+        parallel = self.sleeping_replay(4, 'parallel')
+        order = lambda replay: [(r['file'], r['side'], r['passed'], r['reused']) for r in replay['records']]
+        self.assertEqual(order(serial), [(f'tests/s{n}.py', side, True, False) for n in range(4) for side in ('base', 'final')])
+        self.assertEqual(order(parallel), order(serial))
+        self.assertGreaterEqual(serial['elapsedSec'], 8)
+        self.assertLess(parallel['elapsedSec'], 6)
+
+    def test_unchanged_base_replays_are_reused_and_a_changed_test_reruns(self):
+        first = self.sleeping_replay(4, 'r1')
+        second = self.sleeping_replay(4, 'r2')
+        reused = lambda replay: [(r['side'], r['reused']) for r in replay['records']]
+        self.assertEqual(reused(first), [(side, False) for _ in range(4) for side in ('base', 'final')])
+        self.assertEqual(reused(second), [(side, side == 'base') for _ in range(4) for side in ('base', 'final')])
+        for old, new in zip(first['records'], second['records']):
+            self.assertNotEqual(old['log'], new['log'])
+            self.assertEqual(council.file_sha256(new['log']), new['logSha256'])
+            if new['reused']:
+                self.assertEqual(council.read(new['log']), council.read(old['log']))
+                self.assertEqual((new['exitCode'], new['passed']), (old['exitCode'], old['passed']))
+        council.write(os.path.join(self.wt, 'tests/s1.py'), 'import time\ntime.sleep(1)\n# changed\n')
+        mapping = [{'file': f'tests/s{n}.py', 'command': f'python3 tests/s{n}.py', 'checkIds': [f'T{n}'], 'fixtures': []} for n in range(4)]
+        third = self.replay_measure(mapping, label='r3')['replay']
+        self.assertEqual([r['reused'] for r in third['records'] if r['side'] == 'base'], [True, False, True, True])
+
+    def test_verification_concurrency_must_be_a_small_positive_integer(self):
+        self.assertGreaterEqual(council.verification_concurrency(self.run), 1)
+        for bad in (0, 65, 2.5, '2', True):
+            council.write_json(os.path.join(self.rd, 'verification.json'), {'env': {}, 'concurrency': bad})
+            with self.assertRaises(council.CouncilError):
+                council.verification_settings(self.run)
+
     def test_invalid_verification_profiles_fail_clearly(self):
         for bad in ({'env': {'INVALID-NAME': 'x'}}, {'env': {'X': False}}, {'other': {}}, []):
             council.write_json(os.path.join(self.rd, 'verification.json'), bad)

@@ -41,6 +41,7 @@ const PAIR_REPLAY_RESULT = { type: 'object', properties: {
     signal: { type: 'integer', description: 'Signal number, or zero if none.' }, timedOut: { type: 'boolean' },
     seconds: { type: 'number' }, log: { type: 'string' }, logSha256: { type: 'string' }, tail: { type: 'string' }, launchError: { type: 'string' },
     mutated: PAIR_STRINGS,
+    reused: { type: 'boolean', description: 'A base execution reused from an earlier measurement with the same inputs.' },
   } } },
   elapsedSec: { type: 'number' },
 } }
