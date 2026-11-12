@@ -645,8 +645,17 @@ Each Factory, Pair, Council, and Ensemble result includes versioned `metrics`; C
 It records workflow, tier, strategy, turns by role, failed turns, elapsed time when available,
 findings by stage, readiness, escalation, and recorded token usage. The runner also records
 repository HEAD. Factory retrospective facts include a metrics snapshot before the retrospective itself; the evaluator keeps that scope separate from completed-run metrics. Unknown measurements and dollar costs stay unknown. Native workflow results
-can be saved as JSON and passed to the same evaluator. Native active elapsed time stays unknown;
-the evaluator excludes older estimates derived from `run.json` modification time. Token facts
+can be saved as JSON and passed to the same evaluator. Native workflows have no exact clock, so
+the helper appends `{at, event, job}` lines to `<runDir>/timeline.jsonl`: one per `init`,
+`measure`, `seat-run`, `wait`, `materialize`, `verify-delivery` and `retro` call, and one at each
+job's start and end. Active time counts every job in full and any other gap between events up
+to 15 minutes; a longer gap counts as paused (a resume, or nobody at the keyboard). `dark-factory
+retro` writes it into the facts as `elapsedMs` with `elapsedSource: "helper-timeline"` and an
+`elapsedByRole` breakdown (`author`, `reviewer`, `measure`, from job labels; a native author's
+own turn is not a job, so it shows only in the total). The evaluator uses the timeline when a
+native result has no `elapsedMs`, counts each group's `elapsedSources`, and always prefers the
+Codex host's exact `elapsedMs`. Intake and setup run before `init`, so their time isn't counted.
+The evaluator still excludes older estimates derived from `run.json` modification time. Token facts
 use the same `records`/`byModel` format in both hosts; older native facts are also accepted.
 
 Run-plan reports aggregate budget accounting separately. Its child results retain these metrics

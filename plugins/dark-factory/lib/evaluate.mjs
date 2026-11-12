@@ -28,13 +28,17 @@ export function summarize(results) {
     if (!m || m.version !== 1) throw new Error(`Missing supported metrics in ${source}`)
     const key = [m.host, m.workflow, m.tier || '-', m.strategy, m.variant || 'default', m.scope || 'complete'].join('/')
     const group = groups[key] || (groups[key] = { runs: 0, ready: 0, delivered: 0, deliveryFailed: 0, deliveryUnknown: 0, postDeliveryObserved: 0, postDeliveryRegressions: 0, escalated: 0,
-      turns: 0, timedRuns: 0, elapsedMs: 0, failedTurns: 0, candidates: 0, readyCandidates: 0, runsWithReadyCandidate: 0, findingsByStage: {}, tokensByModel: {}, tokenMeasuredRuns: 0, taskIds: new Set() })
+      turns: 0, timedRuns: 0, elapsedMs: 0, elapsedSources: {}, failedTurns: 0, candidates: 0, readyCandidates: 0, runsWithReadyCandidate: 0, findingsByStage: {}, tokensByModel: {}, tokenMeasuredRuns: 0, taskIds: new Set() })
     group.runs++; group.ready += m.readiness === 'ready' ? 1 : 0
     group.turns += m.turns || 0; group.failedTurns += m.failedTurns || 0; group.escalated += m.escalated ? 1 : 0
     group.candidates += m.candidates?.total || 0; group.readyCandidates += m.candidates?.ready || 0
     if (m.candidates?.ready > 0) group.runsWithReadyCandidate++
     // Older native facts estimated wall time from run.json mtime, including idle resumes.
-    if (m.elapsedFrom !== 'setup' && m.elapsedMs !== null && Number.isFinite(m.elapsedMs)) { group.timedRuns++; group.elapsedMs += m.elapsedMs }
+    if (m.elapsedFrom !== 'setup' && m.elapsedMs !== null && Number.isFinite(m.elapsedMs)) {
+      group.timedRuns++; group.elapsedMs += m.elapsedMs
+      const source = m.elapsedSource || 'recorded'
+      group.elapsedSources[source] = (group.elapsedSources[source] || 0) + 1
+    }
     const deliveryState = delivery?.status || result.delivery?.status
     if (deliveryState === 'delivered') group.delivered++
     else if (delivery && deliveryState !== 'pending') group.deliveryFailed++
@@ -76,10 +80,42 @@ export function summarize(results) {
     interpretation: 'Compare repeated runs on the same task IDs and repository revisions. Readiness is process evidence, not proof of correctness. Delivery failures are measured only when delivery.json exists; missing token, time and dollar costs remain unknown. Findings may overlap across reviewers. No default tuning is performed.' }
 }
 
+// Native results have no exact clock; the helper's timeline gives their active time. Mirrors
+// timeline_elapsed in bin/dark-factory: jobs count in full, other gaps up to 15 minutes.
+const TIMELINE_GAP_MS = 15 * 60 * 1000
+export function timelineElapsed(runDir) {
+  const path = runDir && join(runDir, 'timeline.jsonl')
+  if (!path || !existsSync(path)) return null
+  const events = []
+  for (const line of readFileSync(path, 'utf8').split('\n')) {
+    try { const e = JSON.parse(line), at = Date.parse(e.at); if (Number.isFinite(at)) events.push({ ...e, at }) } catch {}
+  }
+  if (!events.length) return null
+  events.sort((a, b) => a.at - b.at)
+  const open = {}, spans = []
+  for (const e of events) {
+    if (e.event === 'job-start' && e.job) open[e.job] = e.at
+    else if (e.event === 'job-end' && e.job in open) { spans.push([open[e.job], e.at]); delete open[e.job] }
+  }
+  const points = [...new Set(events.map(e => e.at))].sort((a, b) => a - b)
+  let total = 0
+  for (let i = 1; i < points.length; i++) {
+    const a = points[i - 1], b = points[i]
+    total += spans.some(([start, end]) => start <= a && b <= end) ? b - a : Math.min(b - a, TIMELINE_GAP_MS)
+  }
+  return Math.round(total)
+}
+
 export function evaluateFiles(files, observations = {}) {
   let evaluator = null
   const summary = summarize(files.map(source => {
     const result = JSON.parse(readFileSync(source, 'utf8'))
+    const m = result.metrics
+    // The Codex host's exact elapsedMs always wins; a native result falls back to its timeline.
+    if (m && (m.elapsedMs === null || m.elapsedMs === undefined || m.elapsedFrom === 'setup') && m.host !== 'codex') {
+      const elapsed = timelineElapsed(result.runDir)
+      if (elapsed !== null) { Object.assign(m, { elapsedMs: elapsed, elapsedSource: 'helper-timeline' }); delete m.elapsedFrom }
+    }
     const pin = result.provenance?.executor
     if (pin?.mode === 'pinned') {
       const own = guardEngine(environmentPin() || pin)

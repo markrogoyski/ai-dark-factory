@@ -3,7 +3,10 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { loadLib, makeRun, addItem } from './lib.mjs'
 import { validateResult } from '../plugins/dark-factory/lib/codex-runner.mjs'
-import { summarize } from '../plugins/dark-factory/lib/evaluate.mjs'
+import { summarize, evaluateFiles } from '../plugins/dark-factory/lib/evaluate.mjs'
+import { mkdtempSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { contract, mapping, challenges, replay } from './fixtures/pair-contract.mjs'
 
 const L = loadLib()
@@ -333,4 +336,21 @@ test('factory and pair setup turn uncovered required checks into criteria; counc
   assert.match(L.setupPrompt(simple), rule)
   assert.doesNotMatch(L.setupPrompt(L.newState(L.parseConfig({ task: 'Fix it' }))), rule)
   assert.doesNotMatch(L.pairSetupPrompt(L.newState(L.parsePairConfig({ task: 'Fix it', criteria: ['It works.'] }))), rule)
+})
+
+test('evaluation times a native result from its helper timeline and prefers a recorded elapsedMs', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'df-eval-'))
+  const at = minute => new Date(Date.UTC(2026, 10, 11, 12, minute)).toISOString()
+  writeFileSync(join(dir, 'timeline.jsonl'), [[0, 'init'], [2, 'job-start', 'review-pair-design-1'], [40, 'job-end', 'review-pair-design-1'], [45, 'measure']]
+    .map(([m, event, job]) => JSON.stringify({ at: at(m), event, job: job || null })).join('\n') + '\n')
+  const base = { version: 1, workflow: 'pair', strategy: 'pair', turns: 4, readiness: 'ready' }
+  const write = (name, metrics) => { const file = join(dir, name); writeFileSync(file, JSON.stringify({ runDir: dir, metrics })); return file }
+  const native = write('native.json', { ...base, host: 'claude', elapsedMs: null })
+  let group = Object.values(evaluateFiles([native]).groups)[0]
+  assert.equal(group.elapsedMs, 45 * 60_000)
+  assert.deepEqual(group.elapsedSources, { 'helper-timeline': 1 })
+  const recorded = write('recorded.json', { ...base, host: 'codex', elapsedMs: 1234 })
+  group = Object.values(evaluateFiles([recorded]).groups)[0]
+  assert.equal(group.elapsedMs, 1234)
+  assert.deepEqual(group.elapsedSources, { recorded: 1 })
 })

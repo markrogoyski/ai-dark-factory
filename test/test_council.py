@@ -486,3 +486,48 @@ class KeepAwake(TmpDirCase):
         self.start(dict(self.env, DARK_FACTORY_KEEP_AWAKE='0'))
         council.time.sleep(0.2)
         self.assertFalse(os.path.exists(self.record))
+
+
+class Timeline(TmpDirCase):
+    def write_events(self, events):
+        with open(self.path('timeline.jsonl'), 'w') as f:
+            for minute, event, job in events:
+                at = council.datetime.fromtimestamp(1_800_000_000 + minute * 60, council.timezone.utc)
+                f.write(council.json.dumps({'at': at.isoformat(timespec='milliseconds'), 'event': event, 'job': job}) + '\n')
+
+    def test_events_are_appended_and_a_job_records_its_start_and_end(self):
+        council.timeline_event(self.tmp, 'measure', None)
+        jd = self.path('jobs', 'measure-A-base')
+        os.makedirs(jd)
+        council.write_json(os.path.join(jd, 'spec.json'), {'kind': 'unknown-kind', 'runDir': self.tmp})
+        council.cmd_job(jd)
+        lines = [json.loads(l) for l in council.read(self.path('timeline.jsonl')).splitlines()]
+        self.assertEqual([(l['event'], l['job']) for l in lines],
+                         [('measure', None), ('job-start', 'measure-A-base'), ('job-end', 'measure-A-base')])
+        self.assertTrue(all(l['at'].endswith('+00:00') for l in lines))
+
+    def test_elapsed_caps_idle_gaps_counts_jobs_in_full_and_merges_overlaps(self):
+        self.assertIsNone(council.timeline_elapsed(self.tmp))
+        self.write_events([
+            (0, 'init', None),
+            (5, 'job-start', 'review-pair-design-1'),
+            (45, 'wait', 'review-pair-design-1'),            # inside a job: counts in full
+            (50, 'job-end', 'review-pair-design-1'),
+            (52, 'job-start', 'measure-A-pair-code-2'),
+            (55, 'job-start', 'verify-A-impl'),              # overlapping author job
+            (60, 'job-end', 'measure-A-pair-code-2'),
+            (62, 'job-end', 'verify-A-impl'),
+            (182, 'measure', None),                           # two idle hours: count 15 minutes
+        ])
+        elapsed = council.timeline_elapsed(self.tmp)
+        self.assertEqual(elapsed['elapsedMs'], (5 + 45 + 2 + 10 + 15) * 60_000)
+        self.assertEqual(elapsed['byRole'], {'reviewer': 45 * 60_000, 'measure': 8 * 60_000, 'author': 7 * 60_000})
+
+    def test_retro_facts_take_timeline_elapsed_only_when_none_was_recorded(self):
+        self.write_events([(0, 'init', None), (10, 'retro', None)])
+        run = {'runDir': self.tmp}
+        facts = council.fill_metrics(run, {'metrics': {'elapsedMs': None, 'tokens': {}}})['metrics']
+        self.assertEqual((facts['elapsedMs'], facts['elapsedSource']), (600_000, 'helper-timeline'))
+        kept = council.fill_metrics(run, {'metrics': {'elapsedMs': 5, 'tokens': {}}})['metrics']
+        self.assertEqual(kept['elapsedMs'], 5)
+        self.assertNotIn('elapsedSource', kept)
