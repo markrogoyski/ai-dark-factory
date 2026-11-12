@@ -2313,10 +2313,15 @@ async function scenarioFactsSave() {
   writeFileSync(join(dir, 'agent-record.jsonl'), JSON.stringify({ type: 'user', message: { role: 'user', content: `[Workflow harness — computed task] x\n${prompt.split('\n').map(l => `  ${l}`).join('\n')}` } }) + '\n')
   const r = last(exec(['retro', '--facts-only', '--run-dir', runDir, '--out-dir', out, '--expect', expect, '--transcript-wait', '0']))
   assert.deepEqual([r.status, r.path, r.facts], ['ok', join(out, '20261020-120000-proj.facts.json'), true])
-  // Without a host clock or usage evidence, missing measurements stay unknown.
+  // Without a host clock, elapsed time comes from the helper's timeline; without usage evidence,
+  // tokens stay unknown.
   const saved = JSON.parse(readFileSync(r.path, 'utf8')), facts = factsIn(payload)
   assert.equal(facts.metrics.elapsedMs, null); assert.equal(facts.metrics.tokens, null)
-  assert.equal(saved.metrics.elapsedMs, null)
+  assert.ok(Number.isInteger(saved.metrics.elapsedMs) && saved.metrics.elapsedMs >= 0)
+  assert.equal(saved.metrics.elapsedSource, 'helper-timeline')
+  assert.deepEqual(Object.keys(saved.metrics.elapsedByRole).sort(), ['author', 'measure', 'reviewer'])
+  for (const key of ['elapsedSource', 'elapsedByRole']) delete saved.metrics[key]
+  saved.metrics.elapsedMs = null
   assert.equal(saved.metrics.tokens, null)
   assert.deepEqual(saved, facts)
   assert.ok(!existsSync(join(out, '20261020-120000-proj.md')), 'facts only: no retro file')
