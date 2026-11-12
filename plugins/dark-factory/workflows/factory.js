@@ -4142,7 +4142,9 @@ function parsePairConfig(args) {
     simple: { implementer: author.key, reviewer: reviewer.key } }, { workflow: 'pair', tier: 'simple' })
   // Reuse setup and transport, without acquiring council roles or Simple escalation rules.
   return { ...config, raw, tier: 'pair', simple: null, panel: [], specReviewers: [],
-    roles: { setup: author }, lineup: [hostSeat(config.host, author)],
+    // Setup writes criteria and the gate: the author's model, at the shared setup effort unless the
+    // user chose one. Only the host runtime reads roles; native setup picks its own model.
+    roles: { setup: raw.effort === undefined ? parseSeat(author.key, ROLE_EFFORT.setup) : author }, lineup: [hostSeat(config.host, author)],
     auditors: [{ ...hostSeat(config.host, reviewer), lens: 'review', id: 'PR' }],
     pairOptions: { author, reviewer, maxReviews } }
 }

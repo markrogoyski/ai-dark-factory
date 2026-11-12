@@ -510,3 +510,14 @@ test('setup that finds a criterion unverifiable inside the run stops before any 
   const { result } = await run({ setup: { unverifiable: [] } })
   assert.equal(result.status, 'done')
 })
+
+test('codex-host pair setup runs as the author at medium effort unless effort is given', async () => {
+  let { calls } = await run()
+  let setupCall = calls.find(c => c.kind === 'setup')
+  assert.equal(setupCall.model, L.parsePairConfig({ task: 'x', host: 'codex' }).lineup[0].model)
+  assert.equal(setupCall.effort, 'medium')
+  ;({ calls } = await run({ args: { effort: 'xhigh' } }))
+  assert.equal(calls.find(c => c.kind === 'setup').effort, 'xhigh')
+  assert.equal(L.parsePairConfig({ task: 'x', host: 'codex' }).roles.setup.effort, 'medium')
+  assert.equal(L.parsePairConfig({ task: 'x', host: 'codex', effort: 'high' }).roles.setup.effort, 'high')
+})

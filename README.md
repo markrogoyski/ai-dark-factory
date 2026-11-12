@@ -281,6 +281,14 @@ default pair needs both authenticated CLIs. Explicit `--author sol --reviewer as
 Codex models in the Codex host.
 
 1. The author establishes acceptance criteria, reference documents, and the verification gate.
+   In the Codex host and the standalone runtime this setup turn runs on the author's model at
+   `medium` effort (an explicit `effort` applies instead); in Claude Code it runs on the Claude
+   participant's model at `medium`. Every requirement the task or its documents state that the
+   gate can't check, such as "run coverage and inspect the report", becomes its own criterion,
+   citing document and line. A criterion that no evidence inside the run can meet (it needs
+   post-delivery, production or live-service evidence) stops the run with `needs-user` before
+   any author turn, with one question per criterion: rewrite it so the run can check it, or drop
+   it.
 2. The author drafts a design and concrete test contract: criterion IDs, inputs, expected
    outcomes, boundaries, changed/preserved purpose, test files, commands, and fixtures. Criteria
    unsuitable for tests name an inspection and reason. The reviewer verifies test roots against
