@@ -516,8 +516,13 @@ including omissions or weakening of the agreed checks and regressions introduced
 There is no extra review stage, chronological TDD enforcement, or separate contract-version system.
 
 `maxReviews` (CLI: `--max-reviews`) limits total reviews across both stages, default **8**.
-An unchanged artifact with the same unresolved review state on consecutive attempts stops as
-stalled. Budget exhaustion, incomplete reviews, failed required checks, or unresolved findings
+An unchanged artifact with the same open findings and verification results on consecutive
+attempts stops as stalled; a criterion the reviewer moves between partial and met on the same
+bytes does not count as progress. When the measurement itself fails for environmental reasons
+(its disposable checkout can't be made, or the gate's environment fails after bounded recovery),
+the run stops after that code review: readiness is `unverified` when no finding is open, with
+the cause in `final.readiness.infrastructure`, and the reviewer is told not to file the missing
+evidence as a finding. Budget exhaustion, incomplete reviews, failed required checks, or unresolved findings
 never report readiness. A ready result requires review of the exact measured final snapshot,
 all criteria met, and all required checks passing. When no automated gate exists, the result
 records that it was not run. Pair currently delivers implementations; use council or factory
@@ -530,7 +535,8 @@ paths in `plan`, including uncommitted documents. Worktrees start at HEAD; track
 require explicit `allowDirty` or an already clean checkout. Factory tier, panel, audit, and
 historical-evidence options do not apply to Pair.
 
-Results include `design`, `testContract`, `replayMapping`, `reviews`, `findings`, `stopReason`,
+Results open with `summary` (status, readiness, open findings, snapshot, gate result, and the
+cleanup command for after delivery), followed by `design`, `testContract`, `replayMapping`, `reviews`, `findings`, `stopReason`,
 `final.replay`, and `final.readiness`. `final.suite` and `final.replay` are the measurement summary;
 the job's `status.json` keeps the output tails. Replay requests and logs participate in existing cache and
 checkpoint integrity. Ignored dependency directories and external toolchains retain the checkpoint
@@ -1586,7 +1592,9 @@ The same generated workflow file runs on both hosts; only the runtime around it 
     their reviews are in the result.
   - `refs/` holds the snapshots of the plan and other reference documents.
   - `wt/<seat>` and `snap/` are worktrees (`snap/audit-<lens>` is an auditor's checkout); `scratch/` holds the short-lived checkouts the
-    suite and cross-tests run in.
+    suite and cross-tests run in. Where a sandbox refuses to write `.git/worktrees`, a `snap/` or `scratch/` checkout is
+    instead a standalone repository with its git dir beside it (`<name>.gitdir`), borrowing the main repository's objects.
+    Seat worktrees have no such fallback, since seats commit in them: setup runs `init` outside the Bash sandbox.
   - `jobs/` holds Codex, Gemini and measurement jobs.
   - `usage.jsonl` records Codex and Gemini token use.
   - `retro.md` and `retro-data.md` hold the process retro and the notes it drew on.

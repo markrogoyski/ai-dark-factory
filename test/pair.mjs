@@ -326,7 +326,12 @@ test('design challenges must uniquely cover every criterion with substantive val
   const review = { challenges: [...challenges(), { criterion: 'C2', wrongImplementation: 'Document the wrong parameter order.', rejectingCheckIds: ['I1'] }] }
   assert.equal(L.pairChallengeError(state, review), null)
   review.challenges[1].rejectingCheckIds = ['T1']
-  assert.match(L.pairChallengeError(state, review), /covering that criterion/)
+  assert.equal(L.pairChallengeError(state, review), 'Challenge C2 cites T1, which covers C1. Cite only checks whose criteria include C2: I1.')
+  review.challenges[1].rejectingCheckIds = ['T1', 'I1']
+  assert.deepEqual(L.pairTrimChallenges(state, review), ['C2: T1'])
+  assert.deepEqual(review.challenges[1].rejectingCheckIds, ['I1'])
+  assert.equal(L.pairChallengeError(state, review), null)
+  assert.match(L.pairChallengeError(state, { challenges: challenges() }), /Missing: C2\./)
   state.pair.testContract.checks[2].reason = ''
   assert.match(L.pairContractError(state, state.pair.testContract), /reason/)
 })
@@ -508,6 +513,64 @@ test('infrastructure-only failure does not cycle through further author turns', 
   assert.match(result.stopReason, /Verification infrastructure failed/)
   assert.equal(result.reviews.length, 2)
   assert.equal(calls.filter(c => c.kind === 'author').length, 2)
+})
+
+test('a challenge citing a check for another criterion beside a covering one needs no correction', async () => {
+  for (const native of [false, true]) {
+    const { result, calls } = await run({ native, review: (r, n) => {
+      if (n === 1) r.challenges[0].rejectingCheckIds = ['T1', 'OTHER']
+      return r
+    } })
+    assert.equal(result.status, 'done')
+    assert.equal(calls.filter(c => c.kind === 'review').length, 2)
+    assert.equal(result.reviews[0].challenges[0].rejectingCheckIds.join(), 'T1')
+    assert.ok(result.notes.some(n => /dropped rejecting checks .*C1: OTHER/.test(n)))
+  }
+})
+
+test('a failed verification checkout stops after one code review as unverified, not as a finding', async () => {
+  const error = "git worktree add failed: could not create directory of '.git/worktrees/A': Operation not permitted"
+  for (const native of [false, true]) {
+    const { result, calls } = await run({ native, args: { maxReviews: 8 },
+      measure: m => ({ ...m, scratchError: error, suite: { ...m.suite, ran: false, passed: false, failureKind: 'infrastructure', log: '' },
+        replay: { ...m.replay, records: [] } }),
+      review: (r, n) => { if (n === 2) r.criteria[0] = { criterion: 'C1', status: 'partial', note: 'The gate did not run.' }; return r } })
+    const reviews = calls.filter(c => c.kind === 'review')
+    assert.equal(reviews.length, 2)
+    assert.match(reviews[1].prompt, /could not run because of the environment.*don't file a finding/s)
+    assert.doesNotMatch(reviews[0].prompt, /could not run because of the environment/)
+    assert.match(result.stopReason, /Verification infrastructure failed/)
+    const ready = result.final.readiness
+    assert.equal(ready.state, 'unverified')
+    assert.deepEqual(ready.blocked, [])
+    assert.equal(ready.infrastructure.length, 1)
+    assert.ok(ready.infrastructure[0].includes('Operation not permitted'))
+    assert.ok(ready.incomplete.includes('Criterion C1 is partial: The gate did not run.'))
+    assert.equal(result.summary.final.readiness.state, 'unverified')
+  }
+  // An open finding still blocks; the infrastructure reason stays visible beside it.
+  const { result } = await run({ measure: m => ({ ...m, scratchError: error, suite: { ...m.suite, ran: false, passed: false, failureKind: 'infrastructure' } }),
+    review: (r, n) => { if (n === 2) r.findings = [finding('The boundary case is wrong.')]; return r } })
+  assert.equal(result.final.readiness.state, 'blocked')
+  assert.equal(result.final.readiness.infrastructure.length, 1)
+})
+
+test('a reviewer moving a criterion between partial and met on unchanged bytes does not defer the stall', async () => {
+  const { result } = await run({ sameTree: true, args: { maxReviews: 8 }, review: (r, n) => {
+    if (n === 2) r.findings = [finding('The boundary case is wrong.')]
+    if (n > 2) r.resolutions = [{ id: 'P1', status: 'open', evidence: 'Still wrong.' }]
+    r.criteria[0].status = n % 2 ? 'met' : 'partial'
+    return r
+  } })
+  assert.match(result.stopReason, /stalled/)
+  assert.equal(result.reviews.length, 3)
+})
+
+test('the result opens with its summary and names the cleanup command', async () => {
+  const { result } = await run({})
+  assert.equal(Object.keys(result)[0], 'summary')
+  assert.equal(result.summary.cleanupAfterDelivery, "dark-factory cleanup --run-dir '/repo/.council/pair-test'")
+  assert.match(result.forTheOrchestrator, /dark-factory cleanup --run-dir '\/repo\/\.council\/pair-test'/)
 })
 
 test('repeated identical findings retain their identity and do not defeat stall detection', async () => {

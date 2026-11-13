@@ -94,19 +94,50 @@ function pairContractError(S, contract) {
   return null
 }
 
+// A challenge may cite, beside checks that cover its criterion, a check that covers only another
+// criterion or none in the contract. The covering checks already carry the challenge, so the
+// stray IDs are dropped rather than costing a correction turn. Returns what was dropped.
+function pairTrimChallenges(S, review) {
+  const checks = S.pair.testContract?.checks
+  if (!Array.isArray(checks) || !Array.isArray(review?.challenges)) return []
+  const dropped = []
+  for (const c of review.challenges) {
+    if (!Array.isArray(c?.rejectingCheckIds)) continue
+    const covering = c.rejectingCheckIds.filter(id => checks.some(check => check.id === id && Array.isArray(check.criteria) && check.criteria.includes(c.criterion)))
+    if (!covering.length || covering.length === c.rejectingCheckIds.length) continue
+    dropped.push(`${c.criterion}: ${[...new Set(c.rejectingCheckIds.filter(id => !covering.includes(id)))].join(', ')}`)
+    c.rejectingCheckIds = covering
+  }
+  return dropped
+}
+
 function pairChallengeError(S, review) {
   const contract = S.pair.testContract, error = pairContractError(S, contract)
   if (error) return error
   const challenges = review.challenges
   if (!Array.isArray(challenges) || challenges.length !== S.criteria.length ||
-      new Set(challenges.map(c => c.criterion)).size !== S.criteria.length) return 'Design review needs one unique challenge for every acceptance criterion.'
+      new Set(challenges.map(c => c.criterion)).size !== S.criteria.length) {
+    const given = Array.isArray(challenges) ? challenges.map(c => c?.criterion) : []
+    const missing = S.criteria.map(c => c.id).filter(id => !given.includes(id))
+    const repeated = given.filter((id, i) => given.indexOf(id) !== i)
+    return `Design review needs exactly one challenge for each acceptance criterion (${S.criteria.map(c => c.id).join(', ')}).` +
+      `${missing.length ? ` Missing: ${missing.join(', ')}.` : ''}${repeated.length ? ` Repeated: ${[...new Set(repeated)].join(', ')}.` : ''}`
+  }
   for (const c of challenges) {
     const rejectsDesign = review.requiresDesignRevision === true ||
       (review.findings || []).some(f => String(f.statement || '').trim() && String(f.evidence || '').trim() && ['blocker', 'major', 'minor'].includes(f.severity)) ||
       (review.criteria || []).some(a => a.criterion === c.criterion && ['partial', 'unmet'].includes(a.status) && String(a.note || '').trim())
-    if (!S.criteria.some(x => x.id === c.criterion) || !String(c.wrongImplementation || '').trim() ||
-        !Array.isArray(c.rejectingCheckIds) || (!c.rejectingCheckIds.length && !rejectsDesign) || new Set(c.rejectingCheckIds).size !== c.rejectingCheckIds.length ||
-        c.rejectingCheckIds.some(id => !contract.checks.some(check => check.id === id && check.criteria.includes(c.criterion)))) return 'Design challenges need a plausible wrong implementation and valid rejecting checks covering that criterion.'
+    const covers = id => contract.checks.some(check => check.id === id && check.criteria.includes(c.criterion))
+    if (!S.criteria.some(x => x.id === c.criterion)) return `Challenge ${c.criterion} names no acceptance criterion.`
+    if (!String(c.wrongImplementation || '').trim()) return `Challenge ${c.criterion} needs a plausible wrong implementation.`
+    if (!Array.isArray(c.rejectingCheckIds) || new Set(c.rejectingCheckIds).size !== c.rejectingCheckIds.length) return `Challenge ${c.criterion} needs distinct rejectingCheckIds.`
+    if (!c.rejectingCheckIds.length && !rejectsDesign) return `Challenge ${c.criterion} cites no rejecting check. Cite a contract check whose criteria include ${c.criterion}, or, if none rejects the wrong implementation, raise an evidenced finding or assess ${c.criterion} partial or unmet.`
+    const stray = c.rejectingCheckIds.filter(id => !covers(id))
+    if (stray.length) {
+      const owner = id => contract.checks.find(check => check.id === id)
+      return `Challenge ${c.criterion} cites ${stray.map(id => owner(id) ? `${id}, which covers ${owner(id).criteria.join(', ')}` : `${id}, which is not in the contract`).join('; ')}. ` +
+        `Cite only checks whose criteria include ${c.criterion}: ${contract.checks.filter(check => check.criteria.includes(c.criterion)).map(check => check.id).join(', ') || 'none'}.`
+    }
   }
   return null
 }
@@ -202,9 +233,20 @@ function pairIngestReview(S, review) {
   return null
 }
 
+// Whether the helper's measurement failed for reasons outside the snapshot: its disposable
+// checkout could not be made, or the gate's environment failed after bounded recovery.
+function pairInfrastructure(S) {
+  const m = S.pair.stage === 'code' ? S.pair.measurement : null
+  if (!m) return []
+  const out = []
+  if (String(m.scratchError || '').trim()) out.push(`The verification checkout failed: ${oneLine(m.scratchError, 400)}`)
+  else if (m.suite?.failureKind === 'infrastructure') out.push(`The verification environment failed after bounded recovery${m.suite.log ? `; see ${m.suite.log}` : ''}.`)
+  return out
+}
+
 function pairReadiness(S) {
   const p = S.pair, r = p.lastReview
-  const blocked = [], incomplete = []
+  const blocked = [], incomplete = [], infrastructure = pairInfrastructure(S)
   if (p.stop) incomplete.push(p.stop)
   if (!r || r.version !== pairVersion(S) || !r.complete) incomplete.push('The current version has no completed review.')
   for (const f of pairOpen(S).filter(f => p.stage === 'code' || f.stage === 'design')) blocked.push(`${f.id} (${f.severity}): ${f.statement}`)
@@ -212,6 +254,9 @@ function pairReadiness(S) {
   for (const c of S.criteria) {
     const assessments = (r?.criteria || []).filter(x => x.criterion === c.id)
     if (assessments.length !== 1 || !String(assessments[0].note || '').trim()) incomplete.push(`No single evidenced assessment of ${c.id}.`)
+    // With no measurement to read, a reviewer can't call a criterion that needs one met: partial
+    // then reports missing evidence, not a defect.
+    else if (assessments[0].status === 'partial' && infrastructure.length) incomplete.push(`Criterion ${c.id} is partial: ${oneLine(assessments[0].note, 300)}`)
     else if (assessments[0].status !== 'met') blocked.push(`Criterion ${c.id} is ${assessments[0].status}.`)
   }
   if (p.stage === 'code') {
@@ -224,14 +269,17 @@ function pairReadiness(S) {
     pairReplayReadiness(S, blocked, incomplete)
   }
   if (r?.requiresDesignRevision) blocked.push('The reviewer requires a revised design.')
-  return { state: blocked.length ? 'blocked' : incomplete.length ? 'incomplete' : 'ready', blocked, incomplete }
+  // unverified: nothing the review found is open, but the run could not measure the snapshot.
+  return { state: blocked.length ? 'blocked' : infrastructure.length ? 'unverified' : incomplete.length ? 'incomplete' : 'ready', blocked, incomplete, infrastructure }
 }
 
 function pairStalled(S) {
   const p = S.pair
   if (pairReadiness(S).state === 'ready') return false
+  // Criterion statuses are left out: a reviewer can move one between partial and met on the same
+  // bytes, and that noise must not hide an author who changed nothing.
   const signature = JSON.stringify([pairVersion(S), pairOpen(S).map(f => [f.id, f.statement]),
-    p.lastReview?.criteria.map(c => [c.criterion, c.status]), p.lastReview?.requiresDesignRevision,
+    p.lastReview?.requiresDesignRevision,
     p.measurement?.suite?.ran, p.measurement?.suite?.passed, pairReplayRequest(S),
     p.measurement?.replay?.exclusions, p.measurement?.replay?.records?.map(r => [r.side, r.file, r.command, r.checkIds, r.attempted, r.ran, r.hasExitCode, r.exitCode, r.signal, r.timedOut, r.launchError, r.passed, r.mutated])])
   p.signatures.push(signature)
@@ -254,7 +302,7 @@ function pairResult(S, status = 'blocked') {
     `Readiness: ${ready.state}. Reviews: ${p.reviews.length}/${S.pairOptions.maxReviews}.`,
     `Verification: ${!S.verify ? 'no automated gate configured; no test pass claimed' : !m?.suite?.ran ? 'not run on a final snapshot' : m.suite.passed ? 'passed on the reviewed snapshot' : 'failed on the reviewed snapshot'}.`,
     `Replay: ${m?.replay?.records?.length || 0} file/command records; ${m?.replay?.exclusions?.length || 0} overlay exclusions. Base outcomes require reviewer interpretation.`,
-    ...ready.blocked, ...ready.incomplete,
+    ...ready.infrastructure, ...ready.blocked, ...ready.incomplete,
     ...p.findings.map(f => `${f.id}: ${f.status} — ${f.statement}${f.resolution ? ` (${f.resolution})` : ''}`)].join('\n\n')
   return { status, workflow: 'pair', mode: 'implement', task: S.task, runDir: S.run?.runDir || null,
     repositoryNotes: S.repositoryNotes || '',
@@ -270,7 +318,9 @@ function pairResult(S, status = 'blocked') {
     delivery: { status: status === 'done' && ready.state === 'ready' ? 'pending' : 'not-ready' },
     forTheOrchestrator: 'Read final.readiness first. Report unresolved findings or missing evidence before any success summary. ' +
       'Spot-check the reviewed snapshot and report the design and implementation review outcomes. The change stays in final.worktree. ' +
+      'Readiness unverified means no review finding is open but the run could not measure the snapshot (final.readiness.infrastructure says why): run the gate on the delivered bytes before calling it done. ' +
       'Deliver only within the user\'s authorization, preserving unrelated edits; use dark-factory verify-delivery afterward. ' +
+      `Once the delivery is verified, dark-factory cleanup --run-dir ${S.run?.runDir ? shq(S.run.runDir) : '<runDir>'} removes the run's worktrees and refs/council refs (add --all to remove the run directory too). ` +
       'Do not start a council automatically. The Codex host can resume a validated checkpoint with --resume hostRunDir; changed inputs or evidence require a new run.' }
 }
 

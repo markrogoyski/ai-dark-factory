@@ -1783,7 +1783,7 @@ When the work would end with a change someone commits, choose implement.
 `}
 ## Step 2 — create the run
 Run: ${S.cli} init --repo ${S.raw.repo ? shq(S.raw.repo) : '"$PWD"'} --seats ${letters}${S.tier ? ' --factory' : ''}${setupRunId(S) ? ` --run-id ${shq(setupRunId(S))}` : ''}${startedAt ? ' --started-at <the time you read before you started>' : ''}${S.plan.map(p => ` --ref ${shq(p)}`).join('')} followed by --ref <path> for each other document from step 1
-It prints JSON with runId, runDir, repoRoot, refs (the snapshots it made of those documents) and dirty (tracked files with uncommitted changes).
+${S.tier && S.host !== 'codex' ? 'Make it one Bash call with dangerouslyDisableSandbox: true: init creates git worktrees, and the Bash sandbox refuses to write the repository\'s worktree records (".git/worktrees/…: Operation not permitted").\n' : ''}It prints JSON with runId, runDir, repoRoot, refs (the snapshots it made of those documents) and dirty (tracked files with uncommitted changes).
 - If it fails, return status "error" with its message, and empty values elsewhere.
 ${S.allowDirty || (S.modeGiven && S.mode !== 'implement') ? '' : `- If ${S.modeGiven ? '' : 'the mode is implement and '}dirty is non-empty, stop and return status "dirty" with that list. The worktrees branch from HEAD, so uncommitted changes would be invisible to every seat.\n`}
 ## Step 3 — the verification command
@@ -3210,11 +3210,13 @@ function compactResult(S, result) {
     runDir: result.runDir, stopReason: result.stopReason || result.error || '',
     final: { readiness: f.readiness, snapshotRef: f.snapshotRef || null, snapshotTree: f.snapshotTree || null,
       post: f.post || null, diff: f.diff || null, worktree: f.worktree || null,
-      suite: f.suite ? { ran: f.suite.ran, passed: f.suite.passed, command: f.suite.command || S.verify, log: f.suite.log || null } : null },
+      suite: f.suite ? { ran: f.suite.ran, passed: f.suite.passed, command: f.suite.command || S.verify, log: f.suite.log || null,
+        ...(f.suite.failureKind ? { failureKind: f.suite.failureKind } : {}) } : null },
     findings: (result.findings || []).filter(f => f.status === 'open').map(f => ({ id: f.id, severity: f.severity, statement: f.statement })),
     questions: result.questions || [], delivery: result.delivery || null,
     artifacts: { room: result.room || S.run?.room || null, verification: result.runDir ? `${result.runDir}/verification.json` : null,
-      measurement: snapshot ? `${result.runDir}/jobs/measure-${snapshot[1]}-${snapshot[2]}/status.json` : null } }
+      measurement: snapshot ? `${result.runDir}/jobs/measure-${snapshot[1]}-${snapshot[2]}/status.json` : null },
+    cleanupAfterDelivery: `dark-factory cleanup --run-dir ${shq(result.runDir)}` }
 }
 
 // The factory's tiers: which one a run starts at, when the Simple tier hands the work up, and the
@@ -4220,19 +4222,50 @@ function pairContractError(S, contract) {
   return null
 }
 
+// A challenge may cite, beside checks that cover its criterion, a check that covers only another
+// criterion or none in the contract. The covering checks already carry the challenge, so the
+// stray IDs are dropped rather than costing a correction turn. Returns what was dropped.
+function pairTrimChallenges(S, review) {
+  const checks = S.pair.testContract?.checks
+  if (!Array.isArray(checks) || !Array.isArray(review?.challenges)) return []
+  const dropped = []
+  for (const c of review.challenges) {
+    if (!Array.isArray(c?.rejectingCheckIds)) continue
+    const covering = c.rejectingCheckIds.filter(id => checks.some(check => check.id === id && Array.isArray(check.criteria) && check.criteria.includes(c.criterion)))
+    if (!covering.length || covering.length === c.rejectingCheckIds.length) continue
+    dropped.push(`${c.criterion}: ${[...new Set(c.rejectingCheckIds.filter(id => !covering.includes(id)))].join(', ')}`)
+    c.rejectingCheckIds = covering
+  }
+  return dropped
+}
+
 function pairChallengeError(S, review) {
   const contract = S.pair.testContract, error = pairContractError(S, contract)
   if (error) return error
   const challenges = review.challenges
   if (!Array.isArray(challenges) || challenges.length !== S.criteria.length ||
-      new Set(challenges.map(c => c.criterion)).size !== S.criteria.length) return 'Design review needs one unique challenge for every acceptance criterion.'
+      new Set(challenges.map(c => c.criterion)).size !== S.criteria.length) {
+    const given = Array.isArray(challenges) ? challenges.map(c => c?.criterion) : []
+    const missing = S.criteria.map(c => c.id).filter(id => !given.includes(id))
+    const repeated = given.filter((id, i) => given.indexOf(id) !== i)
+    return `Design review needs exactly one challenge for each acceptance criterion (${S.criteria.map(c => c.id).join(', ')}).` +
+      `${missing.length ? ` Missing: ${missing.join(', ')}.` : ''}${repeated.length ? ` Repeated: ${[...new Set(repeated)].join(', ')}.` : ''}`
+  }
   for (const c of challenges) {
     const rejectsDesign = review.requiresDesignRevision === true ||
       (review.findings || []).some(f => String(f.statement || '').trim() && String(f.evidence || '').trim() && ['blocker', 'major', 'minor'].includes(f.severity)) ||
       (review.criteria || []).some(a => a.criterion === c.criterion && ['partial', 'unmet'].includes(a.status) && String(a.note || '').trim())
-    if (!S.criteria.some(x => x.id === c.criterion) || !String(c.wrongImplementation || '').trim() ||
-        !Array.isArray(c.rejectingCheckIds) || (!c.rejectingCheckIds.length && !rejectsDesign) || new Set(c.rejectingCheckIds).size !== c.rejectingCheckIds.length ||
-        c.rejectingCheckIds.some(id => !contract.checks.some(check => check.id === id && check.criteria.includes(c.criterion)))) return 'Design challenges need a plausible wrong implementation and valid rejecting checks covering that criterion.'
+    const covers = id => contract.checks.some(check => check.id === id && check.criteria.includes(c.criterion))
+    if (!S.criteria.some(x => x.id === c.criterion)) return `Challenge ${c.criterion} names no acceptance criterion.`
+    if (!String(c.wrongImplementation || '').trim()) return `Challenge ${c.criterion} needs a plausible wrong implementation.`
+    if (!Array.isArray(c.rejectingCheckIds) || new Set(c.rejectingCheckIds).size !== c.rejectingCheckIds.length) return `Challenge ${c.criterion} needs distinct rejectingCheckIds.`
+    if (!c.rejectingCheckIds.length && !rejectsDesign) return `Challenge ${c.criterion} cites no rejecting check. Cite a contract check whose criteria include ${c.criterion}, or, if none rejects the wrong implementation, raise an evidenced finding or assess ${c.criterion} partial or unmet.`
+    const stray = c.rejectingCheckIds.filter(id => !covers(id))
+    if (stray.length) {
+      const owner = id => contract.checks.find(check => check.id === id)
+      return `Challenge ${c.criterion} cites ${stray.map(id => owner(id) ? `${id}, which covers ${owner(id).criteria.join(', ')}` : `${id}, which is not in the contract`).join('; ')}. ` +
+        `Cite only checks whose criteria include ${c.criterion}: ${contract.checks.filter(check => check.criteria.includes(c.criterion)).map(check => check.id).join(', ') || 'none'}.`
+    }
   }
   return null
 }
@@ -4328,9 +4361,20 @@ function pairIngestReview(S, review) {
   return null
 }
 
+// Whether the helper's measurement failed for reasons outside the snapshot: its disposable
+// checkout could not be made, or the gate's environment failed after bounded recovery.
+function pairInfrastructure(S) {
+  const m = S.pair.stage === 'code' ? S.pair.measurement : null
+  if (!m) return []
+  const out = []
+  if (String(m.scratchError || '').trim()) out.push(`The verification checkout failed: ${oneLine(m.scratchError, 400)}`)
+  else if (m.suite?.failureKind === 'infrastructure') out.push(`The verification environment failed after bounded recovery${m.suite.log ? `; see ${m.suite.log}` : ''}.`)
+  return out
+}
+
 function pairReadiness(S) {
   const p = S.pair, r = p.lastReview
-  const blocked = [], incomplete = []
+  const blocked = [], incomplete = [], infrastructure = pairInfrastructure(S)
   if (p.stop) incomplete.push(p.stop)
   if (!r || r.version !== pairVersion(S) || !r.complete) incomplete.push('The current version has no completed review.')
   for (const f of pairOpen(S).filter(f => p.stage === 'code' || f.stage === 'design')) blocked.push(`${f.id} (${f.severity}): ${f.statement}`)
@@ -4338,6 +4382,9 @@ function pairReadiness(S) {
   for (const c of S.criteria) {
     const assessments = (r?.criteria || []).filter(x => x.criterion === c.id)
     if (assessments.length !== 1 || !String(assessments[0].note || '').trim()) incomplete.push(`No single evidenced assessment of ${c.id}.`)
+    // With no measurement to read, a reviewer can't call a criterion that needs one met: partial
+    // then reports missing evidence, not a defect.
+    else if (assessments[0].status === 'partial' && infrastructure.length) incomplete.push(`Criterion ${c.id} is partial: ${oneLine(assessments[0].note, 300)}`)
     else if (assessments[0].status !== 'met') blocked.push(`Criterion ${c.id} is ${assessments[0].status}.`)
   }
   if (p.stage === 'code') {
@@ -4350,14 +4397,17 @@ function pairReadiness(S) {
     pairReplayReadiness(S, blocked, incomplete)
   }
   if (r?.requiresDesignRevision) blocked.push('The reviewer requires a revised design.')
-  return { state: blocked.length ? 'blocked' : incomplete.length ? 'incomplete' : 'ready', blocked, incomplete }
+  // unverified: nothing the review found is open, but the run could not measure the snapshot.
+  return { state: blocked.length ? 'blocked' : infrastructure.length ? 'unverified' : incomplete.length ? 'incomplete' : 'ready', blocked, incomplete, infrastructure }
 }
 
 function pairStalled(S) {
   const p = S.pair
   if (pairReadiness(S).state === 'ready') return false
+  // Criterion statuses are left out: a reviewer can move one between partial and met on the same
+  // bytes, and that noise must not hide an author who changed nothing.
   const signature = JSON.stringify([pairVersion(S), pairOpen(S).map(f => [f.id, f.statement]),
-    p.lastReview?.criteria.map(c => [c.criterion, c.status]), p.lastReview?.requiresDesignRevision,
+    p.lastReview?.requiresDesignRevision,
     p.measurement?.suite?.ran, p.measurement?.suite?.passed, pairReplayRequest(S),
     p.measurement?.replay?.exclusions, p.measurement?.replay?.records?.map(r => [r.side, r.file, r.command, r.checkIds, r.attempted, r.ran, r.hasExitCode, r.exitCode, r.signal, r.timedOut, r.launchError, r.passed, r.mutated])])
   p.signatures.push(signature)
@@ -4380,7 +4430,7 @@ function pairResult(S, status = 'blocked') {
     `Readiness: ${ready.state}. Reviews: ${p.reviews.length}/${S.pairOptions.maxReviews}.`,
     `Verification: ${!S.verify ? 'no automated gate configured; no test pass claimed' : !m?.suite?.ran ? 'not run on a final snapshot' : m.suite.passed ? 'passed on the reviewed snapshot' : 'failed on the reviewed snapshot'}.`,
     `Replay: ${m?.replay?.records?.length || 0} file/command records; ${m?.replay?.exclusions?.length || 0} overlay exclusions. Base outcomes require reviewer interpretation.`,
-    ...ready.blocked, ...ready.incomplete,
+    ...ready.infrastructure, ...ready.blocked, ...ready.incomplete,
     ...p.findings.map(f => `${f.id}: ${f.status} — ${f.statement}${f.resolution ? ` (${f.resolution})` : ''}`)].join('\n\n')
   return { status, workflow: 'pair', mode: 'implement', task: S.task, runDir: S.run?.runDir || null,
     repositoryNotes: S.repositoryNotes || '',
@@ -4396,7 +4446,9 @@ function pairResult(S, status = 'blocked') {
     delivery: { status: status === 'done' && ready.state === 'ready' ? 'pending' : 'not-ready' },
     forTheOrchestrator: 'Read final.readiness first. Report unresolved findings or missing evidence before any success summary. ' +
       'Spot-check the reviewed snapshot and report the design and implementation review outcomes. The change stays in final.worktree. ' +
+      'Readiness unverified means no review finding is open but the run could not measure the snapshot (final.readiness.infrastructure says why): run the gate on the delivered bytes before calling it done. ' +
       'Deliver only within the user\'s authorization, preserving unrelated edits; use dark-factory verify-delivery afterward. ' +
+      `Once the delivery is verified, dark-factory cleanup --run-dir ${S.run?.runDir ? shq(S.run.runDir) : '<runDir>'} removes the run's worktrees and refs/council refs (add --all to remove the run directory too). ` +
       'Do not start a council automatically. The Codex host can resume a validated checkpoint with --resume hostRunDir; changed inputs or evidence require a new run.' }
 }
 
@@ -4462,10 +4514,10 @@ ${p.design}
 ${JSON.stringify(p.approvedContract || p.testContract)}
 
 ${design ? `Independently check proposed reconciliations against the original task, reference documents, and explicit user decisions; setup notes cannot waive requirements. Check that the criteria cover the entire original request. Check the approach against the task and existing code: correctness, missing requirements, assumptions, alternatives that materially affect the outcome, scope, and planned test coverage. Verify every proposed test root against the BASE repository configuration/layout and its cited evidence; naming a directory does not make it a test root. Reject production roots and missing concrete outcomes/boundaries. Check that every planned test and fixture is a regular file under an accepted root and each focused command is executable by the replay helper. Shared files are allowed when required by the user or plan: inspect focused selection and base loadability. Prefer separate files otherwise. Whole-suite preservation must use kind=gate with the exact designated command, never a directory in a file mapping. Gate evidence establishes final-suite success, not a changed-behavior baseline failure. Each criterion is met only if the design explains how it will be satisfied and checked.
-Return exactly one structured challenge per criterion in challenges: criterion, a substantive wrongImplementation, and rejectingCheckIds that resolve to contract checks covering that criterion. If no check rejects a plausible wrong implementation, return rejectingCheckIds=[] and raise an evidenced finding, assess that criterion partial/unmet, or request design revision with the reason in summary. Never cite a check you believe is ineffective just to fill the array. Approval requires a rejecting check for every challenge. Describe a plausible incorrect result and its rejecting inspection for non-code criteria. Judge whether the checks actually reject that implementation; valid IDs alone are insufficient. ${pairBaseline(S)}`
+Return exactly one structured challenge per criterion in challenges: criterion, a substantive wrongImplementation, and rejectingCheckIds that resolve to contract checks covering that criterion: each cited check's criteria must include the challenged criterion (a check covering only C5 cannot reject a wrong implementation of C3). If no check rejects a plausible wrong implementation, return rejectingCheckIds=[] and raise an evidenced finding, assess that criterion partial/unmet, or request design revision with the reason in summary. Never cite a check you believe is ineffective just to fill the array. Approval requires a rejecting check for every challenge. Describe a plausible incorrect result and its rejecting inspection for non-code criteria. Judge whether the checks actually reject that implementation; valid IDs alone are insufficient. ${pairBaseline(S)}`
     : `Review the implementation and tests against the task and approved design. Inspect the whole diff at ${p.measurement.snapshot.diff}, not only the latest fixes. Look for incorrect behavior, regressions, missing requirements, and tests that would miss the defect. The neutral helper measured this exact snapshot. This summary leaves out what each execution printed: read that in the helper's full record, ${pairMeasurementRecord(S)}, where every replay record and the suite carry the tail of their output, and in the logs they name:
 ${JSON.stringify(p.measurement)}
-Passing tests do not replace code review. Treat a failing or missing required check as unresolved.
+Passing tests do not replace code review. Treat a failing or missing required check as unresolved.${pairInfrastructure(S).length ? ` This measurement could not run because of the environment, not the snapshot (${pairInfrastructure(S).join(' ')}). Readiness already reports that, and neither the author nor you can fix it: don't file a finding for it or reopen one about it. Assess a criterion that needs the missing results partial, with that reason in its note, and review the code on its merits.` : ''}
 Interpret the raw replay records for each check from their output in that record, reading the logs when the tail is not enough. A base fatal at file level (including a missing new API), pass, timeout, or tool error is evidence to interpret, not an automatic red/green verdict. Records cover files/commands and associated check IDs; an aborted file does not prove individual assertions ran. Preserved behavior should pass on base; changed behavior passing there needs investigation. Distinguish the intended missing behavior from infrastructure failure using actual output. If inconclusive, reflect that in criterion assessments/findings rather than approving solely because a record exists. A base record with reused=true is the same execution as an earlier measurement's, carried over because its inputs were identical (base commit, command, test and fixture bytes, timeout and settings); it is not a new run.
 Inspect every overlay exclusion and missing preserved-behavior signal. Compare actual assertions and coverage with the approved contract and report omissions or weakening through findings. Check that each mapped command really isolates its named file and executes its claimed checks. Attack the whole implementation for uncovered requirements, regressions, races, numeric mistakes, and defects introduced by fixes: the contract is a floor, not the review checklist. Return challenges=[] during code review.
 That measurement is the gate result for this snapshot: don't rerun the verification command or the checks in it. Run only targeted probes, such as one test or one analyser on the changed files. Sandboxes can block the sockets that parallel workers use: if a probe fails that way, run the tool single-process.`}
@@ -4893,7 +4945,10 @@ async function controlledRun(work) {
   if ((S.factory || S.pairOptions) && result.runDir) {
     result.artifactType = 'dark-factory-result'
     result.artifactVersion = 1
-    result.summary = compactResult(S, result)
+    // The summary goes first: a reader that sees only the start of a long result still gets the
+    // status, readiness, open findings, snapshot and gate.
+    const { summary, ...rest } = result
+    return { summary: compactResult(S, result), ...rest }
   }
   return result
 }
@@ -5844,6 +5899,7 @@ const PAIR_REVIEW_SCHEMA = strict({ type: 'object', properties: {
 
 const PAIR_MEASURE_SCHEMA = strict({ type: 'object', properties: {
   status: { type: 'string', enum: ['done', 'error'] }, error: { type: 'string' },
+  scratchError: { type: 'string', description: 'Why the disposable verification checkout failed; empty when it succeeded.' },
   snapshot: { type: 'object', properties: { ref: { type: 'string' }, tree: { type: 'string' }, diff: { type: 'string' } } },
   suite: { type: 'object', properties: { ran: { type: 'boolean' }, passed: { type: 'boolean' }, command: { type: 'string' },
     failureKind: { type: 'string' }, log: { type: 'string' } } },
@@ -5951,11 +6007,16 @@ async function pairRun() {
       }
     }
     phase(p.stage === 'design' ? 'Review design' : 'Review code')
-    let review = await pairReviewTurn(label)
+    const trim = (review, at) => {
+      const dropped = p.stage === 'design' ? pairTrimChallenges(S, review) : []
+      if (dropped.length) S.notes.push(`review ${at}: dropped rejecting checks that do not cover the challenged criterion (${dropped.join('; ')}).`)
+      return review
+    }
+    let review = trim(await pairReviewTurn(label), label)
     let error = pairIngestReview(S, review)
     if (error && p.stage === 'design' && review?.complete === true && review.version === pairVersion(S) && pairChallengeError(S, review)) {
       S.notes.push(`review ${label}: ${error} Requested one reviewer correction; the invalid review changed no findings.`)
-      review = await pairReviewTurn(`${label}-corrected`, { error, review })
+      review = trim(await pairReviewTurn(`${label}-corrected`, { error, review }), `${label}-corrected`)
       error = pairIngestReview(S, review)
     }
     if (error) { p.stop = error; return pairResult(S, review ? 'blocked' : 'failed') }
@@ -5971,8 +6032,8 @@ async function pairRun() {
     }
     // A completed review of these bytes is still valid. Missing evidence must not
     // send an already accepted implementation through another author/reviewer cycle.
-    if (p.stage === 'code' && p.measurement?.suite?.failureKind === 'infrastructure') {
-      p.stop = 'Verification infrastructure failed after bounded recovery. Preserve this snapshot and repair the execution environment before continuing.'
+    if (p.stage === 'code' && pairInfrastructure(S).length) {
+      p.stop = 'Verification infrastructure failed, so another review of these bytes cannot add evidence. Preserve this snapshot, repair the execution environment, and run the gate on it.'
       return pairResult(S)
     }
     if (p.stage === 'code' && ready.state === 'incomplete' && pairReviewClean(S)) {

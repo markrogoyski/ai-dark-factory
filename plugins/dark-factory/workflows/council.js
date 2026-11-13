@@ -1800,7 +1800,7 @@ When the work would end with a change someone commits, choose implement.
 `}
 ## Step 2 — create the run
 Run: ${S.cli} init --repo ${S.raw.repo ? shq(S.raw.repo) : '"$PWD"'} --seats ${letters}${S.tier ? ' --factory' : ''}${setupRunId(S) ? ` --run-id ${shq(setupRunId(S))}` : ''}${startedAt ? ' --started-at <the time you read before you started>' : ''}${S.plan.map(p => ` --ref ${shq(p)}`).join('')} followed by --ref <path> for each other document from step 1
-It prints JSON with runId, runDir, repoRoot, refs (the snapshots it made of those documents) and dirty (tracked files with uncommitted changes).
+${S.tier && S.host !== 'codex' ? 'Make it one Bash call with dangerouslyDisableSandbox: true: init creates git worktrees, and the Bash sandbox refuses to write the repository\'s worktree records (".git/worktrees/…: Operation not permitted").\n' : ''}It prints JSON with runId, runDir, repoRoot, refs (the snapshots it made of those documents) and dirty (tracked files with uncommitted changes).
 - If it fails, return status "error" with its message, and empty values elsewhere.
 ${S.allowDirty || (S.modeGiven && S.mode !== 'implement') ? '' : `- If ${S.modeGiven ? '' : 'the mode is implement and '}dirty is non-empty, stop and return status "dirty" with that list. The worktrees branch from HEAD, so uncommitted changes would be invisible to every seat.\n`}
 ## Step 3 — the verification command
@@ -3227,11 +3227,13 @@ function compactResult(S, result) {
     runDir: result.runDir, stopReason: result.stopReason || result.error || '',
     final: { readiness: f.readiness, snapshotRef: f.snapshotRef || null, snapshotTree: f.snapshotTree || null,
       post: f.post || null, diff: f.diff || null, worktree: f.worktree || null,
-      suite: f.suite ? { ran: f.suite.ran, passed: f.suite.passed, command: f.suite.command || S.verify, log: f.suite.log || null } : null },
+      suite: f.suite ? { ran: f.suite.ran, passed: f.suite.passed, command: f.suite.command || S.verify, log: f.suite.log || null,
+        ...(f.suite.failureKind ? { failureKind: f.suite.failureKind } : {}) } : null },
     findings: (result.findings || []).filter(f => f.status === 'open').map(f => ({ id: f.id, severity: f.severity, statement: f.statement })),
     questions: result.questions || [], delivery: result.delivery || null,
     artifacts: { room: result.room || S.run?.room || null, verification: result.runDir ? `${result.runDir}/verification.json` : null,
-      measurement: snapshot ? `${result.runDir}/jobs/measure-${snapshot[1]}-${snapshot[2]}/status.json` : null } }
+      measurement: snapshot ? `${result.runDir}/jobs/measure-${snapshot[1]}-${snapshot[2]}/status.json` : null },
+    cleanupAfterDelivery: `dark-factory cleanup --run-dir ${shq(result.runDir)}` }
 }
 
 // The factory's tiers: which one a run starts at, when the Simple tier hands the work up, and the
@@ -4538,7 +4540,10 @@ async function controlledRun(work) {
   if ((S.factory || S.pairOptions) && result.runDir) {
     result.artifactType = 'dark-factory-result'
     result.artifactVersion = 1
-    result.summary = compactResult(S, result)
+    // The summary goes first: a reader that sees only the start of a long result still gets the
+    // status, readiness, open findings, snapshot and gate.
+    const { summary, ...rest } = result
+    return { summary: compactResult(S, result), ...rest }
   }
   return result
 }

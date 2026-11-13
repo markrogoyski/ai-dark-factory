@@ -74,6 +74,7 @@ const PAIR_REVIEW_SCHEMA = strict({ type: 'object', properties: {
 
 const PAIR_MEASURE_SCHEMA = strict({ type: 'object', properties: {
   status: { type: 'string', enum: ['done', 'error'] }, error: { type: 'string' },
+  scratchError: { type: 'string', description: 'Why the disposable verification checkout failed; empty when it succeeded.' },
   snapshot: { type: 'object', properties: { ref: { type: 'string' }, tree: { type: 'string' }, diff: { type: 'string' } } },
   suite: { type: 'object', properties: { ran: { type: 'boolean' }, passed: { type: 'boolean' }, command: { type: 'string' },
     failureKind: { type: 'string' }, log: { type: 'string' } } },

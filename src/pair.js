@@ -99,11 +99,16 @@ async function pairRun() {
       }
     }
     phase(p.stage === 'design' ? 'Review design' : 'Review code')
-    let review = await pairReviewTurn(label)
+    const trim = (review, at) => {
+      const dropped = p.stage === 'design' ? pairTrimChallenges(S, review) : []
+      if (dropped.length) S.notes.push(`review ${at}: dropped rejecting checks that do not cover the challenged criterion (${dropped.join('; ')}).`)
+      return review
+    }
+    let review = trim(await pairReviewTurn(label), label)
     let error = pairIngestReview(S, review)
     if (error && p.stage === 'design' && review?.complete === true && review.version === pairVersion(S) && pairChallengeError(S, review)) {
       S.notes.push(`review ${label}: ${error} Requested one reviewer correction; the invalid review changed no findings.`)
-      review = await pairReviewTurn(`${label}-corrected`, { error, review })
+      review = trim(await pairReviewTurn(`${label}-corrected`, { error, review }), `${label}-corrected`)
       error = pairIngestReview(S, review)
     }
     if (error) { p.stop = error; return pairResult(S, review ? 'blocked' : 'failed') }
@@ -119,8 +124,8 @@ async function pairRun() {
     }
     // A completed review of these bytes is still valid. Missing evidence must not
     // send an already accepted implementation through another author/reviewer cycle.
-    if (p.stage === 'code' && p.measurement?.suite?.failureKind === 'infrastructure') {
-      p.stop = 'Verification infrastructure failed after bounded recovery. Preserve this snapshot and repair the execution environment before continuing.'
+    if (p.stage === 'code' && pairInfrastructure(S).length) {
+      p.stop = 'Verification infrastructure failed, so another review of these bytes cannot add evidence. Preserve this snapshot, repair the execution environment, and run the gate on it.'
       return pairResult(S)
     }
     if (p.stage === 'code' && ready.state === 'incomplete' && pairReviewClean(S)) {

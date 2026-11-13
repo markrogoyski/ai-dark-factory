@@ -21,6 +21,7 @@ Read the task for any other document it tells the seats to follow or read, for e
 
 ## Step 2 — create the run
 Run: dark-factory init --repo '/repo' --seats A --factory --started-at <the time you read before you started> followed by --ref <path> for each other document from step 1
+Make it one Bash call with dangerouslyDisableSandbox: true: init creates git worktrees, and the Bash sandbox refuses to write the repository's worktree records (".git/worktrees/…: Operation not permitted").
 It prints JSON with runId, runDir, repoRoot, refs (the snapshots it made of those documents) and dirty (tracked files with uncommitted changes).
 - If it fails, return status "error" with its message, and empty values elsewhere.
 - If dirty is non-empty, stop and return status "dirty" with that list. The worktrees branch from HEAD, so uncommitted changes would be invisible to every seat.

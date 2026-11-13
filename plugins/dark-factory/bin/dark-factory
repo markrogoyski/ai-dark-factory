@@ -409,6 +409,7 @@ def cmd_init(a):
         with open(exclude, 'a', encoding='utf-8') as f:
             f.write(('' if existing.endswith('\n') or not existing else '\n') + '/.council/\n')
 
+    created = not os.path.exists(run_dir)
     for d in ('jobs', 'logs', 'seats', 'wt', 'snap', 'tmp', 'scratch'):
         os.makedirs(os.path.join(run_dir, d), exist_ok=True)
     for d in ROOM_DIRS:
@@ -418,7 +419,19 @@ def cmd_init(a):
     for s in seats:
         path = os.path.join(run_dir, 'wt', s)
         if not os.path.exists(path):
-            git('worktree', 'add', '--detach', path, head, cwd=root)
+            try:
+                git('worktree', 'add', '--detach', path, head, cwd=root)
+            except CouncilError as e:
+                # Seats commit in their worktrees, so a seat has no standalone fallback. Leave no
+                # half-made run behind for the retry to trip over.
+                if created:
+                    for added in worktrees.values():
+                        git('worktree', 'remove', '--force', added, cwd=root, check=False)
+                    shutil.rmtree(run_dir, ignore_errors=True)
+                    git('worktree', 'prune', cwd=root, check=False)
+                hint = (' A sandbox refused to write the worktree records: run init again with the sandbox disabled.'
+                        if 'Operation not permitted' in str(e) or 'Permission denied' in str(e) else '')
+                raise CouncilError(f'{e}.{hint}')
         deps = clone_deps(root, path) or deps
         docs = copy_agent_docs(root, path, untracked=getattr(a, 'factory', False))
         worktrees[s] = path
@@ -1649,8 +1662,7 @@ def scratch_checkout(run, seat, label, commit, live):
     path = os.path.join(run['runDir'], 'scratch', f'{seat}-{label}-{os.getpid()}')
     try:
         shutil.rmtree(path, ignore_errors=True)
-        with WORKTREE_LOCK:
-            git('worktree', 'add', '--detach', path, commit, cwd=run['repoRoot'])
+        detached_checkout(run, path, commit)
         clone_deps(live, path)
         if run.get('factory'):
             copy_agent_docs(run['repoRoot'], path, untracked=True)
@@ -1660,10 +1672,48 @@ def scratch_checkout(run, seat, label, commit, live):
         return None, oneline(str(e), 300)
 
 
+def detached_checkout(run, path, commit):
+    """Check `commit` out at `path` as a git worktree, or, where the worktree records can't be
+    written, as a standalone repository that borrows the main repository's objects.
+
+    A sandbox (Claude Code's Bash tool's among them) can refuse `git worktree add` with "could not
+    create directory of '.git/worktrees/…'" while allowing writes to the run directory. The
+    fallback writes nothing under the repository's .git: its git dir is <path>.gitdir, beside the
+    checkout, and its objects come from the main repository through objects/info/alternates. Git
+    commands in the checkout (status, diff, checkout -- .) still work. Returns 'worktree' or
+    'standalone'."""
+    root = run['repoRoot']
+    with WORKTREE_LOCK:
+        try:
+            git('worktree', 'add', '--detach', path, commit, cwd=root)
+            return 'worktree'
+        except CouncilError as e:
+            refused = e
+            git('worktree', 'prune', cwd=root, check=False)
+    gitdir = path + '.gitdir'
+    shutil.rmtree(path, ignore_errors=True)
+    shutil.rmtree(gitdir, ignore_errors=True)
+    common = os.path.normpath(os.path.join(root, git('rev-parse', '--git-common-dir', cwd=root).strip()))
+    sha = git('rev-parse', '--verify', f'{commit}^{{commit}}', cwd=root).strip()
+    try:
+        os.makedirs(path)
+        git('init', '-q', f'--separate-git-dir={gitdir}', path)
+        with open(os.path.join(gitdir, 'objects', 'info', 'alternates'), 'w', encoding='utf-8') as f:
+            f.write(os.path.join(common, 'objects') + '\n')
+        git('checkout', '-q', '--detach', sha, cwd=path)
+    except (CouncilError, OSError) as e:
+        shutil.rmtree(path, ignore_errors=True)
+        shutil.rmtree(gitdir, ignore_errors=True)
+        raise CouncilError(f'{refused}; standalone checkout also failed: {e}')
+    return 'standalone'
+
+
 def drop_checkout(run, path):
     with WORKTREE_LOCK:
-        git('worktree', 'remove', '--force', path, cwd=run['repoRoot'], check=False)
+        if not os.path.isdir(path + '.gitdir'):
+            git('worktree', 'remove', '--force', path, cwd=run['repoRoot'], check=False)
     shutil.rmtree(path, ignore_errors=True)
+    shutil.rmtree(path + '.gitdir', ignore_errors=True)
 
 
 def tracked_changes(path):
@@ -1912,11 +1962,15 @@ def run_measure_job(jd, spec):
         out['scratch'] = bool(scratch)
         if scratch:
             cwd = scratch
+            out['checkout'] = 'standalone' if os.path.isdir(scratch + '.gitdir') else 'worktree'
         else:
             out['scratchError'] = f'ran in the live worktree instead: {err}'
             if run.get('factory'):
+                # The environment failed, not the snapshot: failureKind tells Pair to stop rather
+                # than send unchanged bytes through more review.
                 out['scratchError'] = err
-                out['suite'] = {'ran': False, 'passed': False, 'tail': 'Disposable verification checkout failed: ' + err}
+                out['suite'] = {'ran': False, 'passed': False, 'command': settings['command'], 'failureKind': 'infrastructure',
+                                'log': '', 'tail': 'Disposable verification checkout failed: ' + err}
                 out['crossTests'] = []
                 return out
     post = os.path.join(run['room'], spec['label'], f'{spec["seat"]}.md')
@@ -2001,7 +2055,7 @@ def input_digest(run, seat, label, path, tests, replay=None):
 # output tail, checkout path and log digest; the job's status.json keeps the full record. Must match
 # PAIR_MEASURE_SCHEMA in src/pair-schemas.js (test/pair.mjs compares them).
 PAIR_BRIEF = {
-    'status': '', 'error': '',
+    'status': '', 'error': '', 'scratchError': '',
     'snapshot': {'ref': '', 'tree': '', 'diff': ''},
     'suite': {'ran': False, 'passed': False, 'command': '', 'failureKind': '', 'log': ''},
     'replay': {
@@ -2088,7 +2142,7 @@ def checkout_snapshot(run, seat, label, path):
     if not git('rev-parse', '--verify', '--quiet', ref, cwd=run['repoRoot'], check=False).strip():
         raise CouncilError(f'no snapshot {seat}-{label} (it is taken when that round is measured)')
     if not os.path.exists(path):
-        git('worktree', 'add', '--detach', path, ref, cwd=run['repoRoot'])
+        detached_checkout(run, path, ref)
         clone_deps(run['repoRoot'], path)
         if run.get('factory'):
             copy_agent_docs(run['repoRoot'], path, untracked=True)

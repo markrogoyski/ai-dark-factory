@@ -100,6 +100,9 @@ Handle paused results using their actual fields and the user's existing instruct
 - `blocked`, `failed`, or incomplete readiness: report the concrete failing check, missing
   review, or CLI problem. Do not relabel it as success, change vendors without authority,
   or retry the same failing launch indefinitely.
+- `unverified` readiness: no review finding is open, but the run could not measure the snapshot;
+  `final.readiness.infrastructure` says why. Report that cause, not a code defect, and run the gate
+  on the delivered bytes before calling the change done.
 
 Reruns normally start a new run. Use `--resume HOST_RUN_DIR` to reuse a validated checkpoint. The runner checks engine, repository, reference inputs, snapshots, worktrees and evidence before replaying completed operations. Changed task/configuration or evidence requires a new run; never reset files to force checkpoint validation. Saved worktrees and evidence remain intact. Run budgets retain spent work across resumes.
 
@@ -121,6 +124,9 @@ use the shipped helper's `verify-delivery` command as described in
 [references/delivery.md](references/delivery.md). It compares the delivered bytes, records any
 reviewed adjustments and handoffs, and runs the shared gate in the main checkout. Report its
 `delivery.json` separately from factory readiness; a ready snapshot can still fail delivery. For an incomplete run, `verify-delivery --diagnostic-reason "explanation"` can record gate results in `delivery-diagnostic.json`; it does not grant readiness or authorize delivery.
+Once delivery is verified, `dark-factory cleanup --run-dir RUN` removes the run's worktrees and
+`refs/council/<run>/` refs (`--all` also removes the run directory). Don't clean up a run you may
+still resume or deliver from.
 
 Architecture returns a reviewed design and `milestones[]`, with arguments for later factory
 runs. Present those milestones and retain the design artifacts. Do not automatically launch

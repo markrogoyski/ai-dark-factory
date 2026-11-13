@@ -112,7 +112,7 @@ class Verification(TmpDirCase):
                          '--brief', '--max-wait', '20')
         full = json.loads(council.read(os.path.join(self.rd, 'jobs', 'measure-A-brief', 'status.json')))
         self.assertEqual(brief['status'], 'done')
-        self.assertEqual(list(brief), ['status', 'error', 'snapshot', 'suite', 'replay'])
+        self.assertEqual(list(brief), ['status', 'error', 'scratchError', 'snapshot', 'suite', 'replay'])
         self.assertEqual(brief['snapshot'], {k: full['snapshot'][k] for k in ('ref', 'tree', 'diff')})
         self.assertEqual(brief['suite'], {'ran': True, 'passed': True, 'command': 'python3 gate.py',
                                           'failureKind': full['suite'].get('failureKind', ''), 'log': full['suite']['log']})
@@ -624,6 +624,55 @@ class Verification(TmpDirCase):
         self.assertFalse(result['passed'])
         self.assertEqual(len(result['attempts']), 1)
         self.assertIn('value', result['mutated'])
+
+    def refuse_worktrees(self):
+        # A sandbox that lets the run directory be written but not the repository's worktree records.
+        records = os.path.join(self.repo, '.git', 'worktrees')
+        os.chmod(records, 0o555)
+        self.addCleanup(os.chmod, records, 0o755)
+
+    def test_refused_worktree_records_fall_back_to_a_standalone_checkout(self):
+        self.put('vendor/lib.py', 'dependency\n')
+        council.write(os.path.join(self.wt, 'tests/changed.py'),
+                      'from pathlib import Path\nassert Path("value").read_text() == "fixed\\n"\n')
+        self.refuse_worktrees()
+        result = self.replay_measure()
+        self.assertTrue(result['scratch'], result.get('scratchError'))
+        self.assertEqual(result['checkout'], 'standalone')
+        self.assertTrue(result['suite']['ran'] and result['suite']['passed'], result['suite'].get('tail'))
+        self.assertEqual([(r['side'], r['passed']) for r in result['replay']['records']],
+                         [('base', False), ('final', True), ('base', True), ('final', True)])
+        for record in result['replay']['records']:
+            self.assertFalse(os.path.exists(record['cwd']))
+            self.assertFalse(os.path.exists(record['cwd'] + '.gitdir'))
+        self.assertEqual(os.listdir(os.path.join(self.rd, 'scratch')), [])
+        self.assertEqual(os.listdir(os.path.join(self.repo, '.git', 'worktrees')), ['A', 'B'])
+
+    def test_standalone_checkout_detects_gate_mutations(self):
+        council.write(os.path.join(self.rd, 'verify.sh'), 'echo changed > unchanged')
+        self.refuse_worktrees()
+        result = self.measure()
+        self.assertEqual(result['checkout'], 'standalone')
+        self.assertFalse(result['suite']['passed'])
+        self.assertEqual(result['suite']['mutated'], ['unchanged'])
+
+    def test_failed_verification_checkout_is_an_infrastructure_failure(self):
+        with mock.patch.object(council, 'detached_checkout', side_effect=council.CouncilError('refused')):
+            out = council.run_measure_job(None, {'runDir': self.rd, 'seat': 'A', 'label': 'infra', 'job': 'measure-A-infra',
+                                                 'tests': [], 'suiteTimeout': 10, 'testTimeout': 10})
+        self.assertFalse(out['scratch'])
+        self.assertEqual(out['scratchError'], 'refused')
+        self.assertEqual(out['suite']['failureKind'], 'infrastructure')
+        self.assertFalse(out['suite']['ran'])
+        self.assertEqual(out['suite']['command'], 'python3 gate.py')
+        self.assertEqual(council.measurement_brief(dict(out, status='done'))['scratchError'], 'refused')
+
+    def test_init_refused_worktrees_leaves_no_run_behind(self):
+        self.refuse_worktrees()
+        failed = self.cli('init', '--repo', self.repo, '--seats', 'A', '--run-id', 'refused', '--factory', error=True)
+        self.assertIn('run init again with the sandbox disabled', failed['error'])
+        self.assertFalse(os.path.exists(os.path.join(self.repo, '.council', 'refused')))
+        self.assertTrue(os.path.isdir(self.rd), 'an existing run is never removed')
 
 
 if __name__ == '__main__':

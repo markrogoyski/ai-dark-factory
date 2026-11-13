@@ -40,7 +40,10 @@ async function controlledRun(work) {
   if ((S.factory || S.pairOptions) && result.runDir) {
     result.artifactType = 'dark-factory-result'
     result.artifactVersion = 1
-    result.summary = compactResult(S, result)
+    // The summary goes first: a reader that sees only the start of a long result still gets the
+    // status, readiness, open findings, snapshot and gate.
+    const { summary, ...rest } = result
+    return { summary: compactResult(S, result), ...rest }
   }
   return result
 }
