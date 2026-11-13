@@ -2293,13 +2293,22 @@ def run_delivery_job(jd, spec):
     return result
 
 
-def cmd_verify_delivery(a):
-    run = load_run(a.run_dir)
-    report = json.loads(read(a.result))
-    if report.get('artifactType') == 'dark-factory-summary':
-        raise CouncilError('verify-delivery requires the full result; summary.json is informational only')
+def load_result(run, path):
+    """The full result from a saved file, RUN/result.json, or a native workflow's task output,
+    which wraps the result under "result"."""
+    report = json.loads(read(path or os.path.join(run['runDir'], 'result.json')))
+    if isinstance(report, dict) and report.get('artifactType') is None and isinstance(report.get('result'), dict):
+        report = report['result']
+    if not isinstance(report, dict) or report.get('artifactType') == 'dark-factory-summary':
+        raise CouncilError('delivery requires the full result; summary.json is informational only')
     if os.path.realpath(report.get('runDir', '')) != os.path.realpath(run['runDir']):
         raise CouncilError('result belongs to a different run')
+    return report
+
+
+def cmd_verify_delivery(a):
+    run = load_run(a.run_dir)
+    report = load_result(run, a.result)
     manifest = json.loads(read(a.manifest)) if a.manifest else {'adjustments': [], 'handoffs': []}
     final = report.get('final', {})
     reason = (a.diagnostic_reason or '').strip()
@@ -2330,11 +2339,9 @@ def cmd_verify_delivery(a):
 
 def cmd_apply(a):
     run = load_run(a.run_dir)
-    report = json.loads(read(a.result or os.path.join(run['runDir'], 'result.json')))
+    report = load_result(run, a.result)
     if report.get('artifactType') != 'dark-factory-result' or report.get('artifactVersion') != 1:
         raise CouncilError('apply requires a full dark-factory-result v1; summary.json is informational only')
-    if os.path.realpath(report.get('runDir', '')) != os.path.realpath(run['runDir']):
-        raise CouncilError('result belongs to a different run')
     final, repo = report.get('final', {}), run['repoRoot']
     ref = delivery_snapshot(run, final)
     if git('rev-parse', 'HEAD', cwd=repo).strip() != run['head']:
@@ -2939,7 +2946,7 @@ def main():
 
     p = sub.add_parser('verify-delivery', help='compare delivered bytes and rerun the gate in the main checkout')
     p.add_argument('--run-dir', required=True)
-    p.add_argument('--result', required=True, help='saved factory result JSON')
+    p.add_argument('--result', help='saved result JSON or native workflow task output; defaults to RUN/result.json')
     p.add_argument('--manifest', help='JSON with adjustments and handoffs, each with path/reason/sha256')
     p.add_argument('--suite-timeout', type=int, default=1200)
     p.add_argument('--max-wait', type=int, default=DEFAULT_MAX_WAIT)
@@ -2947,7 +2954,7 @@ def main():
 
     p = sub.add_parser('apply', help='apply a ready reviewed snapshot to its base and verify the index tree hash')
     p.add_argument('--run-dir', required=True)
-    p.add_argument('--result', help='saved factory result JSON; defaults to RUN/result.json')
+    p.add_argument('--result', help='saved result JSON or native workflow task output; defaults to RUN/result.json')
 
     p = sub.add_parser('usage')
     p.add_argument('--run-dir', required=True)

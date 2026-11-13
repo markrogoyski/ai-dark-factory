@@ -6,7 +6,8 @@ const PAIR_SETUP_SCHEMA = strict({ type: 'object', properties: {
   questions: PAIR_STRINGS,
   head: { type: 'string', description: 'The original full base commit from init.head / run.json; never a later snapshot.' },
   unverifiable: { type: 'array', description: 'Criteria (supplied or written) that evidence available inside this run cannot fully meet; [] when every criterion can be checked.',
-    items: { type: 'object', properties: { criterion: { type: 'string' }, reason: { type: 'string' } } } },
+    items: { type: 'object', properties: { criterion: { type: 'string' }, reason: { type: 'string' },
+      origin: { type: 'string', enum: ['supplied', 'written'], description: 'supplied: given in the task, criteria or a reference document, in substance; written: drafted by setup.' } } } },
 } })
 const PAIR_CONTRACT = { type: 'object', properties: {
   testRoots: { type: 'array', items: { type: 'object', properties: {

@@ -304,7 +304,16 @@ function pairResult(S, status = 'blocked') {
     `Replay: ${m?.replay?.records?.length || 0} file/command records; ${m?.replay?.exclusions?.length || 0} overlay exclusions. Base outcomes require reviewer interpretation.`,
     ...ready.infrastructure, ...ready.blocked, ...ready.incomplete,
     ...p.findings.map(f => `${f.id}: ${f.status} — ${f.statement}${f.resolution ? ` (${f.resolution})` : ''}`)].join('\n\n')
-  return { status, workflow: 'pair', mode: 'implement', task: S.task, runDir: S.run?.runDir || null,
+  return {
+    forTheOrchestrator: 'Read final.readiness first. Report unresolved findings or missing evidence before any success summary. ' +
+      'Spot-check the reviewed snapshot and report the design and implementation review outcomes. The change stays in final.worktree. ' +
+      'Readiness unverified means no review finding is open but the run could not measure the snapshot (final.readiness.infrastructure says why): run the gate on the delivered bytes before calling it done. ' +
+      'Deliver only within the user\'s authorization, preserving unrelated edits. On a clean checkout at the original base, ' +
+      `dark-factory apply --run-dir ${S.run?.runDir ? shq(S.run.runDir) : '<runDir>'} --result <file> stages the reviewed snapshot and checks its tree hash; then run dark-factory verify-delivery with the same --run-dir and --result. ` +
+      'For --result, pass the workflow task\'s output file as it stands (the helper reads the result inside it), or omit --result when the run directory holds result.json. ' +
+      `Once the delivery is verified, dark-factory cleanup --run-dir ${S.run?.runDir ? shq(S.run.runDir) : '<runDir>'} removes the run's worktrees and refs/council refs (add --all to remove the run directory too). ` +
+      'Do not start a council automatically. The Codex host can resume a validated checkpoint with --resume hostRunDir; changed inputs or evidence require a new run.',
+    status, workflow: 'pair', mode: 'implement', task: S.task, runDir: S.run?.runDir || null,
     repositoryNotes: S.repositoryNotes || '',
     room: S.run?.room || null, refs: S.refs, stage: p.stage, stopReason: p.stop,
     design: p.design, testContract: p.approvedContract || p.testContract, replayMapping: p.replayMapping,
@@ -315,12 +324,6 @@ function pairResult(S, status = 'blocked') {
       worktree: S.seats[0]?.wt || null, post: p.label && S.run ? `${S.run.room}/${p.label}/A.md` : null,
       snapshotRef: m?.snapshot?.ref || null, snapshotTree: m?.snapshot?.tree || null, diff: m?.snapshot?.diff || null,
       suite: m?.suite || null, replay: m?.replay || null, criteria: p.lastReview?.criteria || [], readiness: ready },
-    delivery: { status: status === 'done' && ready.state === 'ready' ? 'pending' : 'not-ready' },
-    forTheOrchestrator: 'Read final.readiness first. Report unresolved findings or missing evidence before any success summary. ' +
-      'Spot-check the reviewed snapshot and report the design and implementation review outcomes. The change stays in final.worktree. ' +
-      'Readiness unverified means no review finding is open but the run could not measure the snapshot (final.readiness.infrastructure says why): run the gate on the delivered bytes before calling it done. ' +
-      'Deliver only within the user\'s authorization, preserving unrelated edits; use dark-factory verify-delivery afterward. ' +
-      `Once the delivery is verified, dark-factory cleanup --run-dir ${S.run?.runDir ? shq(S.run.runDir) : '<runDir>'} removes the run's worktrees and refs/council refs (add --all to remove the run directory too). ` +
-      'Do not start a council automatically. The Codex host can resume a validated checkpoint with --resume hostRunDir; changed inputs or evidence require a new run.' }
+    delivery: { status: status === 'done' && ready.state === 'ready' ? 'pending' : 'not-ready' } }
 }
 

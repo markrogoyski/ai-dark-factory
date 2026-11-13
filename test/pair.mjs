@@ -624,7 +624,7 @@ test('reviewers can reword an existing finding through its ID without duplicatin
 
 test('setup that finds a criterion unverifiable inside the run stops before any author turn', async () => {
   for (const native of [false, true]) {
-    const { result, calls } = await run({ native, setup: { unverifiable: [{ criterion: 'C1', reason: 'Needs the deployed service to answer.' }] } })
+    const { result, calls } = await run({ native, setup: { unverifiable: [{ criterion: 'C1', origin: 'supplied', reason: 'Needs the deployed service to answer.' }] } })
     assert.equal(result.status, 'needs-user')
     assert.equal(result.questions.length, 1)
     assert.match(result.questions[0], /^C1 .*The requested behavior works.*deployed service.*Rewrite it/)
@@ -638,12 +638,37 @@ test('setup that finds a criterion unverifiable inside the run stops before any 
   assert.match(calls.find(c => c.kind === 'setup').prompt, /fails only inside your own sandbox \(a refused port bind.*does not make a criterion unverifiable/)
 })
 
+// IterTools-PHP: setup stopped to ask whether to rewrite or drop a criterion it had written itself,
+// for a 64-bit limitation the plan already accepted.
+test('a criterion setup wrote and could not check goes to the author to inspect, not to the user', async () => {
+  for (const native of [false, true]) {
+    const { result, calls } = await run({ native, setup: { unverifiable: [{ criterion: 'C1', origin: 'written', reason: '32-bit rows cannot run on 64-bit PHP.' }] } })
+    assert.equal(result.status, 'done')
+    assert.deepEqual(result.questions, [])
+    assert.match(calls.find(c => c.kind === 'author').prompt, /could not find a run-time check for C1, which it wrote: 32-bit rows.*Check it by inspecting the code/)
+  }
+  const { result } = await run({ setup: { unverifiable: [{ criterion: 'C1', origin: 'supplied', reason: 'Needs production.' }] } })
+  assert.equal(result.status, 'needs-user')
+})
+
+// IterTools-PHP: a fix copied Single::accumulate's argument checks into Stream; review tested only the
+// listed cases and missed different messages for combined arguments.
+test('mirrored behaviour gets a side-by-side check in design and review', async () => {
+  const { calls } = await run({ native: true })
+  assert.match(calls.find(c => c.kind === 'author' && /# Stage: design/.test(c.prompt)).prompt, /copies, mirrors or reimplements behaviour another function already has.*runs both on the same inputs side by side, including combinations of arguments/)
+  const reviews = calls.filter(c => c.kind === 'review').map(c => c.prompt)
+  assert.ok(reviews.some(p => /require a side-by-side check that the two agree/.test(p)))
+  assert.ok(reviews.some(p => /run both on the same inputs beyond the listed cases, including combinations of arguments, and file any difference/.test(p)))
+})
+
 // Sonnet setup stopped a run as unverifiable on "make coverage ... may not be runnable" with pcov
 // installed; reviews flagged substring exception-message assertions in 8 of 24 runs.
 test('setup lists only criteria it checked cannot be met, and design asserts specified messages exactly', async () => {
   const state = L.newState(L.parsePairConfig('Fix it'))
   const setup = L.pairSetupPrompt(state)
-  assert.match(setup, /List in unverifiable only the criteria, supplied or written by you, that you have established cannot be fully met/)
+  assert.match(setup, /List in unverifiable only the criteria that you have established cannot be fully met/)
+  assert.match(setup, /You own the criteria you write: word each one so evidence inside this run can check it/)
+  assert.match(setup, /A limitation that the task or a reference document explicitly accepts is not a gap/)
   assert.match(setup, /post-delivery, production or live-service evidence/)
   assert.match(setup, /might be missing, check it with one command first \(for example `php -m \| grep -i pcov`/)
   assert.match(setup, /Doubt alone \("may not be runnable"\) is not a reason: record it in repositoryNotes/)

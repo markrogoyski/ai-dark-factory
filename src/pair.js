@@ -36,13 +36,17 @@ async function pairRun() {
     S.pair.stop = 'Setup omitted criteria, reference snapshots, or the requested verification command.'
     return pairResult(S)
   }
-  // A criterion no evidence inside the run can meet would block readiness after all the work, so
-  // the user rewrites or drops it before any author turn.
+  // A supplied criterion no evidence inside the run can meet would block readiness after all the
+  // work, so the user rewrites or drops it before any author turn. Setup owns the criteria it
+  // wrote: one it still lists goes to the author and reviewer to check by inspection, not to the user.
   const unverifiable = (setup.unverifiable || []).filter(u => String(u?.criterion || '').trim())
-  if (unverifiable.length) {
+  const supplied = unverifiable.filter(u => u.origin !== 'written')
+  for (const u of unverifiable.filter(u => u.origin === 'written'))
+    S.repositoryNotes = `${S.repositoryNotes ? `${S.repositoryNotes}\n` : ''}Setup could not find a run-time check for ${u.criterion}, which it wrote: ${oneLine(u.reason, 300) || 'no reason given'}. Check it by inspecting the code and the plan, and say so in the design.`
+  if (supplied.length) {
     const text = id => S.criteria.find(c => c.id === id)?.text
-    S.pair.stop = `Setup found ${unverifiable.length === 1 ? 'a criterion' : 'criteria'} this run cannot verify: ${unverifiable.map(u => u.criterion).join(', ')}.`
-    S.pair.questions = unverifiable.map(u => `${u.criterion}${text(u.criterion) ? ` ("${oneLine(text(u.criterion), 200)}")` : ''} cannot be verified inside the run: ${oneLine(u.reason, 300) || 'no reason given'}. Rewrite it so the run can check it, or drop it?`)
+    S.pair.stop = `Setup found ${supplied.length === 1 ? 'a criterion' : 'criteria'} this run cannot verify: ${supplied.map(u => u.criterion).join(', ')}.`
+    S.pair.questions = supplied.map(u => `${u.criterion}${text(u.criterion) ? ` ("${oneLine(text(u.criterion), 200)}")` : ''} cannot be verified inside the run: ${oneLine(u.reason, 300) || 'no reason given'}. Rewrite it so the run can check it, or drop it?`)
     return pairResult(S, 'needs-user')
   }
   const p = S.pair

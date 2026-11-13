@@ -85,6 +85,19 @@ test('a ready Pair result is applied and its delivery verified', async t => {
   await deliver(f, result)
 })
 
+// IterTools-PHP: a native run returned its result only inside the workflow task's output, and
+// the orchestrator had to extract it before apply and verify-delivery would take it.
+test('a native workflow task output file is accepted as the result as it stands', async t => {
+  const f = fixture(t)
+  const { result } = await simulate('pair', {}, { setup: f.setup, measure: f.measure })
+  const file = join(f.dir, 'task.output')
+  writeFileSync(file, JSON.stringify({ summary: 'Pair', agentCount: 6, logs: [], result, totalTokens: 1 }))
+  ok(f.repo, 'apply', '--run-dir', f.run.runDir, '--result', file)
+  assert.equal(readFileSync(join(f.repo, 'value'), 'utf8'), 'fixed\n')
+  const delivery = ok(f.repo, 'verify-delivery', '--run-dir', f.run.runDir, '--result', file, '--max-wait', '30')
+  assert.equal(delivery.status, 'delivered', JSON.stringify(delivery))
+})
+
 test('a ready Ensemble candidate, saved as its delivery result, is applied and its delivery verified', async t => {
   const f = fixture(t)
   const { snapshot } = await f.measure({ seat: 'A', label: 'r0' })
