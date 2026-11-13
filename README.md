@@ -1,12 +1,16 @@
-# dark-factory
+# AI Dark Factory
 
-A workflow engine for Claude Code and Codex. Pair one author with one independent reviewer,
-have a council solve one task independently, debate it on an evidence ledger, and converge
-on one result, or let the factory choose how much process a task needs. The Claude council
-entry point defaults to
-Claude Opus, Claude Sonnet, Codex Astra and Gemini Flash. The Codex entry point defaults to
-Claude Opus, Codex Astra and Codex Sol seats with OpenAI reviewers, and also supports explicit
-Gemini seats.
+**Autonomous agent workflows that plan and implement on their own, checked by multi-agent review across models from different vendors.**
+
+It is a workflow engine for Claude Code and Codex, with three ways to get that review:
+
+- **Pair**: one author and one independent reviewer.
+- **Council**: several seats solve the task blind, debate it on an evidence ledger, and converge on one result.
+- **Factory**: chooses how much process a task needs, from a single reviewed change up to a council.
+
+The seats come from different vendors. The Claude entry point defaults to Claude Opus, Claude
+Sonnet, Codex Astra and Gemini Flash. The Codex entry point defaults to Claude Opus, Codex Astra
+and Codex Sol seats with OpenAI reviewers, and also supports explicit Gemini seats.
 
     /dark-factory:council Fix the cancellation in Special::confluentHypergeometric at large negative z
 
