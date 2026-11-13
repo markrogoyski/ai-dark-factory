@@ -1,13 +1,55 @@
 # dark-factory
 
 A workflow engine for Claude Code and Codex. Pair one author with one independent reviewer,
-or have a council solve one task independently, debate it on an evidence ledger, and converge
-on one result. The Claude council entry point defaults to
+have a council solve one task independently, debate it on an evidence ledger, and converge
+on one result, or let the factory choose how much process a task needs. The Claude council
+entry point defaults to
 Claude Opus, Claude Sonnet, Codex Astra and Gemini Flash. The Codex entry point defaults to
 Claude Opus, Codex Astra and Codex Sol seats with OpenAI reviewers, and also supports explicit
 Gemini seats.
 
     /dark-factory:council Fix the cancellation in Special::confluentHypergeometric at large negative z
+
+## The workflows at a glance
+
+| workflow | use it for | who works | what you get back |
+|---|---|---|---|
+| [`factory`](#the-factory) | implementation, investigation or design when it isn't obvious how much process it needs | an Opus intake picks a tier (or Pair), then that process runs | the chosen process's result, escalated in the same run if the tier was too low |
+| [`pair`](#pair-one-author-one-reviewer) | a scoped change one agent should own | one author, one reviewer in a fresh context per review | a reviewed, measured snapshot, or the open findings |
+| [`council`](#how-a-council-run-goes) | a subtle bug, a real trade-off, an investigation where the obvious answer may be wrong | 2–6 seats from several vendors solve blind, then debate | one converged result, or the scorecard's pick |
+| [`ensemble`](#ensemble-reviewed-alternatives) | several independent attempts to choose from | 2–6 solvers with distinct stances, reviewed per lens | ranked candidates for you to pick or merge |
+| [`run-plan`](#run-plan-execute-a-plan-across-runs) | a whole plan of tasks, committed one by one | a Factory or Pair run per task, then a council acceptance check | local commits, parked questions, a final acceptance |
+
+How they fit together:
+
+```text
+  /dark-factory:run-plan    plan.json: tasks in dependency order, then acceptance
+     |
+     +-- each eligible task --> a factory or pair run --> ready? --yes--> apply, verify, commit
+     |                                                      '----no-----> park; dependents wait
+     '-- every task done -----> council investigation: is the whole plan implemented?
+
+  /dark-factory:factory
+     |
+  intake (Opus, read-only) picks a tier and a strategy
+     |
+     +-- pair strategy ------------------------> Pair
+     +-- simple -------> Simple ---------------> (escalates to Fix or Feature)
+     +-- fix ----------> Council, two seats
+     +-- feature ------> Feature --------------> (escalates to Architecture)
+     +-- architecture -> Architecture            (designs only: returns milestones)
+
+  /dark-factory:pair        one author and one reviewer, looping until review passes
+  /dark-factory:council     seats solve blind, debate on a ledger, converge on one result
+  /dark-factory:ensemble    independent candidates, reviewed and ranked for you to choose
+```
+
+Every workflow shares the same guarantees. Seats work in their own git worktrees from HEAD.
+Neutral checks run the verification gate on a snapshot, never on a live worktree. Reviewers work
+in fresh contexts, and code, not a model, decides readiness. Nothing reaches your checkout until
+it is delivered, by you or by a plan run you authorized to commit. [Pieces](#pieces) shows where
+each part runs in Claude Code and in Codex. Model names in the diagrams are the Claude Code
+defaults; the Codex profile substitutes OpenAI models for most roles, as each section says.
 
 ## Install in Claude Code
 
@@ -111,6 +153,28 @@ has fresh agent sessions, separate worktrees, and the existing independent revie
 gates. A successful task is applied, checked with `verify-delivery`, and committed together with
 its progress record. Requesting a plan run authorizes those local commits. Use a checkout with clean tracked files
 on the intended feature branch; the plan run does not publish, deploy, or switch branches.
+
+```text
+  plan.json (bytes frozen)                  .council/run-plan-<id>/state.json: attempts,
+     |                                      budgets, answers, questions, decisions
+     v
+  +-> next eligible task: dependencies done, attempts and budget left
+  |      |
+  |   reserve its turns and time
+  |      |
+  |   a Factory or Pair run: fresh sessions, its own worktrees, review and readiness
+  |      |
+  |      +-- ready ----------> apply --> verify-delivery --> commit code + progress
+  |      |                     (a failed check or commit hook rolls back and parks)
+  |      +-- failed run, attempts left --> tried again
+  |      '-- needs-user / needs-tier / needs-split / not ready --> parked; dependents wait
+  +------'
+     |
+  no eligible task left
+     +-- every task done --> acceptance: run acceptance.verify, then a fresh council
+     |                       investigation on the integrated revision; both must pass
+     '-- otherwise --------> incomplete: answer the parked tasks, rerun the same command
+```
 
 Create a plan such as `plan.json`. It may remain untracked; its bytes are frozen for the run. A tracked plan retains the existing behavior of committing progress with each task:
 
@@ -280,6 +344,36 @@ using the existing model names. An unspecified reviewer defaults to the other ve
 default pair needs both authenticated CLIs. Explicit `--author sol --reviewer astra` uses only
 Codex models in the Codex host.
 
+```text
+  setup (Opus)        criteria, reference snapshots, the gate and its baseline; stops first
+     |                on needs-plan, a dirty tree, conflicting requirements, or a criterion
+     |                nothing in the run can verify (needs-user)
+     v
+  DESIGN STAGE
+  author: design + test contract  ----------->  reviewer: design review, with a plausible
+     ^    (one correction if malformed)         wrong implementation and the checks that
+     |                                          reject it, for every criterion
+     |                                                |
+     +--------------- not approved: open findings ----+
+                                                      | approved
+                                                      v
+  CODE STAGE
+  +-> author: implement, or fix findings and failed checks; map checks to test files
+  |      |
+  |   measure (helper)   snapshot; replay the mapped tests on base and on the snapshot;
+  |      |               run the full gate
+  |      v
+  |   reviewer: a fresh context and its own checkout of the measured snapshot
+  |      |
+  |      +-- ready: every criterion met, required checks pass --> done, delivery pending
+  +------+-- findings or failed checks
+         '-- the approach must change --> back to the design stage
+
+  Every review counts against maxReviews (default 8, both stages together). The run stops
+  unresolved when the budget is spent, when it stalls (same artifact, same open findings),
+  when a clean review still lacks evidence, or when verification infrastructure fails.
+```
+
 1. A setup turn establishes acceptance criteria, reference documents, and the verification gate.
    The run inherits their quality, so setup runs on Claude Opus at `medium` effort whatever the
    participants are: Sonnet setup dropped stated criteria and stopped on guesses where Opus setup
@@ -359,8 +453,9 @@ dependency changes were excluded. Final replay uses the author's dependency inst
 the full gate, so a package addition or upgrade can pass its final focused checks. Each command
 gets a fresh dependency copy. Ignored dependencies still have the checkpoint limitations below.
 
-Raw replay evidence is at file/command granularity, with check IDs, base/snapshot identity, cwd,
-exit/signal/timeout, launch errors, logs and output tails. A base fatal is a result even when no
+The helper's raw replay evidence, in the job's `status.json`, is at file/command granularity,
+with check IDs, base/snapshot identity, cwd, exit/signal/timeout, launch errors, logs and output
+tails. The measurement summary the engine reads drops the cwd, log digests and tails. A base fatal is a result even when no
 individual assertions ran. Base passes, timeouts and tool errors also require reviewer judgment;
 none automatically establishes or rejects intended changed behavior. An excluded or unscheduled
 file has no execution result. Every changed check needs a base result; every executable check
@@ -662,6 +757,28 @@ and host adapters. It retains its distinct stances and review lenses, followed b
 comparison. It does not debate, repair, or select a winner. Specify `mode: "implement"` or
 `"investigate"` when the wording is ambiguous.
 
+```text
+  setup: run dir, a worktree per candidate, criteria, gate (no spec review)
+     |
+     +-- candidate 1, stance minimal ----> neutral check --> lens reviews --+
+     +-- candidate 2, stance root-cause -> neutral check --> lens reviews --+
+     +-- candidate 3, stance edge-cases -> neutral check --> lens reviews --+
+     +-- candidate 4, stance idiomatic --> neutral check --> lens reviews --+
+     |   in parallel, each blind to the others                              |
+     |                                                                      v
+     |                                         each candidate's own readiness
+     v
+  compare (Opus, advisory): ranking, disagreements, a merge plan
+     |
+  result: status advisory, delivery pending-selection: you pick or merge
+```
+
+Implement mode's stances are minimal, root-cause, edge-cases, idiomatic, contrarian and
+test-first, and its lenses correctness, verification, fit and simplicity. Investigate mode
+uses trace-code, history, falsify, empirical, outside-in and analogy, reviewed for evidence,
+refute and completeness. `candidates` and `reviewers` take that many from the front of each
+list.
+
 Object arguments support `candidates` (2–6, default 4), `reviewers` (1–4, default 2; capped by
 available lenses), and `models: {solve, review, compare}`. Claude defaults remain Sonnet solvers,
 per-lens Sonnet/Opus reviewers, and an Opus comparison. Codex defaults use Sol solvers,
@@ -773,6 +890,24 @@ cannot replace a failed snapshot check, and a gate that alters tracked snapshot 
 Codex checkers poll running shell sessions and helper jobs, while `--suite-timeout` controls
 the gate deadline.
 
+```text
+  author's worktree --dark-factory measure--> snapshot refs/council/<run>/A-<label> + diff
+                                                 |
+       +-----------------------------------------+-----------------------------+
+       v                                         v                             v
+  base checkout + the snapshot's      snapshot checkout:             snapshot checkout:
+  test files: mapped commands         mapped commands                the full gate
+  (cached while inputs match)                                        (verify.sh)
+       |                                         |                             |
+       +-----------------------------------------+-----------------------------+
+                                                 v
+                    jobs/measure-A-<label>/status.json   the full record, with output tails
+                                                 |
+                                                 v   the summary (what --brief prints)
+                    engine checks, then the author and reviewer prompts, which point
+                    back to status.json for the output tails
+```
+
 A Pair measurement replays the changed test files on base and on the final snapshot. Those
 executions run in parallel with each other and with the gate, each in its own disposable
 checkout and private TMPDIR, and their records keep mapping order (base before final), so the
@@ -795,6 +930,26 @@ publishes a content-addressed copy under `<runDir>/evidence/`, tied to the snaps
 its index. The tests auditor (or correctness/review lens when there is no tests auditor)
 owns historical acceptance. Missing evidence keeps readiness incomplete even with no bug
 findings and a passing current suite.
+
+Readiness and delivery are separate steps:
+
+```text
+  ready result: final.readiness ready, delivery.status pending, change still in its worktree
+     |
+     |  you authorize delivery
+     v
+  dark-factory apply --run-dir RUN       clean base required; stages the reviewed snapshot
+     |                                   and checks its tree hash; does not commit
+     v
+  local-plan updates and any reviewed adjustments, listed in a manifest with their hashes
+     |
+     v
+  dark-factory verify-delivery ...       compares the delivered bytes with the snapshot,
+     |                                   checks unrelated files, reruns the gate in the
+     |                                   main checkout
+     v
+  <runDir>/delivery.json                 status delivered, or incomplete with the mismatches
+```
 
 A ready factory result has `delivery.status: pending`: the reviewed change is still in its
 worktree. After authorized application and required local-plan updates, run:
@@ -819,9 +974,14 @@ claiming a test pass.
     .claude-plugin/marketplace.json   the marketplace: lists the plugins in this repo
     plugins/dark-factory/             the plugin, and the only thing that ships
       .claude-plugin/plugin.json
-      workflows/                      pair.js, factory.js, council.js, ensemble.js (built from src/)
+      workflows/                      pair.js, factory.js, council.js, ensemble.js, run-plan.js
+                                      (built from src/)
       bin/dark-factory                the helper CLI the agents call
-      bin/dark-factory-codex          the Codex host runner
+      bin/dark-factory-codex          the Codex host and standalone runner
+      bin/dark-factory-evaluate       the offline evaluator
+      lib/                            the runners' adapters, checkpoints, engine pinning, and
+                                      policy.mjs (built from src/lib/)
+      schemas/                        the provenance schema
       skills/dark-factory/            the Codex skill and its relative launcher
     install-codex.sh                  link the skill into a project or user skill directory
     src/ tools/ test/                 development: sources, build, tests
@@ -846,6 +1006,36 @@ wasn't enough.
 | `architecture` | Opus, Astra and Sonnet design it blind and debate the designs; the chosen design's author writes a milestone plan; a three-lens review and one revision; nothing is built | 35–50 |
 
 The table describes the independent strategy. Factory can also select Pair for scoped implementations with one clear approach. Use `strategy: "independent"` to retain the tier's competing-attempt process, or `strategy: "pair"` with `pair: {author, reviewer, maxReviews}` to request Pair. Task tier and collaboration strategy are reported separately. Explicit independent-process options (`seats`, `simple`, `panel`, `spec`, `audit`, `roles`, or `evidence`) keep automatic routing on the independent strategy; combining them with an explicit Pair strategy is rejected rather than silently discarding them.
+
+```text
+  task
+   |
+  intake (Opus, read-only: the task, its documents and the code)
+   |-- a document the task needs is missing ----------> needs-plan
+   |-- separate pieces of work ------------------------> needs-split  (or rerun with noSplit)
+   |-- your pinned tier differs from intake's ---------> needs-tier   (or tierConfirmed)
+   |
+   +-- strategy pair (implement, below architecture) --> Pair
+   |
+   +-- simple:  setup -> implement (Sonnet) -> neutral check -> review (Astra) -> panel
+   |              -> at most one fix pass -> fresh review and check -> readiness
+   |
+   +-- fix:     the council flow with two seats, Opus and Astra
+   |
+   +-- feature: setup + spec review -> plans, blind -> debate -> final plan
+   |              -> build, one checked increment a turn (at most 4)
+   |              -> audit: correctness, design, tests -> one fix pass -> re-review
+   |
+   '-- architecture: setup + spec review -> designs, blind (3 seats) -> debate
+                  -> milestone plan -> review: grounding, sequencing, risk
+                  -> one revision -> milestones[], each a factory run of its own
+
+  escalation, upward only, in the same run (details in the table below):
+    Simple  --too-big-----------------------> Fix or Feature, as the implementer judged
+    Simple  --over-budget, design-finding---> Feature
+    Simple  --verify-failed, blocked--------> Fix
+    Feature --more than 4 increments--------> Architecture, before anything is built
+```
 
 The model names below describe the Claude profile. Codex uses its own OpenAI defaults while
 keeping the same stages and rules; explicit `seats`, `simple`, `panel`, `spec`, `audit`, and
@@ -995,7 +1185,47 @@ than one vendor.
 It is the sibling of `/dark-factory:ensemble`. Ensemble returns ranked candidates for you to pick from; the
 council argues until it agrees, and falls back to an evidence scorecard when it can't.
 
-## How a run goes
+## How a council run goes
+
+This is the council flow that `/dark-factory:council` and the factory's Fix tier run. The Feature
+and Architecture tiers reuse its setup, spec review and debate stages.
+
+```text
+  setup (Opus)        preflight, run dir, a worktree per seat, gate, baseline, criteria
+     |
+  spec review         coverage (Astra) + intent (Opus) --> panel rules --> amend criteria,
+     |                assume the conservative reading, or stop and ask (spec: 'ask')
+     v
+  round 0, blind      each seat solves alone in its own worktree
+     |
+  neutral checks      snapshot each position; run the gate and published tests in a
+     |                disposable checkout; rule VERIFIED / REFUTED / FABRICATED / UNRESOLVED
+     |
+     +-- every tree identical and passing (implement)? ---------------------+
+     v                                                                      |
+  +-> debate round k  read the others and the ledger; file findings,        |
+  |      |            concede, adopt, revise, vote                          |
+  |   neutral checks  + a two-vendor panel on disputed load-bearing claims  |
+  |      |                                                                  |
+  |   stop rule       consensus: ceil(2N/3) votes, two vendors ------------>|
+  |      |            no change from round 2, or last round: scorecard ---->|
+  +------+ narrow the field, next round                                     |
+                                                                            v
+  synthesis           the chosen author folds in amendments and adopted ideas; checked
+     |
+  ratification        other seats endorse or object; panel on blocking objections;
+     |                one fix pass for upheld ones
+     |
+  audit (implement)   correctness (Astra) + design (Opus), never saw the debate
+     |                --> triage --> one fix pass --> re-review of the fix only
+     v
+  readiness           ready / blocked / incomplete: reported, never changes the choice
+     |
+  report, scorecards, retro
+
+  after round 0 or any debate round: ceil(2N/3) seats raise the same question
+  about the request --> stop with needs-user
+```
 
 1. **Setup.** One Opus agent first runs `dark-factory preflight` for the Codex and Gemini CLIs the
    lineup and panel need, and stops the run, before anything is created, if one can't start
@@ -1198,18 +1428,50 @@ accepts:
 
 ## Pieces
 
-- `plugins/dark-factory/bin/dark-factory-codex`: the local Codex host for the generated factory
-  and council workflows. Its runtime adapter launches the helper directly, writes exact prompt
-  files, validates structured results, and records progress. The skill's launcher resolves the
-  runner relative to its real installed path, so prompts do not depend on an installation path.
+The same generated workflow file runs on both hosts; only the runtime around it changes.
+
+```text
+  Claude Code (native)                            Codex, or the standalone runner
+  /dark-factory:<workflow>                        $dark-factory ..., dark-factory-codex
+     |                                               |
+  Claude Code's workflow runtime runs             lib/codex-runner.mjs runs the same
+  workflows/<workflow>.js                         workflows/<workflow>.js
+     |                                               |
+     +-- Claude turns: subagents                     +-- every model turn: a CLI session
+     +-- Codex and Gemini turns: a Haiku relay       |   (codex exec, claude -p, agy)
+     |   agent runs `dark-factory seat-run`          +-- helper calls: run directly
+     +-- other helper calls: an agent runs them      |
+     |   (setup's init, checks, measurements)        |
+     v                                               v
+  +-------------------------------------------------------------------------------+
+  | bin/dark-factory, the Python helper: worktrees, snapshots, gate and replay    |
+  | jobs, Codex and Gemini turns, apply, verify-delivery, usage, retro            |
+  +-------------------------------------------------------------------------------+
+     |
+     v
+  <repo>/.council/<runId>/    room/  refs/  wt/  snap/  jobs/  scratch/  usage.jsonl
+
+  Pair with runtime: "cli", and every run-plan: in Claude Code, one Sonnet transport
+  agent launches dark-factory-codex, so the right-hand column runs the whole workflow.
+```
+
+- `plugins/dark-factory/bin/dark-factory-codex`: the local Codex host for all five generated
+  workflows. Its runtime adapter (`lib/codex-runner.mjs`) launches the helper directly, writes
+  exact prompt files, validates structured results, and records progress. The skill's launcher
+  resolves the runner relative to its real installed path, so prompts do not depend on an
+  installation path. Beside it in `lib/`: `run-plan-runner.mjs` (run-plan's process, filesystem
+  and Git adapter: delivery, commits, the journal), `checkpoint.mjs` (resume), `evaluate.mjs`
+  (behind `bin/dark-factory-evaluate`), `engine.mjs` and `engine-observations.mjs` (engine
+  pinning and provider observations), and `policy.mjs`, which `make build` generates from
+  `src/lib/`.
 - `plugins/dark-factory/workflows/council.js` and `factory.js`: the moderators. `factory.js` is the same
   engine with intake, the Simple tier (`src/simple.js`), the Feature tier (`src/feature.js`), the
-  Architecture tier (`src/architecture.js`) and `src/main-factory.js` (routing, and `escalate()`)
-  on top. They
+  Architecture tier (`src/architecture.js`), Pair for its pair strategy, and `src/main-factory.js`
+  (routing, and `escalate()`) on top. They
   hold the turn order, the ledger, the stop rule, the scorecards and every prompt, and never
-  judge. Both are **generated** from `src/` by `tools/build.mjs` (the workflow runtime allows no
-  imports, so each has to be one file), and are
-  committed so it can be diffed and run without a build. Edit `src/`, then `make build`:
+  judge. All five workflows are **generated** from `src/` by `tools/build.mjs` (the workflow
+  runtime allows no imports, so each has to be one file), and are
+  committed so they can be diffed and run without a build. Edit `src/`, then `make build`:
   - `src/lib/*.js`: the pure half. Every function takes the state object `S` (built by
     `newState(parseConfig(args))`) as its first argument and calls nothing from the runtime:
     config and seats, the state queries, every prompt, the ingestion and rulings, consensus,
@@ -1223,8 +1485,19 @@ accepts:
   - `src/lib/tiers.js`: the factory's pure half: tier parsing and routing, the pushback, the
     escalation triggers, brief and chain, the Feature tier's increments, report and result, the
     Architecture tier's milestones (and each one's run args), report and result, the run facts.
-  - `src/00-meta.js`, `src/00-meta-factory.js`: each workflow's `meta` (it must stay a plain
-    literal) and header comment.
+  - `src/pair.js` (the design and code loop, and the `runtime: "cli"` transport), with
+    `src/lib/pair.js` (contract and mapping checks, review ingestion, readiness, stall
+    detection, the measurement summary, the result), `src/lib/pair-prompts.js`,
+    `src/pair-schemas.js`, `src/boot-pair.js` and `src/main-pair.js`: `pair.js`, and Factory's
+    pair strategy.
+  - `src/lib/ensemble.js` (stances, lenses, prompts), `src/ensemble-schemas.js`,
+    `src/boot-ensemble.js` and `src/main-ensemble.js`: `ensemble.js`, on the council's setup and
+    checks.
+  - `src/lib/run-plan.js` (plan validation, scheduling, outcomes, answers, limits, the report)
+    and `src/main-run-plan.js`: `run-plan.js`. Its process work is in `lib/run-plan-runner.mjs`.
+  - `src/lib/controls.js` (strategy, budgets, explanation, repair policy) and `src/repair.js`
+    (bounded repairs with fresh reviews).
+  - `src/00-meta*.js`: each workflow's `meta` (it must stay a plain literal) and header comment.
   - `tools/sources.mjs` lists each built workflow's files in order.
 - `bin/dark-factory`: deterministic plumbing, since workflow scripts have no shell. It handles
   worktrees, snapshots (`refs/council/<run>/<seat>-<round>`), suite and cross-test runs, and
@@ -1394,14 +1667,15 @@ any note: no seat would have diagnosed the relay indentation bug.
 
 The pieces of `make check`:
 
-    node test/sim.mjs            # the real script against stub agents, and bin/dark-factory against a stub agy and real git; 27 scenarios
+    make syntax                  # every script, runner and helper parses
+    node test/sim.mjs            # the real script against stub agents, and bin/dark-factory against a stub agy and real git; 42 scenarios
     SIM_ONLY=scenarioBallot,scenarioMeasure node test/sim.mjs   # just those
-    node --test test/logic.mjs test/pair.mjs # decision logic and Pair scenarios through both hosts
-    node --test test/host-logic.mjs test/codex-runner.mjs test/codex-install.mjs # Codex routing, runner, and installation with stub CLIs
-    python3 -B -m unittest discover -s test -p 'test_*.py'      # bin/dark-factory's pure functions
+    node --test test/logic.mjs test/pair.mjs test/improvements.mjs # decision logic, and Pair scenarios through both hosts
+    make host-test               # Codex routing, runner, installation, checkpoints, run-plan, engine pinning and provider policy, with stub CLIs
+    python3 -B -m unittest discover -s test -p 'test_*.py'      # bin/dark-factory: pure functions, and jobs on temporary repositories
     node test/static.mjs         # scripts parse, `meta` is a plain literal, src/lib stays pure
     node test/hash-parity.mjs    # the JS and Python prompt hashes agree
-    node tools/build.mjs --check # the built workflows are what src/ builds to
+    node tools/build.mjs --check # the built workflows and policy.mjs are what src/ builds to
 
 **Prompt golden files.** `test/golden/<run>/<kind>.txt` holds the rendered prompt of each kind
 (setup, solve, debate, checker, panel, ratify, relay and so on) for fixed scenarios, and the

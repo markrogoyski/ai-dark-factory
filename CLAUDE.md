@@ -14,9 +14,10 @@ below are rules for changing this repo.
 - Agents call the helper by its bare name, `dark-factory`: the plugin's `bin/` is on their PATH.
   Never write an install path into a prompt; the plugin's directory changes between installs.
 - `src/lib/*.js` stays pure: each function takes the state `S` first and calls no runtime
-  (`agent`, `parallel`, `log`). Runtime calls go in `src/boot.js`, `turns.js`, `council.js`, `simple.js` and
-  the `main-*.js` entry files.
-- `meta` in `src/00-meta.js` and `src/00-meta-factory.js` must stay a plain literal.
+  (`agent`, `parallel`, `log`). Runtime calls go in the files outside `src/lib/`: `boot*.js`,
+  `turns.js`, `repair.js`, the flows (`council.js`, `simple.js`, `feature.js`, `architecture.js`,
+  `pair.js`) and the `main-*.js` entry files.
+- `meta` in every `src/00-meta*.js` must stay a plain literal.
 - `/council` must not change when the factory does: factory-only behaviour goes behind `S.tier`,
   `S.factory` or `S.workflowName`, and the council's goldens stay byte-identical.
 - All five workflows are generated. Run-plan scheduling and policy stay in `src/`; its process,
