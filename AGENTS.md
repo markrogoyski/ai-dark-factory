@@ -1,8 +1,8 @@
 # Repository instructions
 
 Read [CLAUDE.md](CLAUDE.md) for the shared editing, generation, verification, and commit
-conventions. They apply to changes made through either host. The README documents user-facing
-behavior and installation for both Claude Code and Codex.
+conventions. They apply to changes made through either host. The README documents installation for
+both Claude Code and Codex, and `docs/` documents user-facing behavior.
 
 - Keep factory decisions in the shared `src/` engine. Add host-specific execution to the runtime
   adapter; preserve the existing Claude behavior when the Codex host is absent.

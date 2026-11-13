@@ -1,7 +1,8 @@
 # CLAUDE.md
 
-The README is the user-facing reference (README § Pieces covers the architecture). The notes
-below are rules for changing this repo.
+The README is the user-facing introduction and install guide; the detailed reference is in
+`docs/` (`docs/architecture.md` covers the architecture). The notes below are rules for changing
+this repo.
 
 ## Editing
 
