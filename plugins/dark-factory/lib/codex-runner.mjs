@@ -298,9 +298,9 @@ export function createRuntime({ repo, hostRunDir, concurrency = 3, timeoutMin = 
       if (!/^[\w.-]+$/.test(request.setupRunId) || request.setupRunId === '.' || request.setupRunId === '..') throw new Error('Invalid setup run ID')
       ownedRuns.add(join(repo, '.council', request.setupRunId))
     }
-    // Specification amendments remeasure the baseline, including temporary Git indexes and
+    // Specification amendments (which pass measures: true) remeasure the baseline, including temporary Git indexes and
     // snapshot refs, through the same helper path as a checker.
-    const measures = request.role === 'checker' || request.label === 'spec amend'
+    const measures = request.role === 'checker' || request.measures === true
     const writes = setup || measures || ['retro', 'record'].includes(request.role)
     const writable = setup ? gitDirs : measures ? [runDir, ...gitDirs] : writes ? [runDir] : []
     let preflight = ''

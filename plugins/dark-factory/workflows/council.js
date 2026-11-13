@@ -4564,9 +4564,11 @@ function keepHostDiagnostics(label, result) {
 async function ask(prompt, opts, role, who) {
   reserveTurn()
   const selected = roleAgent(S, role, opts)
+  // measures is a host-runner capability; the native runtime gets only the options it knows.
+  const { measures, ...nativeOpts } = opts
   const res = hostRuntime
     ? await hostAgent(prompt, { ...opts, schema: withProcess(opts.schema) }, role, who)
-    : await agent(prompt, { ...opts, schema: withProcess(opts.schema) })
+    : await agent(prompt, { ...nativeOpts, schema: withProcess(opts.schema) })
   S.turnLog.push({ turn: opts.label, role, vendor: hostRuntime ? selected.vendor : 'claude', ok: !!res })
   keepProcess(opts.label, role, who || (hostRuntime ? selected.name : opts.model), res)
   return res
@@ -4867,7 +4869,7 @@ async function runSpecReview() {
   log(`spec: ${S.spec.findings.map(f => `${f.id} ${f.status}`).join(', ')}`)
   if (S.specAsk && open.length) return open
   if (!todo.length) return null
-  const amend = await ask(specAmendPrompt(S, todo), { label: 'spec amend', phase: 'Spec', schema: SPEC_AMEND_SCHEMA, model: 'opus', effort: 'medium' }, 'spec')
+  const amend = await ask(specAmendPrompt(S, todo), { label: 'spec amend', phase: 'Spec', schema: SPEC_AMEND_SCHEMA, model: 'opus', effort: 'medium', measures: true }, 'spec')
   if (!amend) { S.notes.push('The spec amendment failed; the criteria stand as setup wrote them.'); return null }
   if (applyAmend(S, amend, todo)) {
     log(`spec: criteria now ${S.criteria.map(c => c.id).join(', ')}${S.spec.assumptions.length ? `; assumed ${S.spec.assumptions.map(a => a.id).join(', ')}` : ''}`)

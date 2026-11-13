@@ -231,7 +231,7 @@ test('native agent roles use fresh contexts and reject invalid provider output',
   } })
   assert.deepEqual(await runtime.agent({ prompt: 'intake', schema: object, vendor: 'codex', model: 'test', role: 'intake' }), { ok: true })
   await runtime.agent({ prompt: 'setup', schema: object, vendor: 'codex', model: 'test', role: 'setup' })
-  await runtime.agent({ prompt: 'amend', schema: object, vendor: 'codex', model: 'test', role: 'spec', label: 'spec amend' })
+  await runtime.agent({ prompt: 'amend', schema: object, vendor: 'codex', model: 'test', role: 'spec', label: 'spec amend', measures: true })
   await runtime.agent({ prompt: 'review', schema: object, vendor: 'codex', model: 'test', role: 'spec', label: 'spec coverage' })
   assert.ok(seen.every(argv => argv.includes('--fresh')))
   assert.equal(seen[0][seen[0].indexOf('--sandbox') + 1], 'read-only')
@@ -256,6 +256,23 @@ test('preflight runs in the host and fails before launching the setup model', as
   assert.equal(output.status, 'preflight')
   assert.equal(output.preflight[0].error, 'Missing CLI')
   assert.deepEqual(calls, [['preflight', '--vendors', 'codex']])
+})
+
+test('measurement permissions follow the measures flag, not the display label', async t => {
+  const dir = temporary(t), seen = []
+  const runtime = createRuntime({ repo: dir, hostRunDir: dir, gitDirs: [join(dir, '.git')], execute: async argv => {
+    seen.push(argv)
+    const payload = readFileSync(argv[argv.indexOf('--prompt-file') + 1], 'utf8')
+    const schema = JSON.parse(payload.split('<<<OUTPUT_SCHEMA\n')[1].split('\nOUTPUT_SCHEMA>>>')[0])
+    return { status: 'done', result: { ok: true, turn: schema.properties.turn.enum[0] } }
+  } })
+  const base = { prompt: 'p', schema: object, vendor: 'codex', model: 'test', role: 'spec' }
+  await runtime.agent({ ...base, label: 'renamed amendment', measures: true })
+  await runtime.agent({ ...base, label: 'spec amend' })
+  assert.ok(seen[0].includes(join(dir, '.git')), 'measures: true grants Git access under any label')
+  assert.equal(seen[0][seen[0].indexOf('--sandbox') + 1], 'workspace-write')
+  assert.ok(!seen[1].includes(join(dir, '.git')), 'the label alone grants nothing')
+  assert.equal(seen[1][seen[1].indexOf('--sandbox') + 1], 'read-only')
 })
 
 test('permission diagnostics survive validation, host events and native role unwrapping', async t => {
