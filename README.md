@@ -12,7 +12,9 @@ The seats come from different vendors. The Claude entry point defaults to Claude
 Sonnet, Codex Astra and Gemini Flash. The Codex entry point defaults to Claude Opus, Codex Astra
 and Codex Sol seats with OpenAI reviewers, and also supports explicit Gemini seats.
 
-    /dark-factory:council Fix the cancellation in Special::confluentHypergeometric at large negative z
+For example, to have a council work out a subtle bug:
+
+    /dark-factory:council Fix the race condition that lets two workers claim the same job
 
 ## The workflows at a glance
 
