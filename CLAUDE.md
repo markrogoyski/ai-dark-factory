@@ -26,7 +26,8 @@ this repo.
   while sharing setup, measurement, and runtime adapters.
 - Prompts are the product. A prompt change fails the golden tests, which is intended: run
   `UPDATE_GOLDEN=1 node test/sim.mjs`, then read `git diff test/golden` before committing.
-- The prompt hash exists twice, in `src/lib/util.js` and in `bin/dark-factory`. Change both
+- The prompt hash exists three times, in `src/lib/util.js`, in `bin/dark-factory` and in
+  `plugins/dark-factory/lib/codex-runner.mjs`. Change all three
   together (`test/hash-parity.mjs` checks that they match).
 
 ## Verifying
