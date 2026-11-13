@@ -36,10 +36,10 @@ const PAIR_REPLAY_RESULT = { type: 'object', properties: {
   records: { type: 'array', items: { type: 'object', properties: {
     side: { type: 'string', enum: ['base', 'final'] }, revision: { type: 'string' }, tree: { type: 'string' },
     file: { type: 'string' }, command: { type: 'string' }, checkIds: PAIR_STRINGS,
-    cwd: { type: 'string' }, attempted: { type: 'boolean' }, ran: { type: 'boolean' }, passed: { type: 'boolean' },
+    attempted: { type: 'boolean' }, ran: { type: 'boolean' }, passed: { type: 'boolean' },
     hasExitCode: { type: 'boolean' }, exitCode: { type: 'integer', description: 'Meaningful only when hasExitCode is true.' },
     signal: { type: 'integer', description: 'Signal number, or zero if none.' }, timedOut: { type: 'boolean' },
-    seconds: { type: 'number' }, log: { type: 'string' }, logSha256: { type: 'string' }, tail: { type: 'string' }, launchError: { type: 'string' },
+    seconds: { type: 'number' }, log: { type: 'string' }, launchError: { type: 'string' },
     mutated: PAIR_STRINGS,
     reused: { type: 'boolean', description: 'A base execution reused from an earlier measurement with the same inputs.' },
   } } },
@@ -75,6 +75,7 @@ const PAIR_REVIEW_SCHEMA = strict({ type: 'object', properties: {
 const PAIR_MEASURE_SCHEMA = strict({ type: 'object', properties: {
   status: { type: 'string', enum: ['done', 'error'] }, error: { type: 'string' },
   snapshot: { type: 'object', properties: { ref: { type: 'string' }, tree: { type: 'string' }, diff: { type: 'string' } } },
-  suite: { type: 'object', properties: { ...CHECK_SCHEMA.properties.suite.properties, command: { type: 'string' }, failureKind: { type: 'string' } } },
+  suite: { type: 'object', properties: { ran: { type: 'boolean' }, passed: { type: 'boolean' }, command: { type: 'string' },
+    failureKind: { type: 'string' }, log: { type: 'string' } } },
   replay: PAIR_REPLAY_RESULT,
 } })

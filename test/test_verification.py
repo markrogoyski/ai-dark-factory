@@ -104,6 +104,35 @@ class Verification(TmpDirCase):
             if change == 'environment': self.config({'FACTORY_GATE': 'different'})
             self.assertFalse(self.replay_measure(mapping, roots).get('reused', False), change)
 
+    def test_brief_measurement_is_the_full_record_without_output(self):
+        # A native Pair transport retypes --brief's result: everything the engine checks, without
+        # what each execution printed, which stays in the job's status.json.
+        request = json.dumps({'testRoots': ['tests'], 'mapping': self.replay_mapping()})
+        brief = self.cli('measure', '--run-dir', self.rd, '--seat', 'A', '--label', 'brief', '--replay-json', request,
+                         '--brief', '--max-wait', '20')
+        full = json.loads(council.read(os.path.join(self.rd, 'jobs', 'measure-A-brief', 'status.json')))
+        self.assertEqual(brief['status'], 'done')
+        self.assertEqual(list(brief), ['status', 'error', 'snapshot', 'suite', 'replay'])
+        self.assertEqual(brief['snapshot'], {k: full['snapshot'][k] for k in ('ref', 'tree', 'diff')})
+        self.assertEqual(brief['suite'], {'ran': True, 'passed': True, 'command': 'python3 gate.py',
+                                          'failureKind': full['suite'].get('failureKind', ''), 'log': full['suite']['log']})
+        self.assertIn('tail', full['suite'])
+        self.assertTrue(any('AssertionError' in r['tail'] for r in full['replay']['records']))
+        dropped = {'cwd', 'logSha256', 'tail'}
+        self.assertEqual(len(brief['replay']['records']), 4)
+        for short, record in zip(brief['replay']['records'], full['replay']['records']):
+            self.assertEqual(short, {k: v for k, v in record.items() if k not in dropped})
+        self.assertEqual({k: v for k, v in brief['replay'].items() if k != 'records'},
+                         {k: v for k, v in full['replay'].items() if k != 'records'})
+        # A repeated request answers from the finished job, and wait prints the same summary.
+        again = self.cli('measure', '--run-dir', self.rd, '--seat', 'A', '--label', 'brief', '--replay-json', request,
+                         '--brief', '--max-wait', '20')
+        self.assertEqual(again, brief)
+        self.assertEqual(self.cli('wait', '--run-dir', self.rd, '--job', 'measure-A-brief', '--brief'), brief)
+        self.assertIn('tail', self.cli('wait', '--run-dir', self.rd, '--job', 'measure-A-brief')['suite'])
+        os.makedirs(os.path.join(self.rd, 'jobs', 'verify-x'))
+        self.assertIn('only to measurement jobs', self.cli('wait', '--run-dir', self.rd, '--job', 'verify-x', '--brief', error=True)['error'])
+
     def test_replay_uses_snapshot_bytes_and_original_base_after_author_commits(self):
         council.write(os.path.join(self.wt, 'tests/changed.py'),
                       'from pathlib import Path\nassert Path("value").read_text() == "fixed\\n"\n')

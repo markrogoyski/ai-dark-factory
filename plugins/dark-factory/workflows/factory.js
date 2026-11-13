@@ -4169,6 +4169,26 @@ function pairReviewTag(S) {
   return S.pair.measurement?.snapshot?.ref?.slice(`refs/council/${S.run.runId}/A-`.length) || 'base'
 }
 
+// The measurement as the engine and the prompts read it: the helper's result cut to `schema`
+// (PAIR_MEASURE_SCHEMA), a missing value taking its type's empty value, exactly as
+// `dark-factory measure --brief` prints it for a native transport to copy. The Codex runtime returns
+// the full result, so both hosts pass through here and hand the engine the same shape.
+function pairMeasurementView(S, m, schema) {
+  if (!m) return null
+  const pick = (v, s) => s.type === 'object'
+    ? Object.fromEntries(Object.entries(s.properties).map(([k, x]) => [k, pick(v && typeof v === 'object' && !Array.isArray(v) ? v[k] : undefined, x)]))
+    : s.type === 'array' ? (Array.isArray(v) ? v.map(x => pick(x, s.items)) : [])
+    : v ?? (s.type === 'string' ? '' : s.type === 'boolean' ? false : 0)
+  return { ...pick(m, schema), status: m.status === 'done' ? 'done' : 'error' }
+}
+
+// The helper's full record of the current measurement: the view above plus what each execution
+// printed (its tail), checkout paths and log digests.
+function pairMeasurementRecord(S) {
+  const tag = pairReviewTag(S)
+  return tag === 'base' ? '' : `${S.run.runDir}/jobs/measure-A-${tag}/status.json`
+}
+
 function pairOpen(S) {
   return S.pair.findings.filter(f => f.status === 'open')
 }
@@ -4412,7 +4432,7 @@ ${JSON.stringify(p.findings)}
 
 # Latest review and measurement
 ${JSON.stringify({ review: p.lastReview, measurement: p.measurement })}
-
+${pairMeasurementRecord(S) ? `The measurement leaves out what each execution printed: read it in ${pairMeasurementRecord(S)}, where every replay record and the suite carry the tail of their output, or in the logs they name.\n` : ''}
 # Author continuity
 ${p.author?.notes || '(first author turn)'}
 
@@ -4443,10 +4463,10 @@ ${JSON.stringify(p.approvedContract || p.testContract)}
 
 ${design ? `Independently check proposed reconciliations against the original task, reference documents, and explicit user decisions; setup notes cannot waive requirements. Check that the criteria cover the entire original request. Check the approach against the task and existing code: correctness, missing requirements, assumptions, alternatives that materially affect the outcome, scope, and planned test coverage. Verify every proposed test root against the BASE repository configuration/layout and its cited evidence; naming a directory does not make it a test root. Reject production roots and missing concrete outcomes/boundaries. Check that every planned test and fixture is a regular file under an accepted root and each focused command is executable by the replay helper. Shared files are allowed when required by the user or plan: inspect focused selection and base loadability. Prefer separate files otherwise. Whole-suite preservation must use kind=gate with the exact designated command, never a directory in a file mapping. Gate evidence establishes final-suite success, not a changed-behavior baseline failure. Each criterion is met only if the design explains how it will be satisfied and checked.
 Return exactly one structured challenge per criterion in challenges: criterion, a substantive wrongImplementation, and rejectingCheckIds that resolve to contract checks covering that criterion. If no check rejects a plausible wrong implementation, return rejectingCheckIds=[] and raise an evidenced finding, assess that criterion partial/unmet, or request design revision with the reason in summary. Never cite a check you believe is ineffective just to fill the array. Approval requires a rejecting check for every challenge. Describe a plausible incorrect result and its rejecting inspection for non-code criteria. Judge whether the checks actually reject that implementation; valid IDs alone are insufficient. ${pairBaseline(S)}`
-    : `Review the implementation and tests against the task and approved design. Inspect the whole diff at ${p.measurement.snapshot.diff}, not only the latest fixes. Look for incorrect behavior, regressions, missing requirements, and tests that would miss the defect. The neutral helper measured this exact snapshot:
+    : `Review the implementation and tests against the task and approved design. Inspect the whole diff at ${p.measurement.snapshot.diff}, not only the latest fixes. Look for incorrect behavior, regressions, missing requirements, and tests that would miss the defect. The neutral helper measured this exact snapshot. This summary leaves out what each execution printed: read that in the helper's full record, ${pairMeasurementRecord(S)}, where every replay record and the suite carry the tail of their output, and in the logs they name:
 ${JSON.stringify(p.measurement)}
 Passing tests do not replace code review. Treat a failing or missing required check as unresolved.
-Interpret the raw replay records for each check, reading their logs when needed. A base fatal at file level (including a missing new API), pass, timeout, or tool error is evidence to interpret, not an automatic red/green verdict. Records cover files/commands and associated check IDs; an aborted file does not prove individual assertions ran. Preserved behavior should pass on base; changed behavior passing there needs investigation. Distinguish the intended missing behavior from infrastructure failure using actual output. If inconclusive, reflect that in criterion assessments/findings rather than approving solely because a record exists. A base record with reused=true is the same execution as an earlier measurement's, carried over because its inputs were identical (base commit, command, test and fixture bytes, timeout and settings); it is not a new run.
+Interpret the raw replay records for each check from their output in that record, reading the logs when the tail is not enough. A base fatal at file level (including a missing new API), pass, timeout, or tool error is evidence to interpret, not an automatic red/green verdict. Records cover files/commands and associated check IDs; an aborted file does not prove individual assertions ran. Preserved behavior should pass on base; changed behavior passing there needs investigation. Distinguish the intended missing behavior from infrastructure failure using actual output. If inconclusive, reflect that in criterion assessments/findings rather than approving solely because a record exists. A base record with reused=true is the same execution as an earlier measurement's, carried over because its inputs were identical (base commit, command, test and fixture bytes, timeout and settings); it is not a new run.
 Inspect every overlay exclusion and missing preserved-behavior signal. Compare actual assertions and coverage with the approved contract and report omissions or weakening through findings. Check that each mapped command really isolates its named file and executes its claimed checks. Attack the whole implementation for uncovered requirements, regressions, races, numeric mistakes, and defects introduced by fixes: the contract is a floor, not the review checklist. Return challenges=[] during code review.
 That measurement is the gate result for this snapshot: don't rerun the verification command or the checks in it. Run only targeted probes, such as one test or one analyser on the changed files. Sandboxes can block the sockets that parallel workers use: if a probe fails that way, run the tool single-process.`}
 
@@ -4467,11 +4487,13 @@ function hostMaterializationNote(S, label, tag, checkout) {
   return `If that checkout does not exist, create it with ${S.cli} materialize --run-dir ${shq(S.run.runDir)} --seat A --label ${shq(tag)} --name ${shq(`pair-review-${label}`)}. The CLI transport normally creates it before your turn. Inspect this checkout, not the main repository's working files.`
 }
 
+// --brief prints the result already in the output schema's shape, without what each execution
+// printed (the job's status.json keeps it), so the transport copies about a third of the record.
 function pairMeasurePrompt(S, label) {
   return `You are transporting a deterministic verification result for the pair workflow. Do not review, change, or judge the implementation. Run exactly:
-${S.cli} measure --run-dir ${shq(S.run.runDir)} --seat A --label ${shq(label)} --replay-json ${shq(JSON.stringify(pairReplayRequest(S)))} --max-wait 5
-If status is running, poll ${S.cli} wait --run-dir ${shq(S.run.runDir)} --job ${shq(`measure-A-${label}`)} --max-wait 5 until it finishes. Poll an active shell session before launching another command. Do not use sleep polling.
-Return status done only for the helper's completed result. Copy snapshot.ref, snapshot.tree, snapshot.diff, and suite.ran, suite.passed, suite.command, suite.failureKind (empty when absent), and suite.tail exactly (empty command or tail if absent). Copy the ENTIRE replay object unchanged, including mapping, roots, identities, changes, exclusions, file/command records, launch errors, exit/signal/timeout fields, log paths, tails, and timings. Never summarize individual tests or interpret base failures. On failure return error with the actual message and empty snapshot/replay values. Do not substitute results from the live worktree or remove required checks.`
+${S.cli} measure --run-dir ${shq(S.run.runDir)} --seat A --label ${shq(label)} --replay-json ${shq(JSON.stringify(pairReplayRequest(S)))} --brief --max-wait 5
+If status is running, poll ${S.cli} wait --run-dir ${shq(S.run.runDir)} --job ${shq(`measure-A-${label}`)} --brief --max-wait 5 until it finishes. Poll an active shell session before launching another command. Do not use sleep polling.
+The finished result is one line of JSON in exactly the shape you return. Return it as printed: the same keys and values, including the whole replay object and every record, with nothing added, dropped, reformatted or summarized. Never interpret base failures. If the command fails without printing that result, return status error with the actual message in error and empty snapshot, suite and replay values. Do not substitute results from the live worktree or remove required checks.`
 }
 
 // From here the script runs. `S` is the one state object: the lib/ functions take it as their first
@@ -5784,10 +5806,10 @@ const PAIR_REPLAY_RESULT = { type: 'object', properties: {
   records: { type: 'array', items: { type: 'object', properties: {
     side: { type: 'string', enum: ['base', 'final'] }, revision: { type: 'string' }, tree: { type: 'string' },
     file: { type: 'string' }, command: { type: 'string' }, checkIds: PAIR_STRINGS,
-    cwd: { type: 'string' }, attempted: { type: 'boolean' }, ran: { type: 'boolean' }, passed: { type: 'boolean' },
+    attempted: { type: 'boolean' }, ran: { type: 'boolean' }, passed: { type: 'boolean' },
     hasExitCode: { type: 'boolean' }, exitCode: { type: 'integer', description: 'Meaningful only when hasExitCode is true.' },
     signal: { type: 'integer', description: 'Signal number, or zero if none.' }, timedOut: { type: 'boolean' },
-    seconds: { type: 'number' }, log: { type: 'string' }, logSha256: { type: 'string' }, tail: { type: 'string' }, launchError: { type: 'string' },
+    seconds: { type: 'number' }, log: { type: 'string' }, launchError: { type: 'string' },
     mutated: PAIR_STRINGS,
     reused: { type: 'boolean', description: 'A base execution reused from an earlier measurement with the same inputs.' },
   } } },
@@ -5823,7 +5845,8 @@ const PAIR_REVIEW_SCHEMA = strict({ type: 'object', properties: {
 const PAIR_MEASURE_SCHEMA = strict({ type: 'object', properties: {
   status: { type: 'string', enum: ['done', 'error'] }, error: { type: 'string' },
   snapshot: { type: 'object', properties: { ref: { type: 'string' }, tree: { type: 'string' }, diff: { type: 'string' } } },
-  suite: { type: 'object', properties: { ...CHECK_SCHEMA.properties.suite.properties, command: { type: 'string' }, failureKind: { type: 'string' } } },
+  suite: { type: 'object', properties: { ran: { type: 'boolean' }, passed: { type: 'boolean' }, command: { type: 'string' },
+    failureKind: { type: 'string' }, log: { type: 'string' } } },
   replay: PAIR_REPLAY_RESULT,
 } })
 
@@ -5912,9 +5935,9 @@ async function pairRun() {
       if (mappingError) { p.stop = mappingError; return pairResult(S) }
       phase('Verify')
       try {
-        p.measurement = hostRuntime ? await hostRuntime.measure({ run: S.run, seat: 'A', label, replay: pairReplayRequest(S) })
+        p.measurement = pairMeasurementView(S, hostRuntime ? await hostRuntime.measure({ run: S.run, seat: 'A', label, replay: pairReplayRequest(S) })
           : await ask(pairMeasurePrompt(S, label), { label: `measure ${label}`, phase: 'Verify', schema: PAIR_MEASURE_SCHEMA,
-            model: transportModel, effort: 'low' }, 'checker')
+            model: transportModel, effort: 'low' }, 'checker'), PAIR_MEASURE_SCHEMA)
       } catch (error) {
         if (fatalTurnError(error)) throw error
         p.measurement = { status: 'error', error: String(error?.message || error) }

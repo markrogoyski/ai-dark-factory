@@ -1,11 +1,14 @@
 // Shared pair engine exercised through both hosts, with no model calls.
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { readFileSync, writeFileSync, mkdirSync } from 'node:fs'
+import { readFileSync, writeFileSync, mkdirSync, mkdtempSync } from 'node:fs'
+import { execFileSync } from 'node:child_process'
+import { join } from 'node:path'
+import { tmpdir } from 'node:os'
 import { fileURLToPath } from 'node:url'
 import { loadLib } from './lib.mjs'
 import { validateResult } from '../plugins/dark-factory/lib/codex-runner.mjs'
-import { contract, mapping, challenges, replay } from './fixtures/pair-contract.mjs'
+import { contract, mapping, challenges, replay, helperRecord } from './fixtures/pair-contract.mjs'
 
 const L = loadLib()
 const root = new URL('../', import.meta.url)
@@ -26,7 +29,7 @@ const setup = () => ({ status: 'ok', mode: 'implement', runId: 'pair-test', runD
   criteria: [{ id: 'C1', text: 'The requested behavior works.' }], refs: [], dirty: [], verify: 'node test.cjs', baselinePasses: true })
 const measurement = (label, tree = 'a'.repeat(40)) => ({ status: 'done', error: '', snapshot: {
   ref: `refs/council/pair-test/A-${label}`, tree, diff: `/repo/.council/pair-test/room/${label}/A.diff`,
-}, suite: { ran: true, passed: true, failureKind: '', tail: 'pass', command: 'node test.cjs' }, replay: replay(tree) })
+}, suite: { ran: true, passed: true, command: 'node test.cjs', failureKind: '', log: `/repo/.council/pair-test/logs/suite-A-${label}.log` }, replay: replay(tree) })
 const finding = statement => ({ severity: 'minor', statement, evidence: 'src/example.js:12 lacks the required case.' })
 
 async function run(options = {}) {
@@ -76,7 +79,7 @@ async function run(options = {}) {
     turn: async request => {
       const value = await respond(request.prompt, request.schema, request)
       return value && { status: 'done', result: value }
-    }, measure,
+    }, measure: async request => helperRecord(await measure(request)),
   }
   const result = await execute(agent, () => { throw new Error('Pair must not launch a panel') }, null,
     title => phases.push(title), () => {}, { task: 'Implement the behavior', repo: '/repo', ...(options.native ? {} : { host: 'codex' }), ...options.args }, {}, null, runtime)
@@ -161,7 +164,7 @@ test('author claims and omission cannot close findings; unchanged work stalls', 
 
 test('a clean review cannot hide failing or missing verification', async () => {
   for (const ran of [true, false]) {
-    const { result } = await run({ args: { maxReviews: 3 }, measure: m => ({ ...m, suite: { ...m.suite, ran, passed: false, tail: 'failed' } }) })
+    const { result } = await run({ args: { maxReviews: 3 }, measure: m => ({ ...m, suite: { ...m.suite, ran, passed: false } }) })
     assert.notEqual(result.final.readiness.state, 'ready')
     assert.match(result.stopReason, ran ? /budget exhausted/ : /verification evidence remains incomplete/)
     assert.ok([...result.final.readiness.blocked, ...result.final.readiness.incomplete].some(s => /verification/i.test(s)))
@@ -179,13 +182,71 @@ test('failed, incomplete, stale and unsupported reviews cannot approve', async (
 })
 
 test('measurement failure and a mismatched snapshot never reach code review', async () => {
-  for (const change of [m => ({ ...m, status: 'error', error: 'Gate unavailable.' }), m => ({ ...m, snapshot: { ...m.snapshot, ref: 'other-ref' } }),
+  for (const native of [false, true]) for (const change of [m => ({ ...m, status: 'error', error: 'Gate unavailable.' }), m => ({ ...m, snapshot: { ...m.snapshot, ref: 'other-ref' } }),
+    m => ({ ...m, snapshot: { ...m.snapshot, diff: '/elsewhere/A.diff' } }), m => ({ ...m, snapshot: { ...m.snapshot, tree: 'not-a-tree' } }),
     m => ({ ...m, suite: { ...m.suite, command: 'true' } }), () => { throw new Error('Transport failed') }]) {
-    const { result, calls } = await run({ measure: change })
-    assert.equal(result.status, 'failed')
+    const { result, calls } = await run({ native, measure: change })
+    assert.equal(result.status, 'failed', String(change))
     assert.equal(calls.filter(c => c.kind === 'review').length, 1)
     assert.notEqual(result.final.readiness.state, 'ready')
   }
+  // The runtime's full record is cut to the engine's view; a gap in it becomes an empty value the
+  // checks reject, never a default that passes.
+  for (const change of [() => ({ status: 'running' }), m => ({ ...m, status: 'failed' }), ({ snapshot, ...m }) => m, m => ({ ...m, snapshot: { ref: m.snapshot.ref } })]) {
+    const { result, calls } = await run({ measure: change })
+    assert.equal(result.status, 'failed', String(change))
+    assert.equal(calls.filter(c => c.kind === 'review').length, 1)
+  }
+})
+
+// The native transport retyped the whole record, output tails included (about 22k characters, 1-3
+// minutes of Opus output a measurement). It now copies the helper's brief result; the tails stay in
+// the job's status.json, which the author and reviewer prompts name.
+test('the native transport copies the brief measurement and both hosts see the same one', async () => {
+  const seen = {}
+  for (const native of [true, false]) {
+    const { result, calls } = await run({ native })
+    const measure = calls.find(c => c.kind === 'measure')
+    if (native) {
+      assert.match(measure.prompt, /dark-factory measure .* --brief --max-wait 5\n/)
+      assert.match(measure.prompt, /dark-factory wait .* --brief --max-wait 5 until/)
+      assert.equal(measure.model, 'opus')
+      const record = measure.schema.properties.replay.properties.records.items.properties
+      for (const key of ['tail', 'cwd', 'logSha256']) assert.ok(!(key in record), key)
+      assert.ok(!('tail' in measure.schema.properties.suite.properties))
+    } else assert.equal(measure, undefined)
+    const code = calls.filter(c => c.kind === 'review').at(-1)
+    assert.ok(code.prompt.includes("read that in the helper's full record, /repo/.council/pair-test/jobs/measure-A-pair-code-2/status.json,"))
+    assert.ok(!code.prompt.includes('raw output') && !code.prompt.includes('logSha256') && !code.prompt.includes('/scratch/'))
+    seen[native] = { suite: result.final.suite, replay: result.final.replay, prompt: code.prompt.match(/^\{"status".*$/m)[0] }
+  }
+  assert.deepEqual(seen[true], seen[false])
+  assert.deepEqual(seen[true].suite, { ran: true, passed: true, command: 'node test.cjs', failureKind: '', log: '/repo/.council/pair-test/logs/suite-A-pair-code-2.log' })
+  const { calls } = await run({ native: true, review: (r, n) => { if (n === 2) r.findings = [finding('Cover the boundary.')]; return r } })
+  const authors = calls.filter(c => c.kind === 'author')
+  assert.ok(authors[2].prompt.includes('The measurement leaves out what each execution printed: read it in /repo/.council/pair-test/jobs/measure-A-pair-code-2/status.json,'))
+  assert.ok(!authors[0].prompt.includes('The measurement leaves out') && !authors[1].prompt.includes('The measurement leaves out'), 'no measurement before the first code turn')
+})
+
+test('the helper prints the same brief measurement the engine reads', async () => {
+  const { calls } = await run({ native: true })
+  const schema = calls.find(c => c.kind === 'measure').schema
+  const full = helperRecord(measurement('pair-code-2', '1'.repeat(40)))
+  delete full.replay.records[0].reused
+  full.replay.records[1].exitCode = null
+  delete full.suite.failureKind
+  full.replay.changes = [{ status: 'M', path: 'tests/changed.cjs' }]
+  const dir = mkdtempSync(join(tmpdir(), 'pair-brief-'))
+  mkdirSync(join(dir, 'jobs', 'measure-A-pair-code-2'), { recursive: true })
+  writeFileSync(join(dir, 'jobs', 'measure-A-pair-code-2', 'status.json'), JSON.stringify(full))
+  const cli = fileURLToPath(new URL('plugins/dark-factory/bin/dark-factory', root))
+  const printed = JSON.parse(execFileSync(cli, ['wait', '--run-dir', dir, '--job', 'measure-A-pair-code-2', '--brief', '--max-wait', '0'], { encoding: 'utf8' }).trim().split('\n').at(-1))
+  validateResult(printed, schema)
+  assert.deepEqual(printed, L.pairMeasurementView(null, full, schema))
+  assert.equal(printed.replay.records[0].reused, false)
+  assert.equal(printed.replay.records[1].exitCode, 0)
+  assert.equal(printed.replay.changes[0].previousPath, '')
+  assert.ok(JSON.stringify(full).length > JSON.stringify(printed).length)
 })
 
 test('budget exhaustion after design approval cannot report unbuilt work as ready', async () => {
@@ -349,10 +410,10 @@ test('base fatal, pass, timeout and tool errors remain raw evidence for both rev
   for (const native of [true, false]) for (const outcome of ['fatal', 'pass', 'timeout', 'tool-error', 'launch-error']) {
     const { result, calls } = await run({ native, measure: m => {
       const b = m.replay.records[0]
-      if (outcome === 'fatal') { b.exitCode = 255; b.tail = 'Fatal: new API not found before test discovery' }
+      if (outcome === 'fatal') b.exitCode = 255
       if (outcome === 'pass') { b.exitCode = 0; b.passed = true }
       if (outcome === 'timeout') { b.timedOut = true; b.exitCode = -9; b.signal = 9 }
-      if (outcome === 'tool-error') { b.exitCode = 127; b.tail = 'tool not found' }
+      if (outcome === 'tool-error') b.exitCode = 127
       if (outcome === 'launch-error') { b.ran = false; b.hasExitCode = false; b.launchError = 'cannot spawn' }
       return m
     } })

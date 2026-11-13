@@ -43,6 +43,26 @@ function pairReviewTag(S) {
   return S.pair.measurement?.snapshot?.ref?.slice(`refs/council/${S.run.runId}/A-`.length) || 'base'
 }
 
+// The measurement as the engine and the prompts read it: the helper's result cut to `schema`
+// (PAIR_MEASURE_SCHEMA), a missing value taking its type's empty value, exactly as
+// `dark-factory measure --brief` prints it for a native transport to copy. The Codex runtime returns
+// the full result, so both hosts pass through here and hand the engine the same shape.
+function pairMeasurementView(S, m, schema) {
+  if (!m) return null
+  const pick = (v, s) => s.type === 'object'
+    ? Object.fromEntries(Object.entries(s.properties).map(([k, x]) => [k, pick(v && typeof v === 'object' && !Array.isArray(v) ? v[k] : undefined, x)]))
+    : s.type === 'array' ? (Array.isArray(v) ? v.map(x => pick(x, s.items)) : [])
+    : v ?? (s.type === 'string' ? '' : s.type === 'boolean' ? false : 0)
+  return { ...pick(m, schema), status: m.status === 'done' ? 'done' : 'error' }
+}
+
+// The helper's full record of the current measurement: the view above plus what each execution
+// printed (its tail), checkout paths and log digests.
+function pairMeasurementRecord(S) {
+  const tag = pairReviewTag(S)
+  return tag === 'base' ? '' : `${S.run.runDir}/jobs/measure-A-${tag}/status.json`
+}
+
 function pairOpen(S) {
   return S.pair.findings.filter(f => f.status === 'open')
 }

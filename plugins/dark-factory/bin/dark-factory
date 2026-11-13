@@ -11,7 +11,9 @@ workflow's agents call it. Every subcommand prints one JSON object on its last l
                         [--checkout L-LABEL]   (first creates --cwd as a checkout of that snapshot)
                         (reads the payload from the relay's saved transcript when F is missing)
     dark-factory measure     --run-dir D --seat L --label rN [--since rM] [--tests T0A1,T1B2] [--no-snapshot]
-    dark-factory wait        --run-dir D --job KEY
+                        [--replay-json JSON] [--brief]   (--brief: the result as Pair reads it, without
+                        output tails; the job's status.json keeps the full record)
+    dark-factory wait        --run-dir D --job KEY [--brief]
     dark-factory materialize --run-dir D --seat L --label rN [--name DIR]
     dark-factory usage       --run-dir D [--no-claude]
     dark-factory preflight   --vendors codex,gemini,claude
@@ -526,11 +528,12 @@ def archive_job(jd):
     os.replace(jd, f'{jd}.old{n}')
 
 
-def settle_existing_job(jd, key, max_wait, decide):
+def settle_existing_job(jd, key, max_wait, decide, show=None):
     """A job directory for this key may already exist. `decide(old_spec, state)` says what to do with
     it: 'wait' (it is this work, running or done: wait for it and return its result), a dict (emit
     that, e.g. a reused result), or None (it is stale or failed: archive it). True when the request
-    was answered from the existing job; False when the caller should start a new one."""
+    was answered from the existing job; False when the caller should start a new one. `show` prints
+    the answer (default emit)."""
     if not os.path.isdir(jd):
         return False
     spec_path = os.path.join(jd, 'spec.json')
@@ -539,7 +542,7 @@ def settle_existing_job(jd, key, max_wait, decide):
     if action is None:
         archive_job(jd)
         return False
-    emit(wait_job(jd, key, max_wait) if action == 'wait' else action)
+    (show or emit)(wait_job(jd, key, max_wait) if action == 'wait' else action)
     return True
 
 
@@ -547,7 +550,10 @@ def cmd_wait(a):
     jd = job_dir(a.run_dir, a.job)
     if not os.path.isdir(jd):
         raise CouncilError(f'no such job: {a.job}')
-    emit(wait_job(jd, a.job, a.max_wait))
+    if a.brief and not a.job.startswith('measure-'):
+        raise CouncilError('--brief applies only to measurement jobs')
+    state = wait_job(jd, a.job, a.max_wait)
+    emit(measurement_brief(state) if a.brief else state)
 
 
 def cmd_jobs(a):
@@ -1990,6 +1996,44 @@ def input_digest(run, seat, label, path, tests, replay=None):
             'tests': {t: digest_of(os.path.join(run['room'], 'tests', t)) for t in tests}}
 
 
+# What Pair's engine reads from a measurement, each field with the value it takes when missing. A
+# native Claude transport retypes this into its structured output, so it leaves out each execution's
+# output tail, checkout path and log digest; the job's status.json keeps the full record. Must match
+# PAIR_MEASURE_SCHEMA in src/pair-schemas.js (test/pair.mjs compares them).
+PAIR_BRIEF = {
+    'status': '', 'error': '',
+    'snapshot': {'ref': '', 'tree': '', 'diff': ''},
+    'suite': {'ran': False, 'passed': False, 'command': '', 'failureKind': '', 'log': ''},
+    'replay': {
+        'base': '', 'snapshot': '', 'snapshotTree': '', 'testRoots': [''],
+        'mapping': [{'file': '', 'command': '', 'checkIds': [''], 'fixtures': ['']}],
+        'changes': [{'status': '', 'path': '', 'previousPath': ''}],
+        'exclusions': [{'path': '', 'reason': ''}],
+        'records': [{'side': '', 'revision': '', 'tree': '', 'file': '', 'command': '', 'checkIds': [''],
+                     'attempted': False, 'ran': False, 'passed': False, 'hasExitCode': False, 'exitCode': 0,
+                     'signal': 0, 'timedOut': False, 'seconds': 0, 'log': '', 'launchError': '',
+                     'mutated': [''], 'reused': False}],
+        'elapsedSec': 0,
+    },
+}
+
+
+def brief_pick(value, shape):
+    if isinstance(shape, dict):
+        value = value if isinstance(value, dict) else {}
+        return {k: brief_pick(value.get(k), s) for k, s in shape.items()}
+    if isinstance(shape, list):
+        return [brief_pick(v, shape[0]) for v in value] if isinstance(value, list) else []
+    return shape if value is None else value
+
+
+def measurement_brief(state):
+    """A finished measurement in the shape of PAIR_BRIEF; a running job's answer is unchanged."""
+    if state.get('status') == 'running':
+        return state
+    return dict(brief_pick(state, PAIR_BRIEF), status='done' if state.get('status') == 'done' else 'error')
+
+
 def cmd_measure(a):
     run = load_run(a.run_dir)
     tests = [t for t in (a.tests or '').split(',') if t]
@@ -2027,14 +2071,15 @@ def cmd_measure(a):
             return dict(state, reused=True)
         return None                                      # failed, or something it depends on changed
 
-    if settle_existing_job(jd, key, a.max_wait, decide):
+    show = (lambda state: emit(measurement_brief(state))) if a.brief else (lambda state: emit(state))
+    if settle_existing_job(jd, key, a.max_wait, decide, show):
         return
     if run.get('factory'):
         pointer = os.path.join(run['runDir'], 'evidence', f'{a.seat}-{a.label}.json')
         if os.path.exists(pointer):
             os.remove(pointer)
     start_job(jd, spec)
-    emit(wait_job(jd, key, a.max_wait))
+    show(wait_job(jd, key, a.max_wait))
 
 
 def checkout_snapshot(run, seat, label, path):
@@ -2803,6 +2848,7 @@ def main():
     p.add_argument('--run-dir', required=True)
     p.add_argument('--job', required=True)
     p.add_argument('--max-wait', type=int, default=DEFAULT_MAX_WAIT)
+    p.add_argument('--brief', action='store_true', help='print a finished measurement as Pair reads it, without output tails')
 
     p = sub.add_parser('measure')
     p.add_argument('--run-dir', required=True)
@@ -2816,6 +2862,7 @@ def main():
     p.add_argument('--suite-timeout', type=int, default=1200)
     p.add_argument('--test-timeout', type=int, default=300)
     p.add_argument('--max-wait', type=int, default=DEFAULT_MAX_WAIT)
+    p.add_argument('--brief', action='store_true', help='print the finished result as Pair reads it, without output tails')
 
     p = sub.add_parser('materialize')
     p.add_argument('--run-dir', required=True)

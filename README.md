@@ -317,7 +317,12 @@ All actionable findings, including minor ones, must close. Optional preferences 
 separately. The author retains its CLI session across design and implementation; native Claude
 workflow turns carry an explicit handoff and private notes. Review contexts and checkouts are
 fresh each time. Codex's runner executes measurements directly; Claude's workflow uses a
-transport turn to run the same helper. Its existing CLI relay handles external participants.
+transport turn, on the Claude participant's model, to run the same helper with `--brief`. That
+prints everything the engine checks, leaving out what each execution printed, its checkout path
+and its log digest, so the transport retypes about a third of the record (8k characters instead of
+22k on average). Both hosts hand the engine and the prompts that same summary. The author and
+reviewer read the output tails in the job's full record, `<runDir>/jobs/measure-A-<label>/status.json`,
+which their prompts name, or in the logs it lists. Its existing CLI relay handles external participants.
 There is no council, panel, voting, or automatic escalation.
 
 In Claude Code, `runtime: "cli"` (or `--runtime cli` at the start of a string task) runs the
@@ -380,7 +385,8 @@ require explicit `allowDirty` or an already clean checkout. Factory tier, panel,
 historical-evidence options do not apply to Pair.
 
 Results include `design`, `testContract`, `replayMapping`, `reviews`, `findings`, `stopReason`,
-`final.replay`, and `final.readiness`. Replay requests and logs participate in existing cache and
+`final.replay`, and `final.readiness`. `final.suite` and `final.replay` are the measurement summary;
+the job's `status.json` keeps the output tails. Replay requests and logs participate in existing cache and
 checkpoint integrity. Ignored dependency directories and external toolchains retain the checkpoint
 limitations below. Changes stay
 in `final.worktree`; a ready snapshot has `delivery.status: pending`. Apply it within the user's

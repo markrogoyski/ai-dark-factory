@@ -83,9 +83,9 @@ async function pairRun() {
       if (mappingError) { p.stop = mappingError; return pairResult(S) }
       phase('Verify')
       try {
-        p.measurement = hostRuntime ? await hostRuntime.measure({ run: S.run, seat: 'A', label, replay: pairReplayRequest(S) })
+        p.measurement = pairMeasurementView(S, hostRuntime ? await hostRuntime.measure({ run: S.run, seat: 'A', label, replay: pairReplayRequest(S) })
           : await ask(pairMeasurePrompt(S, label), { label: `measure ${label}`, phase: 'Verify', schema: PAIR_MEASURE_SCHEMA,
-            model: transportModel, effort: 'low' }, 'checker')
+            model: transportModel, effort: 'low' }, 'checker'), PAIR_MEASURE_SCHEMA)
       } catch (error) {
         if (fatalTurnError(error)) throw error
         p.measurement = { status: 'error', error: String(error?.message || error) }
