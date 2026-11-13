@@ -8,6 +8,9 @@ import { execFileSync } from 'node:child_process'
 import { journalRuntime, loadCheckpoint, readEventLog } from '../plugins/dark-factory/lib/checkpoint.mjs'
 import { runWorkflow, parseCLI } from '../plugins/dark-factory/lib/codex-runner.mjs'
 
+// Launch preparation probes the installed provider CLIs; these tests are about the checkpoint, not the host.
+const noPrepare = async () => null
+
 function fixture(t) {
   const repo = realpathSync(mkdtempSync(join(tmpdir(), 'factory-checkpoint-')))
   t.after(() => rmSync(repo, { recursive: true, force: true }))
@@ -91,7 +94,7 @@ const empty = s => s.enum ? s.enum[0] : s.type === 'object' ? Object.fromEntries
 
 async function pausedRun(t, flags = []) {
   const f = fixture(t), deadlines = []
-  const dependencies = { progress: () => {}, runtime: { execute: async argv => {
+  const dependencies = { progress: () => {}, prepare: noPrepare, runtime: { execute: async argv => {
     if (argv[0] === 'preflight') return { status: 'ok' }
     assert.equal(argv[0], 'seat-run')
     deadlines.push(argv[argv.indexOf('--timeout-min') + 1])
@@ -203,7 +206,7 @@ test('a failed metadata write leaves the previous JSON intact', t => {
 
 test('runner resumes a tier decision using the saved intake and a new setup operation', async t => {
   const f = fixture(t), calls = []
-  const dependencies = { progress: () => {}, runtime: { execute: async argv => {
+  const dependencies = { progress: () => {}, prepare: noPrepare, runtime: { execute: async argv => {
     if (argv[0] === 'preflight') return { status: 'ok' }
     assert.equal(argv[0], 'seat-run')
     const prompt = readFileSync(argv[argv.indexOf('--prompt-file') + 1], 'utf8')
@@ -225,7 +228,7 @@ test('runner resumes a tier decision using the saved intake and a new setup oper
 test('resume retains turns started after the last checkpoint even without a final result', async t => {
   const f = fixture(t)
   let turns = 0
-  const dependencies = { progress: () => {}, runtime: { execute: async argv => {
+  const dependencies = { progress: () => {}, prepare: noPrepare, runtime: { execute: async argv => {
     if (argv[0] === 'preflight') return { status: 'ok' }
     turns++
     const prompt = readFileSync(argv[argv.indexOf('--prompt-file') + 1], 'utf8')
@@ -246,7 +249,7 @@ test('resume retains turns started after the last checkpoint even without a fina
 test('resume reuses specification review but amends criteria with the new answer', async t => {
   const f = fixture(t), calls = []
   const helper = new URL('../plugins/dark-factory/bin/dark-factory', import.meta.url)
-  const dependencies = { progress: () => {}, runtime: { execute: async argv => {
+  const dependencies = { progress: () => {}, prepare: noPrepare, runtime: { execute: async argv => {
     if (argv[0] === 'preflight') return { status: 'ok' }
     const prompt = readFileSync(argv[argv.indexOf('--prompt-file') + 1], 'utf8')
     const schema = JSON.parse(prompt.split('<<<OUTPUT_SCHEMA\n')[1].split('\nOUTPUT_SCHEMA>>>')[0])

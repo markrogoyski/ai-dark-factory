@@ -358,7 +358,7 @@ test('factory decisions stop before setup while preserving input and machine-rea
   const dir = temporary(t), repo = join(dir, 'repo')
   initRepo(repo)
   let count = 0
-  const result = await runWorkflow(parseCLI(['--cwd', repo, 'Implement the missing plan']), { progress: () => {}, runtime: {
+  const result = await runWorkflow(parseCLI(['--cwd', repo, 'Implement the missing plan']), { progress: () => {}, prepare: async () => null, runtime: {
     execute: async argv => {
       count++
       const payload = readFileSync(argv[argv.indexOf('--prompt-file') + 1], 'utf8')
@@ -378,7 +378,8 @@ test('full CLI Simple run uses actual worktrees, helper jobs and verification wi
   const dir = temporary(t), repo = join(dir, 'repo'), bin = join(dir, 'bin'), home = join(dir, 'codex-home')
   initRepo(repo)
   mkdirSync(bin); mkdirSync(home)
-  writeFileSync(join(bin, 'codex'), readFileSync(join(root, 'test/fixtures/codex-cli.cjs')), { mode: 0o755 })
+  // Every provider the run can reach is the fixture, so preflight never probes an installed CLI.
+  for (const cli of ['codex', 'claude']) writeFileSync(join(bin, cli), readFileSync(join(root, 'test/fixtures/codex-cli.cjs')), { mode: 0o755 })
   const result = JSON.parse(execFileSync(process.execPath, [cli, '--cwd', repo, '--tier', 'simple', 'Fix sum to add its operands'], {
     encoding: 'utf8', timeout: 90_000, stdio: ['ignore', 'pipe', 'pipe'],
     env: { ...process.env, PATH: `${bin}:${process.env.PATH}`, CODEX_HOME: home,
@@ -467,7 +468,8 @@ test('installed pair workflow runs both author/reviewer directions and repeated 
 test('Ensemble uses real isolated snapshots and fresh reviewers through stub CLIs', t => {
   const dir = temporary(t), repo = join(dir, 'repo'), bin = join(dir, 'bin')
   initRepo(repo); mkdirSync(bin)
-  writeFileSync(join(bin, 'codex'), readFileSync(join(root, 'test/fixtures/codex-cli.cjs')), { mode: 0o755 })
+  // Every provider the run can reach is the fixture, so preflight never probes an installed CLI.
+  for (const cli of ['codex', 'claude']) writeFileSync(join(bin, cli), readFileSync(join(root, 'test/fixtures/codex-cli.cjs')), { mode: 0o755 })
   let stdout
   try {
     execFileSync(process.execPath, [cli, '--cwd', repo, '--workflow', 'ensemble', '--seats', 'sol,astra', 'Fix sum to add its operands'], {

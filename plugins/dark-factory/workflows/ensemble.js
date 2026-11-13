@@ -5485,6 +5485,9 @@ async function ensembleRun() {
     ? await ask(prompt, { label: 'compare', phase: 'Compare', schema: ENSEMBLE_COMPARE_SCHEMA, model: a.model, effort: a.effort }, 'compare', a.name)
     : await externalTurn({ key: 'compare', threadKey: 'compare', fresh: true, vendor: a.vendor, model: a.model, effort: a.effort, role: 'compare', who: a.name,
       sandbox: 'read-only', cwd: S.run.repoRoot, writable: [], timeoutKind: 'audit' }, prompt, ENSEMBLE_COMPARE_SCHEMA, 'compare', 'Compare')
+  // A selected implementation candidate is saved whole as the delivery result, so it carries the
+  // full-result marker that `apply` requires; the advisory result around it does not.
+  if (S.mode === 'implement') for (const c of alive) Object.assign(c, { artifactType: 'dark-factory-result', artifactVersion: 1 })
   return { status: alive.length ? 'advisory' : 'failed', workflow: 'ensemble', mode: S.mode, task: S.task, runDir: S.run.runDir, candidates, advisor, notes: S.notes,
     final: { readiness: { state: 'incomplete', blocked: [], incomplete: ['No candidate selected; ranking is advisory.', ...(!advisor ? ['Comparison unavailable.'] : [])] } },
     delivery: { status: 'pending-selection' },
