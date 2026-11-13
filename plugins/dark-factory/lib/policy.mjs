@@ -328,6 +328,25 @@ function newState(config) {
   }
 }
 
+// What survives when the factory rebuilds the state for a fresh attempt (tier routing, the pair
+// strategy, escalation): the run's diagnostic history, so its report and retro cover the whole run
+// and not just the last attempt. That is the turn log, the agents' process notes, the notes on
+// what was dropped or degraded, the relay failures and the vendor timings. Everything else is
+// per-attempt and starts clean: config, run directory, seats, criteria, ledger and claims,
+// positions, votes, verification and baseline, worktrees, spec review, audit, build and
+// milestones. `blocked` (a vendor's CLI stuck in the sandbox) and `longPosts` (measured against
+// that attempt's word limit) are not carried either. Arrays are copied, so the old state can be
+// discarded. Callers add their own extras (factory, pair) on top.
+function carriedState(S) {
+  return {
+    turnLog: S.turnLog.slice(),
+    processNotes: S.processNotes.slice(),
+    notes: S.notes.slice(),
+    relayFailures: S.relayFailures.slice(),
+    vendorTimes: S.vendorTimes.slice(),
+  }
+}
+
 // Vendors whose CLIs this run depends on: the seats', the panel's, the spec reviewers' and the auditors'.
 function externalVendors(S) {
   return [...new Set([...S.lineup, ...S.panel, ...S.specReviewers, ...S.auditors, ...(S.ensemble ? [S.ensemble.compare] : []),

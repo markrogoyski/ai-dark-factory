@@ -24,12 +24,12 @@ async function factoryRun() {
   S.factory.strategy = factoryStrategy(S, intake)
   log(`factory: tier ${tier} (${S.factory.chosenBy}${S.factory.chosenBy === 'intake' ? '' : `; intake recommends ${S.factory.recommended}`}): ${oneLine(intake.reasons, 200)}`)
   {
-    const carried = { factory: S.factory, turnLog: S.turnLog, processNotes: S.processNotes }
+    const carried = { ...carriedState(S), factory: S.factory }
     S = newState(parseConfig(tierArgs(S.raw, tier, intake), { workflow: 'factory', tier }))
     Object.assign(S, carried)
   }
   if (S.factory.strategy === 'pair') {
-    const carried = { factory: S.factory, turnLog: S.turnLog, processNotes: S.processNotes }
+    const carried = { ...carriedState(S), factory: S.factory }
     S = newState(factoryPairConfig(S))
     Object.assign(S, carried, { pair: newPairState() })
     if (S.raw.explain) return explanation(S)
@@ -55,13 +55,13 @@ function tierRun(tier) {
 
 // Hand the work to a higher tier: from Simple, or from Feature to Architecture. The lower tier's
 // run directory stays for inspection; the higher tier starts from a fresh state with the factory
-// record, the turn log and the process notes carried over, so its report and retro cover the
-// whole run.
+// record and the run's diagnostic history (carriedState) carried over, so its report and retro
+// cover the whole run.
 async function escalate(handUp) {
   const brief = escalationBrief(S, handUp)
   log(`factory: escalating from ${brief.from} to ${handUp.to} (${handUp.trigger}): ${handUp.why}`)
   const factory = { ...S.factory, tier: handUp.to, escalation: brief }
-  const carried = { turnLog: S.turnLog, processNotes: S.processNotes, relayFailures: S.relayFailures, vendorTimes: S.vendorTimes,
+  const carried = { ...carriedState(S),
     notes: S.notes.map(n => /^\w+ attempt: /.test(n) ? n : `${capital(brief.from)} attempt: ${n}`) }
   // From the user's own args: the lower tier's carry its defaults, such as Feature's two seats.
   S = newState(parseConfig(tierArgs(factory.args, handUp.to, factory.intake), { workflow: S.workflowName, tier: handUp.to, escalation: brief }))

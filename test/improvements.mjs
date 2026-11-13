@@ -349,3 +349,44 @@ test('evaluation reads a native result\'s helper usage, labelled as excluding na
   assert.equal(broken.tokens, null)
   assert.match(broken.tokenError, /JSON/)
 })
+
+const freshState = () => L.newState(L.parseConfig({ task: 'Fix the parser' }))
+
+// The history a rebuilt factory state keeps: see carriedState in src/lib/state.js.
+const CARRIED = ['notes', 'processNotes', 'relayFailures', 'turnLog', 'vendorTimes']
+
+test('carriedState carries the diagnostic history and nothing else', () => {
+  const S = freshState()
+  S.turnLog.push({ turn: 'intake', role: 'intake', vendor: 'claude', ok: true })
+  S.processNotes.push({ turn: 'intake', role: 'intake', who: 'opus', text: 'slow' })
+  S.notes.push('a note')
+  S.relayFailures.push({ turn: 'x', model: 'm', status: 'relay ended', error: 'e' })
+  S.vendorTimes.push({ turn: 'x', vendor: 'codex', seconds: 12 })
+  const c = L.carriedState(S)
+  assert.deepEqual(Object.keys(c).sort(), CARRIED)
+  for (const k of CARRIED) assert.deepEqual(c[k], S[k], k)
+})
+
+test('carriedState copies the arrays, so the discarded state cannot alias the new one', () => {
+  const S = freshState()
+  S.relayFailures.push({ turn: 'x', model: 'm', status: 'relay ended', error: 'e' })
+  const c = L.carriedState(S)
+  for (const k of CARRIED) assert.notEqual(c[k], S[k], k)
+  S.relayFailures.push({ turn: 'y' })
+  assert.equal(c.relayFailures.length, 1)
+})
+
+test('per-attempt state is not carried: a rebuilt state starts clean apart from the history', () => {
+  const old = freshState()
+  old.relayFailures.push({ turn: 'x', model: 'm', status: 'relay ended', error: 'e' })
+  old.ledger.push({ id: '1A1' }); old.byId['1A1'] = old.ledger[0]
+  old.criteria.push({ id: 'C1', text: 'c' }); old.verify = 'make test'; old.baselineOk = false
+  old.seats.push({ L: 'A', active: true }); old.pos.A = { round: 1 }; old.votes[1] = { A: {} }
+  old.blocked.codex = true; old.longPosts.push({ turn: 'r1A', words: 9999 }); old.lastRound = 3
+  old.run = { runId: 'r', runDir: '/r', repoRoot: '/repo', room: '/r/room' }
+  const next = freshState()
+  Object.assign(next, L.carriedState(old))
+  assert.deepEqual(next.relayFailures, old.relayFailures)
+  const clean = freshState()
+  for (const k of Object.keys(clean).filter(k => !CARRIED.includes(k))) assert.deepEqual(next[k], clean[k], `${k} starts clean`)
+})
