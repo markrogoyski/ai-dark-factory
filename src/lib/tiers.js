@@ -14,7 +14,7 @@ const TIERS = ['simple', 'fix', 'feature', 'architecture']
 const TIER_SEATS = { fix: ['opus', 'astra'], feature: ['opus', 'astra'], architecture: ['opus', 'astra', 'sonnet'] }
 const CODEX_TIER_SEATS = { fix: ['opus', 'astra', 'sol'], feature: ['opus', 'astra', 'sol'], architecture: ['opus', 'astra', 'sol'] }
 const SIMPLE = { implementer: 'sonnet', reviewer: 'astra', maxLines: 200, maxFiles: 8 }
-const CODEX_SIMPLE = { ...SIMPLE, implementer: 'sol' }
+const CODEX_SIMPLE = { ...SIMPLE, implementer: 'astra' }
 const SMALL_DIFF = 50          // changed lines: below this, a clean fix or feature run hints the tier was too high
 
 // What the factory reads from its args, on top of what the council reads.

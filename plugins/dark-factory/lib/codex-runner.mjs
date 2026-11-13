@@ -24,7 +24,7 @@ Git, and authenticated CLIs for the selected models.
   --cwd DIR                  Target Git repository (default: current directory)
   --tier TIER                simple, fix, feature, or architecture
   --seats a,b                Override the model seats (e.g. astra,sol or opus,astra)
-  --author MODEL             Pair author (default in Codex: sol)
+  --author MODEL             Pair author (default in Codex: astra)
   --reviewer MODEL           Pair reviewer (default: other vendor)
   --max-reviews N            Pair review budget across design and code (default: 8)
   --args-file FILE           Full workflow arguments as a JSON object

@@ -7,11 +7,11 @@ function parseEnsembleConfig(args) {
   const named = seatList(raw.seats)
   const count = boundedInteger(raw.candidates, named.length || 4, 'candidates', 6)
   if (count < 2 || (named.length && named.length !== count)) throw new Error('ensemble needs 2–6 candidates, matching seats when supplied.')
-  const solve = models.solve || raw.solveModel || (codex ? 'sol' : 'sonnet')
+  const solve = models.solve || raw.solveModel || (codex ? 'astra' : 'sonnet')
   const config = parseConfig({ ...raw, mode, seats: named.length ? named : Array(count).fill(solve), spec: false, audit: false }, { workflow: 'ensemble', tier: 'ensemble' })
   const { stances, lenses } = ensembleChoices(config)
   const review = models.review || raw.reviewModel
-  const picked = lenses.slice(0, boundedInteger(raw.reviewers, 2, 'reviewers', 4)).map(l => ({ ...l, ...hostSeat(config.host, parseSeat(review || (codex ? (l.model === 'opus' ? 'astra' : 'sol') : l.model), raw.effort)), lens: l.key }))
+  const picked = lenses.slice(0, boundedInteger(raw.reviewers, 2, 'reviewers', 4)).map(l => ({ ...l, ...hostSeat(config.host, parseSeat(review || (codex ? 'astra' : l.model), raw.effort)), lens: l.key }))
   return { ...config, raw, panel: [], specReviewers: [], auditors: picked,
     ensemble: { stances: stances.slice(0, count), lenses: picked, compare: hostSeat(config.host, parseSeat(models.compare || raw.compareModel || (codex ? 'astra' : 'opus'), raw.effort)) } }
 }

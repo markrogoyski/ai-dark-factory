@@ -52,8 +52,8 @@ const external = s => s.external === true || s.vendor !== 'claude'
 // selects the shorter continuation prompts for seats whose CLI session survives between turns.
 const hostSeat = (host, s) => host === 'codex' ? { ...s, external: true } : s
 const CODEX_ROLES = {
-  intake: 'astra', setup: 'sol', checker: 'sol', questions: 'luna',
-  spec: 'astra', retro: 'sol', record: 'luna',
+  intake: 'astra', setup: 'astra', checker: 'astra', questions: 'luna',
+  spec: 'astra', retro: 'astra', record: 'luna',
 }
 const ROLE_EFFORT = { intake: 'medium', setup: 'medium', checker: 'medium', questions: 'low', spec: 'medium', retro: 'medium', record: 'low' }
 
@@ -114,9 +114,9 @@ const SIMPLE_LENS = { review: { model: 'astra', id: 'XR' } }
 // code (grounding), whether its order works (sequencing), and what could sink it (risk, with the
 // designs the council didn't choose). The risk lens is the run's only model that wrote no design.
 const ARCH_LENSES = { grounding: { model: 'astra', id: 'XG' }, sequencing: { model: 'opus', id: 'XS' }, risk: { model: 'gemini', id: 'XK' } }
-const CODEX_AUDIT_LENSES = { correctness: { model: 'astra', id: 'XC' }, design: { model: 'sol', id: 'XD' } }
+const CODEX_AUDIT_LENSES = { correctness: { model: 'astra', id: 'XC' }, design: { model: 'astra', id: 'XD' } }
 const CODEX_FEATURE_LENS = { tests: { model: 'luna', id: 'XT' } }
-const CODEX_ARCH_LENSES = { grounding: { model: 'astra', id: 'XG' }, sequencing: { model: 'sol', id: 'XS' }, risk: { model: 'luna', id: 'XK' } }
+const CODEX_ARCH_LENSES = { grounding: { model: 'astra', id: 'XG' }, sequencing: { model: 'astra', id: 'XS' }, risk: { model: 'luna', id: 'XK' } }
 const MAX_MILESTONES = 8          // the Architecture tier's milestone plan lists at most this many
 
 function parseAudit(v, lenses = AUDIT_LENSES) {
@@ -166,7 +166,7 @@ function parseConfig(args, opts = {}) {
   const auditLenses = host === 'codex' ? CODEX_AUDIT_LENSES : AUDIT_LENSES
   const featureLens = host === 'codex' ? CODEX_FEATURE_LENS : FEATURE_LENS
   const archLenses = host === 'codex' ? CODEX_ARCH_LENSES : ARCH_LENSES
-  const spec = simple ? { reviewers: [], ask: false } : parseSpec(raw.spec, host === 'codex' ? { coverage: 'astra', intent: 'sol' } : SPEC_LENSES)
+  const spec = simple ? { reviewers: [], ask: false } : parseSpec(raw.spec, host === 'codex' ? { coverage: 'astra', intent: 'astra' } : SPEC_LENSES)
   return {
     raw, host, roles, task, modeGiven, mode, controls: parseControls(raw),
     rounds: Math.max(1, Math.min(3, Number(raw.rounds) || 2)),

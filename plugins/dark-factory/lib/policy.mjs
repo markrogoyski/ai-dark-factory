@@ -129,8 +129,8 @@ const external = s => s.external === true || s.vendor !== 'claude'
 // selects the shorter continuation prompts for seats whose CLI session survives between turns.
 const hostSeat = (host, s) => host === 'codex' ? { ...s, external: true } : s
 const CODEX_ROLES = {
-  intake: 'astra', setup: 'sol', checker: 'sol', questions: 'luna',
-  spec: 'astra', retro: 'sol', record: 'luna',
+  intake: 'astra', setup: 'astra', checker: 'astra', questions: 'luna',
+  spec: 'astra', retro: 'astra', record: 'luna',
 }
 const ROLE_EFFORT = { intake: 'medium', setup: 'medium', checker: 'medium', questions: 'low', spec: 'medium', retro: 'medium', record: 'low' }
 
@@ -191,9 +191,9 @@ const SIMPLE_LENS = { review: { model: 'astra', id: 'XR' } }
 // code (grounding), whether its order works (sequencing), and what could sink it (risk, with the
 // designs the council didn't choose). The risk lens is the run's only model that wrote no design.
 const ARCH_LENSES = { grounding: { model: 'astra', id: 'XG' }, sequencing: { model: 'opus', id: 'XS' }, risk: { model: 'gemini', id: 'XK' } }
-const CODEX_AUDIT_LENSES = { correctness: { model: 'astra', id: 'XC' }, design: { model: 'sol', id: 'XD' } }
+const CODEX_AUDIT_LENSES = { correctness: { model: 'astra', id: 'XC' }, design: { model: 'astra', id: 'XD' } }
 const CODEX_FEATURE_LENS = { tests: { model: 'luna', id: 'XT' } }
-const CODEX_ARCH_LENSES = { grounding: { model: 'astra', id: 'XG' }, sequencing: { model: 'sol', id: 'XS' }, risk: { model: 'luna', id: 'XK' } }
+const CODEX_ARCH_LENSES = { grounding: { model: 'astra', id: 'XG' }, sequencing: { model: 'astra', id: 'XS' }, risk: { model: 'luna', id: 'XK' } }
 const MAX_MILESTONES = 8          // the Architecture tier's milestone plan lists at most this many
 
 function parseAudit(v, lenses = AUDIT_LENSES) {
@@ -243,7 +243,7 @@ function parseConfig(args, opts = {}) {
   const auditLenses = host === 'codex' ? CODEX_AUDIT_LENSES : AUDIT_LENSES
   const featureLens = host === 'codex' ? CODEX_FEATURE_LENS : FEATURE_LENS
   const archLenses = host === 'codex' ? CODEX_ARCH_LENSES : ARCH_LENSES
-  const spec = simple ? { reviewers: [], ask: false } : parseSpec(raw.spec, host === 'codex' ? { coverage: 'astra', intent: 'sol' } : SPEC_LENSES)
+  const spec = simple ? { reviewers: [], ask: false } : parseSpec(raw.spec, host === 'codex' ? { coverage: 'astra', intent: 'astra' } : SPEC_LENSES)
   return {
     raw, host, roles, task, modeGiven, mode, controls: parseControls(raw),
     rounds: Math.max(1, Math.min(3, Number(raw.rounds) || 2)),
@@ -3189,7 +3189,7 @@ const TIERS = ['simple', 'fix', 'feature', 'architecture']
 const TIER_SEATS = { fix: ['opus', 'astra'], feature: ['opus', 'astra'], architecture: ['opus', 'astra', 'sonnet'] }
 const CODEX_TIER_SEATS = { fix: ['opus', 'astra', 'sol'], feature: ['opus', 'astra', 'sol'], architecture: ['opus', 'astra', 'sol'] }
 const SIMPLE = { implementer: 'sonnet', reviewer: 'astra', maxLines: 200, maxFiles: 8 }
-const CODEX_SIMPLE = { ...SIMPLE, implementer: 'sol' }
+const CODEX_SIMPLE = { ...SIMPLE, implementer: 'astra' }
 const SMALL_DIFF = 50          // changed lines: below this, a clean fix or feature run hints the tier was too high
 
 // What the factory reads from its args, on top of what the council reads.
@@ -4017,11 +4017,11 @@ function parseEnsembleConfig(args) {
   const named = seatList(raw.seats)
   const count = boundedInteger(raw.candidates, named.length || 4, 'candidates', 6)
   if (count < 2 || (named.length && named.length !== count)) throw new Error('ensemble needs 2–6 candidates, matching seats when supplied.')
-  const solve = models.solve || raw.solveModel || (codex ? 'sol' : 'sonnet')
+  const solve = models.solve || raw.solveModel || (codex ? 'astra' : 'sonnet')
   const config = parseConfig({ ...raw, mode, seats: named.length ? named : Array(count).fill(solve), spec: false, audit: false }, { workflow: 'ensemble', tier: 'ensemble' })
   const { stances, lenses } = ensembleChoices(config)
   const review = models.review || raw.reviewModel
-  const picked = lenses.slice(0, boundedInteger(raw.reviewers, 2, 'reviewers', 4)).map(l => ({ ...l, ...hostSeat(config.host, parseSeat(review || (codex ? (l.model === 'opus' ? 'astra' : 'sol') : l.model), raw.effort)), lens: l.key }))
+  const picked = lenses.slice(0, boundedInteger(raw.reviewers, 2, 'reviewers', 4)).map(l => ({ ...l, ...hostSeat(config.host, parseSeat(review || (codex ? 'astra' : l.model), raw.effort)), lens: l.key }))
   return { ...config, raw, panel: [], specReviewers: [], auditors: picked,
     ensemble: { stances: stances.slice(0, count), lenses: picked, compare: hostSeat(config.host, parseSeat(models.compare || raw.compareModel || (codex ? 'astra' : 'opus'), raw.effort)) } }
 }
@@ -4096,7 +4096,7 @@ function parsePairConfig(args) {
     if (raw[key] !== undefined) throw new Error(`pair: ${key} is not a pair option; use author, reviewer, and maxReviews.`)
   }
   if (raw.mode && raw.mode !== 'implement') throw new Error('pair: this workflow delivers an implementation.')
-  const author = parseSeat(raw.author || (raw.host === 'codex' ? 'sol' : 'opus'), raw.effort)
+  const author = parseSeat(raw.author || (raw.host === 'codex' ? 'astra' : 'opus'), raw.effort)
   const reviewer = parseSeat(raw.reviewer || (author.vendor === 'claude' ? 'astra' : 'opus'), raw.effort)
   const maxReviews = raw.maxReviews === undefined ? 8 : Number(raw.maxReviews)
   if (!Number.isSafeInteger(maxReviews) || maxReviews < 2 || maxReviews > 100) throw new Error('pair: maxReviews must be an integer from 2 to 100.')

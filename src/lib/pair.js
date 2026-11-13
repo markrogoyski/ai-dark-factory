@@ -14,7 +14,7 @@ function parsePairConfig(args) {
     if (raw[key] !== undefined) throw new Error(`pair: ${key} is not a pair option; use author, reviewer, and maxReviews.`)
   }
   if (raw.mode && raw.mode !== 'implement') throw new Error('pair: this workflow delivers an implementation.')
-  const author = parseSeat(raw.author || (raw.host === 'codex' ? 'sol' : 'opus'), raw.effort)
+  const author = parseSeat(raw.author || (raw.host === 'codex' ? 'astra' : 'opus'), raw.effort)
   const reviewer = parseSeat(raw.reviewer || (author.vendor === 'claude' ? 'astra' : 'opus'), raw.effort)
   const maxReviews = raw.maxReviews === undefined ? 8 : Number(raw.maxReviews)
   if (!Number.isSafeInteger(maxReviews) || maxReviews < 2 || maxReviews > 100) throw new Error('pair: maxReviews must be an integer from 2 to 100.')

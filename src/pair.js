@@ -170,7 +170,7 @@ function pairReviewTurn(label, correction = null) {
   }, prompt, PAIR_REVIEW_SCHEMA, `review ${label}`, ph)
 }
 
-// The participants are named so the runner's Codex defaults (a Sol author) don't replace the
+// The participants are named so the runner's Codex defaults (an Astra author) don't replace the
 // Claude Code profile.
 function pairCliPrompt() {
   const q = v => "'" + String(v).replace(/'/g, "'\\''") + "'"

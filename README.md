@@ -110,9 +110,9 @@ Headless Claude processes run with `CLAUDE_CODE_DISABLE_AUTO_MEMORY=1`, includin
 turns and fresh reviewers. Claude's [auto memory is shared across worktrees](https://code.claude.com/docs/en/memory#storage-location),
 so disabling it keeps project notes out of these independent sessions without changing account settings.
 
-Simple uses Sol to implement and Astra to review. Fix, Feature and Architecture use Opus,
-Astra and Sol seats. Orchestration roles can be changed through `roles`, for example
-`{"intake": "sol", "checker": {"model": "astra", "effort": "high"}}`.
+Simple uses Astra to implement and a fresh Astra session to review. Fix, Feature and
+Architecture use Opus, Astra and Sol seats. Orchestration roles can be changed through
+`roles`, for example `{"intake": "sol", "checker": {"model": "astra", "effort": "high"}}`.
 
 You can also invoke the runner without installing a skill:
 
@@ -338,7 +338,7 @@ $dark-factory --workflow pair Implement the retry policy
 $dark-factory --workflow pair --author opus --reviewer astra Add cancellation support
 ```
 
-Pair defaults to Claude Opus author and Codex Astra reviewer in Claude Code, and Codex Sol
+Pair defaults to Claude Opus author and Codex Astra reviewer in Claude Code, and Codex Astra
 author and Claude Opus reviewer in Codex. `author` and `reviewer` select the roles independently
 using the existing model names. An unspecified reviewer defaults to the other vendor. The
 default pair needs both authenticated CLIs. Explicit `--author sol --reviewer astra` uses only
@@ -781,8 +781,8 @@ list.
 
 Object arguments support `candidates` (2–6, default 4), `reviewers` (1–4, default 2; capped by
 available lenses), and `models: {solve, review, compare}`. Claude defaults remain Sonnet solvers,
-per-lens Sonnet/Opus reviewers, and an Opus comparison. Codex defaults use Sol solvers,
-Sol/Astra reviewers, and an Astra comparison. Explicit `seats` chooses candidate models, using
+per-lens Sonnet/Opus reviewers, and an Opus comparison. Codex defaults use Astra solvers,
+Astra reviewers, and an Astra comparison. Explicit `seats` chooses candidate models, using
 the shared model catalog. If `candidates` is also supplied, its count must match `seats`.
 References, criteria, verification, dirty-tree policy, explanation and run budgets are shared.
 

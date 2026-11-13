@@ -91,7 +91,7 @@ test('pair selects the author and opposite-vendor reviewer without council roles
   assert.equal(c.lineup[0].key, 'opus')
   assert.equal(c.auditors[0].key, 'astra')
   c = L.parsePairConfig({ task: 'Implement it', host: 'codex' })
-  assert.equal(c.lineup[0].key, 'sol')
+  assert.equal(c.lineup[0].key, 'astra')
   assert.equal(c.auditors[0].key, 'opus')
   assert.deepEqual(L.externalVendors(c).sort(), ['claude', 'codex'])
   c = L.parsePairConfig('--author astra --reviewer sonnet --max-reviews 12 Implement it')
@@ -641,12 +641,12 @@ test('pair setup runs on Opus for Claude Code and for weaker Claude authors on t
   // A Codex author keeps its own setup, and an explicit effort still sets setup's effort.
   let { calls } = await run({ args: { author: 'sol' } })
   assert.deepEqual([calls.find(c => c.kind === 'setup').model, calls.find(c => c.kind === 'setup').effort], ['gpt-6.1-sol', 'medium'])
-  assert.equal(L.parsePairConfig({ task: 'x', host: 'codex' }).roles.setup.key, 'sol')
+  assert.equal(L.parsePairConfig({ task: 'x', host: 'codex' }).roles.setup.key, 'astra')
   ;({ calls } = await run({ args: { author: 'sonnet', effort: 'xhigh' } }))
   assert.deepEqual([calls.find(c => c.kind === 'setup').model, calls.find(c => c.kind === 'setup').effort], ['opus', 'xhigh'])
   assert.deepEqual(['key', 'effort'].map(k => L.parsePairConfig({ task: 'x', host: 'codex', author: 'sonnet', effort: { sonnet: 'low' } }).roles.setup[k]), ['opus', 'low'])
   // Factory's pair strategy builds its config through the same rule.
-  for (const [host, author, expected] of [['claude', undefined, 'opus'], ['claude', 'sol', 'opus'], ['codex', 'sonnet', 'opus'], ['codex', undefined, 'sol']]) {
+  for (const [host, author, expected] of [['claude', undefined, 'opus'], ['claude', 'sol', 'opus'], ['codex', 'sonnet', 'opus'], ['codex', undefined, 'astra']]) {
     const S = { raw: { task: 'x', host, ...(author ? { pair: { author } } : {}) }, roles: {}, retro: false }
     assert.equal(L.factoryPairConfig(S).roles.setup.key, expected, `${host} ${author}`)
   }

@@ -59,9 +59,11 @@ describe('Codex host configuration', () => {
         assert.equal(L.external(member), true)
       }
       assert.equal(config.roles.intake.key, 'astra')
-      assert.equal(config.roles.setup.key, 'sol')
-      assert.equal(config.checkModel, 'sol')
-      if (tier === 'simple') assert.deepEqual([config.lineup[0].key, config.auditors[0].key], ['sol', 'astra'])
+      assert.equal(config.roles.setup.key, 'astra')
+      assert.equal(config.checkModel, 'astra')
+      // Sol is a default only as a distinct mind in a lineup or the panel; single roles default to Astra.
+      for (const member of [...Object.values(config.roles), ...config.specReviewers, ...config.auditors]) assert.notEqual(member.key, 'sol', tier)
+      if (tier === 'simple') assert.deepEqual([config.lineup[0].key, config.auditors[0].key], ['astra', 'astra'])
       if (tier !== 'simple') assert.deepEqual(config.lineup.map(s => s.key), ['opus', 'astra', 'sol'])
     }
   })
