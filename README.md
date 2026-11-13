@@ -53,33 +53,84 @@ defaults; the Codex profile substitutes OpenAI models for most roles, as each se
 
 ## Install in Claude Code
 
-The repo is a Claude Code plugin marketplace with one plugin, `dark-factory`:
+**Requirements.** Claude Code with the Workflow tool, `git`, `python3` and Node on PATH, and
+work in a Git repository with at least one commit. The default lineups also use other vendors'
+CLIs, each installed and logged in:
+
+| CLI | needed for | without it |
+|---|---|---|
+| [`codex`](https://github.com/openai/codex) | Codex seats (`astra`, `sol`, `luna`): the default Pair reviewer, the Simple tier's reviewer, council and audit seats | pick a lineup without Codex seats |
+| `agy` (Antigravity CLI) | Gemini seats (`gemini`, `gemini-pro`): one default council seat | pick a lineup without Gemini seats |
+
+**Install.** The repo is a Claude Code plugin marketplace with one plugin, `dark-factory`. In a
+Claude Code session:
 
     /plugin marketplace add markrogoyski/ai-dark-factory
     /plugin install dark-factory@ai-dark-factory
 
-That adds `/dark-factory:pair`, `/dark-factory:factory`, `/dark-factory:council`, `/dark-factory:ensemble`, and `/dark-factory:run-plan`, and puts
-the helper the agents run, `dark-factory`, on their PATH. A plugin can't grant permissions, so add
-this to `~/.claude/settings.json` yourself (see the permission note under Install and test):
+Start a new session (or run `/reload-plugins`). That adds `/dark-factory:pair`,
+`/dark-factory:factory`, `/dark-factory:council`, `/dark-factory:ensemble` and
+`/dark-factory:run-plan`, and puts the helper the agents run, `dark-factory`, on their PATH.
+
+**Permission (required).** A plugin can't grant permissions, so add this to
+`~/.claude/settings.json` yourself:
 
     "permissions": { "allow": [ "Bash(dark-factory:*)" ] }
 
-Codex and Gemini seats need the `codex` and `agy` CLIs; the requirements are listed under
-Install and test.
+It stops the relay and checker agents prompting mid-run, and Codex and Gemini seats depend on
+it: neither CLI can run inside Claude Code's Bash sandbox, because each writes to its home
+directory (`~/.codex`, `~/.gemini`) as it starts and needs the network. `dark-factory seat-run`
+detects this, and the relay runs the command outside the sandbox from the first try. Per the
+Claude Code docs, an allow rule also approves running the commands it matches outside the
+sandbox, and it applies before auto mode's classifier. Without it, setup's preflight finds the
+CLI stuck in the sandbox and stops the run before any seat starts, saying how to fix it or which
+seat to swap.
+
+**agy settings (required for Gemini seats).** Headless agy can't ask for permission, so it
+denies every command and file edit unless `~/.gemini/antigravity-cli/settings.json` has
+`"toolPermission": "proceed-in-sandbox"`. Commands then run without prompting inside agy's
+sandbox, which has no network and can only write where a grant allows. This setting is global,
+so it applies to interactive agy sessions too; `seat-run` refuses to start a Gemini turn without
+it. `seat-run` adds the one grant a run needs, `write_file(<repo>/.council)`, the first time a
+repository has a Gemini seat.
+
+**Claude only.** Without `codex` and `agy`, choose Claude models explicitly:
+
+    /dark-factory:pair --author opus --reviewer sonnet Implement the retry policy
+    /dark-factory:council --seats opus,sonnet Fix the cancellation in ...
+
+[Choosing the models](#choosing-the-models) lists every seat name.
+
+**Try it.** In a repository with a clean working tree, with `codex` installed (the Simple tier's
+reviewer is Codex Astra):
+
+    /dark-factory:factory Add a debug log line with the retry count in Fetcher::retry
+
+**Update and uninstall.**
+
+    /plugin marketplace update ai-dark-factory
+    /plugin update dark-factory@ai-dark-factory
+    /plugin uninstall dark-factory@ai-dark-factory
 
 ## Install in Codex
 
-From a checkout of this repository, install the skill in the project where you want to use it:
+Codex uses dark-factory as a skill linked from a local checkout. Clone the repository somewhere
+it can stay, then install the skill in the project where you want to use it:
 
 ```sh
-./install-codex.sh --repo /path/to/project
+git clone https://github.com/markrogoyski/ai-dark-factory.git ~/ai-dark-factory
+~/ai-dark-factory/install-codex.sh --repo /path/to/project
 ```
 
-With no arguments, the installer uses the current Git repository. `./install-codex.sh --user`
+With no `--repo`, the installer uses the current Git repository. `install-codex.sh --user`
 installs in `~/.agents/skills` for use across projects. It creates a symlink to the shipped skill,
-so keep this checkout in place. It does not replace an existing skill from another location or
+so keep the checkout in place. It does not replace an existing skill from another location or
 change account settings. Codex discovers the skill automatically; start a new session if it
 doesn't appear.
+
+To update, `git pull` in the checkout: the link points at it, so the next session uses the new
+version. To uninstall, remove the link, `.agents/skills/dark-factory` in the project (or
+`~/.agents/skills/dark-factory`), and the checkout.
 
 Then, in Codex:
 
@@ -1657,13 +1708,16 @@ One note is a lead and the same note across turns or runs is a pattern, so read 
 across several runs before changing anything. Transcripts still explain a failure better than
 any note: no seat would have diagnosed the relay indentation bug.
 
-## Install and test
+## Development
+
+To work on dark-factory itself, install your checkout as the Claude Code plugin in place of the
+published one:
 
     ./install.sh                 # once: builds from src/, installs this checkout as the plugin, removes pre-plugin copies
     make build                   # after editing src/; then /reload-plugins or a new session (the plugin is read live)
     make check                   # all code, host, and installer gates; no models or installed Claude plugin required
     make installed               # separately check that the local Claude plugin is this checkout
-    make hooks                   # run `make check` before every commit (there is no remote for CI)
+    make hooks                   # run `make check` before every commit (there is no CI)
 
 The pieces of `make check`:
 
@@ -1686,30 +1740,9 @@ for tests with `COUNCIL_JOB_POLL`, `COUNCIL_TRANSCRIPT_POLL` and `COUNCIL_TRANSC
 
 `plugins/dark-factory/workflows/ensemble.js` is generated from the shared sources, like the other workflows.
 
-Requirements: Claude Code with the Workflow tool, the `codex` CLI and the Antigravity CLI
-(`agy`) logged in, `python3`, and `git`. Implement mode needs a repository with at least one
-commit. Without one of the CLIs, pick a lineup without its seats.
-
-**Permission (required for Codex and Gemini seats).** Neither CLI can run inside Claude Code's
-Bash sandbox: each writes to its home directory (`~/.codex`, `~/.gemini`) as it starts, and
-needs the network. `dark-factory seat-run` detects
-this; the relay runs the command outside the sandbox from the first try. That needs an allow
-rule in `~/.claude/settings.json`, which also stops the relay and checker agents prompting:
-
-    "permissions": { "allow": [ "Bash(dark-factory:*)" ] }
-
-Per the Claude Code docs, an allow rule also approves running the commands it matches outside
-the sandbox, and it applies before auto mode's classifier. Without it, setup's preflight
-finds the CLI stuck in the sandbox and stops the run before any seat starts, saying how to fix
-it or which seat to swap.
-
-**agy settings (required for Gemini seats).** Headless agy can't ask for permission, so it
-denies every command and file edit unless `~/.gemini/antigravity-cli/settings.json` has
-`"toolPermission": "proceed-in-sandbox"`. Commands then run without prompting inside agy's
-sandbox, which has no network and can only write where a grant allows. This setting is global,
-so it applies to interactive agy sessions too; `seat-run` refuses to start a Gemini turn without
-it. `seat-run` adds the one grant a run needs, `write_file(<repo>/.council)`, the first time a
-repository has a Gemini seat.
+Requirements, the permission rule and agy settings are under
+[Install in Claude Code](#install-in-claude-code); `make check` itself needs only Node,
+`python3` and `git`.
 
 ## Gotchas
 
