@@ -196,7 +196,7 @@ function runFacts(S, o) {
     fabricated: S.ledger.filter(c => c.status === 'fabricated').length,
     relayFailures: S.relayFailures.length,
     overTierHints: overTierHints(S, o),
-    ...(S.tier === 'architecture' ? { milestones: (S.milestones || []).length } : {}),
+    ...(tierProfile(S).architecture ? { milestones: (S.milestones || []).length } : {}),
   }
 }
 

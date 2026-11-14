@@ -158,7 +158,7 @@ function auditOutcome(S, c, W, audit) {
     bits.push(c.round === 'J' ? 'not adjudicated (minor, raised after the last fix)' : 'not ruled on')
   } else {
     bits.push(rulingText(c, S.host === 'codex' ? 'the independent panel' : undefined))
-    if (c.fixed) bits.push(S.tier === 'architecture' ? 'fixed in the revision' : 'fixed in the audit fix pass')
+    if (c.fixed) bits.push(tierProfile(S).architecture ? 'fixed in the revision' : 'fixed in the audit fix pass')
     else if (isStanding(S, c)) bits.push('still stands against the final version')
   }
   if (declined) bits.push(`declined by the author: ${oneLine(declined.why, 200) || 'no reason given'}`)
@@ -169,7 +169,7 @@ function auditOutcome(S, c, W, audit) {
 function auditSection(S, W, audit) {
   if (!audit || !audit.ran) return ''
   if (audit.cycles) return `\n\n### Independent review\n\n${audit.cycles.length} fresh review cycle(s), ${audit.cycles.filter(c => c.needed).length} cycle(s) needing repair. Budget: ${audit.repairPolicy.maxPasses} repair passes; minor findings: ${audit.repairPolicy.minor}.\n\n${S.ledger.filter(c => lensOf(c.author)).map(c => `[${c.id}] ${c.severity || c.kind}: ${c.statement} → ${c.fixed ? 'fixed' : c.status}`).join('\n')}\n${audit.stopReason || ''}\n${audit.gaps.join('\n')}`
-  const simple = S.tier === 'simple', arch = S.tier === 'architecture'
+  const { simple, architecture: arch } = tierProfile(S)
   const lines = [simple ? `${S.host === 'codex' ? 'An independent reviewer' : 'A reviewer from another vendor'}, ${S.auditors.map(a => a.name).join(', ')}, read the change without seeing how it was made.`
     : arch ? `Reviewers who never saw the debate reviewed the milestone plan, each through one lens: ${listText(S.auditors.map(a => `${a.lens} (${a.name})`))}.`
     : `Auditors who never saw the debate reviewed the final ${S.build ? 'change' : 'version'}, each through one lens: ${listText(S.auditors.map(a => `${a.lens} (${a.name})`))}.`, '']
@@ -405,7 +405,7 @@ function retroFacts(S, o) {
     `- Run ${S.run.runId} in ${S.run.repoRoot}, ${S.mode} mode. Task: ${oneLine(S.task, 300)}`,
     factoryFacts(S),
     `- Seats: ${S.seats.map(s => `${s.L}=${s.name} (${s.effort})${s.active ? '' : ', dropped'}`).join(', ')}. Panel: ${S.panel.map(m => m.name).join(', ')}. Checkers: ${S.checkModel}.`,
-    S.pair ? pairOutcomeFacts(S) : !o.outcome ? `- Outcome: the Simple change by ${o.W.L}${o.audit && o.audit.fixPass ? ', with one fix pass' : ''}.` : S.build ? buildFacts(S, o) : S.tier === 'architecture' ? archFacts(S, o) : `- Outcome: ${o.outcome.kind === 'consensus' ? `consensus on ${o.outcome.W} in round ${o.outcome.round}${o.outcome.via === 'blind' ? `, before any debate, because ${o.outcome.same.join(', ')} were byte-identical` : o.outcome.via === 'identical' ? ` by pooling the votes for identical versions ${o.outcome.same.join(', ')}` : o.outcome.via === 'approval' ? ' by approval' : ''}` : `no consensus after ${plural(o.outcome.round, 'round')}; the scorecard picked ${o.outcome.W}`}, ` +
+    S.pair ? pairOutcomeFacts(S) : !o.outcome ? `- Outcome: the Simple change by ${o.W.L}${o.audit && o.audit.fixPass ? ', with one fix pass' : ''}.` : S.build ? buildFacts(S, o) : tierProfile(S).architecture ? archFacts(S, o) : `- Outcome: ${o.outcome.kind === 'consensus' ? `consensus on ${o.outcome.W} in round ${o.outcome.round}${o.outcome.via === 'blind' ? `, before any debate, because ${o.outcome.same.join(', ')} were byte-identical` : o.outcome.via === 'identical' ? ` by pooling the votes for identical versions ${o.outcome.same.join(', ')}` : o.outcome.via === 'approval' ? ' by approval' : ''}` : `no consensus after ${plural(o.outcome.round, 'round')}; the scorecard picked ${o.outcome.W}`}, ` +
       `with up to ${plural(S.rounds, 'round')} allowed. Endorsed at ratification by ${o.endorsements.length ? o.endorsements.join(', ') : 'nobody'}` +
       `${o.fixPass ? '; one fix pass for upheld objections' : ''}.`,
     S.dropped.length ? `- Left contention: ${S.dropped.map(d => `${d.seat} after round ${d.afterRound}`).join(', ')}.` : '',
@@ -579,7 +579,7 @@ function preflightStop(S, bad) {
   const seats = S.lineup.filter(s => used.includes(s.vendor)).map(s => s.key)
   const panel = S.panel.filter(m => used.includes(m.vendor)).map(m => m.key)
   // The factory's auditors are named too: the Architecture tier's risk reviewer is Gemini by default.
-  const lenses = S.tier ? S.auditors.filter(a => used.includes(a.vendor)).map(a => a.lens) : []
+  const lenses = tierProfile(S).factory ? S.auditors.filter(a => used.includes(a.vendor)).map(a => a.lens) : []
   return {
     status: 'blocked', reason: `a vendor CLI can't run from this session (${lines.join('; ')})`, mode: S.mode, task: S.task, runDir: null,
     preflight: bad, notes: S.notes,

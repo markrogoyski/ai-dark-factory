@@ -617,7 +617,7 @@ For a focused test or an intended red, put the command in a file and pass --comm
 
 // Whether this run keeps and audits historical evidence: a factory implement run with evidence: true.
 function historyCheck(S) {
-  return !!(S.tier && S.mode === 'implement' && S.evidence)
+  return !!(tierProfile(S).factory && S.mode === 'implement' && S.evidence)
 }
 
 function evidenceOwner(S) {
@@ -652,13 +652,13 @@ function protocol(S, L) {
 You are seat ${L}, one of ${n} ${S.host === 'codex' ? 'independent AI agents' : 'AI models from different vendors'} working on the same task. Seats are anonymous letters (${active(S).map(s => s.L).join(', ')}). Don't reveal or speculate about which model you or anyone else is.
 ${S.mode === 'plan' ? `
 This council plans before it builds. The positions are plans: nothing is built until one is chosen. Its author then writes the final plan, folding in the amendments and the best of the other plans, and builds it in increments, each checked by a neutral verifier. Auditors who never saw this debate review the finished change.
-` : S.tier === 'architecture' ? `
+` : tierProfile(S).architecture ? `
 This council designs work too big to build in one go. The positions are designs, and nothing is built in this run. The author of the chosen design writes the final design, folding in the amendments and the best of the other designs, and breaks it into milestones. Reviewers who never saw this debate review that milestone plan, and each milestone is later built by a run of its own.
 ` : ''}
 - Round 0: everyone works alone, blind.
 - Debate rounds (up to ${S.rounds}): everyone reads everyone's work and the ledger, critiques, challenges, adopts good ideas, revises, and votes on which position should ship.${S.narrow && n > 2 && S.rounds > 1 ? `
 - After a debate round without consensus, the field narrows. The two positions ranked highest on the scorecard stay in contention, as does any position another seat voted for and any whose author has a verified blocker or major finding against one that stays. The rest leave contention: their authors stop revising and become reviewers, who critique the remaining positions, publish tests and vote.` : ''}
-- The council has converged when ${consensusAt(S)} of ${n} seats vote to ship the same position${crossVendor(S) ? `, with votes from ${crossVendorText(S)} among them` : ''}.${S.mode === 'implement' ? ' Votes for positions whose measured snapshots are byte-identical count together, so vote for the version you want shipped; you need not switch to another seat\'s identical copy.' : ''} ${S.mode === 'plan' ? 'Its author then writes the final plan and builds it.' : S.tier === 'architecture' ? 'Its author then writes the final design and its milestone plan.' : 'Its author then writes the final version, folding in the amendments, and the others ratify it.'}
+- The council has converged when ${consensusAt(S)} of ${n} seats vote to ship the same position${crossVendor(S) ? `, with votes from ${crossVendorText(S)} among them` : ''}.${S.mode === 'implement' ? ' Votes for positions whose measured snapshots are byte-identical count together, so vote for the version you want shipped; you need not switch to another seat\'s identical copy.' : ''} ${S.mode === 'plan' ? 'Its author then writes the final plan and builds it.' : tierProfile(S).architecture ? 'Its author then writes the final design and its milestone plan.' : 'Its author then writes the final version, folding in the amendments, and the others ratify it.'}
 - If the council doesn't converge, the base position is chosen by a scorecard computed from the ledger. Evidence decides that, not vote counts.
 
 ## The ledger
@@ -685,9 +685,9 @@ function testPublishing(S, L, round) {
   const p = `T${round}${L}`
   return `
 ## Publishing tests
-A test that any correct solution must pass is the strongest evidence there is: ${S.tier === 'simple' ? 'the neutral verifier runs it against your change' : 'it runs against every seat\'s position every round'}. To publish one:
+A test that any correct solution must pass is the strongest evidence there is: ${tierProfile(S).simple ? 'the neutral verifier runs it against your change' : 'it runs against every seat\'s position every round'}. To publish one:
 - Number them ${p}1, ${p}2, … this round.
-- Put its file(s) under ${S.run.room}/tests/<ID>/files/<path relative to the repo root>. ${S.tier === 'simple' ? 'Use new files, with the ID in the file and class/function names, because the files get copied into a checkout of your change.' : 'Use names no other seat would pick (put the ID in the file and class/function names), because the files get copied into every worktree.'}
+- Put its file(s) under ${S.run.room}/tests/<ID>/files/<path relative to the repo root>. ${tierProfile(S).simple ? 'Use new files, with the ID in the file and class/function names, because the files get copied into a checkout of your change.' : 'Use names no other seat would pick (put the ID in the file and class/function names), because the files get copied into every worktree.'}
 - Write ${S.run.room}/tests/<ID>/test.json: {"command": "<command, run from the repo root, that runs just this test>", "purpose": "<the behaviour it pins down>"}.
 - List it in \`tests\`. A test is itself a claim: one that asserts behaviour the task doesn't require can be challenged and thrown out.
 `
@@ -770,8 +770,8 @@ const POSITION_HINT = {
   design:      'the complete design',
   plan:        'the complete plan, ending with its increments',
 }
-const deliverable = S => S.tier === 'architecture' ? ARCH_DELIVERABLE : DELIVERABLE[S.mode]
-const positionHint = S => S.tier === 'architecture' ? 'the complete design, ending with its milestones' : POSITION_HINT[S.mode]
+const deliverable = S => tierProfile(S).architecture ? ARCH_DELIVERABLE : DELIVERABLE[S.mode]
+const positionHint = S => tierProfile(S).architecture ? 'the complete design, ending with its milestones' : POSITION_HINT[S.mode]
 
 function critSummary(S, crit) {
   if (!crit || !crit.length) return 'not assessed'
@@ -884,7 +884,7 @@ function claimsAsk(S) {
 }
 
 function lengthAsk(S) {
-  return `Keep the post under about ${S.postWords} words${S.mode === 'implement' ? ': the diff carries the detail, and the post explains it' : ''}. ${S.tier === 'simple' ? 'The reviewer and the verifier read it' : S.build ? 'The verifier and the auditors read it' : 'Every seat reads it'}, so make each paragraph earn its place. ` +
+  return `Keep the post under about ${S.postWords} words${S.mode === 'implement' ? ': the diff carries the detail, and the post explains it' : ''}. ${tierProfile(S).simple ? 'The reviewer and the verifier read it' : S.build ? 'The verifier and the auditors read it' : 'Every seat reads it'}, so make each paragraph earn its place. ` +
   (S.mode === 'design' || S.mode === 'plan'
     ? `The ${S.mode} itself belongs in the post, not in a side file: the post is what is verified, debated and handed on. Only supporting material, such as prototype output, logs or data, goes in separate files in the room next to your post, named with your seat letter first, and pointed to from the post.`
     : 'Only the post file counts toward the limit. Put long material the task asks for, such as exact edits, logs or data, in separate files in the room next to your post, named with your seat letter first, and point to them from the post.')
@@ -1007,7 +1007,7 @@ ${digest(S, s.L, k - 1)}
 
 Then, this round:
 1. Critique the other ${S.inContention ? 'contending ' : ''}positions (\`findings\`): concrete defects with evidence, ${S.mode === 'plan' ? 'such as a step that relies on code that isn\'t there or doesn\'t work that way (cite the file:line), a criterion the plan leaves uncovered, or an increment that would leave the verification command failing'
-  : S.tier === 'architecture' ? 'such as a design that relies on code that isn\'t there or doesn\'t work that way (cite the file:line), a criterion it leaves uncovered, or a milestone that would leave the system broken or needs what only a later one delivers'
+  : tierProfile(S).architecture ? 'such as a design that relies on code that isn\'t there or doesn\'t work that way (cite the file:line), a criterion it leaves uncovered, or a milestone that would leave the system broken or needs what only a later one delivers'
   : 'such as an input that breaks it, a test ID, or a file:line'}. A finding is checked against the version you read (round ${k - 1}).${S.mode === 'implement' ? ' Back important findings with a published test when you can.' : ''}${S.inContention ? ' Positions out of contention can no longer ship, so don\'t file findings against them.' : ''}
 2. Answer the ledger: concede findings against you that hold (\`concessions\`), challenge claims you believe are wrong, with evidence (\`challenges\`), and withdraw your own claims that turned out wrong (\`withdrawals\`).
 3. Adopt good ideas from other positions, credited (\`adopted\`).
@@ -1111,7 +1111,7 @@ function synthBody(S, W, outcome, upto) {
     : outcome.kind === 'consensus'
     ? `The council converged on your position: ${outcome.voters.join(', ')} ${outcome.via === 'approval' ? 'chose or accepted it' : outcome.via === 'identical' ? `voted to ship it or a byte-identical copy of it (${outcome.same.filter(X => X !== L).join(', ')})` : 'voted to ship it'} ${outcome.ballot ? 'in the ballot after' : 'in'} round ${outcome.round}.`
     : `The council did not converge. The scorecard, computed from the ledger rather than from votes, ranks your position first:\n\n${positionTable(S)}`
-  const arch = S.tier === 'architecture'
+  const arch = tierProfile(S).architecture
   return `# Final turn — you write the final ${S.mode === 'plan' ? 'plan' : arch ? 'design and its milestone plan' : 'version'}
 
 ${why}
@@ -1279,7 +1279,7 @@ function specReviewPrompt(S, r) {
 
 ${S.task}
 ${refsBlock(S)}${S.context ? `\n# Context from the user\n\n${S.context}\n` : ''}
-Mode: ${S.mode}. ${S.tier === 'architecture' ? 'The result is a design and a plan of milestones for building it, each to be built later by a run of its own; nothing in the repository changes in this run.' : { implement: 'The result is a change to the repository.', investigate: 'The result is an answer, with evidence; nothing in the repository changes.', design: 'The result is a design to choose from, not the change itself.' }[S.mode]}
+Mode: ${S.mode}. ${tierProfile(S).architecture ? 'The result is a design and a plan of milestones for building it, each to be built later by a run of its own; nothing in the repository changes in this run.' : { implement: 'The result is a change to the repository.', investigate: 'The result is an answer, with evidence; nothing in the repository changes.', design: 'The result is a design to choose from, not the change itself.' }[S.mode]}
 
 # The acceptance criteria${given ? ' (written by the user)' : ' (written by the setup from the task and the code)'}
 
@@ -1383,7 +1383,7 @@ Where the user answered, write the criteria to the answer. Otherwise choose the 
 - Keep each criterion's ID. Reword a criterion in place; number a new one after the highest ID; remove one only when an accepted finding says it is out of scope or can't be checked.${given ? ' The user wrote the criteria: never reword or remove theirs. Add a criterion beside one instead.' : ''}
 - Every criterion must stay checkable from inside a worktree, by reading files and running commands, with no network, logins or subagents. Name the evidence where it isn't obvious.
 - Keep it short: 3 to 9 criteria. Merge rather than pile on.${S.mode === 'implement' ? `
-${S.tier ? '- If execution settings need amendment, update verification.json as an env object of explicit string overrides without weakening checks. Remeasure through the disposable-checkout path even when only the overrides changed. Do not rely on shell exports.\n' : ''}- If an amendment changes the verification command${S.tier ? ' or its environment overrides' : ''}, write the new command to ${S.run.runDir}/verify.sh, just the command, with no shebang line, and measure the baseline again: ${S.cli} measure --run-dir ${S.run.runDir} --seat ${S.letters[0]} --label base2${S.tier ? '' : ' --no-snapshot'} (if it prints status "running", poll with ${S.cli} wait --run-dir ${S.run.runDir} --job measure-${S.letters[0]}-base2). Set baselinePasses to suite.passed, and baselineNote to the reason and the failing tail if it fails. If ${S.tier ? 'neither the command nor the overrides change' : 'the command doesn\'t change'}, return it as it is, with baselinePasses ${S.baselineOk} and baselineNote "${S.baselineOk ? '' : oneLine(S.baselineNote, 300).replace(/"/g, "'")}".` : `
+${tierProfile(S).factory ? '- If execution settings need amendment, update verification.json as an env object of explicit string overrides without weakening checks. Remeasure through the disposable-checkout path even when only the overrides changed. Do not rely on shell exports.\n' : ''}- If an amendment changes the verification command${tierProfile(S).factory ? ' or its environment overrides' : ''}, write the new command to ${S.run.runDir}/verify.sh, just the command, with no shebang line, and measure the baseline again: ${S.cli} measure --run-dir ${S.run.runDir} --seat ${S.letters[0]} --label base2${tierProfile(S).factory ? '' : ' --no-snapshot'} (if it prints status "running", poll with ${S.cli} wait --run-dir ${S.run.runDir} --job measure-${S.letters[0]}-base2). Set baselinePasses to suite.passed, and baselineNote to the reason and the failing tail if it fails. If ${tierProfile(S).factory ? 'neither the command nor the overrides change' : 'the command doesn\'t change'}, return it as it is, with baselinePasses ${S.baselineOk} and baselineNote "${S.baselineOk ? '' : oneLine(S.baselineNote, 300).replace(/"/g, "'")}".` : `
 - Return the verification command as it is, with baselinePasses false and baselineNote "".`}
 - Update the criteria in ${S.run.runDir}/TASK.md to match, and add the assumptions there under their own heading.
 
@@ -1467,7 +1467,7 @@ ${taskBlock(S, 'H')}
 - Your own checkout of the changed code: ${auditCheckout(S, a, 'H')}. If it doesn't exist yet, create it with \`${S.cli} materialize --run-dir ${S.run.runDir} --seat ${W.L} --label ${tag} --name ${roundTag('H')}-${a.lens}\`, which prints its path. Run tests and experiments there; nobody else uses it.
 - The user's own checkout of the repository: ${S.run.repoRoot}. Read only. The code before the change is the diff's base; \`git log\` in your checkout gives the history.
 
-Don't open anything else under ${S.run.room}: it holds the discussion that produced this change, and reading it would cost you the independence you are here for. Write only to your checkout, to ${S.run.room}/tests/ and to your review${S.tier ? '; the verification helper may also write its jobs and logs' : ''}.${auditEvidenceBlock(S, a, W, tag)}
+Don't open anything else under ${S.run.room}: it holds the discussion that produced this change, and reading it would cost you the independence you are here for. Write only to your checkout, to ${S.run.room}/tests/ and to your review${tierProfile(S).factory ? '; the verification helper may also write its jobs and logs' : ''}.${auditEvidenceBlock(S, a, W, tag)}
 
 ${a.lens === 'correctness' && S.auditors.some(x => x.lens === 'tests') ? AUDIT_LENS.correctness.replace(TESTS_BULLET, '') : AUDIT_LENS[a.lens]}
 
@@ -1479,7 +1479,7 @@ Review the change, not the whole codebase. A problem the change neither introduc
 - minor: anything else worth the author's time.
 Style the codebase itself doesn't follow, and preferences without a reason, are not findings. Finding nothing is a good outcome when it is true: an empty list from a careful review is worth more than a padded one.
 
-Blocker and major findings go to two independent adjudicators, and minor fact findings to a neutral verifier. The author gets one pass to fix what is upheld, ${S.tier === 'simple' ? `and the verifier then checks the fixed version again${historyCheck(S) ? '; you then confirm historical acceptance on its evidence bundle' : ''}` :'and you will then review that fix'}.
+Blocker and major findings go to two independent adjudicators, and minor fact findings to a neutral verifier. The author gets one pass to fix what is upheld, ${tierProfile(S).simple ? `and the verifier then checks the fixed version again${historyCheck(S) ? '; you then confirm historical acceptance on its evidence bundle' : ''}` :'and you will then review that fix'}.
 ${auditPublishing(S, a)}
 Write your review to ${auditPost(S, a, 'H')}: your verdict, then each finding with its evidence${a.lens === 'design' ? ', then your probes' : ''}. In your output, \`summary\` is the verdict in 2-4 sentences, each finding says what is wrong and what you would change, and \`probes\` ${a.lens === 'design' ? 'lists the next changes you traced' : 'is empty'}.`
 }
@@ -1495,7 +1495,7 @@ Write your note to ${auditPost(S, a, 'J')}.`
 }
 
 function reauditBody(S, a, W) {
-  if (S.tier === 'simple') return evidenceOnlyBody(S, a, W)
+  if (tierProfile(S).simple) return evidenceOnlyBody(S, a, W)
   const p = S.pos[W.L]
   const mine = S.ledger.filter(c => c.author === a.id && c.round === 'H' && c.kind === 'finding')
   const fate = c => c.judgment && c.status === 'judgment' ? 'a suggestion, not adjudicated'
@@ -1590,7 +1590,7 @@ Review only what the revision changed: problems it introduced, and revisions tha
 }
 
 function auditPrompt(S, a, W, round) {
-  if (S.tier === 'architecture') {
+  if (tierProfile(S).architecture) {
     if (round === 'H') return planReviewBody(S, a, W)
     if (external(a)) return `The review continues. You are still the ${a.lens} reviewer of the same plan; the task and your instructions from before still apply.\n\n${planRereviewBody(S, a, W)}`
     return `You are an independent reviewer of a milestone plan another AI wrote for the task below. You haven't seen how it was made or anything said about it, and that is deliberate. You have no stake in it. Apart from the files named below, don't open anything under ${S.run.room}: it holds the discussion that produced the plan.
@@ -1643,7 +1643,7 @@ Change nothing else: this is the last pass, and ${simple ? 'the verifier will ch
 
 function auditFixPrompt(S, W, todo) {
   if (external(W)) return `${resumedPreamble(S, W, 'I')}\n${auditFixBody(S, W, todo)}`
-  return `${S.tier === 'simple' ? simpleIntro(S) : S.tier === 'feature' ? buildIntro(S) : protocol(S, W.L)}\n${taskBlock(S, 'I')}\n${workspaceBlock(S, W, 'I')}${notesBlock(S, W)}\n${auditFixBody(S, W, todo)}`
+  return `${tierProfile(S).simple ? simpleIntro(S) : tierProfile(S).feature ? buildIntro(S) : protocol(S, W.L)}\n${taskBlock(S, 'I')}\n${workspaceBlock(S, W, 'I')}${notesBlock(S, W)}\n${auditFixBody(S, W, todo)}`
 }
 
 function versionText(S, c, Y, k) {
@@ -1651,7 +1651,7 @@ function versionText(S, c, Y, k) {
   const snap = r => S.mode === 'implement'
     ? `${Y}'s round-${r} version (diff ${S.run.room}/r${r}/${Y}.diff; checkout: \`${S.cli} materialize --run-dir ${S.run.runDir} --seat ${Y} --label r${r}\`)`
     : `${Y}'s round-${r} post (${S.run.room}/r${r}/${Y}.md)`
-  if (c.kind === 'finding' && (c.round === 'H' || c.round === 'J') && S.tier === 'architecture') {
+  if (c.kind === 'finding' && (c.round === 'H' || c.round === 'J') && tierProfile(S).architecture) {
     return c.round === 'H' ? `${Y}'s final milestone plan (${S.run.room}/${S.auditedTag}/${Y}.md)` : `${Y}'s revised milestone plan (${postPath(S, Y, 'I')})`
   }
   if (c.kind === 'finding' && (c.round === 'H' || c.round === 'J')) {
@@ -1693,7 +1693,7 @@ function checkerPrompt(S, Y, k, items) {
   const since = sinceTag(S, k)
   const tests = validTests(S).map(t => t.id)
   const post = (k === 'H' || /^review\d+$/.test(k)) ? S.pos[Y].post : postPath(S, Y, k)          // the audit re-measures the final version, which has no post of its own
-  const arch = S.tier === 'architecture'
+  const arch = tierProfile(S).architecture
   const what = typeof k === 'number' ? `round ${k}` : k === 'F' ? `the final ${S.mode === 'plan' ? 'plan' : arch ? 'design and its milestone plan' : 'version'}` : buildStep(k) ? `build increment ${buildStep(k)} of ${S.build.increments.length}`
     : k === 'H' ? (arch ? 'the final milestone plan, with the independent review\'s findings' : 'the final version, with the independent audit\'s findings and tests')
     : k === 'I' ? (arch ? 'the milestone plan as revised after the review' : 'the final version after the audit fix pass') : 'the fixed final version'
@@ -1761,7 +1761,7 @@ Claim: ${clip(c.statement, 800)}
 Evidence cited: ${clip(c.evidence, 600) || '(none)'}
 Judge it against: ${versionText(S, c, c.kind === 'finding' ? c.target : c.author, -1)}
 Earlier ruling: ${c.status}${c.note ? ` (${clip(c.note, 400)})` : ''}
-${chs.length ? `Challenges:\n${chs.map(x => `- ${x.by}: ${clip(x.reason, 600)}${x.evidence ? ` (evidence: ${clip(x.evidence, 400)})` : ''}`).join('\n')}` : lensOf(c.author) ? (S.tier === 'architecture' ? 'Raised by an independent reviewer of the milestone plan; nobody has ruled on it yet.' : 'Raised by an independent auditor of the final version; nobody has ruled on it yet.') : 'Raised as an objection at ratification; nobody has ruled on it yet.'}`
+${chs.length ? `Challenges:\n${chs.map(x => `- ${x.by}: ${clip(x.reason, 600)}${x.evidence ? ` (evidence: ${clip(x.evidence, 400)})` : ''}`).join('\n')}` : lensOf(c.author) ? (tierProfile(S).architecture ? 'Raised by an independent reviewer of the milestone plan; nobody has ruled on it yet.' : 'Raised by an independent auditor of the final version; nobody has ruled on it yet.') : 'Raised as an objection at ratification; nobody has ruled on it yet.'}`
 }).join('\n\n')}
 
 Return one ruling per claim ID.`
@@ -2795,7 +2795,7 @@ function auditOutcome(S, c, W, audit) {
     bits.push(c.round === 'J' ? 'not adjudicated (minor, raised after the last fix)' : 'not ruled on')
   } else {
     bits.push(rulingText(c, S.host === 'codex' ? 'the independent panel' : undefined))
-    if (c.fixed) bits.push(S.tier === 'architecture' ? 'fixed in the revision' : 'fixed in the audit fix pass')
+    if (c.fixed) bits.push(tierProfile(S).architecture ? 'fixed in the revision' : 'fixed in the audit fix pass')
     else if (isStanding(S, c)) bits.push('still stands against the final version')
   }
   if (declined) bits.push(`declined by the author: ${oneLine(declined.why, 200) || 'no reason given'}`)
@@ -2806,7 +2806,7 @@ function auditOutcome(S, c, W, audit) {
 function auditSection(S, W, audit) {
   if (!audit || !audit.ran) return ''
   if (audit.cycles) return `\n\n### Independent review\n\n${audit.cycles.length} fresh review cycle(s), ${audit.cycles.filter(c => c.needed).length} cycle(s) needing repair. Budget: ${audit.repairPolicy.maxPasses} repair passes; minor findings: ${audit.repairPolicy.minor}.\n\n${S.ledger.filter(c => lensOf(c.author)).map(c => `[${c.id}] ${c.severity || c.kind}: ${c.statement} → ${c.fixed ? 'fixed' : c.status}`).join('\n')}\n${audit.stopReason || ''}\n${audit.gaps.join('\n')}`
-  const simple = S.tier === 'simple', arch = S.tier === 'architecture'
+  const { simple, architecture: arch } = tierProfile(S)
   const lines = [simple ? `${S.host === 'codex' ? 'An independent reviewer' : 'A reviewer from another vendor'}, ${S.auditors.map(a => a.name).join(', ')}, read the change without seeing how it was made.`
     : arch ? `Reviewers who never saw the debate reviewed the milestone plan, each through one lens: ${listText(S.auditors.map(a => `${a.lens} (${a.name})`))}.`
     : `Auditors who never saw the debate reviewed the final ${S.build ? 'change' : 'version'}, each through one lens: ${listText(S.auditors.map(a => `${a.lens} (${a.name})`))}.`, '']
@@ -3042,7 +3042,7 @@ function retroFacts(S, o) {
     `- Run ${S.run.runId} in ${S.run.repoRoot}, ${S.mode} mode. Task: ${oneLine(S.task, 300)}`,
     factoryFacts(S),
     `- Seats: ${S.seats.map(s => `${s.L}=${s.name} (${s.effort})${s.active ? '' : ', dropped'}`).join(', ')}. Panel: ${S.panel.map(m => m.name).join(', ')}. Checkers: ${S.checkModel}.`,
-    S.pair ? pairOutcomeFacts(S) : !o.outcome ? `- Outcome: the Simple change by ${o.W.L}${o.audit && o.audit.fixPass ? ', with one fix pass' : ''}.` : S.build ? buildFacts(S, o) : S.tier === 'architecture' ? archFacts(S, o) : `- Outcome: ${o.outcome.kind === 'consensus' ? `consensus on ${o.outcome.W} in round ${o.outcome.round}${o.outcome.via === 'blind' ? `, before any debate, because ${o.outcome.same.join(', ')} were byte-identical` : o.outcome.via === 'identical' ? ` by pooling the votes for identical versions ${o.outcome.same.join(', ')}` : o.outcome.via === 'approval' ? ' by approval' : ''}` : `no consensus after ${plural(o.outcome.round, 'round')}; the scorecard picked ${o.outcome.W}`}, ` +
+    S.pair ? pairOutcomeFacts(S) : !o.outcome ? `- Outcome: the Simple change by ${o.W.L}${o.audit && o.audit.fixPass ? ', with one fix pass' : ''}.` : S.build ? buildFacts(S, o) : tierProfile(S).architecture ? archFacts(S, o) : `- Outcome: ${o.outcome.kind === 'consensus' ? `consensus on ${o.outcome.W} in round ${o.outcome.round}${o.outcome.via === 'blind' ? `, before any debate, because ${o.outcome.same.join(', ')} were byte-identical` : o.outcome.via === 'identical' ? ` by pooling the votes for identical versions ${o.outcome.same.join(', ')}` : o.outcome.via === 'approval' ? ' by approval' : ''}` : `no consensus after ${plural(o.outcome.round, 'round')}; the scorecard picked ${o.outcome.W}`}, ` +
       `with up to ${plural(S.rounds, 'round')} allowed. Endorsed at ratification by ${o.endorsements.length ? o.endorsements.join(', ') : 'nobody'}` +
       `${o.fixPass ? '; one fix pass for upheld objections' : ''}.`,
     S.dropped.length ? `- Left contention: ${S.dropped.map(d => `${d.seat} after round ${d.afterRound}`).join(', ')}.` : '',
@@ -3216,7 +3216,7 @@ function preflightStop(S, bad) {
   const seats = S.lineup.filter(s => used.includes(s.vendor)).map(s => s.key)
   const panel = S.panel.filter(m => used.includes(m.vendor)).map(m => m.key)
   // The factory's auditors are named too: the Architecture tier's risk reviewer is Gemini by default.
-  const lenses = S.tier ? S.auditors.filter(a => used.includes(a.vendor)).map(a => a.lens) : []
+  const lenses = tierProfile(S).factory ? S.auditors.filter(a => used.includes(a.vendor)).map(a => a.lens) : []
   return {
     status: 'blocked', reason: `a vendor CLI can't run from this session (${lines.join('; ')})`, mode: S.mode, task: S.task, runDir: null,
     preflight: bad, notes: S.notes,
@@ -3465,7 +3465,7 @@ function runFacts(S, o) {
     fabricated: S.ledger.filter(c => c.status === 'fabricated').length,
     relayFailures: S.relayFailures.length,
     overTierHints: overTierHints(S, o),
-    ...(S.tier === 'architecture' ? { milestones: (S.milestones || []).length } : {}),
+    ...(tierProfile(S).architecture ? { milestones: (S.milestones || []).length } : {}),
   }
 }
 
