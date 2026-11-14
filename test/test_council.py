@@ -487,7 +487,17 @@ class KeepAwake(TmpDirCase):
 
     def start(self, env):
         jd = self.path('jobs', 'job')
-        with mock.patch.object(council.sys, 'platform', 'darwin'), mock.patch.dict(os.environ, env):
+        real_popen = council.subprocess.Popen
+
+        def popen(*args, **kwargs):
+            # start_job leaves its children detached, as the CLI exits right after; this test
+            # process outlives them, so it reaps them (else: ResourceWarning, still running).
+            child = real_popen(*args, **kwargs)
+            self.addCleanup(child.wait, 30)
+            return child
+
+        with mock.patch.object(council.sys, 'platform', 'darwin'), mock.patch.dict(os.environ, env), \
+                mock.patch.object(council.subprocess, 'Popen', popen):
             council.start_job(jd, {'kind': 'noop'})
         return council.read(os.path.join(jd, 'pid')).strip()
 
