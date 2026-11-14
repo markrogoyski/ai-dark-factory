@@ -10,7 +10,12 @@ import tempfile
 import time
 import uuid
 
-from .common import CouncilError, emit, git, load_run, normalize, oneline, prompt_hash, read, split_schema, tail, write, write_json
+from .common import CouncilError, emit, git, load_run, normalize, oneline, prompt_hash, read, split_schema, tail, subject_environment, write, write_json
+from .jobs import job_dir, register_job_runner, settle_existing_job, start_job, wait_job
+from .pinning import pin_guard, turn_pin_identity
+from .sandbox import ensure_agy_grant, vendor_blocked
+from .snapshots import checkout_snapshot
+from .transcripts import payload_from_transcripts
 
 
 def cmd_seat_run(a):
@@ -534,9 +539,8 @@ DENIED_NUDGE = ('Your last request ({denied}) needed a permission that nobody ca
                 'inside it, so read and compare files directly. Carry on with the task from where you stopped, and finish as the '
                 'task asks, with your answer as structured output if it asks for one.')
 
-# Imported last: these modules import names from this one, and each name below is used only at call time.
-from .jobs import job_dir, settle_existing_job, start_job, wait_job
-from .pinning import pin_guard, subject_environment, turn_pin_identity
-from .sandbox import ensure_agy_grant, vendor_blocked
-from .snapshots import checkout_snapshot
-from .transcripts import payload_from_transcripts
+
+# Looked up at call time, so a replaced runner (a test's patch) is the one a job runs.
+register_job_runner('codex', lambda jd, spec: run_codex_job(jd, spec))
+register_job_runner('gemini', lambda jd, spec: run_gemini_job(jd, spec))
+register_job_runner('claude', lambda jd, spec: run_claude_job(jd, spec))

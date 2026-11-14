@@ -9,6 +9,25 @@ import sys
 import time
 
 from .common import CouncilError, JOB_POLL_SEC, SELF, emit, oneline, read, tail, write, write_json
+from .pinning import pin_guard
+from .retro import timeline_event
+
+
+# What each job kind runs, filled in by the modules that own the work (providers, measure,
+# verification, delivery) as they are imported; the package's __init__ imports all of them.
+JOB_RUNNERS = {}
+VENDOR_KINDS = ('codex', 'gemini', 'claude')
+# The --brief form of a job's result, by job-key prefix.
+JOB_BRIEFS = {}
+
+
+def register_job_runner(kind, run):
+    """`run(jd, spec)` returns the job's result for a spec of this kind."""
+    JOB_RUNNERS[kind] = run
+
+
+def register_job_brief(prefix, brief):
+    JOB_BRIEFS[prefix] = brief
 
 
 def job_dir(run_dir, key):
@@ -109,10 +128,11 @@ def cmd_wait(a):
     jd = job_dir(a.run_dir, a.job)
     if not os.path.isdir(jd):
         raise CouncilError(f'no such job: {a.job}')
-    if a.brief and not a.job.startswith('measure-'):
+    brief = next((fn for prefix, fn in JOB_BRIEFS.items() if a.job.startswith(prefix)), None)
+    if a.brief and not brief:
         raise CouncilError('--brief applies only to measurement jobs')
     state = wait_job(jd, a.job, a.max_wait)
-    emit(measurement_brief(state) if a.brief else state)
+    emit(brief(state) if a.brief else state)
 
 
 def cmd_jobs(a):
@@ -171,14 +191,14 @@ def run_job_spec(jd, spec):
     try:
         if spec.get('pin') and not os.environ.get('DARK_FACTORY_PIN'):
             os.environ['DARK_FACTORY_PIN'] = json.dumps(spec['pin'])
-        pin_guard(spec.get('runDir'), spec if spec['kind'] in ('codex', 'gemini', 'claude') else None)
-        if spec['kind'] in ('codex', 'gemini', 'claude'):
+        pin_guard(spec.get('runDir'), spec if spec['kind'] in VENDOR_KINDS else None)
+        if spec['kind'] in VENDOR_KINDS:
             if spec.get('resumeSession'):
                 session_name = {'claude': 'claude-session', 'codex': 'thread', 'gemini': 'conversation'}[spec['kind']]
                 path = os.path.join(spec['runDir'], 'seats', spec['seat'], session_name)
                 if spec['fresh'] or not os.path.isfile(path) or read(path).strip() != spec['resumeSession']:
                     raise CouncilError('recovery session is missing or changed; refusing to start a fresh turn')
-            run = {'codex': run_codex_job, 'gemini': run_gemini_job, 'claude': run_claude_job}[spec['kind']]
+            run = JOB_RUNNERS[spec['kind']]
             result = run(jd, spec)
             if transient(result) and not spec.get('resumeSession'):
                 first = result['error']
@@ -188,15 +208,11 @@ def run_job_spec(jd, spec):
                 result['retried'] = oneline(first)[:300]
             if result.get('status') == 'error':
                 result['errorClass'] = error_class(result.get('error'))
-        elif spec['kind'] == 'measure':
-            result = run_measure_job(jd, spec)
-        elif spec['kind'] == 'verify':
-            result = run_verify_job(jd, spec)
-        elif spec['kind'] == 'delivery':
-            result = run_delivery_job(jd, spec)
+        elif spec['kind'] in JOB_RUNNERS:
+            result = JOB_RUNNERS[spec['kind']](jd, spec)
         else:
             result = {'status': 'error', 'error': f'unknown job kind {spec["kind"]}'}
-        checked = pin_guard(spec.get('runDir'), spec if spec['kind'] in ('codex', 'gemini', 'claude') else None)
+        checked = pin_guard(spec.get('runDir'), spec if spec['kind'] in VENDOR_KINDS else None)
         if checked:
             result['executor'] = checked['executor']
             if checked.get('settings'):
@@ -206,11 +222,3 @@ def run_job_spec(jd, spec):
         if spec['kind'] == 'delivery':
             write_json(os.path.join(spec['runDir'], 'delivery.json'), result)
     write_json(os.path.join(jd, 'status.json'), result)
-
-# Imported last: these modules import names from this one, and each name below is used only at call time.
-from .delivery import run_delivery_job
-from .measure import measurement_brief, run_measure_job
-from .pinning import pin_guard
-from .providers import run_claude_job, run_codex_job, run_gemini_job
-from .retro import timeline_event
-from .verification import run_verify_job

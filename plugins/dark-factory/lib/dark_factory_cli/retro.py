@@ -6,6 +6,8 @@ import os
 import re
 
 from .common import CouncilError, SELF, emit, load_run, prompt_hash, read, write, write_json
+from .transcripts import payload_from_transcripts
+from .usage import claude_usage
 
 
 # A development checkout (plugins/dark-factory/bin/ under the repo) keeps retros in the repo, next
@@ -246,7 +248,3 @@ def retro_summary(out_dir):
         if over:
             lines.append(f'  hints the tier was too high: {tally(over)}')
     return '\n'.join(lines)
-
-# Imported last: these modules import names from this one, and each name below is used only at call time.
-from .transcripts import payload_from_transcripts
-from .usage import claude_usage

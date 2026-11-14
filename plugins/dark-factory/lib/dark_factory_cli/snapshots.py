@@ -1,12 +1,84 @@
-"""Seat snapshots, numstat, and scratch and detached checkouts (materialize)."""
+"""Seat snapshots, numstat, scratch and detached checkouts (materialize), and the dependency and agent-doc copies a checkout gets."""
 
 import os
 import re
 import shutil
 import subprocess
+import sys
 import threading
 
-from .common import CouncilError, SNAPSHOT_EXCLUDES, emit, git, load_run, oneline, seat_tree, write
+from .common import CouncilError, DEPS, SNAPSHOT_EXCLUDES, emit, git, load_run, oneline, seat_tree, write
+
+
+def clone_deps(src_root, dst_root):
+    """Copy ignored dependency dirs (vendor/, node_modules/) into a fresh worktree.
+
+    A real copy, not a symlink: Composer's autoloader resolves __DIR__ through symlinks, so a
+    symlinked vendor/ would silently autoload the *main* tree's classes. On APFS `cp -c` clones
+    copy-on-write, so this is near-instant and costs no disk.
+    """
+    cloned = []
+    for d in DEPS:
+        src, dst = os.path.join(src_root, d), os.path.join(dst_root, d)
+        if not os.path.isdir(src) or os.path.exists(dst):
+            continue
+        ignored = subprocess.run(['git', 'check-ignore', '-q', d], cwd=src_root,
+                                 stdin=subprocess.DEVNULL, close_fds=True).returncode == 0
+        if not ignored:
+            continue
+        r = subprocess.run(['cp', '-cR', src, dst], stdin=subprocess.DEVNULL, capture_output=True, close_fds=True)
+        if r.returncode != 0:
+            shutil.rmtree(dst, ignore_errors=True)
+            r = subprocess.run(['cp', '-R', src, dst], stdin=subprocess.DEVNULL, capture_output=True, close_fds=True)
+        if r.returncode != 0:
+            shutil.rmtree(dst, ignore_errors=True)
+            copy_skipping_protected(src, dst)
+        cloned.append(d)
+    return cloned
+
+
+# Claude Code's sandbox always denies writing files with these names, wherever they are, so a
+# Claude setup turn on the standalone runner can't copy them (vendor/amphp/serialization ships a
+# .gitmodules). None of them is loaded by a dependency at run time.
+SANDBOX_PROTECTED = frozenset(('.gitmodules', '.gitconfig', '.bashrc', '.bash_profile', '.zshrc', '.zprofile', '.profile', '.ripgreprc', '.mcp.json'))
+
+
+def copy_skipping_protected(src, dst):
+    """Copy a dependency tree, leaving out the sandbox-protected files the copy is refused."""
+    skipped = []
+
+    def copy(a, b):
+        try:
+            return shutil.copy2(a, b)
+        except PermissionError:
+            if os.path.basename(a) not in SANDBOX_PROTECTED:
+                raise
+            skipped.append(os.path.relpath(a, src))
+            return b
+
+    shutil.copytree(src, dst, symlinks=True, copy_function=copy)
+    for rel in skipped:
+        print(f'dark-factory: skipped sandbox-protected {os.path.join(os.path.basename(src), rel)}', file=sys.stderr)
+    return skipped
+
+
+AGENT_DOCS = ('CLAUDE.md', 'CLAUDE.local.md', 'AGENTS.md', 'GEMINI.md')
+
+
+def copy_agent_docs(root, wt, untracked=False):
+    """Copy ignored instructions, and untracked ones for Factory, into isolated checkouts.
+    Snapshot exclusions keep these local instructions out of the delivered change."""
+    copied = []
+    for name in AGENT_DOCS:
+        src, dst = os.path.join(root, name), os.path.join(wt, name)
+        if not os.path.isfile(src) or os.path.exists(dst):
+            continue
+        ignored = subprocess.run(['git', 'check-ignore', '-q', name], cwd=root, stdin=subprocess.DEVNULL,
+                                 capture_output=True, close_fds=True).returncode == 0
+        if ignored or (untracked and not git('ls-files', '--', name, cwd=root).strip()):
+            shutil.copy2(src, dst)
+            copied.append(name)
+    return copied
 
 
 def parse_numstat(text):
@@ -185,6 +257,3 @@ def cmd_materialize(a):
     path = os.path.join(run['runDir'], 'snap', name)
     ref = checkout_snapshot(run, a.seat, a.label, path)
     emit({'status': 'ok', 'path': path, 'ref': ref})
-
-# Imported last: these modules import names from this one, and each name below is used only at call time.
-from .setup import clone_deps, copy_agent_docs

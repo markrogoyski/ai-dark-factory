@@ -9,7 +9,9 @@ import shutil
 import tempfile
 import time
 
-from .common import CouncilError, emit, git, load_run, read, run_shell, tail, write, write_json
+from .common import CouncilError, emit, git, load_run, read, run_shell, subject_environment, tail, write, write_json
+from .jobs import job_dir, register_job_runner, settle_existing_job, start_job, wait_job
+from .snapshots import tracked_changes
 
 
 def verification_config(run):
@@ -324,7 +326,5 @@ def crosstest(run, cwd, label, seat, test_ids, timeout, reset=False, env=None):
                 git('checkout', '-q', '--', '.', cwd=cwd, check=False)
     return results
 
-# Imported last: these modules import names from this one, and each name below is used only at call time.
-from .jobs import job_dir, settle_existing_job, start_job, wait_job
-from .pinning import subject_environment
-from .snapshots import tracked_changes
+
+register_job_runner('verify', lambda jd, spec: run_verify_job(jd, spec))

@@ -119,6 +119,11 @@ def load_run(run_dir):
     return json.loads(read(path))
 
 
+def subject_environment(env=None):
+    """Executor context belongs to control processes, never the candidate under test."""
+    return {k: v for k, v in (os.environ if env is None else env).items() if k not in EXECUTOR_CONTEXT}
+
+
 def seat_tree(run, seat):
     return os.path.join(run['runDir'], 'wt', seat)
 
@@ -170,6 +175,3 @@ def run_shell(cmd, cwd, timeout, log_path, env=None):
 def oneline(text, n=300):
     text = ' '.join(str(text or '').split())
     return text if len(text) <= n else text[:n] + ' […]'
-
-# Imported last: these modules import names from this one, and each name below is used only at call time.
-from .pinning import subject_environment

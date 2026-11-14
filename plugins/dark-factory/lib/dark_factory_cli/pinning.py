@@ -5,7 +5,7 @@ import os
 import subprocess
 import sys
 
-from .common import CouncilError, EXECUTOR_CONTEXT, SELF, read
+from .common import CouncilError, SELF, read
 
 
 def pin_guard(run_dir=None, spec=None, repo=None, final=None):
@@ -44,11 +44,6 @@ def pin_guard(run_dir=None, spec=None, repo=None, final=None):
     os.environ['DARK_FACTORY_PIN'] = json.dumps(out['executor'])
     os.environ['PATH'] = os.path.join(out['executor']['root'], 'bin') + os.pathsep + os.environ.get('PATH', '')
     return out
-
-
-def subject_environment(env=None):
-    """Executor context belongs to control processes, never the candidate under test."""
-    return {k: v for k, v in (os.environ if env is None else env).items() if k not in EXECUTOR_CONTEXT}
 
 
 def turn_pin_identity(pin):

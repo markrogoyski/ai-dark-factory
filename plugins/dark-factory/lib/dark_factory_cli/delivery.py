@@ -7,6 +7,10 @@ import re
 import subprocess
 
 from .common import CouncilError, emit, git, load_run, read, write_json
+from .jobs import job_dir, register_job_runner, settle_existing_job, start_job, wait_job
+from .pinning import pin_guard
+from .snapshots import worktree_tree
+from .verification import inspect_evidence, safe_relative, suite, verification_settings
 
 
 def checkout_changes(repo):
@@ -224,8 +228,5 @@ def cmd_apply(a):
     emit({'status': 'applied', 'snapshotRef': ref, 'snapshotTree': tree, 'runDir': run['runDir'],
           'next': 'Run dark-factory verify-delivery before committing.'})
 
-# Imported last: these modules import names from this one, and each name below is used only at call time.
-from .jobs import job_dir, settle_existing_job, start_job, wait_job
-from .pinning import pin_guard
-from .snapshots import worktree_tree
-from .verification import inspect_evidence, safe_relative, suite, verification_settings
+
+register_job_runner('delivery', lambda jd, spec: run_delivery_job(jd, spec))

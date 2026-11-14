@@ -10,6 +10,9 @@ import subprocess
 import time
 
 from .common import CouncilError, DEPS, emit, git, load_run, prompt_hash, read, run_shell, seat_tree, tail, write, write_json
+from .jobs import job_dir, register_job_brief, register_job_runner, settle_existing_job, start_job, wait_job
+from .snapshots import drop_checkout, scratch_checkout, seat_head, snapshot, tracked_changes, worktree_tree
+from .verification import VerificationInfrastructureError, crosstest, evidence_inputs, file_sha256, inspect_evidence, publish_evidence, safe_relative, suite, verification_concurrency, verification_environment, verification_settings, verification_temp
 
 
 def replay_request(value):
@@ -426,7 +429,6 @@ def cmd_measure(a):
     start_job(jd, spec)
     show(wait_job(jd, key, a.max_wait))
 
-# Imported last: these modules import names from this one, and each name below is used only at call time.
-from .jobs import job_dir, settle_existing_job, start_job, wait_job
-from .snapshots import drop_checkout, scratch_checkout, seat_head, snapshot, tracked_changes, worktree_tree
-from .verification import VerificationInfrastructureError, crosstest, evidence_inputs, file_sha256, inspect_evidence, publish_evidence, safe_relative, suite, verification_concurrency, verification_environment, verification_settings, verification_temp
+
+register_job_runner('measure', lambda jd, spec: run_measure_job(jd, spec))
+register_job_brief('measure-', measurement_brief)
