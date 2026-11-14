@@ -124,8 +124,8 @@ const CATALOG = {
   astra:  { vendor: 'codex',  model: 'gpt-6-astra', name: 'Codex Astra' },
   sol:    { vendor: 'codex',  model: 'gpt-6.1-sol', name: 'Codex Sol' },
   luna:   { vendor: 'codex',  model: 'gpt-6-luna',  name: 'Codex Luna' },
-  gemini:       { vendor: 'gemini', model: 'gemini-3.8-flash', name: 'Gemini Flash', efforts: ['low', 'medium', 'high'] },
-  'gemini-pro': { vendor: 'gemini', model: 'gemini-3.1-pro',   name: 'Gemini Pro',   efforts: ['low', 'high'] },
+  gemini: { vendor: 'gemini', model: 'gemini-4-hydrogen', name: 'Gemini Hydrogen', efforts: ['low', 'medium', 'high', 'xhigh'] },
+  argon:  { vendor: 'gemini', model: 'gemini-4-argon',    name: 'Gemini Argon',    efforts: ['low', 'medium', 'high'] },
 }
 
 const DEFAULT_SEATS = ['opus', 'sonnet', 'astra', 'gemini']
@@ -175,7 +175,7 @@ function parseSeat(spec, effortSpec) {
   s.effort = e ? String(e).toLowerCase() : 'high'
   const valid = s.vendor === 'codex' ? CODEX_EFFORTS : CLAUDE_EFFORTS
   if (!valid.includes(s.effort)) throw new Error(`council: effort '${s.effort}' is not valid for ${s.name}. Valid: ${valid.join(', ')}.`)
-  // agy names the effort in the model slug (gemini-3.8-flash-high). A level the model lacks maps to
+  // agy names the effort in the model slug (gemini-4-hydrogen-high). A level the model lacks maps to
   // the nearest one it has, so one effort can be given for every seat.
   if (s.vendor === 'gemini' && !s.slug) {
     const rank = ['low', 'medium', 'high', 'xhigh', 'max', 'ultra']

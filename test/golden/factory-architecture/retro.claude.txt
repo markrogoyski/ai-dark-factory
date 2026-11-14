@@ -27,7 +27,7 @@ Return up to 3 things that worked and should be kept, and 3 to 5 changes, the mo
 1. **<change>** <why>. Evidence: <evidence>. Where: <where>.
 ```
 Don't copy the process notes or run facts into it; the next command attaches them exactly.
-2. Run this with the Bash tool, exactly as written: dark-factory retro --run-dir '/tmp/proj/.council/test-farch' --expect 3531-47c77701
+2. Run this with the Bash tool, exactly as written: dark-factory retro --run-dir '/tmp/proj/.council/test-farch' --expect 3534-4291852f
    The last line it prints is JSON. "ok": set saved to its "path". "sandboxed": run the same command again with the sandbox disabled (dangerouslyDisableSandbox: true). "error", or "sandboxed" again: set saved to "" and error to what it printed.
 
 # The report
@@ -85,20 +85,20 @@ Don't copy the process notes or run facts into it; the next command attaches the
 
 ### Independent review
 
-Reviewers who never saw the debate reviewed the milestone plan, each through one lens: grounding (Codex Astra), sequencing (Claude Opus) and risk (Gemini Flash).
+Reviewers who never saw the debate reviewed the milestone plan, each through one lens: grounding (Codex Astra), sequencing (Claude Opus) and risk (Gemini Hydrogen).
 
 - **Grounding, Codex Astra:** Milestone 2 relies on a hook that is not there.
   - [XG1] major, milestone 2: SyncClient::pull has no page callback to resume from; milestone 2 must add one → upheld by the two-vendor panel: adjudicator 1: verified, upheld | adjudicator 2: verified, upheld; fixed in the revision
 - **Sequencing, Claude Opus:** The order works.
   - No findings.
-- **Risk, Gemini Flash:** Sound; one alternative worth weighing.
+- **Risk, Gemini Hydrogen:** Sound; one alternative worth weighing.
   - [XK1] minor, judgment, milestone 3: B's event log would make the backfill unnecessary → a suggestion to the author, not adjudicated
 - **Revision:** A revised the plan for what was upheld, and it was checked again.
 - **Re-review of the revision** (grounding, sequencing, risk): nothing new.
 
 # Process notes and run facts
 
-=====BEGIN PAYLOAD 3531-47c77701=====
+=====BEGIN PAYLOAD 3534-4291852f=====
 ## Process notes
 
 - None: no turn reported anything in its way.
@@ -117,7 +117,7 @@ Reviewers who never saw the debate reviewed the milestone plan, each through one
 - Ledger by kind: fact 3 (verified 3); verification 2 (verified 2); finding 3 (verified 2, judgment 1).
 - Votes by round: r1 A→A B→A C→A.
 - Spec review: coverage by Codex Astra, intent by Claude Opus; 0 findings; criteria unchanged.
-- Audit: grounding by Codex Astra, sequencing by Claude Opus, risk by Gemini Flash; 2 findings (major verified 1, minor judgment 1), 0 tests; a fix pass, then 0 re-review findings.
+- Audit: grounding by Codex Astra, sequencing by Claude Opus, risk by Gemini Hydrogen; 2 findings (major verified 1, minor judgment 1), 0 tests; a fix pass, then 0 re-review findings.
 - Final readiness: ready: the final version was checked and nothing known stands against it.
 - Problems during the run: none.
 
@@ -218,4 +218,4 @@ Reviewers who never saw the debate reviewed the milestone plan, each through one
   "milestones": 3
 }
 ```
-=====END PAYLOAD 3531-47c77701=====
+=====END PAYLOAD 3534-4291852f=====

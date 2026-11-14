@@ -9,7 +9,7 @@ It is a workflow engine for Claude Code and Codex, with three ways to get that r
 - **Factory**: chooses how much process a task needs, from a single reviewed change up to a council.
 
 The seats come from different vendors. The Claude entry point defaults to Claude Opus, Claude
-Sonnet, Codex Astra and Gemini Flash. The Codex entry point defaults to Claude Opus, Codex Astra
+Sonnet, Codex Astra and Gemini Hydrogen. The Codex entry point defaults to Claude Opus, Codex Astra
 and Codex Sol seats with OpenAI reviewers, and also supports explicit Gemini seats.
 
 For example, to have a council work out a subtle bug:
@@ -66,7 +66,7 @@ CLIs, each installed and logged in:
 | CLI | needed for | without it |
 |---|---|---|
 | [`codex`](https://github.com/openai/codex) | Codex seats (`astra`, `sol`, `luna`): the default Pair reviewer, the Simple tier's reviewer, council and audit seats | pick a lineup without Codex seats |
-| `agy` (Antigravity CLI) | Gemini seats (`gemini`, `gemini-pro`): one default council seat | pick a lineup without Gemini seats |
+| `agy` (Antigravity CLI) | Gemini seats (`gemini`, `argon`): one default council seat | pick a lineup without Gemini seats |
 
 **Install.** The repo is a Claude Code plugin marketplace with one plugin, `dark-factory`. In a
 Claude Code session:

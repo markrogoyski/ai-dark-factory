@@ -6,7 +6,7 @@ Step 1. Make one Bash tool call with exactly these four parameters:
 - dangerouslyDisableSandbox: true (the Antigravity CLI (agy) has its own sandbox and can't start inside the Bash tool's)
 - description: "Run the Antigravity CLI (agy) turn"
 
-dark-factory seat-run --run-dir '/tmp/proj/.council/test-consensus' --vendor gemini --seat 'A' --job 'A-r0' --model 'gemini-3.8-flash-high' --effort high --sandbox workspace-write --cwd '/tmp/proj/.council/test-consensus/wt/A' --writable '/tmp/proj/.council/test-consensus/room' --prompt-file '/tmp/proj/.council/test-consensus/jobs/A-r0.haiku.prompt.md' --expect 10449-c87edbf5
+dark-factory seat-run --run-dir '/tmp/proj/.council/test-consensus' --vendor gemini --seat 'A' --job 'A-r0' --model 'gemini-4-hydrogen-high' --effort high --sandbox workspace-write --cwd '/tmp/proj/.council/test-consensus/wt/A' --writable '/tmp/proj/.council/test-consensus/room' --prompt-file '/tmp/proj/.council/test-consensus/jobs/A-r0.haiku.prompt.md' --expect 10449-c87edbf5
 
 It reads the payload from your saved prompt itself, so don't copy it unless step 2 asks you to. The command can take up to 10 minutes. That is normal: wait for it.
 

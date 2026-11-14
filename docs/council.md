@@ -227,7 +227,7 @@ accepts:
 | `mode` | auto | `implement`, `investigate` or `design`. Unless given, setup picks it after reading the task and its documents: a bug fix or "do the next item" on a checklist is implement |
 | `seats` | `['opus','sonnet','astra','gemini']` | a list or a comma-separated string; see [Choosing the models](models.md). A string task may start with `--seats a,b,c,d` |
 | `rounds` | 2 | debate rounds, 1–3 |
-| `effort` | `high` | for every seat, or per seat: `{astra: 'xhigh'}`. Codex also accepts `ultra`. Gemini maps the level to the nearest one the model has (Flash: low, medium, high), since agy names it in the model slug |
+| `effort` | `high` | for every seat, or per seat: `{astra: 'xhigh'}`. Codex also accepts `ultra`. Gemini maps the level to the nearest one the model has (Hydrogen: low, medium, high, xhigh; Argon: low, medium, high), since agy names it in the model slug |
 | `context` | | extra context for every seat |
 | `criteria` | written by setup | your own acceptance criteria, as a list of strings |
 | `verify` | found by setup | the verification command |

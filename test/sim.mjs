@@ -304,8 +304,8 @@ async function scenarioConsensus() {
   assert.equal(seatsByL.C.findingsUpheld, 1, 'C finding upheld')
   assert.equal(seatsByL.B.ideasAdoptedByOthers, 1, 'B idea adopted by C')
   assert.equal(seatsByL.A.testsPublished, 1)
-  // The default lineup: Opus, Sonnet, Astra and Gemini Flash, across three vendors.
-  assert.deepEqual(result.seats.map(s => s.model).sort(), ['Claude Opus', 'Claude Sonnet', 'Codex Astra', 'Gemini Flash'])
+  // The default lineup: Opus, Sonnet, Astra and Gemini Hydrogen, across three vendors.
+  assert.deepEqual(result.seats.map(s => s.model).sort(), ['Claude Opus', 'Claude Sonnet', 'Codex Astra', 'Gemini Hydrogen'])
   // Every Codex and Gemini seat went through a relay, every Claude seat did not.
   const codexSeats = result.seats.filter(s => s.vendor !== 'claude').map(s => s.seat)
   for (const c of calls.filter(c => ['solve', 'debate'].includes(c.role.kind))) {
@@ -314,7 +314,7 @@ async function scenarioConsensus() {
   // Each relay runs the seat's own CLI; agy takes the effort in the model slug.
   const gem = calls.find(c => c.role.kind === 'solve' && c.role.key === 'gemini')
   const ast = calls.find(c => c.role.kind === 'solve' && c.role.key === 'astra')
-  assert.ok(gem && /seat-run [^\n]*--vendor gemini [^\n]*--model 'gemini-3\.8-flash-high' --effort high/.test(gem.raw), 'gemini relay command')
+  assert.ok(gem && /seat-run [^\n]*--vendor gemini [^\n]*--model 'gemini-4-hydrogen-high' --effort high/.test(gem.raw), 'gemini relay command')
   assert.ok(ast && /seat-run [^\n]*--vendor codex [^\n]*--model 'gpt-6-astra'/.test(ast.raw), 'codex relay command')
   assert.ok(gem.raw.startsWith('You are a relay between a workflow and the Antigravity CLI (agy).'))
   // Codex and Gemini debate prompts are the short resumed form; Claude ones carry the full protocol.
@@ -543,13 +543,13 @@ async function scenarioFailures() {
   assert.ok(result.notes.some(n => n.includes(`check of ${failedCheck} in r1 failed`)))
   assert.equal(result.status, 'converged', '3 seats: quorum 2 of 3, needs both vendors')
   // The facts carry what went wrong; a failed retro is reported, and the result is intact.
-  const sol = result.seats.find(s => s.model === 'Gemini Flash').seat
+  const sol = result.seats.find(s => s.model === 'Gemini Hydrogen').seat
   // A relay that returns nothing was ended by Claude Code, not by the vendor, and the facts say so.
   assert.ok(new RegExp(`- Relay attempts that didn't return a result: ${sol}-r0 via haiku: relay ended \\(the relay agent returned nothing: Claude Code blocked it[^\n]*jobs/${sol}-r0 is absent[^\n]*; ${sol}-r0 via sonnet: relay ended`).test(retroPrompt), retroPrompt)
   assert.ok(retroPrompt.includes(`Gemini turn ${sol}-r0 failed: Claude Code ended both relay agents`), 'the failure names the harness')
   assert.ok(new RegExp(`- Turns that returned nothing: [^\\n]*r0:${sol} gemini \\(relay\\)[^\\n]*r0:${sol} gemini[,.]`).test(retroPrompt), 'empty turns listed')
   assert.ok(retroPrompt.includes(`check r1:${failedCheck}`), 'the failed checker is listed')
-  assert.ok(retroPrompt.includes(`  - Seat ${sol} (Gemini Flash) failed in round 0 and was dropped.`))
+  assert.ok(retroPrompt.includes(`  - Seat ${sol} (Gemini Hydrogen) failed in round 0 and was dropped.`))
   assert.equal(result.retro.error, 'the retro agent failed')
   assert.ok(result.retro.markdown.includes('The retro agent failed.'))
   return 'dropped a failed seat, survived a failed checker, quorum recomputed; a failed retro is reported'
@@ -936,7 +936,7 @@ from dark_factory_cli.jobs import pid_alive; print(pid_alive(1))`, join(dirname(
 let failed = 0
 // ---------------------------------------------------------------- choosing the lineup
 
-// The default is Opus, Sonnet, Astra and Gemini Flash; any lineup can be picked instead, as a
+// The default is Opus, Sonnet, Astra and Gemini Hydrogen; any lineup can be picked instead, as a
 // list, a comma-separated string, or a `--seats` prefix on a string task (how /council passes it).
 async function scenarioLineup() {
   const quick = runId => async (role, prompt) => {
@@ -959,10 +959,10 @@ async function scenarioLineup() {
   assert.ok(!a.calls.some(c => /--vendor gemini/.test(c.raw)), 'no Gemini turn when it is swapped out')
   assert.equal(a.result.status, 'converged')
 
-  const b = await run('lineup-string', quick('test-lineup-b'), { task: 'Fix the flaky retry', seats: 'opus, astra, gemini-pro', effort: 'medium', rounds: 1 })
-  const pro = b.result.seats.find(s => s.model === 'Gemini Pro')
-  assert.equal(pro.effort, 'high', 'Pro has no medium; a tie goes to the higher effort')
-  assert.ok(b.calls.some(c => /--vendor gemini [^\n]*--model 'gemini-3\.1-pro-high'/.test(c.raw)), 'effort in the agy slug')
+  const b = await run('lineup-string', quick('test-lineup-b'), { task: 'Fix the flaky retry', seats: 'opus, astra, argon', effort: 'xhigh', rounds: 1 })
+  const argon = b.result.seats.find(s => s.model === 'Gemini Argon')
+  assert.equal(argon.effort, 'high', 'Argon has no xhigh; it maps to the nearest level it has')
+  assert.ok(b.calls.some(c => /--vendor gemini [^\n]*--model 'gemini-4-argon-high'/.test(c.raw)), 'effort in the agy slug')
   assert.ok(b.result.report.markdown.includes('from at least two vendors'), 'three vendors: two among the voters suffice')
 
   const c = await run('lineup-slug', quick('test-lineup-c'), { task: 'Fix the flaky retry', seats: ['opus', 'gemini:gemini-3.6-flash-low'], effort: { opus: 'xhigh' }, rounds: 1 })
@@ -970,11 +970,11 @@ async function scenarioLineup() {
   assert.ok(c.calls.some(c => /--model 'gemini-3\.6-flash-low'/.test(c.raw)), 'a gemini:<slug> is passed through as it is')
   assert.equal(c.result.seats.find(s => s.model === 'Claude Opus').effort, 'xhigh')
 
-  const flash = await run('lineup-flash', quick('test-lineup-d'), { task: 'Fix the flaky retry', effort: 'max', rounds: 1 })
-  assert.ok(flash.calls.some(c => /--model 'gemini-3\.8-flash-high'/.test(c.raw)), 'max maps to Flash high')
+  const hydrogen = await run('lineup-hydrogen', quick('test-lineup-d'), { task: 'Fix the flaky retry', effort: 'max', rounds: 1 })
+  assert.ok(hydrogen.calls.some(c => /--model 'gemini-4-hydrogen-xhigh'/.test(c.raw)), 'max maps to Hydrogen xhigh')
 
   await assert.rejects(run('lineup-bad', quick('x'), { task: 'Fix it', seats: 'opus,gpt' }), /unknown seat 'gpt'.*gemini:<model-slug>/)
-  return 'default lineup has Gemini; --seats prefix, comma string, gemini-pro, gemini:<slug> and effort mapping ok'
+  return 'default lineup has Gemini; --seats prefix, comma string, argon, gemini:<slug> and effort mapping ok'
 }
 
 // ---------------------------------------------------------------- agy runner (runs bin/dark-factory)
@@ -1025,7 +1025,7 @@ print(json.dumps(reply))
     const file = join(runDir, 'jobs', `${job}.prompt.md`)
     writeFileSync(file, `Seat prompt ${job}\n\n<<<OUTPUT_SCHEMA\n{"type":"object","additionalProperties":false,"required":["answer","process"],"properties":{"answer":{"type":"string"},"process":{"type":"string"}}}\nOUTPUT_SCHEMA>>>\n`)
     const out = execFileSync(cli, ['seat-run', '--run-dir', runDir, '--vendor', 'gemini', '--seat', 'A', '--job', job,
-      '--model', 'gemini-3.8-flash-high', '--cwd', join(runDir, 'wt', 'A'), '--prompt-file', file, ...extra], { env }).toString()
+      '--model', 'gemini-4-hydrogen-high', '--cwd', join(runDir, 'wt', 'A'), '--prompt-file', file, ...extra], { env }).toString()
     return JSON.parse(out.trim().split('\n').pop())
   }
   const calls = n => JSON.parse(readFileSync(join(stub, 'calls', `${n}.json`), 'utf8'))
@@ -1042,7 +1042,7 @@ print(json.dumps(reply))
   assert.deepEqual(r0.result, { answer: 'one', process: '' })
   const c0 = calls(0)
   assert.ok(c0.argv.includes('--sandbox') && c0.argv.includes('--json-schema') && !c0.argv.includes('--conversation'))
-  assert.equal(c0.argv[c0.argv.indexOf('--model') + 1], 'gemini-3.8-flash-high')
+  assert.equal(c0.argv[c0.argv.indexOf('--model') + 1], 'gemini-4-hydrogen-high')
   assert.equal(c0.argv[c0.argv.indexOf('-p') + 1].trim(), 'Seat prompt A-r0b')
   assert.ok(!c0.cwd.startsWith(repo) && /council-agy\/run1-[0-9a-f]{8}\/A$/.test(c0.cwd), `agy starts outside the repository, so its shell can read and write the worktree: ${c0.cwd}`)
   const allow = JSON.parse(readFileSync(settings, 'utf8')).permissions.allow
@@ -1221,7 +1221,7 @@ async function scenarioRelayErrors() {
     }
   }, { task: 'Fix the flaky retry', rounds: 1, timeoutMin: { debate: 30 } })
   const L = key => result.seats.find(s => s.model === key).seat
-  const G = L('Gemini Flash'), X = L('Codex Astra')
+  const G = L('Gemini Hydrogen'), X = L('Codex Astra')
   const relays = (kind, key) => calls.filter(c => c.role.kind === kind && c.role.key === key && /\(relay/.test(c.label))
   assert.equal(relays('debate', 'gemini').length, 1, 'a vendor error is not retried with a second relay')
   assert.ok(relays('ratify', 'gemini').length === 1, 'Gemini was not blocked by an error that mentions a sandbox')
@@ -1409,7 +1409,7 @@ print(json.dumps(json.load(open(os.path.join(d, 'replies.json')))[n]))
     const file = join(runDir, 'jobs', `${job}.prompt.md`)
     writeFileSync(file, `${prompt}\n\n<<<OUTPUT_SCHEMA\n${JSON.stringify(schema)}\nOUTPUT_SCHEMA>>>\n`)
     const out = execFileSync(join(here, '..', 'plugins', 'dark-factory', 'bin', 'dark-factory'), ['seat-run', '--run-dir', runDir, '--vendor', 'gemini', '--seat', 'A', '--job', job,
-      '--model', 'gemini-3.8-flash-high', '--cwd', join(runDir, 'wt', 'A'), '--prompt-file', file], { env }).toString()
+      '--model', 'gemini-4-hydrogen-high', '--cwd', join(runDir, 'wt', 'A'), '--prompt-file', file], { env }).toString()
     return JSON.parse(out.trim().split('\n').pop())
   }
   return { turn, ncalls: () => readdirSync(join(stub, 'calls')).length }

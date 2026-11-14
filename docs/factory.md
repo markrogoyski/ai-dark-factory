@@ -138,7 +138,7 @@ keeping the same stages and rules; explicit `seats`, `simple`, `panel`, `spec`, 
   5. **The review**, by reviewers who never saw the debate, through three lenses: **grounding**
      (Codex Astra, IDs `XG1`: does the plan match the code as it is), **sequencing** (Claude Opus,
      `XS1`: does each milestone leave the system working, and are the order, dependencies and
-     sizes sound) and **risk and alternatives** (Gemini Flash, `XK1`: what could sink it, and
+     sizes sound) and **risk and alternatives** (Gemini Hydrogen, `XK1`: what could sink it, and
      whether a design the council didn't choose is better, for the plan or one milestone; only
      this lens reads the other designs). They read the plan and the repository, write nothing,
      and say which milestone each finding is about. Gemini is the only model in the run that

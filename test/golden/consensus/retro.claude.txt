@@ -27,16 +27,16 @@ Return up to 3 things that worked and should be kept, and 3 to 5 changes, the mo
 1. **<change>** <why>. Evidence: <evidence>. Where: <where>.
 ```
 Don't copy the process notes or run facts into it; the next command attaches them exactly.
-2. Run this with the Bash tool, exactly as written: dark-factory retro --run-dir '/tmp/proj/.council/test-consensus' --expect 1490-73a5e045
+2. Run this with the Bash tool, exactly as written: dark-factory retro --run-dir '/tmp/proj/.council/test-consensus' --expect 1496-4126470f
    The last line it prints is JSON. "ok": set saved to its "path". "sandboxed": run the same command again with the sandbox disabled (dangerouslyDisableSandbox: true). "error", or "sandboxed" again: set saved to "" and error to what it printed.
 
 # The report
 
 ### Chosen: B (Claude Opus)
 
-- Converged in round 1: A (Gemini Flash), B (Claude Opus), C (Claude Sonnet) voted to ship it (consensus needs 3 of 4 seats, from at least two vendors).
+- Converged in round 1: A (Gemini Hydrogen), B (Claude Opus), C (Claude Sonnet) voted to ship it (consensus needs 3 of 4 seats, from at least two vendors).
 - Votes in round 1, with reasons:
-  - A (Gemini Flash) → B: best
+  - A (Gemini Hydrogen) → B: best
   - B (Claude Opus) → B: best
   - C (Claude Sonnet) → B: best
   - D (Codex Astra) → D: best
@@ -45,7 +45,7 @@ Don't copy the process notes or run facts into it; the next command attaches the
 
 ### The positions
 
-- **A (Gemini Flash)**, ranked 2 of 4 on the scorecard; last voted for B. Opened with: position A v0. Ended at: position A revised.
+- **A (Gemini Hydrogen)**, ranked 2 of 4 on the scorecard; last voted for B. Opened with: position A v0. Ended at: position A revised.
 - **B (Claude Opus)**, chosen. Opened with: position B v0.
 - **C (Claude Sonnet)**, ranked 3 of 4 on the scorecard; last voted for B. Opened with: position C v0. Ended at: position C revised.
 - **D (Codex Astra)**, ranked 4 of 4 on the scorecard; last voted for D. Opened with: position D v0. Ended at: position D revised.
@@ -65,7 +65,7 @@ Don't copy the process notes or run facts into it; the next command attaches the
 - **Readiness:** ready: the final version was checked and nothing known stands against it
 - **Final version** by B (Claude Opus): final version
 - **Neutral check of the final version:** suite PASS · published tests 1/1 · criteria 2 met, 1 partial of 3 · no standing findings
-- **Ratification:** endorsed by A (Gemini Flash), C (Claude Sonnet), D (Codex Astra).
+- **Ratification:** endorsed by A (Gemini Hydrogen), C (Claude Sonnet), D (Codex Astra).
 - **Still open:** nothing.
 
 ### Specification review
@@ -87,19 +87,19 @@ Auditors who never saw the debate reviewed the final version, each through one l
 
 # Process notes and run facts
 
-=====BEGIN PAYLOAD 1490-73a5e045=====
+=====BEGIN PAYLOAD 1496-4126470f=====
 ## Process notes
 
 - r0:B opus (seat, Claude Opus): Solve note from B.
 - r0:C sonnet (seat, Claude Sonnet): Solve note from C.
-- r0:A gemini (seat, Gemini Flash): Solve note from A.
+- r0:A gemini (seat, Gemini Hydrogen): Solve note from A.
 - r0:D astra (seat, Codex Astra): Solve note from D.
 - r1:C sonnet (seat, Claude Sonnet): The digest cut the ledger at 25 items, so I re-read room/r0 to find 0D2.
 
 ## Run facts
 
 - Run test-consensus in /tmp/proj, implement mode. Task: Fix the empty-input crash in Parser::parse
-- Seats: A=Gemini Flash (high), B=Claude Opus (high), C=Claude Sonnet (high), D=Codex Astra (high). Panel: Claude Opus, Codex Astra. Checkers: sonnet.
+- Seats: A=Gemini Hydrogen (high), B=Claude Opus (high), C=Claude Sonnet (high), D=Codex Astra (high). Panel: Claude Opus, Codex Astra. Checkers: sonnet.
 - Outcome: consensus on B in round 1, with up to 2 rounds allowed. Endorsed at ratification by A, C, D.
 - Claude agent turns: 26 (setup 1, relay 8, spec 1, seat 6, checker 9, auditor 1). Codex turns: 5 (spec 1, seat 3, auditor 1). Gemini turns: 3 (seat 3).
 - Codex and Gemini turn times: median 42s; slowest spec-coverage 42s, A-r0 42s, D-r0 42s.
@@ -110,4 +110,4 @@ Auditors who never saw the debate reviewed the final version, each through one l
 - Audit: correctness by Codex Astra, design by Claude Opus; 0 findings, 0 tests; no fix pass.
 - Final readiness: ready: the final version was checked and nothing known stands against it.
 - Problems during the run: none.
-=====END PAYLOAD 1490-73a5e045=====
+=====END PAYLOAD 1496-4126470f=====

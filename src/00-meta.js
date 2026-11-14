@@ -1,6 +1,6 @@
 export const meta = {
   name: 'council',
-  description: 'Opus, Sonnet, Codex Astra and Gemini Flash solve one task independently, debate it on an evidence ledger, and converge on one result',
+  description: 'Opus, Sonnet, Codex Astra and Gemini Hydrogen solve one task independently, debate it on an evidence ledger, and converge on one result',
   whenToUse: 'Use when a task deserves several independent minds that must then agree: a subtle bug, a design with real trade-offs, an investigation where the obvious answer may be wrong. Unlike /ensemble, which ranks candidates for you to pick, the council debates in rounds and converges on one result, falling back to an evidence scorecard when it cannot agree. Expensive (roughly 30-50 agent turns). Before any seat starts, two reviewers attack the acceptance criteria (coverage: Codex Astra, intent: Claude Opus) and the panel rules on what they find; questions only the user can settle are answered on the most conservative reading and reported as assumptions, or with spec: "ask" the run stops and asks; spec: false skips it. In implement mode, two auditors who never saw the debate then review the final version (correctness: Codex Astra, design: Claude Opus) and the author gets one fix pass; pass audit: false to skip it, or audit: {correctness: "sol", design: "sonnet"} to swap their models. Not for mechanical work. Seats work in git worktrees checked out from HEAD, so they cannot see uncommitted files: if the work follows a plan or any other document that is not committed (a plan from plan mode under ~/.claude/plans/, an untracked PLAN.md, a checklist), call it with object args and pass the document\'s absolute path in `plan`, e.g. {task: "Do item 13 on the bug checklist", plan: ["/abs/path/BUG_CHECK_LIST.md"]}. Say in the task which part to do; do not paste the document. The council snapshots it for every seat. The default lineup is opus, sonnet, astra, gemini; when the user asks for other models (say, because one vendor\'s quota is used up), pass them in `seats`, e.g. {task: "...", seats: ["opus", "sonnet", "astra", "sol"]}, or prefix a string task with --seats opus,sonnet,astra,sol.',
   phases: [
     { title: 'Setup', detail: 'worktrees, room, and acceptance criteria fixed before anyone starts', model: 'opus' },
@@ -26,7 +26,7 @@ export const meta = {
 //          panel, checkModel, allowDirty, clarifications, narrow, retro, timeoutMin, ballot, approval, spec, audit}
 //   plan:   path(s) of a plan or other document the work follows. Worktrees check out HEAD, so an
 //           uncommitted plan is invisible to seats; `council init --ref` snapshots it into the run.
-//   seats:  default ['opus', 'sonnet', 'astra', 'gemini']; also 'sol', 'luna', 'gemini-pro', 'fable', 'haiku',
+//   seats:  default ['opus', 'sonnet', 'astra', 'gemini']; also 'sol', 'luna', 'argon', 'fable', 'haiku',
 //           'codex:<slug>', 'gemini:<slug>'. A list, or a comma-separated string. A string task may
 //           start with `--seats opus,sonnet,astra,sol` instead.
 //   effort: 'high' (default) for every seat, or {astra: 'xhigh', ...}
