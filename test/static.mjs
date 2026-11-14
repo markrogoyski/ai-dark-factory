@@ -2,7 +2,7 @@
 //   - each script parses the way the runtime loads it (an async function body, no imports)
 //   - `meta` is a plain literal: sim.mjs rewrites `export const meta` to ordinary code and runs it,
 //     so a computed value there would pass every test and fail when Claude Code scans the workflow
-//   - src/lib stays pure: no runtime calls, and a function that reads the state object `S` takes it
+//   - src/lib stays pure: no runtime calls or references to runtime globals, and a function that reads the state object `S` takes it
 //     as a parameter rather than reaching for the script's global one
 //   node test/static.mjs
 
@@ -95,6 +95,17 @@ for (const file of new Set([...LIB, ...PAIR_LIB, ...RUN_PLAN_LIB, ...POLICY_LIB]
 }
 
 try { assertPolicy(POLICY_LIB.map(file => ({ file, text: readFileSync(join(root, file), 'utf8') })), POLICY_EXPORTS, TARGETS.policy.trailer) } catch (e) { failed++; console.log(`FAIL ${e.message}`) }
+// The run-plan library is not part of the policy bundle, so check it the same way: any reference to a
+// runtime global (agent, parallel, pipeline, phase, log, args, budget, workflow), called or not, is an
+// unresolved identifier. The policy files get this from the check above; this covers the rest of src/lib.
+// The probes show it fails on a bare `args`, a runtime function passed as a value, and a call.
+for (const file of RUN_PLAN_LIB) {
+  const text = readFileSync(join(root, file), 'utf8')
+  try { assertPolicy([{ file, text }]); console.log(`ok   ${file}: no runtime globals`) } catch (e) { failed++; console.log(`FAIL ${e.message}`) }
+  for (const body of ['return args.x', 'return agent', 'return log(S)', 'return [phase, parallel, pipeline, budget, workflow]']) {
+    try { assertPolicy([{ file, text: `${text}\nfunction injectedProbe(S) { ${body} }\n` }]); failed++; console.log(`FAIL checker accepted ${file} with \`${body}\``) } catch {}
+  }
+}
 
 // The checker itself: it must reject what it is there to reject.
 for (const [label, text, ok] of [
