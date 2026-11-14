@@ -131,7 +131,9 @@ The same generated workflow file runs on both hosts; only the runtime around it 
     `<seat>.delta.diff`, `final/`, `ratify/`, the audit's `audit/<lens>.md`, `final3/` (its
     fix pass, or the Architecture tier's revision) and `reaudit/`, and `tests/<ID>/` (seats'
     tests, and auditors' as `TXC1`, `TXD1`). The Architecture tier's reviewers write no files:
-    their reviews are in the result.
+    their reviews are in the result. Pair writes `pair-<stage>-<n>/` (the author's `A.md` and
+    `probes/`, the scripts its claims cite) and `review-pair-<stage>-<n>/probes/`, the
+    reviewer's; `seat-run` creates a missing writable root inside the run before the turn.
   - `refs/` holds the snapshots of the plan and other reference documents.
   - `wt/<seat>` and `snap/` are worktrees (`snap/audit-<lens>` is an auditor's checkout); `scratch/` holds the short-lived checkouts the
     suite and cross-tests run in. Where a sandbox refuses to write `.git/worktrees`, a `snap/` or `scratch/` checkout is
