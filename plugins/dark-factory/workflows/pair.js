@@ -3239,8 +3239,9 @@ function compactResult(S, result) {
     cleanupAfterDelivery: `dark-factory cleanup --run-dir ${shq(result.runDir)}` }
 }
 
-// The factory's tiers: which one a run starts at, when the Simple tier hands the work up, and the
-// facts each run records so the router can be tuned. Pure, like the rest of lib/.
+// The factory's tiers: which one a run starts at, how a run hands the work up, and the facts each
+// run records so the router can be tuned. Pure, like the rest of lib/. Each tier's own rules are in
+// tier-simple.js, tier-feature.js and tier-architecture.js.
 //
 //   simple        one implementer, checks, one reviewer from another vendor, at most one fix
 //   fix           a subtle bug: two blind attempts (Opus, Astra) through the council
@@ -3298,25 +3299,6 @@ function intakeTier(intake) {
   return t
 }
 
-// The increments the Feature tier's build runs, from the final plan's list, one turn each. A plan
-// that lists more than FEATURE_INCREMENTS hands the work up before anything is built
-// (featureTrigger); one without a usable list is built in one turn.
-function planIncrements(list) {
-  const items = (Array.isArray(list) ? list : []).filter(x => x && String(x.title || x.delivers || '').trim())
-    .map(x => ({ title: oneLine(x.title || x.delivers, 120), delivers: oneLine(x.delivers || x.title, 1200) }))
-  const fresh = (x, n) => ({ n, ...x, reported: false, summary: '', deviations: [], check: null })
-  if (!items.length) return { listed: 0, increments: [fresh({ title: 'The whole plan', delivers: 'Everything in the final plan.' }, 1)] }
-  return { listed: items.length, increments: items.map((x, i) => fresh(x, i + 1)) }
-}
-
-// Whether the Feature tier should hand the work up before it builds: a final plan that needs more
-// increments than one build makes is work for milestones. L is the plan's author. null to go on.
-function featureTrigger(S, L) {
-  const listed = S.build ? S.build.listed : 0
-  if (listed <= FEATURE_INCREMENTS) return null
-  return { trigger: 'too-many-increments', to: 'architecture', L, why: `the chosen plan lists ${listed} increments, more than one feature build makes (${FEATURE_INCREMENTS})` }
-}
-
 // The pieces intake split the task into, made safe; [] runs it as one. One piece is not a split,
 // and a piece can only build on the pieces before it.
 function splitItems(intake) {
@@ -3335,41 +3317,6 @@ function tierPushback(S, intake) {
   if (!f.asked || f.tierConfirmed) return null
   const recommended = intakeTier(intake)
   return recommended === f.asked ? null : { asked: f.asked, recommended }
-}
-
-// Whether the Simple tier should hand the work up, at each point it can tell. Deterministic, from
-// the ledger and the checks; null to go on. Failures of the machinery (an agent that returned
-// nothing) are not evidence about the task, so they never escalate.
-function simpleTrigger(S, stage, o = {}) {
-  const L = S.letters[0]
-  const p = S.pos[L]
-  if (stage === 'solve') {
-    const big = o.tooBig
-    if (big && ['fix', 'feature', 'architecture'].includes(big.tier)) {
-      return { trigger: 'too-big', to: big.tier === 'fix' ? 'fix' : 'feature', why: `the implementer judged it bigger than a simple change: ${oneLine(big.reason, 300) || 'no reason given'}` }
-    }
-    const st = p && p.stats
-    const lines = st ? st.added + st.removed : 0
-    if (st && (lines > S.simple.maxLines || st.files > S.simple.maxFiles)) {
-      return { trigger: 'over-budget', to: 'feature', why: `the change is ${lines} changed lines in ${plural(st.files, 'file')}, over the Simple budget of ${S.simple.maxLines} lines or ${S.simple.maxFiles} files` }
-    }
-    return null
-  }
-  if (stage === 'review') {
-    // A judgment finding the panel agreed on has become a fact (applyPanel), and is still about the approach.
-    const design = S.ledger.filter(c => (c.round === 'H' || /^review\d+$/.test(c.round)) && c.kind === 'finding' && c.wasJudgment && W8[c.severity] >= 2 && c.status === 'verified' && !c.withdrawn && !c.fixed)
-    if (design.length) {
-      return { trigger: 'design-finding', to: 'feature', why: `the panel upheld ${design.map(c => `${c.severity} ${c.id}`).join(', ')} against the approach itself`, findings: design.map(c => c.id) }
-    }
-    return null
-  }
-  if (stage === 'final') {
-    const failing = S.mode === 'implement' && S.baselineOk && p && p.suite && p.suite.ran && !p.suite.passed
-    if (failing) return { trigger: 'verify-failed', to: 'fix', why: 'the verification command still fails after the fix pass' }
-    if (o.ready && o.ready.state === 'blocked') return { trigger: 'blocked', to: 'fix', why: `the final version is blocked: ${o.ready.blocked.join('; ')}` }
-    return null
-  }
-  return null
 }
 
 // What the higher tier is told about the attempt that came before. Never the diff or the plan:
@@ -3480,30 +3427,13 @@ function factoryFacts(S) {
   ].filter(Boolean).join('\n')
 }
 
-// A Simple run's report, and the opening of an escalated one.
+// The opening of the report of a run a lower tier handed up.
 function escalatedSection(S) {
   return escalationChain(S.factory && S.factory.escalation).map(e => e.from === 'feature'
     ? `### Escalated from Feature\n\nThe factory first planned this as one feature and handed it to the ${e.to} tier, before building anything, because ${e.why}. ` +
       `The designs below started fresh: blind, without that plan. The Feature attempt is in ${e.runDir}.\n\n`
     : `### Escalated from Simple\n\nThe factory first tried this as a simple change (one implementer, one reviewer) and handed it to the ${e.to} tier because ${e.why}. ` +
       `The council below started fresh: blind, without that attempt's change. The Simple attempt is in ${e.runDir}.\n\n`).join('')
-}
-
-function simpleReport(S, o) {
-  const { W, ready, audit } = o
-  const p = S.pos[W.L]
-  const assumed = S.pendingQ.filter(q => q && q.question)
-  const lines = [
-    `- **Readiness:** ${readinessText(ready)}.`,
-    `- **Change:** ${p.stats ? `${plural(p.stats.files, 'file')}, +${p.stats.added}/−${p.stats.removed}` : 'not measured'}; ${oneLine(p.summary, 400)}`,
-    `- **Neutral check:** ${finalSummary(S, W.L)}`,
-    S.baselineOk ? '' : `- **Baseline:** the verification command already failed before the change (${oneLine(S.baselineNote, 200)}).`,
-  ].filter(Boolean)
-  return {
-    markdown: (assumed.length ? `### Assumptions to check\n\n${assumed.map(q => `- ${sentence(oneLine(q.question, 300))}${q.assumption ? ` Assumed: ${sentence(oneLine(q.assumption, 300))}` : ''}`).join('\n')}\n\n` : '') +
-      `### Simple change, by ${W.name}\n\nThe factory routed this as a simple change: one implementer, the neutral check, and ${S.host === 'codex' ? 'one independent reviewer' : 'one reviewer from another vendor'}.\n\n${lines.join('\n')}` +
-      auditSection(S, W, audit) + problemsSection(S),
-  }
 }
 
 // The user pinned a tier that intake would not pick: stop before anything is created, and ask.
@@ -3558,6 +3488,94 @@ ${payload}
 =====END PAYLOAD ${hash}=====`
 }
 
+// A run a lower tier handed up: that tier's own result, opening with why. A run handed up twice
+// (Simple, then Feature) is wrapped once, by the last hand-up, which knows the whole chain.
+function escalatedResult(S, res) {
+  if (!res || typeof res !== 'object' || res.escalated) return res
+  const e = S.factory.escalation
+  const chain = escalationChain(e)
+  const f = S.factory
+  const as = { simple: 'a simple change', feature: 'a feature' }
+  return {
+    ...res, escalated: true,
+    factory: { tier: e.to, startedAt: chain[0].from, chosenBy: f.chosenBy, asked: f.asked, recommended: f.recommended,
+      escalation: { from: e.from, to: e.to, trigger: e.trigger, why: e.why, runDir: e.runDir, ...(chain.length > 1 ? { earlier: chain.slice(0, -1).map(x => ({ from: x.from, to: x.to, trigger: x.trigger, why: x.why, runDir: x.runDir })) } : {}) } },
+    report: res.report ? { ...res.report, markdown: `${escalatedSection(S)}${res.report.markdown}` } : res.report,
+    forTheOrchestrator: `This run started as ${as[chain[0].from] || chain[0].from} and the factory handed it ${chain.map(x => `to the ${x.to} tier because ${x.why}`).join(', then ')}. Say so first, in one sentence. ` +
+      chain.map(x => `The ${capital(x.from)} attempt is in ${x.runDir}; clean it up with \`${S.cli} cleanup --run-dir ${x.runDir} --all\` when the user is done. `).join('') + (res.forTheOrchestrator || ''),
+  }
+}
+
+// A council, Feature or Architecture run the factory routed to directly: its result, with how the
+// tier was chosen. One that was handed up on the way already says how it got there.
+function routedResult(S, res) {
+  if (!res || typeof res !== 'object' || res.escalated) return res
+  const f = S.factory
+  return { ...res,
+    ...(res.mode === 'implement' && res.final && res.final.snapshotRef ? {
+      final: { ...res.final, snapshotTree: S.pos[res.final.author]?.tree?.hash || null },
+      delivery: { status: 'pending', record: `${res.runDir}/delivery.json` },
+    } : {}),
+    factory: { tier: f.tier, chosenBy: f.chosenBy, asked: f.asked, recommended: f.recommended, reasons: f.intake ? f.intake.reasons : '' },
+    forTheOrchestrator: `The factory ran this at the ${f.tier} tier (${f.chosenBy === 'intake' ? 'intake\'s choice' : f.chosenBy === 'pinned' ? 'the user\'s choice, which intake agreed with' : `the user's choice, over intake's ${f.recommended}`}); mention it in a few words. ${res.forTheOrchestrator || ''}` }
+}
+
+// The Simple tier's rules: when it hands the work up, and its report and result. Pure, like the
+// rest of lib/; the flow is src/simple.js, and the rules every tier shares are in tiers.js.
+
+// Whether the Simple tier should hand the work up, at each point it can tell. Deterministic, from
+// the ledger and the checks; null to go on. Failures of the machinery (an agent that returned
+// nothing) are not evidence about the task, so they never escalate.
+function simpleTrigger(S, stage, o = {}) {
+  const L = S.letters[0]
+  const p = S.pos[L]
+  if (stage === 'solve') {
+    const big = o.tooBig
+    if (big && ['fix', 'feature', 'architecture'].includes(big.tier)) {
+      return { trigger: 'too-big', to: big.tier === 'fix' ? 'fix' : 'feature', why: `the implementer judged it bigger than a simple change: ${oneLine(big.reason, 300) || 'no reason given'}` }
+    }
+    const st = p && p.stats
+    const lines = st ? st.added + st.removed : 0
+    if (st && (lines > S.simple.maxLines || st.files > S.simple.maxFiles)) {
+      return { trigger: 'over-budget', to: 'feature', why: `the change is ${lines} changed lines in ${plural(st.files, 'file')}, over the Simple budget of ${S.simple.maxLines} lines or ${S.simple.maxFiles} files` }
+    }
+    return null
+  }
+  if (stage === 'review') {
+    // A judgment finding the panel agreed on has become a fact (applyPanel), and is still about the approach.
+    const design = S.ledger.filter(c => (c.round === 'H' || /^review\d+$/.test(c.round)) && c.kind === 'finding' && c.wasJudgment && W8[c.severity] >= 2 && c.status === 'verified' && !c.withdrawn && !c.fixed)
+    if (design.length) {
+      return { trigger: 'design-finding', to: 'feature', why: `the panel upheld ${design.map(c => `${c.severity} ${c.id}`).join(', ')} against the approach itself`, findings: design.map(c => c.id) }
+    }
+    return null
+  }
+  if (stage === 'final') {
+    const failing = S.mode === 'implement' && S.baselineOk && p && p.suite && p.suite.ran && !p.suite.passed
+    if (failing) return { trigger: 'verify-failed', to: 'fix', why: 'the verification command still fails after the fix pass' }
+    if (o.ready && o.ready.state === 'blocked') return { trigger: 'blocked', to: 'fix', why: `the final version is blocked: ${o.ready.blocked.join('; ')}` }
+    return null
+  }
+  return null
+}
+
+// A Simple run's report.
+function simpleReport(S, o) {
+  const { W, ready, audit } = o
+  const p = S.pos[W.L]
+  const assumed = S.pendingQ.filter(q => q && q.question)
+  const lines = [
+    `- **Readiness:** ${readinessText(ready)}.`,
+    `- **Change:** ${p.stats ? `${plural(p.stats.files, 'file')}, +${p.stats.added}/−${p.stats.removed}` : 'not measured'}; ${oneLine(p.summary, 400)}`,
+    `- **Neutral check:** ${finalSummary(S, W.L)}`,
+    S.baselineOk ? '' : `- **Baseline:** the verification command already failed before the change (${oneLine(S.baselineNote, 200)}).`,
+  ].filter(Boolean)
+  return {
+    markdown: (assumed.length ? `### Assumptions to check\n\n${assumed.map(q => `- ${sentence(oneLine(q.question, 300))}${q.assumption ? ` Assumed: ${sentence(oneLine(q.assumption, 300))}` : ''}`).join('\n')}\n\n` : '') +
+      `### Simple change, by ${W.name}\n\nThe factory routed this as a simple change: one implementer, the neutral check, and ${S.host === 'codex' ? 'one independent reviewer' : 'one reviewer from another vendor'}.\n\n${lines.join('\n')}` +
+      auditSection(S, W, audit) + problemsSection(S),
+  }
+}
+
 // A Simple run that finished without handing the work up.
 function simpleResult(S, o) {
   const { W, ready, audit, report, retro } = o
@@ -3594,7 +3612,28 @@ function simpleResult(S, o) {
   }
 }
 
-// ---- The Feature tier's report, facts and result.
+// The Feature tier's rules: its increments, when it hands the work up, and its report, facts and
+// result. Pure, like the rest of lib/; the flow is src/feature.js, and the rules every tier shares
+// are in tiers.js.
+
+// The increments the Feature tier's build runs, from the final plan's list, one turn each. A plan
+// that lists more than FEATURE_INCREMENTS hands the work up before anything is built
+// (featureTrigger); one without a usable list is built in one turn.
+function planIncrements(list) {
+  const items = (Array.isArray(list) ? list : []).filter(x => x && String(x.title || x.delivers || '').trim())
+    .map(x => ({ title: oneLine(x.title || x.delivers, 120), delivers: oneLine(x.delivers || x.title, 1200) }))
+  const fresh = (x, n) => ({ n, ...x, reported: false, summary: '', deviations: [], check: null })
+  if (!items.length) return { listed: 0, increments: [fresh({ title: 'The whole plan', delivers: 'Everything in the final plan.' }, 1)] }
+  return { listed: items.length, increments: items.map((x, i) => fresh(x, i + 1)) }
+}
+
+// Whether the Feature tier should hand the work up before it builds: a final plan that needs more
+// increments than one build makes is work for milestones. L is the plan's author. null to go on.
+function featureTrigger(S, L) {
+  const listed = S.build ? S.build.listed : 0
+  if (listed <= FEATURE_INCREMENTS) return null
+  return { trigger: 'too-many-increments', to: 'architecture', L, why: `the chosen plan lists ${listed} increments, more than one feature build makes (${FEATURE_INCREMENTS})` }
+}
 
 // The Feature tier's outcome lines in the retro's run facts.
 function buildFacts(S, o) {
@@ -3714,39 +3753,9 @@ function featureResult(S, o) {
   }
 }
 
-// A run a lower tier handed up: that tier's own result, opening with why. A run handed up twice
-// (Simple, then Feature) is wrapped once, by the last hand-up, which knows the whole chain.
-function escalatedResult(S, res) {
-  if (!res || typeof res !== 'object' || res.escalated) return res
-  const e = S.factory.escalation
-  const chain = escalationChain(e)
-  const f = S.factory
-  const as = { simple: 'a simple change', feature: 'a feature' }
-  return {
-    ...res, escalated: true,
-    factory: { tier: e.to, startedAt: chain[0].from, chosenBy: f.chosenBy, asked: f.asked, recommended: f.recommended,
-      escalation: { from: e.from, to: e.to, trigger: e.trigger, why: e.why, runDir: e.runDir, ...(chain.length > 1 ? { earlier: chain.slice(0, -1).map(x => ({ from: x.from, to: x.to, trigger: x.trigger, why: x.why, runDir: x.runDir })) } : {}) } },
-    report: res.report ? { ...res.report, markdown: `${escalatedSection(S)}${res.report.markdown}` } : res.report,
-    forTheOrchestrator: `This run started as ${as[chain[0].from] || chain[0].from} and the factory handed it ${chain.map(x => `to the ${x.to} tier because ${x.why}`).join(', then ')}. Say so first, in one sentence. ` +
-      chain.map(x => `The ${capital(x.from)} attempt is in ${x.runDir}; clean it up with \`${S.cli} cleanup --run-dir ${x.runDir} --all\` when the user is done. `).join('') + (res.forTheOrchestrator || ''),
-  }
-}
-
-// A council, Feature or Architecture run the factory routed to directly: its result, with how the
-// tier was chosen. One that was handed up on the way already says how it got there.
-function routedResult(S, res) {
-  if (!res || typeof res !== 'object' || res.escalated) return res
-  const f = S.factory
-  return { ...res,
-    ...(res.mode === 'implement' && res.final && res.final.snapshotRef ? {
-      final: { ...res.final, snapshotTree: S.pos[res.final.author]?.tree?.hash || null },
-      delivery: { status: 'pending', record: `${res.runDir}/delivery.json` },
-    } : {}),
-    factory: { tier: f.tier, chosenBy: f.chosenBy, asked: f.asked, recommended: f.recommended, reasons: f.intake ? f.intake.reasons : '' },
-    forTheOrchestrator: `The factory ran this at the ${f.tier} tier (${f.chosenBy === 'intake' ? 'intake\'s choice' : f.chosenBy === 'pinned' ? 'the user\'s choice, which intake agreed with' : `the user's choice, over intake's ${f.recommended}`}); mention it in a few words. ${res.forTheOrchestrator || ''}` }
-}
-
-// ---- The Architecture tier's milestones, report, facts and result.
+// The Architecture tier's rules: its milestones (and each one's run args), report, facts and
+// result. Pure, like the rest of lib/; the flow is src/architecture.js, and the rules every tier
+// shares are in tiers.js.
 
 // The milestones the final plan lists, made safe: at most MAX_MILESTONES, each with a task, and
 // each building only on milestones before it. A tier other than simple is feature: a milestone

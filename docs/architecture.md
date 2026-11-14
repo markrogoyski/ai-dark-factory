@@ -77,9 +77,11 @@ The same generated workflow file runs on both hosts; only the runtime around it 
     `councilSetup()`, `debateStage()` and `synthesize()`, are what `featureRun()` and
     `architectureRun()` reuse; the Architecture tier's review is `runAudit()` with its own
     prompts and a revision that returns the milestones.
-  - `src/lib/tiers.js`: the factory's pure half: tier parsing and routing, the pushback, the
-    escalation triggers, brief and chain, the Feature tier's increments, report and result, the
-    Architecture tier's milestones (and each one's run args), report and result, the run facts.
+  - `src/lib/tiers.js`: the factory's pure half shared by every tier: tier parsing and routing,
+    the pushback, the escalation brief and chain, the run facts. Each tier's own rules are beside
+    it: `tier-simple.js` (its trigger, report and result), `tier-feature.js` (the increments, its
+    trigger, report and result) and `tier-architecture.js` (the milestones and each one's run args,
+    report and result).
   - `src/pair.js` (the design and code loop, and the `runtime: "cli"` transport), with
     `src/lib/pair.js` (contract and mapping checks, review ingestion, readiness, stall
     detection, the measurement summary, the result), `src/lib/pair-prompts.js`,
