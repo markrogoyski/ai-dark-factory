@@ -298,6 +298,31 @@ function parseConfig(args, opts = {}) {
 // state object `S` (see newState) as its first argument and touches nothing else, so a test can
 // build a state and call any of it directly.
 
+// The wording and flags that depend on which workflow and tier is running, resolved from the
+// state in one place so the prompts read them instead of branching on S.tier inline. Recomputed on
+// each call because a factory run can change tier mid-run (escalation).
+function tierProfile(S) {
+  const tier = S.tier || null
+  const simple = tier === 'simple', feature = tier === 'feature', architecture = tier === 'architecture'
+  return {
+    tier, factory: !!tier, simple, feature, architecture,
+    workflow: S.workflowName,
+    ensemble: S.workflowName === 'ensemble',
+    pair: S.workflowName === 'pair',
+    // a tier whose verification command gates the result (architecture builds nothing)
+    gated: !!tier && !architecture,
+    // the worker addressed by the prompt, and how the others are named
+    worker: simple ? 'you' : 'a council seat',
+    workersHave: simple ? 'you have' : 'seats have',
+    workerPossessive: simple ? 'your' : 'a seat\'s',
+    roomNote: simple ? 'where your post and tests go' : 'shared by all seats',
+    // the independent reader of a finished change, and of the result in an audit fix pass
+    changeReviewer: simple ? 'reviewer' : 'auditor',
+    resultReviewer: architecture ? 'reviewer' : 'auditor',
+    result: architecture ? 'plan' : 'change',
+  }
+}
+
 // The state of one run: the config (parseConfig) plus everything that changes as the run goes.
 // Created once at boot; the functions below and in the other lib/ files read and update it.
 function newState(config) {
@@ -551,7 +576,7 @@ function taskBlock(S, round) {
   t += escalationBlock(S)
   t += `\n# Acceptance criteria (fixed before any work began)\n\n${S.criteria.map(c => `- ${c.id}: ${c.text}`).join('\n') || '- (none recorded)'}\n`
   if (S.verify) t += `\n# Verification command\n\n\`${S.verify}\`, run from the root of a worktree (saved as ${S.run.runDir}/verify.sh).\n`
-  if (S.tier && S.verify && S.tier !== 'architecture') t += verificationBlock(S)
+  if (tierProfile(S).gated && S.verify) t += verificationBlock(S)
   return t + assumptionsBlock(S) + clarificationsFor(S, round)
 }
 
@@ -658,21 +683,22 @@ function commitRule(s) {
 }
 
 function workspaceBlock(S, s, round) {
+  const P = tierProfile(S)
   const lines = ['# Your workspace', '', `- Your worktree, a private checkout of the starting commit: ${s.wt}`]
   if (S.mode === 'implement') {
-    lines.push(`  Make all code changes there, and run commands from inside it (cd there first; your shell may start in the main checkout). Never modify ${S.run.repoRoot} itself${S.tier === 'simple' ? '' : ' or another seat\'s worktree'}. ${commitRule(s)}`)
+    lines.push(`  Make all code changes there, and run commands from inside it (cd there first; your shell may start in the main checkout). Never modify ${S.run.repoRoot} itself${P.simple ? '' : ' or another seat\'s worktree'}. ${commitRule(s)}`)
   } else if (S.mode === 'plan') {
     lines.push(`  This is the planning stage, so nothing is built yet. Leave your worktree as it is: if your plan is chosen, you build it there, starting from a clean checkout. Read the code and run commands from inside it, and put any experiment in a scratch copy under $TMPDIR. Never modify ${S.run.repoRoot} itself.`)
   } else {
     lines.push(`  This is ${S.mode === 'design' ? 'a design' : 'an investigation'} task, so nothing in your worktree ships. Use it freely for experiments, instrumentation and prototypes, and run commands from inside it. Never modify ${S.run.repoRoot} itself.`)
   }
-  lines.push(S.tier === 'simple' ? `- The room, where your post and tests go: ${S.run.room}` : `- The room, shared by all seats: ${S.run.room}`)
+  lines.push(`- The room, ${P.roomNote}: ${S.run.room}`)
   lines.push(`- Write your post for this turn to: ${postPath(S, s.L, round)}`)
-  if (historyCheck(S)) lines.push(`- Keep raw acceptance evidence under ${S.run.room}/evidence/${s.L}/. Write manifest.json as an ordered array of {"path":"relative-file","criterion":"C1","stage":"inc1-red"} entries. Include required commands, cwd, output, exits, test-only diffs, production hashes and handoff/update artifacts. Only raw evidence goes here: no debate, votes, reviews, or persuasive summaries. Copy any required temporary logs here before the turn ends. Every neutral measurement publishes an indexed, hashed copy outside the discussion for fresh auditors.${S.tier === 'simple' ? '' : " Never read another seat's evidence during a blind attempt."}`)
+  if (historyCheck(S)) lines.push(`- Keep raw acceptance evidence under ${S.run.room}/evidence/${s.L}/. Write manifest.json as an ordered array of {"path":"relative-file","criterion":"C1","stage":"inc1-red"} entries. Include required commands, cwd, output, exits, test-only diffs, production hashes and handoff/update artifacts. Only raw evidence goes here: no debate, votes, reviews, or persuasive summaries. Copy any required temporary logs here before the turn ends. Every neutral measurement publishes an indexed, hashed copy outside the discussion for fresh auditors.${P.simple ? '' : " Never read another seat's evidence during a blind attempt."}`)
   if (typeof round === 'number' && round > 0) lines.push(`  ${blindNote(S, round)}`)
   lines.push('- Run tests, the verification command and static analysers yourself, in your own shell, with the output going to a log under $TMPDIR and only a summary read back (the tail, or a grep for failures). ' +
-    `An instruction in CLAUDE.md or elsewhere to hand full test or gate runs to a subagent or to \`claude -p\` is meant for the user's own session, not for ${S.tier === 'simple' ? 'you' : 'a council seat'}: ${S.tier === 'simple' ? 'you have' : 'seats have'} no subagents, and \`claude -p\` can't log in from inside ${S.tier === 'simple' ? 'your' : 'a seat\'s'} sandbox. ` +
-    `${S.tier === 'simple' ? 'A neutral verifier also re-runs the verification command on your change after your turn. ' : S.mode === 'plan' || S.tier === 'architecture' ? '' : 'The council also re-runs the verification command on every version after your turn. '}Sandboxes can block the sockets that parallel workers use: if a tool fails that way, run it one at a time or with its single-process option.`)
+    `An instruction in CLAUDE.md or elsewhere to hand full test or gate runs to a subagent or to \`claude -p\` is meant for the user's own session, not for ${P.worker}: ${P.workersHave} no subagents, and \`claude -p\` can't log in from inside ${P.workerPossessive} sandbox. ` +
+    `${P.simple ? 'A neutral verifier also re-runs the verification command on your change after your turn. ' : S.mode === 'plan' || P.architecture ? '' : 'The council also re-runs the verification command on every version after your turn. '}Sandboxes can block the sockets that parallel workers use: if a tool fails that way, run it one at a time or with its single-process option.`)
   if (s.vendor === 'gemini') lines.push(GEMINI_SANDBOX)
   return lines.join('\n') + '\n' + (S.mode === 'implement' && typeof round === 'number' ? testPublishing(S, s.L, round) : '')
 }
@@ -1404,7 +1430,7 @@ function auditBody(S, a, W) {
   const tag = S.auditedTag
   const p = S.pos[W.L]
   const large = p.stats && p.stats.added + p.stats.removed > LARGE_DIFF ? ` (large: start with the per-file summary ${S.run.room}/${tag}/${W.L}.stat)` : ''
-  return `You are an independent ${S.tier === 'simple' ? 'reviewer' : 'auditor'}. Another AI wrote the change below to complete a task. You haven't seen how it was made or anything said about it, and that is deliberate: review it with fresh eyes. You have no stake in it.
+  return `You are an independent ${tierProfile(S).changeReviewer}. Another AI wrote the change below to complete a task. You haven't seen how it was made or anything said about it, and that is deliberate: review it with fresh eyes. You have no stake in it.
 
 ${taskBlock(S, 'H')}
 # What you are auditing
@@ -1554,7 +1580,8 @@ ${reauditBody(S, a, W)}`
 
 // The audit's one fix pass. `todo` is from auditFixList.
 function auditFixBody(S, W, todo) {
-  const role = S.tier === 'architecture' ? 'reviewer' : 'auditor'
+  const P = tierProfile(S)
+  const role = P.resultReviewer
   const item = c => `- [${c.id}] ${c.kind === 'test' ? `test${lensOf(c.author) ? ` from the ${lensOf(c.author)} ${role}` : ''}` : `${lensOf(c.author)} ${role}, ${c.severity}${c.milestone ? `, milestone ${c.milestone}` : ''}`}: ${oneLine(c.statement, 400)}${c.kind !== 'test' && c.evidence ? ` (evidence: ${oneLine(c.evidence, 300)})` : ''}${c.note ? ` — ruling: ${oneLine(c.note, 300)}` : ''}`
   const parts = []
   if (todo.upheld.length) parts.push(`Upheld. Fix each one, or decline it with evidence:\n${todo.upheld.map(item).join('\n')}`)
@@ -1564,9 +1591,9 @@ function auditFixBody(S, W, todo) {
       `Each test's files are under ${S.run.room}/tests/<ID>/files/. The verifier copies them into a checkout of your version and runs the command in its test.json, so don't create a file at the same path with different content. Where a test pins down behaviour worth keeping, also add a test to the project's own suite, in its style and at a path of its own.`)
   }
   if (todo.suite) parts.push(`The verification command fails on your version. Make it pass:\n${oneLine(todo.suite, 800)}`)
-  if (todo.suggestions.length) parts.push(`Suggestions, not adjudicated. Take one only if it clearly improves the ${S.tier === 'architecture' ? 'plan' : 'change'}:\n${todo.suggestions.map(item).join('\n')}`)
-  const simple = S.tier === 'simple'
-  if (S.tier === 'architecture') {
+  if (todo.suggestions.length) parts.push(`Suggestions, not adjudicated. Take one only if it clearly improves the ${P.result}:\n${todo.suggestions.map(item).join('\n')}`)
+  const simple = P.simple
+  if (P.architecture) {
     return `# Revision pass
 
 After you wrote the milestone plan, reviewers who never saw the debate reviewed it, each through one lens: ${listText(S.auditors.map(a => a.lens))}. Neutral verifiers and two adjudicators ruled on what they found.
@@ -1578,7 +1605,7 @@ Revise the design and the milestone plan for these, and change nothing else: thi
   return `# ${simple ? 'Fix pass' : 'Audit fix pass'}
 
 ${simple ? 'An independent reviewer read your change, and a neutral verifier and two adjudicators ruled on what it found.'
-  : S.tier === 'feature' ? `After the build, auditors who never saw the planning reviewed your change, each through one lens: ${listText(S.auditors.map(a => a.lens))}. Neutral verifiers and two adjudicators ruled on what they found.`
+  : P.feature ? `After the build, auditors who never saw the planning reviewed your change, each through one lens: ${listText(S.auditors.map(a => a.lens))}. Neutral verifiers and two adjudicators ruled on what they found.`
   : 'After ratification, two independent auditors reviewed your final version without seeing the debate: one for correctness, one for design. Neutral verifiers and two adjudicators ruled on what they found.'}
 
 ${parts.join('\n\n')}
@@ -1728,7 +1755,8 @@ For each new question (by index), set \`matches\` to the ID of the existing ques
 // and inspect the report) fits neither the verification command nor a self-written criterion, so
 // setup used to drop it and the first design review then blocked on it.
 function requiredChecksRule(S) {
-  if (!S.tier || S.workflowName === 'ensemble' || (Array.isArray(S.raw.criteria) && S.raw.criteria.length)) return ''
+  const P = tierProfile(S)
+  if (!P.factory || P.ensemble || (Array.isArray(S.raw.criteria) && S.raw.criteria.length)) return ''
   return `Every requirement in the task or its reference documents that the verification command from step 3 doesn't cover becomes a criterion of its own, including inspections and report reviews (for example "run the coverage target and inspect the report"). Name the evidence in the criterion and cite its source as document and line. Don't drop a requirement because no command can check it. Such required checks don't count toward the number above: add them beyond it rather than leaving out a behavioural criterion to make room.\n`
 }
 
@@ -1739,11 +1767,12 @@ function setupPrompt(S) {
   // A native Pair's timeline would start at init; the workflow has no replay-safe clock, so the
   // setup agent reads the time itself and init records it.
   const startedAt = !!S.pairOptions && S.host !== 'codex'
-  const what = S.workflowName === 'ensemble' ? 'an ensemble run: independent candidates in separate worktrees, measured and reviewed before an advisory ranking; no debate or automatic selection'
-    : S.workflowName === 'pair' ? 'a pair run: one author will design and implement the task in its own git worktree, with independent review of the design and each implementation revision'
-    : S.tier === 'simple' ? 'a factory run of a simple change: one AI model will make the change below in its own git worktree, and another will review it'
-    : S.tier === 'feature' ? 'a factory run of a feature: several AI models will each plan the task below independently, in their own git worktrees, and debate the plans, and the author of the chosen plan will then build it'
-    : S.tier === 'architecture' ? 'a factory run of an architecture: several AI models will each design the task below independently, in their own git worktrees, and debate the designs, and the author of the chosen design will then break it into milestones, each to be built later by a run of its own'
+  const P = tierProfile(S)
+  const what = P.ensemble ? 'an ensemble run: independent candidates in separate worktrees, measured and reviewed before an advisory ranking; no debate or automatic selection'
+    : P.pair ? 'a pair run: one author will design and implement the task in its own git worktree, with independent review of the design and each implementation revision'
+    : P.simple ? 'a factory run of a simple change: one AI model will make the change below in its own git worktree, and another will review it'
+    : P.feature ? 'a factory run of a feature: several AI models will each plan the task below independently, in their own git worktrees, and debate the plans, and the author of the chosen plan will then build it'
+    : P.architecture ? 'a factory run of an architecture: several AI models will each design the task below independently, in their own git worktrees, and debate the designs, and the author of the chosen design will then break it into milestones, each to be built later by a run of its own'
     : 'a council run: several AI models will each attempt the task below independently, in their own git worktrees, and then debate'
   return `You are setting up ${what}. Your job is only the setup. Don't attempt the task.
 
@@ -1773,26 +1802,26 @@ Read the task together with the part of those documents it points to, and decide
 When the work would end with a change someone commits, choose implement.
 `}
 ## Step 2 — create the run
-Run: ${S.cli} init --repo ${S.raw.repo ? shq(S.raw.repo) : '"$PWD"'} --seats ${letters}${S.tier ? ' --factory' : ''}${setupRunId(S) ? ` --run-id ${shq(setupRunId(S))}` : ''}${startedAt ? ' --started-at <the time you read before you started>' : ''}${S.plan.map(p => ` --ref ${shq(p)}`).join('')} followed by --ref <path> for each other document from step 1
-${S.tier && S.host !== 'codex' ? 'Make it one Bash call with dangerouslyDisableSandbox: true: init creates git worktrees, and the Bash sandbox refuses to write the repository\'s worktree records (".git/worktrees/…: Operation not permitted").\n' : ''}It prints JSON with runId, runDir, repoRoot, refs (the snapshots it made of those documents) and dirty (tracked files with uncommitted changes).
+Run: ${S.cli} init --repo ${S.raw.repo ? shq(S.raw.repo) : '"$PWD"'} --seats ${letters}${P.factory ? ' --factory' : ''}${setupRunId(S) ? ` --run-id ${shq(setupRunId(S))}` : ''}${startedAt ? ' --started-at <the time you read before you started>' : ''}${S.plan.map(p => ` --ref ${shq(p)}`).join('')} followed by --ref <path> for each other document from step 1
+${P.factory && S.host !== 'codex' ? 'Make it one Bash call with dangerouslyDisableSandbox: true: init creates git worktrees, and the Bash sandbox refuses to write the repository\'s worktree records (".git/worktrees/…: Operation not permitted").\n' : ''}It prints JSON with runId, runDir, repoRoot, refs (the snapshots it made of those documents) and dirty (tracked files with uncommitted changes).
 - If it fails, return status "error" with its message, and empty values elsewhere.
 ${S.allowDirty || (S.modeGiven && S.mode !== 'implement') ? '' : `- If ${S.modeGiven ? '' : 'the mode is implement and '}dirty is non-empty, stop and return status "dirty" with that list. The worktrees branch from HEAD, so uncommitted changes would be invisible to every seat.\n`}
 ## Step 3 — the verification command
-${S.raw.verify ? `Use exactly: ${S.raw.verify}` : `${S.tier ? 'If the task or a document from step 1 names commands the change must pass (a "Done when" section, acceptance criteria, a checklist), the verification command runs all of them, joined with &&, even when they include static analysis or coverage: every role is measured against this command, and one that leaves a required check out makes each of them run it separately. Otherwise, find' : 'Find'}` + ' the project\'s standard command for checking a change: its test suite, from CLAUDE.md or AGENTS.md, a Makefile, composer.json, package.json, pyproject.toml and so on. Prefer the normal test run. Avoid full static-analysis sweeps and very slow suites unless the task is about them. If the project has no tests, there is no command.'}
-Write it to <runDir>/verify.sh as just the command, with no shebang line; it is run as \`bash verify.sh\` from the root of a worktree. Write an empty file if there is no command.${S.tier && S.tier !== 'architecture' ? `\nStore sandbox-compatible execution settings as explicit string overrides in <runDir>/verification.json: {"env": {"VARIABLE": "value"}}. Preserve all required checks. The helper supplies private TMPDIR/TMP/TEMP directories, preferring short writable roots, for every verification execution; do not point temporary files at the long run directory. Prefer these run-owned overrides to changing project defaults. Preflight the exact command through neutral measurement below, including worker/socket/cache restrictions; shell-local exports are insufficient. Keep this configuration fixed for the run after specification review.${S.workflowName !== 'ensemble' ? ' Test replays run in parallel with each other and with the gate, each in its own checkout and TMPDIR. If the tests share a fixed port, a database or a global cache and cannot run at the same time, add "concurrency": 1 to verification.json beside env.' : ''}` : ''}
+${S.raw.verify ? `Use exactly: ${S.raw.verify}` : `${P.factory ? 'If the task or a document from step 1 names commands the change must pass (a "Done when" section, acceptance criteria, a checklist), the verification command runs all of them, joined with &&, even when they include static analysis or coverage: every role is measured against this command, and one that leaves a required check out makes each of them run it separately. Otherwise, find' : 'Find'}` + ' the project\'s standard command for checking a change: its test suite, from CLAUDE.md or AGENTS.md, a Makefile, composer.json, package.json, pyproject.toml and so on. Prefer the normal test run. Avoid full static-analysis sweeps and very slow suites unless the task is about them. If the project has no tests, there is no command.'}
+Write it to <runDir>/verify.sh as just the command, with no shebang line; it is run as \`bash verify.sh\` from the root of a worktree. Write an empty file if there is no command.${P.gated ? `\nStore sandbox-compatible execution settings as explicit string overrides in <runDir>/verification.json: {"env": {"VARIABLE": "value"}}. Preserve all required checks. The helper supplies private TMPDIR/TMP/TEMP directories, preferring short writable roots, for every verification execution; do not point temporary files at the long run directory. Prefer these run-owned overrides to changing project defaults. Preflight the exact command through neutral measurement below, including worker/socket/cache restrictions; shell-local exports are insufficient. Keep this configuration fixed for the run after specification review.${!P.ensemble ? ' Test replays run in parallel with each other and with the gate, each in its own checkout and TMPDIR. If the tests share a fixed port, a database or a global cache and cannot run at the same time, add "concurrency": 1 to verification.json beside env.' : ''}` : ''}
 ${S.modeGiven && S.mode !== 'implement'
     ? 'Set baselinePasses to false and baselineNote to "".'
-    : `${S.modeGiven ? 'Then' : 'If the mode is implement,'} measure the baseline: ${S.cli} measure --run-dir <runDir> --seat ${A} --label base${S.tier ? '' : ' --no-snapshot'} (if it prints status "running", poll with ${S.cli} wait --run-dir <runDir> --job measure-${A}-base). Set baselinePasses to suite.passed. If the suite fails or doesn't run at baseline, put the reason and the failing tail in baselineNote.${S.modeGiven ? '' : ' Otherwise set baselinePasses to false and baselineNote to "".'}`}
+    : `${S.modeGiven ? 'Then' : 'If the mode is implement,'} measure the baseline: ${S.cli} measure --run-dir <runDir> --seat ${A} --label base${P.factory ? '' : ' --no-snapshot'} (if it prints status "running", poll with ${S.cli} wait --run-dir <runDir> --job measure-${A}-base). Set baselinePasses to suite.passed. If the suite fails or doesn't run at baseline, put the reason and the failing tail in baselineNote.${S.modeGiven ? '' : ' Otherwise set baselinePasses to false and baselineNote to "".'}`}
 
 ## Step 4 — acceptance criteria
 ${Array.isArray(S.raw.criteria) && S.raw.criteria.length
     ? `Use exactly these, numbered C1, C2, …:\n${S.raw.criteria.map(c => `- ${c}`).join('\n')}\nDon't reword them. If one can't be checked from inside a seat's worktree (see below), keep it and add in its text, in brackets, what a verifier can check instead and what stays unverified.`
-    : S.tier === 'simple' ? 'Write 1 to 3 acceptance criteria for this simple change: concrete, checkable statements of what a correct result must satisfy, derived from the task and the code, not from any particular solution. Read the relevant code before writing them. Number them C1, C2, ….'
+    : P.simple ? 'Write 1 to 3 acceptance criteria for this simple change: concrete, checkable statements of what a correct result must satisfy, derived from the task and the code, not from any particular solution. Read the relevant code before writing them. Number them C1, C2, ….'
     : 'Write 3 to 7 acceptance criteria: concrete, checkable statements of what a complete and correct result must satisfy, derived from the task, the reference documents from step 1 (what they require for this task) and the codebase, not from any particular solution. They are the yardstick every position is judged against and they are fixed before anyone starts, so make them fair to different valid approaches. Read the relevant code before writing them. Number them C1, C2, ….'}
-${requiredChecksRule(S)}${S.tier === 'architecture' ? 'The seats deliver a design and a milestone plan, not the change, so write criteria the design must meet: what it must cover and decide, and what the finished work must do once every milestone is built.\n' : ''}Every criterion must be checkable by the route seats and verifiers actually have: reading files, and running commands from a worktree inside a sandbox, with no subagents, no \`claude -p\`, no network and no logins. ${S.mode === 'design' || S.mode === 'investigate' ? 'For a design or an investigation, checking the document against the code is a fine route; not every criterion needs a command. ' : ''}Name the evidence in the criterion itself where it isn't obvious (a test, a command, a file to read). Don't write a criterion only a capability the seats lack could check.
+${requiredChecksRule(S)}${P.architecture ? 'The seats deliver a design and a milestone plan, not the change, so write criteria the design must meet: what it must cover and decide, and what the finished work must do once every milestone is built.\n' : ''}Every criterion must be checkable by the route seats and verifiers actually have: reading files, and running commands from a worktree inside a sandbox, with no subagents, no \`claude -p\`, no network and no logins. ${S.mode === 'design' || S.mode === 'investigate' ? 'For a design or an investigation, checking the document against the code is a fine route; not every criterion needs a command. ' : ''}Name the evidence in the criterion itself where it isn't obvious (a test, a command, a file to read). Don't write a criterion only a capability the seats lack could check.
 
 ## Step 5 — the task file
-Write <runDir>/TASK.md with the task (verbatim), the mode and what it means the seats deliver (for implement: the integrated change in their worktree, including the tests and docs the criteria ask for${S.tier === 'feature' ? '; in this run each seat first writes a plan, and only the author of the chosen plan then builds it' : ''}${S.tier === 'architecture' ? '; in this run, a design ending in milestones, with nothing in the repository changed' : ''}), the paths of the reference-document snapshots, the context if any, the acceptance criteria, and the verification command.
+Write <runDir>/TASK.md with the task (verbatim), the mode and what it means the seats deliver (for implement: the integrated change in their worktree, including the tests and docs the criteria ask for${P.feature ? '; in this run each seat first writes a plan, and only the author of the chosen plan then builds it' : ''}${P.architecture ? '; in this run, a design ending in milestones, with nothing in the repository changed' : ''}), the paths of the reference-document snapshots, the context if any, the acceptance criteria, and the verification command.
 
 Return the values from these steps.`
 }
