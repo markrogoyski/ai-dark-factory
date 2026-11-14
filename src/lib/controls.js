@@ -31,7 +31,8 @@ function factoryStrategy(S, intake) {
 
 function factoryPairConfig(S) {
   const raw = { ...S.raw, ...S.raw.pair }
-  for (const key of ['tier', 'seats', 'simple', 'panel', 'spec', 'audit', 'roles', 'evidence', 'strategy', 'pair']) delete raw[key]
+  // design: false is a standalone /pair option; the factory's pair strategy always designs first.
+  for (const key of ['tier', 'seats', 'simple', 'panel', 'spec', 'audit', 'roles', 'evidence', 'strategy', 'pair', 'design']) delete raw[key]
   // Unlike a standalone /pair run, a factory run keeps its retro: its facts are what the router is
   // tuned from. The retro and record turns use the factory's roles in the Codex host.
   const config = parsePairConfig(raw)
@@ -49,7 +50,7 @@ function executionPlan(S) {
     requiredCLIs: externalVendors(S).map(v => v === 'gemini' ? 'agy' : v),
     verification: S.verify || S.raw.verify || 'discovered during setup; not yet run',
     limits: { ...S.controls, repair: S.controls.repair || (S.tier === 'simple' ? { maxPasses: 1, minor: 'block' } : null), maxReviews: S.pairOptions?.maxReviews || null, rounds: S.pairOptions ? null : S.rounds },
-    effort: S.pairOptions ? 'Setup, design and code turns, up to the review budget; measurements between code revisions.'
+    effort: S.pairOptions ? `Setup, ${S.pairOptions.design === false ? 'no design stage; ' : 'design and '}code turns, up to the review budget; measurements between code revisions.`
       : 'Depends on findings, retries and escalation. Limits are caps, not cost forecasts.',
     intake: S.factory?.intake || null,
   }

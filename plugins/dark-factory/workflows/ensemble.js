@@ -89,14 +89,17 @@ const countsOf = (xs, f) => Object.entries(xs.reduce((m, x) => { const k = f(x);
 // Run configuration: what the caller's args say, and the seat catalog. Pure: no runtime globals.
 
 // A string task may start with `--seats a,b,c,d` (as /council passes its text through as a string),
-// and for the factory with `--tier simple`, in either order.
-function parseArgs(a) {
+// and for the factory with `--tier simple`, in either order. `switches` names a workflow's
+// valueless flags, each as [key, value]: Pair's `--no-design` is { 'no-design': ['design', false] }.
+function parseArgs(a, switches = {}) {
   if (typeof a !== 'string') return a || {}
   const out = {}, names = { seats: 'seats', tier: 'tier', strategy: 'strategy', author: 'author', reviewer: 'reviewer',
     'max-reviews': 'maxReviews', 'max-turns': 'maxTurns', 'max-run-min': 'maxRunMin', candidates: 'candidates', reviewers: 'reviewers', mode: 'mode', runtime: 'runtime' }
   let rest = a, match
   while (true) {
     if (/^\s*--explain(?:\s|$)/.test(rest)) { out.explain = true; rest = rest.replace(/^\s*--explain(?:\s+|$)/, ''); continue }
+    const flag = rest.match(/^\s*--([\w-]+)(?:\s+([\s\S]*))?$/)
+    if (flag && Object.hasOwn(switches, flag[1])) { out[switches[flag[1]][0]] = switches[flag[1]][1]; rest = flag[2] || ''; continue }
     match = rest.match(/^\s*--([\w-]+)[= ]\s*([^\s]+)(?:\s+([\s\S]*))?$/)
     if (!match || (!names[match[1]] && match[1] !== 'repair-passes')) break
     if (match[1] === 'repair-passes') out.repair = { maxPasses: match[2] }
@@ -3967,7 +3970,8 @@ function factoryStrategy(S, intake) {
 
 function factoryPairConfig(S) {
   const raw = { ...S.raw, ...S.raw.pair }
-  for (const key of ['tier', 'seats', 'simple', 'panel', 'spec', 'audit', 'roles', 'evidence', 'strategy', 'pair']) delete raw[key]
+  // design: false is a standalone /pair option; the factory's pair strategy always designs first.
+  for (const key of ['tier', 'seats', 'simple', 'panel', 'spec', 'audit', 'roles', 'evidence', 'strategy', 'pair', 'design']) delete raw[key]
   // Unlike a standalone /pair run, a factory run keeps its retro: its facts are what the router is
   // tuned from. The retro and record turns use the factory's roles in the Codex host.
   const config = parsePairConfig(raw)
@@ -3985,7 +3989,7 @@ function executionPlan(S) {
     requiredCLIs: externalVendors(S).map(v => v === 'gemini' ? 'agy' : v),
     verification: S.verify || S.raw.verify || 'discovered during setup; not yet run',
     limits: { ...S.controls, repair: S.controls.repair || (S.tier === 'simple' ? { maxPasses: 1, minor: 'block' } : null), maxReviews: S.pairOptions?.maxReviews || null, rounds: S.pairOptions ? null : S.rounds },
-    effort: S.pairOptions ? 'Setup, design and code turns, up to the review budget; measurements between code revisions.'
+    effort: S.pairOptions ? `Setup, ${S.pairOptions.design === false ? 'no design stage; ' : 'design and '}code turns, up to the review budget; measurements between code revisions.`
       : 'Depends on findings, retries and escalation. Limits are caps, not cost forecasts.',
     intake: S.factory?.intake || null,
   }

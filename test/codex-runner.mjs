@@ -69,6 +69,10 @@ test('CLI merges full arguments and explicit options without parsing task text a
   assert.equal(pair.workflow, 'pair')
   assert.deepEqual(pair.args, { author: 'opus', reviewer: 'astra', maxReviews: 6, task: 'Build it' })
   assert.throws(() => parseCLI(['--author', 'opus', 'Build it']), /require --workflow pair/)
+  const direct = parseCLI(['--workflow', 'pair', '--no-design', 'Write the plan'])
+  assert.deepEqual(direct.args, { design: false, task: 'Write the plan' })
+  assert.equal(direct.noDesign, undefined)
+  assert.throws(() => parseCLI(['--no-design', 'Write the plan']), /--no-design requires --workflow pair/)
 })
 
 test('schema validation rejects malformed or stale model outputs', () => {

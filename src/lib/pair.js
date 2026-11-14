@@ -4,8 +4,18 @@ function newPairState() {
 }
 
 // Pair decisions are shared by both hosts. Only the reviewer can close findings.
+// A string task may also start with --no-design, among the other flags.
+const PAIR_SWITCHES = { 'no-design': ['design', false] }
 function parsePairArgs(args) {
-  return parseArgs(args)
+  return parseArgs(args, PAIR_SWITCHES)
+}
+
+// design: false skips the design stage, for a task whose deliverable is itself a document or a
+// plan: there the approved design is the deliverable, and writing and reviewing it twice paid for
+// it twice. The first author turn then writes the deliverable and its test contract, and review
+// starts at the measured snapshot. Factory never sets it.
+function pairDesigned(S) {
+  return S.pairOptions?.design !== false
 }
 
 function parsePairConfig(args) {
@@ -18,6 +28,8 @@ function parsePairConfig(args) {
   const reviewer = parseSeat(raw.reviewer || (author.vendor === 'claude' ? 'astra' : 'opus'), raw.effort)
   const maxReviews = raw.maxReviews === undefined ? 8 : Number(raw.maxReviews)
   if (!Number.isSafeInteger(maxReviews) || maxReviews < 2 || maxReviews > 100) throw new Error('pair: maxReviews must be an integer from 2 to 100.')
+  if (raw.design !== undefined && typeof raw.design !== 'boolean') throw new Error('pair: design must be true or false (--no-design in a string task).')
+  const design = raw.design !== false
   const config = parseConfig({ ...raw, mode: 'implement', retro: false,
     simple: { implementer: author.key, reviewer: reviewer.key } }, { workflow: 'pair', tier: 'simple' })
   // Setup writes the criteria and the gate, and the run inherits their quality: Sonnet setup dropped
@@ -31,12 +43,14 @@ function parsePairConfig(args) {
   return { ...config, raw, tier: 'pair', simple: null, panel: [], specReviewers: [],
     roles: { setup }, lineup: [hostSeat(config.host, author)],
     auditors: [{ ...hostSeat(config.host, reviewer), lens: 'review', id: 'PR' }],
-    pairOptions: { author, reviewer, maxReviews } }
+    pairOptions: { author, reviewer, maxReviews, design } }
 }
 
+// Without a design stage the contract is the author's to revise with the code, so it is part of
+// the reviewed version: a contract change on the same tree is a new version, not a stall.
 function pairVersion(S) {
   return S.pair.stage === 'design' ? `design:${promptHash(JSON.stringify([S.pair.design, S.pair.testContract]))}:${S.pair.measurement?.snapshot?.tree || 'base'}`
-    : `code:${S.pair.measurement?.snapshot?.tree || 'unmeasured'}`
+    : `code:${S.pair.measurement?.snapshot?.tree || 'unmeasured'}${pairDesigned(S) ? '' : `:${promptHash(JSON.stringify(S.pair.approvedContract))}`}`
 }
 
 function pairReviewTag(S) {
@@ -159,6 +173,19 @@ function pairMappingError(S) {
   return missing.length ? `No replay mapping for ${missing.map(c => c.id).join(', ')}.` : null
 }
 
+// Without a design stage the author's contract is the obligation from this turn on. An empty one
+// after the first keeps the contract already in force. Returns why it can't be accepted, or null.
+function pairAdoptContract(S, author) {
+  const p = S.pair, given = author.testContract
+  const contract = p.approvedContract && !given?.testRoots?.length && !given?.checks?.length ? p.approvedContract : given
+  const error = pairContractError(S, contract)
+  if (error) return error
+  p.testContract = contract
+  p.approvedContract = JSON.parse(JSON.stringify(contract))
+  p.replayMapping = author.replayMapping || []
+  return pairMappingError(S)
+}
+
 function pairReplayReadiness(S, blocked, incomplete) {
   const p = S.pair, replay = p.measurement?.replay, request = pairReplayRequest(S)
   const mappingIdentity = entries => JSON.stringify(entries?.map(e => [e.file, e.command, e.checkIds, e.fixtures]))
@@ -260,7 +287,7 @@ function pairReadiness(S) {
     else if (assessments[0].status !== 'met') blocked.push(`Criterion ${c.id} is ${assessments[0].status}.`)
   }
   if (p.stage === 'code') {
-    if (!p.approvedDesign) incomplete.push('The design has not passed review.')
+    if (!p.approvedDesign && pairDesigned(S)) incomplete.push('The design has not passed review.')
     if (!p.approvedContract) incomplete.push('The test contract has not passed review.')
     const m = p.measurement
     if (!m || m.status !== 'done' || !/^[0-9a-f]{40,64}$/.test(m.snapshot?.tree || '')) incomplete.push('No measured snapshot of the current implementation.')

@@ -20,6 +20,7 @@ export function parseCLI(argv, cwd = process.cwd()) {
     if (arg === '--explain') { out.args.explain = true; continue }
     if (arg === '--prepare') { out.prepare = true; continue }
     if (arg === '--brief') { out.brief = true; continue }
+    if (arg === '--no-design') { out.args.design = false; out.noDesign = true; continue }
     if (arg === '--help' || arg === '-h') { out.help = true; continue }
     if (!arg.startsWith('-')) { task.push(arg); continue }
     const match = /^--([^=]+)(?:=(.*))?$/.exec(arg)
@@ -50,6 +51,8 @@ export function parseCLI(argv, cwd = process.cwd()) {
   }
   if (task.length) out.args.task = task.join(' ')
   if (!out.resume && out.workflow !== 'pair' && ['author', 'reviewer', 'maxReviews'].some(key => out.args[key] !== undefined)) throw new Error('author, reviewer, and maxReviews require --workflow pair')
+  if (!out.resume && out.workflow !== 'pair' && out.noDesign) throw new Error('--no-design requires --workflow pair')
+  delete out.noDesign
   if (out.args.tier && !tiers.has(out.args.tier)) throw new Error('Unknown tier: ' + out.args.tier)
   if (out.prepare && (out.resume || out.workflow === 'run-plan')) throw new Error('--prepare checks a new single run; it does not support --resume or run-plan')
   if (!out.help && out.workflow === 'run-plan' && (out.resume || !out.args.planFile)) throw new Error('Run-plan requires --plan-file; repeat it to resume, without --resume')

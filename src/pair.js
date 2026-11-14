@@ -1,4 +1,6 @@
 async function pairRun() {
+  // Without a design stage the run starts, and stays, at the code stage.
+  if (!pairDesigned(S)) S.pair.stage = 'code'
   phase('Setup')
   // Native Claude workflows need a native transport for measurements. Prefer one of the two
   // selected participants; CLI seats and all Codex-host turns use their adapters. Setup is not a
@@ -42,7 +44,7 @@ async function pairRun() {
   const unverifiable = (setup.unverifiable || []).filter(u => String(u?.criterion || '').trim())
   const supplied = unverifiable.filter(u => u.origin !== 'written')
   for (const u of unverifiable.filter(u => u.origin === 'written'))
-    S.repositoryNotes = `${S.repositoryNotes ? `${S.repositoryNotes}\n` : ''}Setup could not find a run-time check for ${u.criterion}, which it wrote: ${oneLine(u.reason, 300) || 'no reason given'}. Check it by inspecting the code and the plan, and say so in the design.`
+    S.repositoryNotes = `${S.repositoryNotes ? `${S.repositoryNotes}\n` : ''}Setup could not find a run-time check for ${u.criterion}, which it wrote: ${oneLine(u.reason, 300) || 'no reason given'}. Check it by inspecting the code and the plan, and say so in the ${pairDesigned(S) ? 'design' : 'handoff'}.`
   if (supplied.length) {
     const text = id => S.criteria.find(c => c.id === id)?.text
     S.pair.stop = `Setup found ${supplied.length === 1 ? 'a criterion' : 'criteria'} this run cannot verify: ${supplied.map(u => u.criterion).join(', ')}.`
@@ -50,13 +52,24 @@ async function pairRun() {
     return pairResult(S, 'needs-user')
   }
   const p = S.pair
-  log(`pair: ${S.pairOptions.author.name} authors; ${S.pairOptions.reviewer.name} reviews; budget ${S.pairOptions.maxReviews} reviews`)
+  log(`pair: ${S.pairOptions.author.name} authors; ${S.pairOptions.reviewer.name} reviews; budget ${S.pairOptions.maxReviews} reviews${pairDesigned(S) ? '' : '; no design stage'}`)
   while (p.reviews.length < S.pairOptions.maxReviews) {
     let label = `pair-${p.stage}-${p.reviews.length + 1}`
     p.label = label
     phase(p.stage === 'design' ? 'Design' : 'Implement')
     let author = await pairAuthorTurn(label)
-    if (p.stage === 'design' && author?.status === 'done') {
+    if (!pairDesigned(S) && author?.status === 'done') {
+      // The author writes the contract with the deliverable; a malformed one, or a mapping that
+      // doesn't fit it, gets the same single correction a malformed design contract gets.
+      const error = pairAdoptContract(S, author)
+      if (error) {
+        p.author = author
+        S.notes.push(`${label}: ${error} Requested one author correction.`)
+        label += '-corrected'
+        p.label = label
+        author = await pairAuthorTurn(label, error)
+      }
+    } else if (p.stage === 'design' && author?.status === 'done') {
       p.author = author
       p.design = author.design
       p.testContract = author.testContract
@@ -82,6 +95,10 @@ async function pairRun() {
       const error = pairContractError(S, p.testContract)
       if (error) { p.stop = error; return pairResult(S, 'blocked') }
     } else {
+      if (!pairDesigned(S)) {
+        const error = pairAdoptContract(S, author)
+        if (error) { p.stop = error; return pairResult(S, 'blocked') }
+      }
       p.replayMapping = author.replayMapping || []
       const mappingError = pairMappingError(S)
       if (mappingError) { p.stop = mappingError; return pairResult(S) }
@@ -141,7 +158,9 @@ async function pairRun() {
         : 'Review stalled: the artifact and unmet criteria or verification results did not change.'
       return pairResult(S)
     }
-    if (p.stage === 'code' && review.requiresDesignRevision) {
+    // Without a design stage there is none to return to: the flag blocks readiness like a finding,
+    // and the author reworks the approach in the next implementation turn.
+    if (p.stage === 'code' && review.requiresDesignRevision && pairDesigned(S)) {
       p.stage = 'design'
       p.approvedDesign = ''
       p.approvedContract = null
