@@ -17,14 +17,19 @@ from .retro import timeline_event
 # What each job kind runs, filled in by the modules that own the work (providers, measure,
 # verification, delivery) as they are imported; the package's __init__ imports all of them.
 JOB_RUNNERS = {}
-VENDOR_KINDS = ('codex', 'gemini', 'claude')
+# Vendor turns (the providers' kinds), by the seats/<seat>/ file that keeps the session a later turn resumes.
+JOB_SESSION_FILES = {}
 # The --brief form of a job's result, by job-key prefix.
 JOB_BRIEFS = {}
 
 
-def register_job_runner(kind, run):
-    """`run(jd, spec)` returns the job's result for a spec of this kind."""
+def register_job_runner(kind, run, session_file=None):
+    """`run(jd, spec)` returns the job's result for a spec of this kind. A vendor turn names its
+    session file: it is checked before a recovery turn, retried once on a transient failure, and
+    pin-guarded against its spec."""
     JOB_RUNNERS[kind] = run
+    if session_file:
+        JOB_SESSION_FILES[kind] = session_file
 
 
 def register_job_brief(prefix, brief):
@@ -192,11 +197,10 @@ def run_job_spec(jd, spec):
     try:
         if spec.get('pin') and not os.environ.get('DARK_FACTORY_PIN'):
             os.environ['DARK_FACTORY_PIN'] = json.dumps(spec['pin'])
-        pin_guard(spec.get('runDir'), spec if spec['kind'] in VENDOR_KINDS else None)
-        if spec['kind'] in VENDOR_KINDS:
+        pin_guard(spec.get('runDir'), spec if spec['kind'] in JOB_SESSION_FILES else None)
+        if spec['kind'] in JOB_SESSION_FILES:
             if spec.get('resumeSession'):
-                session_name = {'claude': 'claude-session', 'codex': 'thread', 'gemini': 'conversation'}[spec['kind']]
-                path = os.path.join(spec['runDir'], 'seats', spec['seat'], session_name)
+                path = os.path.join(spec['runDir'], 'seats', spec['seat'], JOB_SESSION_FILES[spec['kind']])
                 if spec['fresh'] or not os.path.isfile(path) or read(path).strip() != spec['resumeSession']:
                     raise CouncilError('recovery session is missing or changed; refusing to start a fresh turn')
             run = JOB_RUNNERS[spec['kind']]
@@ -213,7 +217,7 @@ def run_job_spec(jd, spec):
             result = JOB_RUNNERS[spec['kind']](jd, spec)
         else:
             result = {'status': 'error', 'error': f'unknown job kind {spec["kind"]}'}
-        checked = pin_guard(spec.get('runDir'), spec if spec['kind'] in VENDOR_KINDS else None)
+        checked = pin_guard(spec.get('runDir'), spec if spec['kind'] in JOB_SESSION_FILES else None)
         if checked:
             result['executor'] = checked['executor']
             if checked.get('settings'):
