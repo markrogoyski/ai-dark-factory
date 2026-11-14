@@ -19,6 +19,7 @@ For a focused test or an intended red, put the command in a file and pass --comm
 
 # What you are checking: seat A, the final plan
 - Current version: post /tmp/proj/.council/test-ffeat/room/final/A.md
+- Supporting files: scripts the post cites should sit next to it, named A-<name>; if one isn't there, use the path the post gives. The room's directories for later rounds and stages are created up front, so ignore the empty ones.
 - Earlier versions: /tmp/proj/.council/test-ffeat/room/r<N>/A.md
 - The code the plan builds on: /tmp/proj/.council/test-ffeat/wt/A, a checkout of the starting commit that stays unchanged while plans are written. Judge its claims about the code there.
 

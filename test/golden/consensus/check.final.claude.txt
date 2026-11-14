@@ -16,6 +16,7 @@ Fix the empty-input crash in Parser::parse
 
 # What you are checking: seat B, the final version
 - Current version: worktree /tmp/proj/.council/test-consensus/wt/B; post /tmp/proj/.council/test-consensus/room/final/B.md
+- Supporting files: scripts the post cites should sit next to it, named B-<name>; if one isn't there, use the path the post gives. The room's directories for later rounds and stages are created up front, so ignore the empty ones.
 - Earlier versions: /tmp/proj/.council/test-consensus/room/r<N>/B.diff, or a checkout via `dark-factory materialize --run-dir /tmp/proj/.council/test-consensus --seat B --label r<N>`, which prints its path
 
 # Step 1 — measure

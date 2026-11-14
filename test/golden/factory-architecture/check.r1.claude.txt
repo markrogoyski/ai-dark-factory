@@ -16,6 +16,7 @@ Make the sync resumable across restarts, per endpoint, without re-downloading pa
 
 # What you are checking: seat A, round 1
 - Current version: post /tmp/proj/.council/test-farch/room/r1/A.md
+- Supporting files: scripts the post cites should sit next to it, named A-<name>; if one isn't there, use the path the post gives. The room's directories for later rounds and stages are created up front, so ignore the empty ones.
 - Earlier versions: /tmp/proj/.council/test-farch/room/r<N>/A.md
 - The code the design builds on: /tmp/proj. Judge its claims about the code there, and don't modify it.
 

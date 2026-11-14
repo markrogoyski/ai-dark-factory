@@ -16,6 +16,7 @@ Fix the retry handling
 
 # What you are checking: seat A, the fixed final version
 - Current version: worktree /tmp/proj/.council/test-deadlock/wt/A; post /tmp/proj/.council/test-deadlock/room/final2/A.md
+- Supporting files: scripts the post cites should sit next to it, named A-<name>; if one isn't there, use the path the post gives. The room's directories for later rounds and stages are created up front, so ignore the empty ones.
 - Earlier versions: /tmp/proj/.council/test-deadlock/room/r<N>/A.diff, or a checkout via `dark-factory materialize --run-dir /tmp/proj/.council/test-deadlock --seat A --label r<N>`, which prints its path
 
 # Step 1 — measure
