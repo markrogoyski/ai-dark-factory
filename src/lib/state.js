@@ -2,6 +2,31 @@
 // state object `S` (see newState) as its first argument and touches nothing else, so a test can
 // build a state and call any of it directly.
 
+// The wording and flags that depend on which workflow and tier is running, resolved from the
+// state in one place so the prompts read them instead of branching on S.tier inline. Recomputed on
+// each call because a factory run can change tier mid-run (escalation).
+function tierProfile(S) {
+  const tier = S.tier || null
+  const simple = tier === 'simple', feature = tier === 'feature', architecture = tier === 'architecture'
+  return {
+    tier, factory: !!tier, simple, feature, architecture,
+    workflow: S.workflowName,
+    ensemble: S.workflowName === 'ensemble',
+    pair: S.workflowName === 'pair',
+    // a tier whose verification command gates the result (architecture builds nothing)
+    gated: !!tier && !architecture,
+    // the worker addressed by the prompt, and how the others are named
+    worker: simple ? 'you' : 'a council seat',
+    workersHave: simple ? 'you have' : 'seats have',
+    workerPossessive: simple ? 'your' : 'a seat\'s',
+    roomNote: simple ? 'where your post and tests go' : 'shared by all seats',
+    // the independent reader of a finished change, and of the result in an audit fix pass
+    changeReviewer: simple ? 'reviewer' : 'auditor',
+    resultReviewer: architecture ? 'reviewer' : 'auditor',
+    result: architecture ? 'plan' : 'change',
+  }
+}
+
 // The state of one run: the config (parseConfig) plus everything that changes as the run goes.
 // Created once at boot; the functions below and in the other lib/ files read and update it.
 function newState(config) {

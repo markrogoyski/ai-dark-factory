@@ -1635,3 +1635,34 @@ describe('the Architecture tier', () => {
     assert.deepEqual(single, { from: 'simple', to: 'fix', trigger: 'verify-failed' }, 'one hand-up records as before')
   })
 })
+
+describe('tierProfile', () => {
+  const L = loadLib()
+  const P = (tier, workflowName = tier ? 'factory' : 'council') => L.tierProfile({ tier, workflowName })
+  test('council (no tier)', () => {
+    const p = P(undefined)
+    assert.equal(p.factory, false); assert.equal(p.gated, false); assert.equal(p.tier, null)
+    assert.equal(p.worker, 'a council seat'); assert.equal(p.changeReviewer, 'auditor'); assert.equal(p.result, 'change')
+  })
+  test('simple', () => {
+    const p = P('simple')
+    assert.equal(p.simple, true); assert.equal(p.gated, true)
+    assert.equal(p.worker, 'you'); assert.equal(p.workersHave, 'you have'); assert.equal(p.workerPossessive, 'your')
+    assert.equal(p.roomNote, 'where your post and tests go'); assert.equal(p.changeReviewer, 'reviewer'); assert.equal(p.resultReviewer, 'auditor')
+  })
+  test('feature', () => {
+    const p = P('feature')
+    assert.equal(p.feature, true); assert.equal(p.gated, true)
+    assert.equal(p.worker, 'a council seat'); assert.equal(p.roomNote, 'shared by all seats'); assert.equal(p.changeReviewer, 'auditor')
+  })
+  test('architecture', () => {
+    const p = P('architecture')
+    assert.equal(p.architecture, true); assert.equal(p.gated, false)
+    assert.equal(p.resultReviewer, 'reviewer'); assert.equal(p.result, 'plan')
+  })
+  test('ensemble and pair', () => {
+    assert.equal(P('simple', 'ensemble').ensemble, true)
+    assert.equal(P('simple', 'pair').pair, true)
+    assert.equal(P('simple').ensemble, false)
+  })
+})
