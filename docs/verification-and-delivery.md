@@ -76,7 +76,7 @@ Readiness and delivery are separate steps:
      |
      |  you authorize delivery
      v
-  dark-factory apply --run-dir RUN       clean base required; stages the reviewed snapshot
+  dark-factory apply --run-dir RUN       original base, no tracked edits; stages the reviewed snapshot
      |                                   and checks its tree hash; does not commit
      v
   local-plan updates and any reviewed adjustments, listed in a manifest with their hashes
@@ -126,8 +126,11 @@ dark-factory apply --run-dir <runDir>
 dark-factory verify-delivery --run-dir <runDir> --result <runDir>/result.json
 ```
 
-`apply` requires the original base and a clean tracked checkout/index, refuses local file
-collisions, stages the snapshot, and checks its tree hash. It does not commit. Supply `--result`
+`apply` requires the original base and a clean tracked checkout/index. Untracked files recorded
+at setup (`deliveryBaseline` in `run.json`) may stay; it refuses a changed one, any other new
+untracked file, and local file collisions. It stages the snapshot and checks its tree hash. It does
+not commit. Files delivered any other way, such as copied by hand, count as delivered only once
+`verify-delivery` reports `delivered`. Supply `--result`
 when the full saved result is elsewhere, including native runs. Delivery verification still runs the project gate.
 
 For diagnosis of an incomplete run whose snapshot has already been applied, add
