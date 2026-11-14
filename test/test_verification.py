@@ -7,7 +7,7 @@ import subprocess
 import unittest
 from unittest import mock
 
-from test_council import CLI, TmpDirCase, council
+from test_council import CLI, TmpDirCase, council, patch_cli
 
 
 class Verification(TmpDirCase):
@@ -145,7 +145,7 @@ class Verification(TmpDirCase):
             council.write(os.path.join(self.wt, 'tests/changed.py'), 'raise RuntimeError("mutable live bytes")\n')
             return result
 
-        with mock.patch.object(council, 'snapshot', side_effect=capture):
+        with patch_cli('snapshot', side_effect=capture):
             result = council.run_measure_job('', {'runDir': self.rd, 'seat': 'A', 'label': 'frozen', 'job': 'frozen',
                 'suiteTimeout': 5, 'testTimeout': 5, 'tests': [], 'replay': {'testRoots': ['tests'], 'mapping': self.replay_mapping()}})
         self.assertEqual(result['replay']['base'], self.run['head'])
@@ -221,7 +221,7 @@ class Verification(TmpDirCase):
             if command == 'unlaunchable': raise OSError('simulated launch failure')
             return original(command, *args, **kwargs)
         mapping = self.replay_mapping(); mapping[0]['command'] = 'unlaunchable'
-        with mock.patch.object(council, 'run_shell', side_effect=launch):
+        with patch_cli('run_shell', side_effect=launch):
             result = council.run_measure_job('', {'runDir': self.rd, 'seat': 'A', 'label': 'launch', 'job': 'launch',
                 'suiteTimeout': 5, 'testTimeout': 5, 'tests': [], 'replay': {'testRoots': ['tests'], 'mapping': mapping}})
         records = result['replay']['records']
@@ -550,7 +550,7 @@ class Verification(TmpDirCase):
 
     def test_no_writable_temp_root_is_infrastructure_without_executing_the_gate(self):
         with mock.patch.object(council.tempfile, 'TemporaryDirectory', side_effect=PermissionError(13, 'sandbox denied')), \
-                mock.patch.object(council, 'run_shell') as execute:
+                patch_cli('run_shell') as execute:
             result = council.suite(self.run, self.wt, 'denied', 'A', 10)
         execute.assert_not_called()
         self.assertFalse(result['ran'])
@@ -657,7 +657,7 @@ class Verification(TmpDirCase):
         self.assertEqual(result['suite']['mutated'], ['unchanged'])
 
     def test_failed_verification_checkout_is_an_infrastructure_failure(self):
-        with mock.patch.object(council, 'detached_checkout', side_effect=council.CouncilError('refused')):
+        with patch_cli('detached_checkout', side_effect=council.CouncilError('refused')):
             out = council.run_measure_job(None, {'runDir': self.rd, 'seat': 'A', 'label': 'infra', 'job': 'measure-A-infra',
                                                  'tests': [], 'suiteTimeout': 10, 'testTimeout': 10})
         self.assertFalse(out['scratch'])

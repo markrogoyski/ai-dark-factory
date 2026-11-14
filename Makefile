@@ -40,7 +40,7 @@ unit:
 syntax:
 	@for f in test/*.mjs test/fixtures/*.cjs tools/*.mjs plugins/dark-factory/lib/*.mjs plugins/dark-factory/skills/dark-factory/scripts/*.mjs plugins/dark-factory/bin/dark-factory-codex plugins/dark-factory/bin/dark-factory-evaluate; do $(NODE) --check $$f || exit 1; done
 	@bash -n install-codex.sh
-	@$(PYTHON) -B -c "import sys; [compile(open(f).read(), f, 'exec') for f in sys.argv[1:]]" plugins/dark-factory/bin/dark-factory plugins/dark-factory/lib/engine-publish.py $(wildcard test/*.py)
+	@$(PYTHON) -B -c "import sys; [compile(open(f).read(), f, 'exec') for f in sys.argv[1:]]" plugins/dark-factory/bin/dark-factory $(wildcard plugins/dark-factory/lib/dark_factory_cli/*.py) plugins/dark-factory/lib/engine-publish.py $(wildcard test/*.py)
 	@echo "syntax: ok"
 
 # A plugin installed from a local folder is read from it live, so there is nothing to copy; this checks

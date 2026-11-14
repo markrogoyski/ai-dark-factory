@@ -2,8 +2,6 @@
 
 import argparse
 import concurrent.futures
-import importlib.machinery
-import importlib.util
 import json
 import os
 import shlex
@@ -15,11 +13,7 @@ import unittest
 from unittest import mock
 
 
-CLI = os.path.join(os.path.dirname(__file__), '..', 'plugins', 'dark-factory', 'bin', 'dark-factory')
-loader = importlib.machinery.SourceFileLoader('provider_cli', CLI)
-module_spec = importlib.util.spec_from_loader('provider_cli', loader)
-council = importlib.util.module_from_spec(module_spec)
-loader.exec_module(council)
+from test_council import CLI, council, patch_cli  # noqa: E402
 
 
 class ClaudeProvider(unittest.TestCase):
@@ -211,7 +205,7 @@ sys.exit(int(os.environ.get('CLAUDE_TEST_EXIT', '0')))
         for saved in (None, 'wrong', 'expected'):
             if saved:
                 council.write(session_file, saved)
-            with mock.patch.object(council, 'run_claude_job', return_value={
+            with patch_cli('run_claude_job', return_value={
                     'status': 'error', 'error': 'temporarily unavailable'}) as run, \
                     mock.patch.object(council.time, 'sleep', side_effect=AssertionError('recovery retried')):
                 council.cmd_job(jd)
@@ -230,7 +224,7 @@ sys.exit(int(os.environ.get('CLAUDE_TEST_EXIT', '0')))
         self.assertNotIn('--json-schema', args)
 
     def test_claude_preflight_uses_its_own_home(self):
-        with mock.patch.object(council, 'emit') as emit:
+        with patch_cli('emit') as emit:
             council.cmd_preflight(argparse.Namespace(vendors='claude'))
         self.assertEqual(emit.call_args.args[0]['status'], 'ok')
         self.assertEqual(emit.call_args.args[0]['vendors']['claude']['exe'], 'claude')
@@ -238,7 +232,7 @@ sys.exit(int(os.environ.get('CLAUDE_TEST_EXIT', '0')))
     def test_job_dispatch_retries_transient_failure_once(self):
         jd = os.path.join(self.root, 'jobs', 'retry')
         council.write_json(os.path.join(jd, 'spec.json'), self.spec('retry'))
-        with mock.patch.object(council, 'run_claude_job', side_effect=[
+        with patch_cli('run_claude_job', side_effect=[
             {'status': 'error', 'error': 'temporarily unavailable'}, {'status': 'done', 'result': {'answer': 'done'}},
         ]) as run, mock.patch.dict(os.environ, {'COUNCIL_RETRY_WAIT': '0'}):
             council.cmd_job(jd)
@@ -250,8 +244,8 @@ sys.exit(int(os.environ.get('CLAUDE_TEST_EXIT', '0')))
         council.write(prompt, 'changed')
         args = argparse.Namespace(vendor='claude', checkout=None, prompt_file=prompt, expect=council.prompt_hash('original'),
                                   no_transcript=True, transcript_wait=10)
-        with mock.patch.object(council, 'payload_from_transcripts', side_effect=AssertionError('transcript access')), \
-                mock.patch.object(council, 'emit') as emit:
+        with patch_cli('payload_from_transcripts', side_effect=AssertionError('transcript access')), \
+                patch_cli('emit') as emit:
             council.cmd_seat_run(args)
         self.assertEqual(emit.call_args.args[0]['status'], 'hash-mismatch')
 
@@ -262,8 +256,8 @@ sys.exit(int(os.environ.get('CLAUDE_TEST_EXIT', '0')))
         council.write(payload_file, payload)
         args = argparse.Namespace(summary=False, run_dir=self.root, facts_only=True, payload_file=payload_file,
                                   expect=council.prompt_hash(payload), transcript_wait=10, out_dir=os.path.join(self.root, 'retros'))
-        with mock.patch.object(council, 'payload_from_transcripts', side_effect=AssertionError('transcript access')), \
-                mock.patch.object(council, 'emit') as emit:
+        with patch_cli('payload_from_transcripts', side_effect=AssertionError('transcript access')), \
+                patch_cli('emit') as emit:
             council.cmd_retro(args)
         self.assertTrue(emit.call_args.args[0]['facts'])
         args.expect = 'wrong'
@@ -283,8 +277,8 @@ sys.exit(int(os.environ.get('CLAUDE_TEST_EXIT', '0')))
         out_dir = os.path.join(self.root, 'retros2')
         args = argparse.Namespace(summary=False, run_dir=self.root, facts_only=True, payload_file=payload_file,
                                   expect=council.prompt_hash(payload), transcript_wait=10, out_dir=out_dir)
-        with mock.patch.object(council, 'claude_usage', return_value={'byModel': {'claude-opus': {'messages': 3}}}), \
-                mock.patch.object(council, 'emit'):
+        with patch_cli('claude_usage', return_value={'byModel': {'claude-opus': {'messages': 3}}}), \
+                patch_cli('emit'):
             council.cmd_retro(args)
         saved = json.loads(council.read(os.path.join(out_dir, 'run-2-' + os.path.basename(self.cwd) + '.facts.json')))['metrics']
         self.assertIsNone(saved['elapsedMs'])

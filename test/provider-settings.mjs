@@ -78,7 +78,7 @@ test('actual typed TOML presentation preserves identity and activation drift ref
   assert.match(guard(f, pin, spec).stdout, /active plugin|settings changed/)
 })
 test('pinned helper constructs strict provider controls without changing native defaults',()=>{
-  const text=readFileSync(new URL('../plugins/dark-factory/bin/dark-factory',import.meta.url),'utf8')
+  const text=readFileSync(new URL('../plugins/dark-factory/lib/dark_factory_cli/providers.py',import.meta.url),'utf8')
   assert.match(text,/--disable-slash-commands/);assert.match(text,/--strict-mcp-config/);assert.match(text,/'--mcp-config', '\{"mcpServers":\{\}\}'/)
   assert.match(text,/'ConfigChange'/);assert.match(text,/approval_policy="never"/)
 })
