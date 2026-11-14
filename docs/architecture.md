@@ -94,7 +94,9 @@ The same generated workflow file runs on both hosts; only the runtime around it 
     (bounded repairs with fresh reviews).
   - `src/00-meta*.js`: each workflow's `meta` (it must stay a plain literal) and header comment.
   - `tools/sources.mjs` lists each built workflow's files in order.
-- `bin/dark-factory`: deterministic plumbing, since workflow scripts have no shell. It handles
+- `bin/dark-factory`: deterministic plumbing, since workflow scripts have no shell. A thin entry point
+  for the `lib/dark_factory_cli/` package (one module per concern: jobs, providers, verification,
+  measure, delivery, retro, and so on). It handles
   worktrees, snapshots (`refs/council/<run>/<seat>-<round>`), suite and cross-test runs, and
   Codex turns. Seats leave their change uncommitted unless the task asks for commits; a snapshot
   keeps a seat's commits and puts anything uncommitted in one council commit on top. A Codex

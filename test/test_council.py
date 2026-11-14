@@ -6,12 +6,11 @@ subprocess calls and a whole simulated run; here each one is a table.
 
 import argparse
 import contextlib
-import importlib.machinery
 import io
 from datetime import timedelta
-import importlib.util
 import json
 import os
+import sys
 import tempfile
 import unittest
 from unittest import mock
@@ -20,15 +19,19 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 CLI = os.path.join(HERE, '..', 'plugins', 'dark-factory', 'bin', 'dark-factory')
 
 
-def load():
-    loader = importlib.machinery.SourceFileLoader('council_cli', CLI)
-    spec = importlib.util.spec_from_loader('council_cli', loader)
-    module = importlib.util.module_from_spec(spec)
-    loader.exec_module(module)
-    return module
+sys.path.insert(0, os.path.join(HERE, '..', 'plugins', 'dark-factory', 'lib'))
+import dark_factory_cli as council  # noqa: E402
 
 
-council = load()
+@contextlib.contextmanager
+def patch_cli(name, new=mock.DEFAULT, **kwargs):
+    """Patch NAME in every helper module that has it, so its callers see the replacement too."""
+    replacement = mock.MagicMock(**kwargs) if new is mock.DEFAULT else new
+    with contextlib.ExitStack() as stack:
+        for target in (council, *council.MODULES):
+            if hasattr(target, name):
+                stack.enter_context(mock.patch.object(target, name, replacement))
+        yield replacement
 
 
 class TmpDirCase(unittest.TestCase):
@@ -299,8 +302,8 @@ class SettleExistingJob(TmpDirCase):
 
     def settle(self, jd, decide):
         emitted = []
-        with mock.patch.object(council, 'emit', emitted.append), \
-                mock.patch.object(council, 'wait_job', lambda jd, key, max_wait: {'status': 'waited', 'job': key}):
+        with patch_cli('emit', emitted.append), \
+                patch_cli('wait_job', lambda jd, key, max_wait: {'status': 'waited', 'job': key}):
             answered = council.settle_existing_job(jd, 'k', 5, decide)
         return answered, emitted
 
