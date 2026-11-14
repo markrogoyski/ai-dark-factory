@@ -34,7 +34,7 @@ function idOf(s) {
   return m ? m[1] : str
 }
 
-// Prompt integrity: must match prompt_hash() in bin/dark-factory exactly.
+// Prompt integrity: must match prompt_hash() in plugins/dark-factory/lib/dark_factory_cli/common.py exactly.
 function fnv(str) {
   let h = 0x811c9dc5
   for (let i = 0; i < str.length; i++) {
