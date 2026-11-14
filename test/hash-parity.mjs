@@ -1,11 +1,11 @@
-// Prompt-hash parity between the workflow (JS), bin/dark-factory (Python) and the Codex runner
-// (plugins/dark-factory/lib/codex-runner.mjs). The JS sides are the functions as they appear in
-// src/lib/util.js (what workflows/council.js is built from) and in codex-runner.mjs (which does not
-// export promptHash), lifted out of the source, not copies kept here.
+// Prompt-hash parity between the workflow (JS), bin/dark-factory (Python) and the Codex runner.
+// The runner has no copy of its own: it imports promptHash from plugins/dark-factory/lib/policy.mjs,
+// which is built from src/lib/util.js. The JS side here is the function lifted out of src/lib/util.js
+// (what the workflows are built from); the policy side is the built module the runner imports.
 import { execFileSync } from 'node:child_process'
 import { writeFileSync, mkdtempSync, readFileSync } from 'node:fs'
 import { join, dirname } from 'node:path'
-import { fileURLToPath } from 'node:url'
+import { fileURLToPath, pathToFileURL } from 'node:url'
 import { tmpdir } from 'node:os'
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..')
@@ -17,10 +17,10 @@ if (start < 0 || end < 0) { console.error('FAIL: fnv/normalize/promptHash not fo
 const promptHash = new Function(`${source.slice(start, end)}\nreturn promptHash`)()
 
 const runnerSource = readFileSync(join(root, 'plugins', 'dark-factory', 'lib', 'codex-runner.mjs'), 'utf8')
-const runnerStart = runnerSource.indexOf('function promptHash(text) {')
-const runnerEnd = runnerSource.indexOf('\n}\n', runnerStart)
-if (runnerStart < 0 || runnerEnd < 0) { console.error('FAIL: promptHash not found in plugins/dark-factory/lib/codex-runner.mjs'); process.exit(1) }
-const runnerPromptHash = new Function(`${runnerSource.slice(runnerStart, runnerEnd + 2)}\nreturn promptHash`)()
+if (!/import \{[^}]*\bpromptHash\b[^}]*\} from '\.\/policy\.mjs'/.test(runnerSource) || /function promptHash\(/.test(runnerSource)) {
+  console.error('FAIL: codex-runner.mjs must import promptHash from ./policy.mjs and keep no copy of its own'); process.exit(1)
+}
+const { promptHash: runnerPromptHash } = await import(pathToFileURL(join(root, 'plugins', 'dark-factory', 'lib', 'policy.mjs')).href)
 
 const dir = mkdtempSync(join(tmpdir(), 'council-hash-'))
 const cases = [

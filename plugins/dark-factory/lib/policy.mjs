@@ -4786,4 +4786,4 @@ function providerDiagnostic(S, observations, unknown) {
     invalidation: 'Persistent approvals changing watched capabilities invalidate this run; one-time approvals without source changes do not.',
     reasons: unknown.length ? ['unknown-capabilities'] : [] }
 }
-export { engineIdentityIssues, launchReport, launchRequirements, pinnedOperationIssues, provenanceFacts, providerConfiguration, reachableProviders }
+export { engineIdentityIssues, launchReport, launchRequirements, pinnedOperationIssues, promptHash, provenanceFacts, providerConfiguration, reachableProviders }

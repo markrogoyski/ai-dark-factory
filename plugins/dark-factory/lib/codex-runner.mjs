@@ -12,6 +12,7 @@ const plugin = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const helper = join(plugin, 'bin', 'dark-factory')
 const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor
 import { parseCLI, positiveInteger } from './cli-options.mjs'
+import { promptHash } from './policy.mjs'
 export { parseCLI } from './cli-options.mjs'
 
 export const HELP = `Usage: dark-factory-codex [options] [--] TASK
@@ -89,13 +90,6 @@ export function validateResult(value, schema, path = '$') {
     value.forEach((item, index) => validateResult(item, schema.items, `${path}[${index}]`))
   }
   return value
-}
-
-function promptHash(text) {
-  const normalized = String(text).replace(/\r\n/g, '\n').replace(/[ \t\n]+$/, '')
-  let hash = 0x811c9dc5
-  for (let i = 0; i < normalized.length; i++) hash = Math.imul((hash ^ normalized.charCodeAt(i)) >>> 0, 0x01000193) >>> 0
-  return `${normalized.length}-${hash.toString(16).padStart(8, '0')}`
 }
 
 function jobKey(value) {
