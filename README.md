@@ -1,3 +1,5 @@
+![AI Dark Factory Logo](https://github.com/markrogoyski/ai-dark-factory/blob/main/docs/image/AIDarkFactoryLogo.png?raw=true)
+
 # AI Dark Factory
 
 **Autonomous agent workflows that plan and implement on their own, checked by multi-agent review across models from different vendors.**
