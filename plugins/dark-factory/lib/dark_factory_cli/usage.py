@@ -4,7 +4,8 @@ import json
 import os
 import re
 
-from .common import emit, load_run, read
+from . import common
+from .common import load_run, read
 
 
 def cmd_usage(a):
@@ -23,7 +24,7 @@ def cmd_usage(a):
     out = {'status': 'ok', 'byModel': by_model}
     if not a.no_claude:
         out['claude'] = claude_usage(load_run(a.run_dir))
-    emit(out)
+    common.emit(out)
 
 
 USAGE_KEYS = ('input_tokens', 'output_tokens', 'cache_creation_input_tokens', 'cache_read_input_tokens')

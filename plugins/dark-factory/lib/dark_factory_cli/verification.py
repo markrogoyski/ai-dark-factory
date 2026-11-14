@@ -9,7 +9,10 @@ import shutil
 import tempfile
 import time
 
-from .common import CouncilError, emit, git, load_run, read, run_shell, tail, write, write_json
+from . import common, jobs
+from .common import CouncilError, git, load_run, read, subject_environment, tail, write, write_json
+from .jobs import job_dir, register_job_runner, settle_existing_job, start_job
+from .snapshots import tracked_changes
 
 
 def verification_config(run):
@@ -109,7 +112,7 @@ def suite(run, cwd, label, seat, timeout, settings=None):
         attempt_log = log if attempt == 0 else log + '.retry'
         try:
             with verification_temp(run, settings) as env:
-                r = run_shell(settings['command'], cwd, max(0.01, timeout - (time.monotonic() - started)), attempt_log, env=env)
+                r = common.run_shell(settings['command'], cwd, max(0.01, timeout - (time.monotonic() - started)), attempt_log, env=env)
                 infrastructure = run.get('factory') and verification_infrastructure_failure(r, env)
                 attempts.append(dict(r, env={**settings['env'], **{k: env[k] for k in ('TMPDIR', 'TMP', 'TEMP') if k in env}},
                                      failureKind='infrastructure' if infrastructure else ''))
@@ -233,7 +236,7 @@ def inspect_evidence(run, seat, label):
 
 
 def cmd_evidence(a):
-    emit(inspect_evidence(load_run(a.run_dir), a.seat, a.label))
+    common.emit(inspect_evidence(load_run(a.run_dir), a.seat, a.label))
 
 
 def cmd_verify(a):
@@ -256,7 +259,7 @@ def cmd_verify(a):
     if settle_existing_job(jd, key, a.max_wait, decide):
         return
     start_job(jd, spec)
-    emit(wait_job(jd, key, a.max_wait))
+    common.emit(jobs.wait_job(jd, key, a.max_wait))
 
 
 def crosstest(run, cwd, label, seat, test_ids, timeout, reset=False, env=None):
@@ -303,7 +306,7 @@ def crosstest(run, cwd, label, seat, test_ids, timeout, reset=False, env=None):
             results.append({'test': tid, 'outcome': 'conflict', 'note': f'{conflict} already exists with different content'})
         else:
             log = os.path.join(run['runDir'], 'logs', f'cross-{tid}-on-{seat}-{label}.log')
-            r = run_shell(command, cwd, timeout, log, env=env)
+            r = common.run_shell(command, cwd, timeout, log, env=env)
             outcome = 'pass' if r['exitCode'] == 0 and not r['timedOut'] else 'fail'
             results.append({'test': tid, 'outcome': outcome, 'exitCode': r['exitCode'],
                             'timedOut': r['timedOut'], 'tail': tail(r['tail'], 12)})
@@ -324,7 +327,5 @@ def crosstest(run, cwd, label, seat, test_ids, timeout, reset=False, env=None):
                 git('checkout', '-q', '--', '.', cwd=cwd, check=False)
     return results
 
-# Imported last: these modules import names from this one, and each name below is used only at call time.
-from .jobs import job_dir, settle_existing_job, start_job, wait_job
-from .pinning import subject_environment
-from .snapshots import tracked_changes
+
+register_job_runner('verify', lambda jd, spec: run_verify_job(jd, spec))

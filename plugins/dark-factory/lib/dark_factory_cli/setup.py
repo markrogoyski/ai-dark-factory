@@ -1,66 +1,17 @@
-"""Run setup and teardown: worktrees, dependency clones, reference and agent-doc copies (init, cleanup)."""
+"""Run setup and teardown: worktrees and reference copies (init, cleanup)."""
 
 import json
 import os
 import re
 import shutil
 import subprocess
-import sys
 import time
 
-from .common import CouncilError, DEPS, ROOM_DIRS, SELF, VERIFICATION_BASE_ENV, emit, git, load_run, read, write_json
-
-
-def clone_deps(src_root, dst_root):
-    """Copy ignored dependency dirs (vendor/, node_modules/) into a fresh worktree.
-
-    A real copy, not a symlink: Composer's autoloader resolves __DIR__ through symlinks, so a
-    symlinked vendor/ would silently autoload the *main* tree's classes. On APFS `cp -c` clones
-    copy-on-write, so this is near-instant and costs no disk.
-    """
-    cloned = []
-    for d in DEPS:
-        src, dst = os.path.join(src_root, d), os.path.join(dst_root, d)
-        if not os.path.isdir(src) or os.path.exists(dst):
-            continue
-        ignored = subprocess.run(['git', 'check-ignore', '-q', d], cwd=src_root,
-                                 stdin=subprocess.DEVNULL, close_fds=True).returncode == 0
-        if not ignored:
-            continue
-        r = subprocess.run(['cp', '-cR', src, dst], stdin=subprocess.DEVNULL, capture_output=True, close_fds=True)
-        if r.returncode != 0:
-            shutil.rmtree(dst, ignore_errors=True)
-            r = subprocess.run(['cp', '-R', src, dst], stdin=subprocess.DEVNULL, capture_output=True, close_fds=True)
-        if r.returncode != 0:
-            shutil.rmtree(dst, ignore_errors=True)
-            copy_skipping_protected(src, dst)
-        cloned.append(d)
-    return cloned
-
-
-# Claude Code's sandbox always denies writing files with these names, wherever they are, so a
-# Claude setup turn on the standalone runner can't copy them (vendor/amphp/serialization ships a
-# .gitmodules). None of them is loaded by a dependency at run time.
-SANDBOX_PROTECTED = frozenset(('.gitmodules', '.gitconfig', '.bashrc', '.bash_profile', '.zshrc', '.zprofile', '.profile', '.ripgreprc', '.mcp.json'))
-
-
-def copy_skipping_protected(src, dst):
-    """Copy a dependency tree, leaving out the sandbox-protected files the copy is refused."""
-    skipped = []
-
-    def copy(a, b):
-        try:
-            return shutil.copy2(a, b)
-        except PermissionError:
-            if os.path.basename(a) not in SANDBOX_PROTECTED:
-                raise
-            skipped.append(os.path.relpath(a, src))
-            return b
-
-    shutil.copytree(src, dst, symlinks=True, copy_function=copy)
-    for rel in skipped:
-        print(f'dark-factory: skipped sandbox-protected {os.path.join(os.path.basename(src), rel)}', file=sys.stderr)
-    return skipped
+from . import common
+from .common import CouncilError, ROOM_DIRS, SELF, VERIFICATION_BASE_ENV, git, load_run, read, write_json
+from .delivery import checkout_changes, checkout_file
+from .retro import setup_started, timeline_event
+from .snapshots import clone_deps, copy_agent_docs
 
 
 REF_MAX_BYTES = 5 * 1024 * 1024
@@ -114,25 +65,6 @@ def copy_refs(root, run_dir, paths):
     return out
 
 
-AGENT_DOCS = ('CLAUDE.md', 'CLAUDE.local.md', 'AGENTS.md', 'GEMINI.md')
-
-
-def copy_agent_docs(root, wt, untracked=False):
-    """Copy ignored instructions, and untracked ones for Factory, into isolated checkouts.
-    Snapshot exclusions keep these local instructions out of the delivered change."""
-    copied = []
-    for name in AGENT_DOCS:
-        src, dst = os.path.join(root, name), os.path.join(wt, name)
-        if not os.path.isfile(src) or os.path.exists(dst):
-            continue
-        ignored = subprocess.run(['git', 'check-ignore', '-q', name], cwd=root, stdin=subprocess.DEVNULL,
-                                 capture_output=True, close_fds=True).returncode == 0
-        if ignored or (untracked and not git('ls-files', '--', name, cwd=root).strip()):
-            shutil.copy2(src, dst)
-            copied.append(name)
-    return copied
-
-
 def cmd_init(a):
     repo = os.path.abspath(a.repo or os.getcwd())
     root = git('rev-parse', '--show-toplevel', cwd=repo).strip()
@@ -140,9 +72,9 @@ def cmd_init(a):
     if not head:
         raise CouncilError('the repository has no commits yet; council worktrees branch from HEAD')
     ref_paths = resolve_refs(root, a.ref)
-    common = git('rev-parse', '--git-common-dir', cwd=root).strip()
-    if not os.path.isabs(common):
-        common = os.path.normpath(os.path.join(root, common))
+    git_common = git('rev-parse', '--git-common-dir', cwd=root).strip()
+    if not os.path.isabs(git_common):
+        git_common = os.path.normpath(os.path.join(root, git_common))
 
     run_id = a.run_id or time.strftime('%Y%m%d-%H%M%S')
     if not re.fullmatch(r'[A-Za-z0-9._-]+', run_id):
@@ -153,7 +85,7 @@ def cmd_init(a):
         raise CouncilError('--seats must be single capital letters, e.g. A,B,C,D')
 
     # Keep .council/ out of `git status` and out of ripgrep, locally, without touching .gitignore.
-    exclude = os.path.join(common, 'info', 'exclude')
+    exclude = os.path.join(git_common, 'info', 'exclude')
     os.makedirs(os.path.dirname(exclude), exist_ok=True)
     existing = read(exclude) if os.path.exists(exclude) else ''
     if '/.council/' not in existing.split('\n'):
@@ -210,7 +142,7 @@ def cmd_init(a):
     if started:
         timeline_event(run_dir, 'setup-start', at=started)
     timeline_event(run_dir, 'init')
-    emit(dict(run, status='ok', worktrees=worktrees, depsCloned=deps, agentDocs=docs,
+    common.emit(dict(run, status='ok', worktrees=worktrees, depsCloned=deps, agentDocs=docs,
               dirty=dirty, untrackedCount=len(untracked)))
 
 
@@ -231,9 +163,5 @@ def cmd_cleanup(a):
         git('update-ref', '-d', r, cwd=root, check=False)
     if a.all:
         shutil.rmtree(run['runDir'], ignore_errors=True)
-    emit({'status': 'ok', 'worktreesRemoved': len(removed), 'refsDeleted': len(refs),
+    common.emit({'status': 'ok', 'worktreesRemoved': len(removed), 'refsDeleted': len(refs),
           'kept': None if a.all else run['room']})
-
-# Imported last: these modules import names from this one, and each name below is used only at call time.
-from .delivery import checkout_changes, checkout_file
-from .retro import setup_started, timeline_event

@@ -10,7 +10,63 @@ import tempfile
 import time
 import uuid
 
-from .common import CouncilError, emit, git, load_run, normalize, oneline, prompt_hash, read, split_schema, tail, write, write_json
+from . import common, jobs, transcripts
+from .common import CouncilError, git, load_run, normalize, oneline, prompt_hash, read, split_schema, tail, subject_environment, write, write_json
+from .jobs import job_dir, register_job_runner, settle_existing_job, start_job
+from .pinning import pin_guard, turn_pin_identity
+from .sandbox import VENDOR_EXE, claude_blocked, codex_blocked, ensure_agy_grant, gemini_blocked
+from .snapshots import checkout_snapshot
+
+
+class Provider:
+    """What one vendor CLI is to the helper. A provider's job function (run_codex_job and the
+    others) builds its command, then goes through the shared steps below: saved_session,
+    run_cli, numeric_usage, record_usage and turn_done."""
+
+    def __init__(self, kind, session_file, pid_file, blocked):
+        self.kind = kind                    # the job kind and seat-run --vendor value
+        self.exe = VENDOR_EXE[kind]         # the CLI on PATH
+        self.session_file = session_file    # in seats/<seat>/: the session a later turn resumes
+        self.pid_file = pid_file            # in the job dir, while the CLI runs
+        self.blocked = blocked              # why the CLI cannot run from here (a sandbox), or None
+
+
+CODEX = Provider('codex', 'thread', 'codex.pid', codex_blocked)
+CLAUDE = Provider('claude', 'claude-session', 'claude.pid', claude_blocked)
+GEMINI = Provider('gemini', 'conversation', 'agy.pid', gemini_blocked)
+PROVIDERS = {p.kind: p for p in (CODEX, CLAUDE, GEMINI)}
+
+
+def saved_session(provider, spec):
+    """The seat's session file and the session it holds; None for a fresh turn or a first one."""
+    path = os.path.join(spec['runDir'], 'seats', spec['seat'], provider.session_file)
+    return path, None if spec['fresh'] or not os.path.exists(path) else read(path).strip()
+
+
+def run_cli(provider, jd, cmd, cwd, stdin, stdout, stderr, env, timeout):
+    """Run one vendor CLI in its own process group, its pid in the job dir, and wait. On the
+    deadline the whole group is killed. Returns (exit code, timed out)."""
+    p = subprocess.Popen(cmd, cwd=cwd, stdin=stdin, stdout=stdout, stderr=stderr, start_new_session=True, env=env, close_fds=True)
+    write(os.path.join(jd, provider.pid_file), str(p.pid))
+    try:
+        return p.wait(timeout=timeout), False
+    except subprocess.TimeoutExpired:
+        try:
+            os.killpg(p.pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+        return p.wait(), True
+
+
+def numeric_usage(reported, bools=True):
+    """The numeric counters of a usage record. Claude's envelope is checked strictly (bools=False);
+    the others have always kept a JSON true or false, which Python counts as a number."""
+    return {k: v for k, v in (reported or {}).items() if isinstance(v, (int, float)) and (bools or not isinstance(v, bool))}
+
+
+def turn_done(spec, thread, started, usage, result, **extra):
+    return {'status': 'done', 'job': spec['job'], 'seat': spec['seat'], 'thread': thread,
+            'elapsedSec': round(time.time() - started, 1), 'usage': usage, 'result': result, **extra}
 
 
 def cmd_seat_run(a):
@@ -24,9 +80,9 @@ def cmd_seat_run(a):
         elif a.vendor == 'gemini':
             bounds['writable'] += [os.path.join(tempfile.gettempdir(), 'council-agy')]
         checked = pin_guard(a.run_dir, bounds)
-    blocked = vendor_blocked(a.vendor)   # first: inside the sandbox, the transcripts may be unreadable too
+    blocked = PROVIDERS[a.vendor].blocked()   # first: inside the sandbox, the transcripts may be unreadable too
     if blocked:
-        emit({'status': 'sandboxed', 'error': blocked})
+        common.emit({'status': 'sandboxed', 'error': blocked})
         return
     if a.vendor == 'gemini' and not checked:
         ensure_agy_grant(os.path.dirname(os.path.abspath(a.run_dir)))   # fails now, not inside the job
@@ -38,16 +94,16 @@ def cmd_seat_run(a):
     text = read(a.prompt_file) if os.path.exists(a.prompt_file) else None
     got = prompt_hash(text) if text is not None else None
     if a.expect and got != a.expect:
-        found = None if getattr(a, 'no_transcript', False) else payload_from_transcripts(a.expect, a.transcript_wait)
+        found = None if getattr(a, 'no_transcript', False) else transcripts.payload_from_transcripts(a.expect, a.transcript_wait)
         if found is not None:
             write(a.prompt_file, found)
             text, got = found, a.expect
         elif text is None:
-            emit({'status': 'need-file', 'expected': a.expect,
+            common.emit({'status': 'need-file', 'expected': a.expect,
                   'hint': 'The payload could not be read from the saved prompt. Write it to the prompt file exactly and retry.'})
             return
         else:
-            emit({'status': 'hash-mismatch', 'expected': a.expect, 'got': got,
+            common.emit({'status': 'hash-mismatch', 'expected': a.expect, 'got': got,
                   'hint': 'The prompt file is not an exact copy of the payload. Rewrite it exactly and retry.'})
             return
     if text is None:
@@ -87,7 +143,7 @@ def cmd_seat_run(a):
     if schema is not None:
         write_json(os.path.join(jd, 'schema.json'), schema)
     start_job(jd, spec)
-    emit(wait_job(jd, a.job, a.max_wait))
+    common.emit(jobs.wait_job(jd, a.job, a.max_wait))
 
 
 # What makes two seat-run calls the same turn: a job is reused only when all of these match.
@@ -190,26 +246,14 @@ def codex_command(jd, spec, thread):
 def run_codex_job(jd, spec):
     started = time.time()
     run_dir = spec['runDir']
-    thread_file = os.path.join(run_dir, 'seats', spec['seat'], 'thread')
-    thread = None if spec['fresh'] or not os.path.exists(thread_file) else read(thread_file).strip()
+    thread_file, thread = saved_session(CODEX, spec)
 
     out_path = os.path.join(jd, 'out.json')
     cmd, cwd = codex_command(jd, spec, thread)                # prompt on stdin — never leave stdin open
 
     events_path, err_path = os.path.join(jd, 'events.jsonl'), os.path.join(jd, 'stderr.txt')
-    timed_out = False
     with open(os.path.join(jd, 'prompt.md'), 'rb') as stdin, open(events_path, 'w') as so, open(err_path, 'w') as se:
-        p = subprocess.Popen(cmd, cwd=cwd, stdin=stdin, stdout=so, stderr=se, start_new_session=True, env=subject_environment(), close_fds=True)
-        write(os.path.join(jd, 'codex.pid'), str(p.pid))
-        try:
-            code = p.wait(timeout=spec['timeout'])
-        except subprocess.TimeoutExpired:
-            try:
-                os.killpg(p.pid, signal.SIGKILL)
-            except ProcessLookupError:
-                pass
-            code = p.wait()
-            timed_out = True
+        code, timed_out = run_cli(CODEX, jd, cmd, cwd, stdin, so, se, subject_environment(), spec['timeout'])
 
     new_thread, usage, errors = None, {}, []
     for line in read(events_path).split('\n'):
@@ -221,7 +265,7 @@ def run_codex_job(jd, spec):
         if t == 'thread.started':
             new_thread = ev.get('thread_id')
         elif t == 'turn.completed' and isinstance(ev.get('usage'), dict):
-            usage = {k: v for k, v in ev['usage'].items() if isinstance(v, (int, float))}
+            usage = numeric_usage(ev['usage'])
         elif t in ('error', 'turn.failed'):
             errors.append(json.dumps(ev.get('error') or ev.get('message') or ev)[:500])
     if new_thread and not thread:
@@ -251,8 +295,7 @@ def run_codex_job(jd, spec):
         except json.JSONDecodeError:
             return {'status': 'error', 'thread': thread or new_thread,
                     'error': 'codex final message was not valid JSON: ' + raw[:500]}
-    return {'status': 'done', 'job': spec['job'], 'seat': spec['seat'], 'thread': thread or new_thread,
-            'elapsedSec': round(time.time() - started, 1), 'usage': usage, 'result': result}
+    return turn_done(spec, thread or new_thread, started, usage, result)
 
 
 def fits_schema(schema, result):
@@ -359,8 +402,7 @@ def run_claude_job(jd, spec):
     """Drive Claude directly from prompt.md; its JSON envelope is never the model's result."""
     started = time.time()
     seat_dir = os.path.join(spec['runDir'], 'seats', spec['seat'])
-    session_file = os.path.join(seat_dir, 'claude-session')
-    session = None if spec['fresh'] or not os.path.exists(session_file) else read(session_file).strip()
+    session_file, session = saved_session(CLAUDE, spec)
     cmd, cwd = claude_command(jd, spec, session)
     if not session:
         # Allocate before launch: JSON output may never arrive if the turn times out.
@@ -368,17 +410,8 @@ def run_claude_job(jd, spec):
         cmd += ['--session-id', session]
     out_path, err_path = os.path.join(jd, 'out.json'), os.path.join(jd, 'stderr.txt')
     with open(os.path.join(jd, 'prompt.md'), 'rb') as stdin, open(out_path, 'w') as so, open(err_path, 'w') as se:
-        p = subprocess.Popen(cmd, cwd=cwd, stdin=stdin, stdout=so, stderr=se, start_new_session=True,
-                             env=claude_env(spec), close_fds=True)
-        write(os.path.join(jd, 'claude.pid'), str(p.pid))
-        try:
-            code = p.wait(timeout=spec['timeout'])
-        except subprocess.TimeoutExpired:
-            try:
-                os.killpg(p.pid, signal.SIGKILL)
-            except ProcessLookupError:
-                pass
-            p.wait()
+        code, timed_out = run_cli(CLAUDE, jd, cmd, cwd, stdin, so, se, claude_env(spec), spec['timeout'])
+        if timed_out:
             write(session_file, session)
             return {'status': 'error', 'thread': session, 'error': f'claude timed out after {spec["timeout"] // 60} min'}
     stderr = read(err_path)
@@ -405,8 +438,7 @@ def run_claude_job(jd, spec):
         return {**failed(f'claude did not resume session {session} (it started {new_session}): the seat lost its memory'), 'thread': None}
     if new_session:
         write(session_file, new_session)
-    reported = out.get('usage') if isinstance(out.get('usage'), dict) else {}
-    usage = {k: v for k, v in reported.items() if isinstance(v, (int, float)) and not isinstance(v, bool)}
+    usage = numeric_usage(out.get('usage') if isinstance(out.get('usage'), dict) else {}, bools=False)
     total = claude_usage_total(seat_dir, session, usage)
     record_usage(spec['runDir'], spec, usage, total, started)
     if code != 0 or out.get('is_error') or out.get('subtype') not in (None, 'success'):
@@ -423,8 +455,7 @@ def run_claude_job(jd, spec):
             return failed('claude returned structured output that does not match this turn\'s schema')
     elif result is None or result == '':
         return failed('claude returned no result')
-    return {'status': 'done', 'job': spec['job'], 'seat': spec['seat'], 'thread': session,
-            'elapsedSec': round(time.time() - started, 1), 'usage': usage, 'result': result, **diagnostics}
+    return turn_done(spec, session, started, usage, result, **diagnostics)
 
 
 def run_gemini_job(jd, spec):
@@ -435,8 +466,7 @@ def run_gemini_job(jd, spec):
     started = time.time()
     run_dir = spec['runDir']
     seat_dir = os.path.join(run_dir, 'seats', spec['seat'])
-    conv_file = os.path.join(seat_dir, 'conversation')
-    conv = None if spec['fresh'] or not os.path.exists(conv_file) else read(conv_file).strip()
+    conv_file, conv = saved_session(GEMINI, spec)
 
     # Where agy starts decides what its sandbox lets shell commands touch: nothing under the start
     # directory can be written, even with a grant, and from anywhere inside the repository nothing
@@ -457,16 +487,9 @@ def run_gemini_job(jd, spec):
         if conversation:
             cmd += ['--conversation', conversation]
         with open(out_path, 'w') as so, open(err_path, 'a') as se:
-            p = subprocess.Popen(cmd, cwd=cwd, stdin=subprocess.DEVNULL, stdout=so, stderr=se, start_new_session=True, env=subject_environment(), close_fds=True)
-            write(os.path.join(jd, 'agy.pid'), str(p.pid))
-            try:
-                code = p.wait(timeout=max(60, spec['timeout'] - (time.time() - started)))
-            except subprocess.TimeoutExpired:
-                try:
-                    os.killpg(p.pid, signal.SIGKILL)
-                except ProcessLookupError:
-                    pass
-                p.wait()
+            code, timed_out = run_cli(GEMINI, jd, cmd, cwd, subprocess.DEVNULL, so, se, subject_environment(),
+                                      max(60, spec['timeout'] - (time.time() - started)))
+            if timed_out:
                 return None, f'agy timed out after {spec["timeout"] // 60} min'
         try:
             return json.loads(read(out_path)), None
@@ -507,7 +530,7 @@ def run_gemini_job(jd, spec):
         if out is None:
             return {'status': 'error', 'error': err[:2000]}
 
-    reported = {k: v for k, v in (out.get('usage') or {}).items() if isinstance(v, (int, float))}
+    reported = numeric_usage(out.get('usage'))
     usage = turn_usage(seat_dir, thread, reported)
     record_usage(run_dir, spec, usage, reported, started)
 
@@ -523,10 +546,9 @@ def run_gemini_job(jd, spec):
         why = (f'agy denied {denied}, which ended the turn early' + (' (also after resuming once)' if resumed else '') if denied
                else 'agy returned no output' + (' (no structured_output)' if schema is not None else ''))
         return {'status': 'error', 'error': f'{why}. {tail(stderr, 5)}'.strip()[:2000]}
-    return {'status': 'done', 'job': spec['job'], 'seat': spec['seat'], 'thread': thread,
-            'elapsedSec': round(time.time() - started, 1), 'usage': usage, 'result': result,
-            **({'denied': denied} if denied else {}), **({'resumedAfter': resumed} if resumed else {}),
-            **({'nudged': True} if nudged else {})}
+    return turn_done(spec, thread, started, usage, result,
+                     **({'denied': denied} if denied else {}), **({'resumedAfter': resumed} if resumed else {}),
+                     **({'nudged': True} if nudged else {}))
 
 
 DENIED_NUDGE = ('Your last request ({denied}) needed a permission that nobody can grant in this run, so it was denied and your turn '
@@ -534,9 +556,8 @@ DENIED_NUDGE = ('Your last request ({denied}) needed a permission that nobody ca
                 'inside it, so read and compare files directly. Carry on with the task from where you stopped, and finish as the '
                 'task asks, with your answer as structured output if it asks for one.')
 
-# Imported last: these modules import names from this one, and each name below is used only at call time.
-from .jobs import job_dir, settle_existing_job, start_job, wait_job
-from .pinning import pin_guard, subject_environment, turn_pin_identity
-from .sandbox import ensure_agy_grant, vendor_blocked
-from .snapshots import checkout_snapshot
-from .transcripts import payload_from_transcripts
+
+# Looked up at call time, so a replaced runner (a test's patch) is the one a job runs.
+register_job_runner('codex', lambda jd, spec: run_codex_job(jd, spec), CODEX.session_file)
+register_job_runner('gemini', lambda jd, spec: run_gemini_job(jd, spec), GEMINI.session_file)
+register_job_runner('claude', lambda jd, spec: run_claude_job(jd, spec), CLAUDE.session_file)
