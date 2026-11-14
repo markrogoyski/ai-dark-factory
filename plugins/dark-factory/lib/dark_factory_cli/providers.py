@@ -10,12 +10,13 @@ import tempfile
 import time
 import uuid
 
-from .common import CouncilError, emit, git, load_run, normalize, oneline, prompt_hash, read, split_schema, tail, subject_environment, write, write_json
-from .jobs import job_dir, register_job_runner, settle_existing_job, start_job, wait_job
+from . import common, jobs, transcripts
+from .common import CouncilError, git, load_run, normalize, oneline, prompt_hash, read, split_schema, tail, subject_environment, write, write_json
+from .jobs import job_dir, register_job_runner, settle_existing_job, start_job
 from .pinning import pin_guard, turn_pin_identity
 from .sandbox import ensure_agy_grant, vendor_blocked
 from .snapshots import checkout_snapshot
-from .transcripts import payload_from_transcripts
+
 
 
 def cmd_seat_run(a):
@@ -31,7 +32,7 @@ def cmd_seat_run(a):
         checked = pin_guard(a.run_dir, bounds)
     blocked = vendor_blocked(a.vendor)   # first: inside the sandbox, the transcripts may be unreadable too
     if blocked:
-        emit({'status': 'sandboxed', 'error': blocked})
+        common.emit({'status': 'sandboxed', 'error': blocked})
         return
     if a.vendor == 'gemini' and not checked:
         ensure_agy_grant(os.path.dirname(os.path.abspath(a.run_dir)))   # fails now, not inside the job
@@ -43,16 +44,16 @@ def cmd_seat_run(a):
     text = read(a.prompt_file) if os.path.exists(a.prompt_file) else None
     got = prompt_hash(text) if text is not None else None
     if a.expect and got != a.expect:
-        found = None if getattr(a, 'no_transcript', False) else payload_from_transcripts(a.expect, a.transcript_wait)
+        found = None if getattr(a, 'no_transcript', False) else transcripts.payload_from_transcripts(a.expect, a.transcript_wait)
         if found is not None:
             write(a.prompt_file, found)
             text, got = found, a.expect
         elif text is None:
-            emit({'status': 'need-file', 'expected': a.expect,
+            common.emit({'status': 'need-file', 'expected': a.expect,
                   'hint': 'The payload could not be read from the saved prompt. Write it to the prompt file exactly and retry.'})
             return
         else:
-            emit({'status': 'hash-mismatch', 'expected': a.expect, 'got': got,
+            common.emit({'status': 'hash-mismatch', 'expected': a.expect, 'got': got,
                   'hint': 'The prompt file is not an exact copy of the payload. Rewrite it exactly and retry.'})
             return
     if text is None:
@@ -92,7 +93,7 @@ def cmd_seat_run(a):
     if schema is not None:
         write_json(os.path.join(jd, 'schema.json'), schema)
     start_job(jd, spec)
-    emit(wait_job(jd, a.job, a.max_wait))
+    common.emit(jobs.wait_job(jd, a.job, a.max_wait))
 
 
 # What makes two seat-run calls the same turn: a job is reused only when all of these match.

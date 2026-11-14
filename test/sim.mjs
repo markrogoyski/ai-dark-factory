@@ -925,9 +925,8 @@ async function scenarioTranscript() {
   assert.ok(existsSync(join(runDir, 'jobs', 'A-r0', 'prompt.md')), 'the Codex job was started from it')
   assert.ok(!readFileSync(join(runDir, 'jobs', 'A-r0', 'prompt.md'), 'utf8').includes('OUTPUT_SCHEMA'), 'schema split off')
   // A process we may not signal (EPERM, as from inside a sandbox) is alive, not dead.
-  const alive = execFileSync('python3', ['-I', '-c', `import importlib.machinery as m, importlib.util as u
-l = m.SourceFileLoader('c', ${JSON.stringify(cli)}); mod = u.module_from_spec(u.spec_from_loader('c', l)); l.exec_module(mod)
-print(mod.pid_alive(1))`], { env }).toString().trim()
+  const alive = execFileSync('python3', ['-I', '-B', '-c', `import sys; sys.path.insert(0, sys.argv[1])
+from dark_factory_cli.jobs import pid_alive; print(pid_alive(1))`, join(dirname(cli), '..', 'lib')], { env }).toString().trim()
   assert.equal(alive, 'True', 'pid_alive treats EPERM as alive')
   return 'seat-run recovers the exact payload from an indented transcript; need-file, hash-mismatch and sandboxed ok'
 }
@@ -2337,7 +2336,8 @@ async function scenarioFactsSave() {
 
 function scenarioHeadlessPrompts() {
   const cli = join(here, '..', 'plugins', 'dark-factory', 'bin', 'dark-factory')
-  const guidance = execFileSync('python3', ['-B', '-c', 'import runpy,sys; print(runpy.run_path(sys.argv[1])["CLAUDE_HEADLESS"])', cli], { encoding: 'utf8' })
+  const guidance = execFileSync('python3', ['-B', '-c', 'import sys; sys.path.insert(0, sys.argv[1]); from dark_factory_cli.providers import CLAUDE_HEADLESS; print(CLAUDE_HEADLESS)',
+    join(dirname(cli), '..', 'lib')], { encoding: 'utf8' })
   const recovery = loadLib().recoverSeatPrompt({}, '/repo/.council/test/room/r0/A.md')
   checkGoldens('headless', [
     { role: { kind: 'guidance' }, label: 'headless', prompt: guidance },

@@ -5,9 +5,10 @@ import json
 import os
 import re
 
-from .common import CouncilError, SELF, emit, load_run, prompt_hash, read, write, write_json
-from .transcripts import payload_from_transcripts
-from .usage import claude_usage
+from . import common, transcripts, usage
+from .common import CouncilError, SELF, load_run, prompt_hash, read, write, write_json
+
+
 
 
 # A development checkout (plugins/dark-factory/bin/ under the repo) keeps retros in the repo, next
@@ -146,13 +147,13 @@ def fill_metrics(run, facts):
                     if isinstance(v, (int, float)) and not isinstance(v, bool) and v >= 0:
                         bucket[k] = bucket.get(k, 0) + v
         try:
-            claude = claude_usage(run)['byModel']
+            claude = usage.claude_usage(run)['byModel']
         except OSError:
             claude = {}
-        for model, usage in claude.items():
-            records += usage.get('messages', 0)
+        for model, model_usage in claude.items():
+            records += model_usage.get('messages', 0)
             bucket = by_model.setdefault(model, {})
-            for key, value in usage.items():
+            for key, value in model_usage.items():
                 if key != 'messages' and isinstance(value, (int, float)) and not isinstance(value, bool) and value >= 0:
                     bucket[key] = bucket.get(key, 0) + value
         m['tokens'] = {'records': records, 'byModel': by_model} if records else None
@@ -184,7 +185,7 @@ def cmd_retro(a):
         if a.expect and prompt_hash(data) != a.expect:
             raise CouncilError('retro payload file does not match --expect')
     else:
-        data = payload_from_transcripts(a.expect, a.transcript_wait) if a.expect else None
+        data = transcripts.payload_from_transcripts(a.expect, a.transcript_wait) if a.expect else None
     if data is not None:
         write(os.path.join(run['runDir'], 'retro-data.md'), data + '\n')
     facts = facts_of(data)
@@ -199,10 +200,10 @@ def cmd_retro(a):
         if facts is not None:
             write_json(base + '.facts.json', fill_metrics(run, facts))
     except PermissionError as e:
-        emit({'status': 'sandboxed', 'error': f'cannot write to {out_dir} ({e.strerror}). This command is running '
+        common.emit({'status': 'sandboxed', 'error': f'cannot write to {out_dir} ({e.strerror}). This command is running '
               'inside a sandbox that only allows writes to the project.'})
         return
-    emit({'status': 'ok', 'path': base + ('.facts.json' if a.facts_only else '.md'), 'notes': data is not None, 'facts': facts is not None})
+    common.emit({'status': 'ok', 'path': base + ('.facts.json' if a.facts_only else '.md'), 'notes': data is not None, 'facts': facts is not None})
 
 
 def retro_summary(out_dir):

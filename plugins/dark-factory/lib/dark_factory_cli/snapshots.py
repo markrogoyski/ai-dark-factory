@@ -7,7 +7,8 @@ import subprocess
 import sys
 import threading
 
-from .common import CouncilError, DEPS, SNAPSHOT_EXCLUDES, emit, git, load_run, oneline, seat_tree, write
+from . import common
+from .common import CouncilError, DEPS, SNAPSHOT_EXCLUDES, git, load_run, oneline, seat_tree, write
 
 
 def clone_deps(src_root, dst_root):
@@ -208,13 +209,13 @@ def detached_checkout(run, path, commit):
     gitdir = path + '.gitdir'
     shutil.rmtree(path, ignore_errors=True)
     shutil.rmtree(gitdir, ignore_errors=True)
-    common = os.path.normpath(os.path.join(root, git('rev-parse', '--git-common-dir', cwd=root).strip()))
+    git_common = os.path.normpath(os.path.join(root, git('rev-parse', '--git-common-dir', cwd=root).strip()))
     sha = git('rev-parse', '--verify', f'{commit}^{{commit}}', cwd=root).strip()
     try:
         os.makedirs(path)
         git('init', '-q', f'--separate-git-dir={gitdir}', path)
         with open(os.path.join(gitdir, 'objects', 'info', 'alternates'), 'w', encoding='utf-8') as f:
-            f.write(os.path.join(common, 'objects') + '\n')
+            f.write(os.path.join(git_common, 'objects') + '\n')
         git('checkout', '-q', '--detach', sha, cwd=path)
     except (CouncilError, OSError) as e:
         shutil.rmtree(path, ignore_errors=True)
@@ -256,4 +257,4 @@ def cmd_materialize(a):
         raise CouncilError(f'invalid checkout name: {name}')
     path = os.path.join(run['runDir'], 'snap', name)
     ref = checkout_snapshot(run, a.seat, a.label, path)
-    emit({'status': 'ok', 'path': path, 'ref': ref})
+    common.emit({'status': 'ok', 'path': path, 'ref': ref})

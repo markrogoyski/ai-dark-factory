@@ -6,8 +6,9 @@ import os
 import re
 import subprocess
 
-from .common import CouncilError, emit, git, load_run, read, write_json
-from .jobs import job_dir, register_job_runner, settle_existing_job, start_job, wait_job
+from . import common, jobs
+from .common import CouncilError, git, load_run, read, write_json
+from .jobs import job_dir, register_job_runner, settle_existing_job, start_job
 from .pinning import pin_guard
 from .snapshots import worktree_tree
 from .verification import inspect_evidence, safe_relative, suite, verification_settings
@@ -186,7 +187,7 @@ def cmd_verify_delivery(a):
         return
     write_json(output, {'status': 'pending', 'job': key})
     start_job(jd, spec)
-    emit(wait_job(jd, key, a.max_wait))
+    common.emit(jobs.wait_job(jd, key, a.max_wait))
 
 
 def cmd_apply(a):
@@ -225,7 +226,7 @@ def cmd_apply(a):
     result = inspect_delivery(run, final, {'adjustments': [], 'handoffs': []})
     if result['problems']:
         raise CouncilError('applied checkout differs: ' + '; '.join(result['problems']))
-    emit({'status': 'applied', 'snapshotRef': ref, 'snapshotTree': tree, 'runDir': run['runDir'],
+    common.emit({'status': 'applied', 'snapshotRef': ref, 'snapshotTree': tree, 'runDir': run['runDir'],
           'next': 'Run dark-factory verify-delivery before committing.'})
 
 

@@ -9,9 +9,10 @@ import shutil
 import subprocess
 import time
 
-from .common import CouncilError, DEPS, emit, git, load_run, prompt_hash, read, run_shell, seat_tree, tail, write, write_json
-from .jobs import job_dir, register_job_brief, register_job_runner, settle_existing_job, start_job, wait_job
-from .snapshots import drop_checkout, scratch_checkout, seat_head, snapshot, tracked_changes, worktree_tree
+from . import common, jobs, snapshots
+from .common import CouncilError, DEPS, git, load_run, prompt_hash, read, seat_tree, tail, write, write_json
+from .jobs import job_dir, register_job_brief, register_job_runner, settle_existing_job, start_job
+from .snapshots import drop_checkout, scratch_checkout, seat_head, tracked_changes, worktree_tree
 from .verification import VerificationInfrastructureError, crosstest, evidence_inputs, file_sha256, inspect_evidence, publish_evidence, safe_relative, suite, verification_concurrency, verification_environment, verification_settings, verification_temp
 
 
@@ -211,7 +212,7 @@ def run_replay(run, spec, snapshot_info, live, settings):
             record['attempted'] = True
             try:
                 with verification_temp(run, settings) as env:
-                    result = run_shell(entry['command'], cwd, spec['testTimeout'], log, env=env)
+                    result = common.run_shell(entry['command'], cwd, spec['testTimeout'], log, env=env)
                 record.update(result, ran=True, hasExitCode=True)
                 record['signal'] = -result['exitCode'] if result['exitCode'] < 0 else 0
                 record['mutated'] = tracked_changes(cwd) if side == 'final' else []
@@ -251,7 +252,7 @@ def run_measure_job(jd, spec):
     out['verification'] = settings
     cwd, scratch = live, None
     if spec.get('snapshot', True):
-        out['snapshot'] = snapshot(run, spec['seat'], spec['label'], spec.get('path'), spec.get('since'))
+        out['snapshot'] = snapshots.snapshot(run, spec['seat'], spec['label'], spec.get('path'), spec.get('since'))
         scratch, err = scratch_checkout(run, spec['seat'], spec['label'], out['snapshot']['commit'], live)
         out['scratch'] = bool(scratch)
         if scratch:
@@ -419,7 +420,7 @@ def cmd_measure(a):
             return dict(state, reused=True)
         return None                                      # failed, or something it depends on changed
 
-    show = (lambda state: emit(measurement_brief(state))) if a.brief else (lambda state: emit(state))
+    show = (lambda state: common.emit(measurement_brief(state))) if a.brief else (lambda state: common.emit(state))
     if settle_existing_job(jd, key, a.max_wait, decide, show):
         return
     if run.get('factory'):
@@ -427,7 +428,7 @@ def cmd_measure(a):
         if os.path.exists(pointer):
             os.remove(pointer)
     start_job(jd, spec)
-    show(wait_job(jd, key, a.max_wait))
+    show(jobs.wait_job(jd, key, a.max_wait))
 
 
 register_job_runner('measure', lambda jd, spec: run_measure_job(jd, spec))

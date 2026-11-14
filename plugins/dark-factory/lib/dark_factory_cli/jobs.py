@@ -8,7 +8,8 @@ import subprocess
 import sys
 import time
 
-from .common import CouncilError, JOB_POLL_SEC, SELF, emit, oneline, read, tail, write, write_json
+from . import common
+from .common import CouncilError, JOB_POLL_SEC, SELF, oneline, read, tail, write, write_json
 from .pinning import pin_guard
 from .retro import timeline_event
 
@@ -120,7 +121,7 @@ def settle_existing_job(jd, key, max_wait, decide, show=None):
     if action is None:
         archive_job(jd)
         return False
-    (show or emit)(wait_job(jd, key, max_wait) if action == 'wait' else action)
+    (show or common.emit)(wait_job(jd, key, max_wait) if action == 'wait' else action)
     return True
 
 
@@ -132,7 +133,7 @@ def cmd_wait(a):
     if a.brief and not brief:
         raise CouncilError('--brief applies only to measurement jobs')
     state = wait_job(jd, a.job, a.max_wait)
-    emit(brief(state) if a.brief else state)
+    common.emit(brief(state) if a.brief else state)
 
 
 def cmd_jobs(a):
@@ -144,7 +145,7 @@ def cmd_jobs(a):
             st = job_state(jd) or {'status': 'empty'}
             rows.append({'job': key, 'status': st.get('status'), 'seconds': st.get('elapsedSec'),
                          'error': (st.get('error') or '')[:200]})
-    emit({'status': 'ok', 'jobs': rows})
+    common.emit({'status': 'ok', 'jobs': rows})
 
 
 # A model at capacity or a short rate limit clears up within a minute or two, so a vendor turn that

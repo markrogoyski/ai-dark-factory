@@ -6,7 +6,8 @@ import shutil
 import subprocess
 import tempfile
 
-from .common import CouncilError, emit, oneline, read, write
+from . import common
+from .common import CouncilError, oneline, read, write
 
 
 def home_blocked(home, who, create=False):
@@ -115,4 +116,4 @@ def cmd_preflight(a):
         c.update(ok=True, version=oneline(r.stdout, 80))
     bad = {v: c for v, c in checks.items() if not c['ok']}
     status = 'ok' if not bad else 'sandboxed' if all(c.get('sandboxed') for c in bad.values()) else 'error'
-    emit({'status': status, 'vendors': checks})
+    common.emit({'status': status, 'vendors': checks})

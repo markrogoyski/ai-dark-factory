@@ -7,7 +7,8 @@ import shutil
 import subprocess
 import time
 
-from .common import CouncilError, ROOM_DIRS, SELF, VERIFICATION_BASE_ENV, emit, git, load_run, read, write_json
+from . import common
+from .common import CouncilError, ROOM_DIRS, SELF, VERIFICATION_BASE_ENV, git, load_run, read, write_json
 from .delivery import checkout_changes, checkout_file
 from .retro import setup_started, timeline_event
 from .snapshots import clone_deps, copy_agent_docs
@@ -71,9 +72,9 @@ def cmd_init(a):
     if not head:
         raise CouncilError('the repository has no commits yet; council worktrees branch from HEAD')
     ref_paths = resolve_refs(root, a.ref)
-    common = git('rev-parse', '--git-common-dir', cwd=root).strip()
-    if not os.path.isabs(common):
-        common = os.path.normpath(os.path.join(root, common))
+    git_common = git('rev-parse', '--git-common-dir', cwd=root).strip()
+    if not os.path.isabs(git_common):
+        git_common = os.path.normpath(os.path.join(root, git_common))
 
     run_id = a.run_id or time.strftime('%Y%m%d-%H%M%S')
     if not re.fullmatch(r'[A-Za-z0-9._-]+', run_id):
@@ -84,7 +85,7 @@ def cmd_init(a):
         raise CouncilError('--seats must be single capital letters, e.g. A,B,C,D')
 
     # Keep .council/ out of `git status` and out of ripgrep, locally, without touching .gitignore.
-    exclude = os.path.join(common, 'info', 'exclude')
+    exclude = os.path.join(git_common, 'info', 'exclude')
     os.makedirs(os.path.dirname(exclude), exist_ok=True)
     existing = read(exclude) if os.path.exists(exclude) else ''
     if '/.council/' not in existing.split('\n'):
@@ -141,7 +142,7 @@ def cmd_init(a):
     if started:
         timeline_event(run_dir, 'setup-start', at=started)
     timeline_event(run_dir, 'init')
-    emit(dict(run, status='ok', worktrees=worktrees, depsCloned=deps, agentDocs=docs,
+    common.emit(dict(run, status='ok', worktrees=worktrees, depsCloned=deps, agentDocs=docs,
               dirty=dirty, untrackedCount=len(untracked)))
 
 
@@ -162,5 +163,5 @@ def cmd_cleanup(a):
         git('update-ref', '-d', r, cwd=root, check=False)
     if a.all:
         shutil.rmtree(run['runDir'], ignore_errors=True)
-    emit({'status': 'ok', 'worktreesRemoved': len(removed), 'refsDeleted': len(refs),
+    common.emit({'status': 'ok', 'worktreesRemoved': len(removed), 'refsDeleted': len(refs),
           'kept': None if a.all else run['room']})

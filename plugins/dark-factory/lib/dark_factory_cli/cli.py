@@ -32,7 +32,8 @@ import argparse
 import os
 import sys
 
-from .common import CouncilError, DEFAULT_MAX_WAIT, TRANSCRIPT_WAIT_SEC, emit, fail, prompt_hash, read
+from . import common
+from .common import CouncilError, DEFAULT_MAX_WAIT, TRANSCRIPT_WAIT_SEC, fail, prompt_hash, read
 from .delivery import cmd_apply, cmd_verify_delivery
 from .jobs import cmd_job, cmd_jobs, cmd_wait
 from .measure import cmd_measure
@@ -47,7 +48,7 @@ from .verification import cmd_evidence, cmd_verify
 
 
 def cmd_hash(a):
-    emit({'status': 'ok', 'hash': prompt_hash(read(a.file))})
+    common.emit({'status': 'ok', 'hash': prompt_hash(read(a.file))})
 
 
 def main():

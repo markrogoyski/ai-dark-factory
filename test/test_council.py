@@ -12,6 +12,7 @@ import json
 import os
 import sys
 import tempfile
+import types
 import unittest
 from unittest import mock
 
@@ -20,18 +21,27 @@ CLI = os.path.join(HERE, '..', 'plugins', 'dark-factory', 'bin', 'dark-factory')
 
 
 sys.path.insert(0, os.path.join(HERE, '..', 'plugins', 'dark-factory', 'lib'))
-import dark_factory_cli as council  # noqa: E402
+from dark_factory_cli import (common, pinning, setup, jobs, transcripts, sandbox, providers, snapshots,  # noqa: E402
+                              verification, measure, delivery, usage, retro, cli)
+
+MODULES = (common, pinning, setup, jobs, transcripts, sandbox, providers, snapshots, verification, measure,
+           delivery, usage, retro, cli)
+# Every helper name in one namespace, so a test reads council.<name>. Patching it here changes
+# nothing the helper calls: patch_cli patches the module that owns the name.
+council = types.ModuleType('council')
+for _module in MODULES:
+    vars(council).update({k: v for k, v in vars(_module).items() if not k.startswith('__')})
+del _module
 
 
-@contextlib.contextmanager
 def patch_cli(name, new=mock.DEFAULT, **kwargs):
-    """Patch NAME in every helper module that has it, so its callers see the replacement too."""
-    replacement = mock.MagicMock(**kwargs) if new is mock.DEFAULT else new
-    with contextlib.ExitStack() as stack:
-        for target in (council, *council.MODULES):
-            if hasattr(target, name):
-                stack.enter_context(mock.patch.object(target, name, replacement))
-        yield replacement
+    """Patch NAME in the module that defines it. Callers elsewhere reach it through that module
+    (jobs.wait_job), so they see the replacement; one that imported the name itself would not."""
+    owner = sys.modules[getattr(council, name).__module__]
+    stale = [m.__name__ for m in MODULES if m is not owner and getattr(m, name, None) is getattr(owner, name)]
+    if stale:
+        raise AssertionError(f'{name} is imported by name in {stale}; call it as {owner.__name__.split(".")[-1]}.{name}')
+    return mock.patch.object(owner, name, new, **kwargs)
 
 
 class TmpDirCase(unittest.TestCase):
