@@ -114,6 +114,42 @@ function pairContractError(S, contract) {
   return null
 }
 
+// A reviewer sometimes names a criterion by its ID and text ("C1: The parser rejects ..."), which
+// Gemini did in a live code review. Where the text starts with exactly one known ID followed by a
+// non-word character, keep only the ID, so the assessment is not silently lost to readiness.
+// Rewrites the review in place; anything else is left for pairCriteriaError to reject.
+function pairNormalizeReview(S, review) {
+  const ids = S.criteria.map(c => c.id)
+  const bare = value => {
+    if (typeof value !== 'string' || ids.includes(value.trim())) return typeof value === 'string' ? value.trim() : value
+    const hits = ids.filter(id => value.trim().startsWith(id) && /^\W/.test(value.trim().slice(id.length)))
+    return hits.length === 1 ? hits[0] : value
+  }
+  for (const list of [review?.criteria, review?.challenges]) {
+    if (Array.isArray(list)) for (const item of list) if (item && typeof item === 'object') item.criterion = bare(item.criterion)
+  }
+  return review
+}
+
+// Every acceptance criterion needs exactly one assessment, under its ID.
+function pairCriteriaError(S, review) {
+  const ids = S.criteria.map(c => c.id)
+  const given = Array.isArray(review?.criteria) ? review.criteria.map(a => a?.criterion) : []
+  const missing = ids.filter(id => !given.includes(id))
+  const unknown = given.filter(id => !ids.includes(id))
+  const repeated = given.filter((id, i) => ids.includes(id) && given.indexOf(id) !== i)
+  if (!missing.length && !unknown.length && !repeated.length) return null
+  return `The review needs exactly one criteria assessment for each acceptance criterion, under its bare ID (${ids.join(', ')}).` +
+    `${missing.length ? ` Missing: ${missing.join(', ')}.` : ''}` +
+    `${unknown.length ? ` Not a criterion ID: ${unknown.map(id => JSON.stringify(oneLine(String(id), 80))).join(', ')}.` : ''}` +
+    `${repeated.length ? ` Repeated: ${[...new Set(repeated)].join(', ')}.` : ''}`
+}
+
+// A review whose structured fields can be fixed without changing its judgement: one correction.
+function pairCorrectableError(S, review) {
+  return ((S.pair.stage === 'design' || pairChallengesDue(S)) && pairChallengeError(S, review)) || pairCriteriaError(S, review)
+}
+
 // A challenge may cite, beside checks that cover its criterion, a check that covers only another
 // criterion or none in the contract. The covering checks already carry the challenge, so the
 // stray IDs are dropped rather than costing a correction turn. Returns what was dropped.
@@ -240,6 +276,8 @@ function pairIngestReview(S, review) {
     const error = pairChallengeError(S, review)
     if (error) return error
   }
+  const criteriaError = pairCriteriaError(S, review)
+  if (criteriaError) return criteriaError
   const resolutions = review.resolutions || []
   const seen = new Set()
   for (const r of resolutions) {

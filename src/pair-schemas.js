@@ -1,4 +1,5 @@
 const PAIR_STRINGS = { type: 'array', items: { type: 'string' } }
+const PAIR_CRITERION_ID = { type: 'string', description: 'The bare criterion ID, such as C1, never its text.' }
 const PAIR_SETUP_SCHEMA = strict({ type: 'object', properties: {
   ...SETUP_SCHEMA.properties,
   status: { type: 'string', enum: ['ok', 'dirty', 'needs-plan', 'needs-user', 'preflight', 'error'] },
@@ -61,7 +62,7 @@ const PAIR_REVIEW_SCHEMA = strict({ type: 'object', properties: {
   version: { type: 'string' }, complete: { type: 'boolean' }, summary: { type: 'string' },
   requiresDesignRevision: { type: 'boolean' },
   challenges: { type: 'array', items: { type: 'object', properties: {
-    criterion: { type: 'string' }, wrongImplementation: { type: 'string' }, rejectingCheckIds: PAIR_STRINGS,
+    criterion: PAIR_CRITERION_ID, wrongImplementation: { type: 'string' }, rejectingCheckIds: PAIR_STRINGS,
   } } },
   findings: { type: 'array', items: { type: 'object', properties: {
     severity: SEVERITY, statement: { type: 'string' }, evidence: { type: 'string' },
@@ -69,7 +70,9 @@ const PAIR_REVIEW_SCHEMA = strict({ type: 'object', properties: {
   resolutions: { type: 'array', items: { type: 'object', properties: {
     id: { type: 'string' }, status: { type: 'string', enum: ['open', 'fixed', 'refuted'] }, evidence: { type: 'string' },
   } } },
-  criteria: CHECK_SCHEMA.properties.criteria,
+  criteria: { type: 'array', items: { type: 'object', properties: {
+    ...CHECK_SCHEMA.properties.criteria.items.properties, criterion: PAIR_CRITERION_ID,
+  } } },
   suggestions: { type: 'array', items: { type: 'string' } },
 } })
 

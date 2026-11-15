@@ -4300,6 +4300,42 @@ function pairContractError(S, contract) {
   return null
 }
 
+// A reviewer sometimes names a criterion by its ID and text ("C1: The parser rejects ..."), which
+// Gemini did in a live code review. Where the text starts with exactly one known ID followed by a
+// non-word character, keep only the ID, so the assessment is not silently lost to readiness.
+// Rewrites the review in place; anything else is left for pairCriteriaError to reject.
+function pairNormalizeReview(S, review) {
+  const ids = S.criteria.map(c => c.id)
+  const bare = value => {
+    if (typeof value !== 'string' || ids.includes(value.trim())) return typeof value === 'string' ? value.trim() : value
+    const hits = ids.filter(id => value.trim().startsWith(id) && /^\W/.test(value.trim().slice(id.length)))
+    return hits.length === 1 ? hits[0] : value
+  }
+  for (const list of [review?.criteria, review?.challenges]) {
+    if (Array.isArray(list)) for (const item of list) if (item && typeof item === 'object') item.criterion = bare(item.criterion)
+  }
+  return review
+}
+
+// Every acceptance criterion needs exactly one assessment, under its ID.
+function pairCriteriaError(S, review) {
+  const ids = S.criteria.map(c => c.id)
+  const given = Array.isArray(review?.criteria) ? review.criteria.map(a => a?.criterion) : []
+  const missing = ids.filter(id => !given.includes(id))
+  const unknown = given.filter(id => !ids.includes(id))
+  const repeated = given.filter((id, i) => ids.includes(id) && given.indexOf(id) !== i)
+  if (!missing.length && !unknown.length && !repeated.length) return null
+  return `The review needs exactly one criteria assessment for each acceptance criterion, under its bare ID (${ids.join(', ')}).` +
+    `${missing.length ? ` Missing: ${missing.join(', ')}.` : ''}` +
+    `${unknown.length ? ` Not a criterion ID: ${unknown.map(id => JSON.stringify(oneLine(String(id), 80))).join(', ')}.` : ''}` +
+    `${repeated.length ? ` Repeated: ${[...new Set(repeated)].join(', ')}.` : ''}`
+}
+
+// A review whose structured fields can be fixed without changing its judgement: one correction.
+function pairCorrectableError(S, review) {
+  return ((S.pair.stage === 'design' || pairChallengesDue(S)) && pairChallengeError(S, review)) || pairCriteriaError(S, review)
+}
+
 // A challenge may cite, beside checks that cover its criterion, a check that covers only another
 // criterion or none in the contract. The covering checks already carry the challenge, so the
 // stray IDs are dropped rather than costing a correction turn. Returns what was dropped.
@@ -4426,6 +4462,8 @@ function pairIngestReview(S, review) {
     const error = pairChallengeError(S, review)
     if (error) return error
   }
+  const criteriaError = pairCriteriaError(S, review)
+  if (criteriaError) return criteriaError
   const resolutions = review.resolutions || []
   const seen = new Set()
   for (const r of resolutions) {
@@ -4653,7 +4691,7 @@ ${correction ? `\n# Correct the previous structured review\n${correction.error}\
 
 Repository checkout to inspect: ${checkout}
 ${hostMaterializationNote(S, label, tag, checkout)}
-This checkout is separate from the author's worktree. Do not edit the author's worktree, main checkout, design, criteria, or verification configuration. You may run probes in your own checkout; assess the original snapshot, record the probe commands and results, and restore any tracked files you change. Save each probe script or command file under ${S.run.room}/review-${label}/probes/, not in /tmp or $TMPDIR, which are cleared after the run, and cite it by that path in your evidence. Never treat a passing probe on modified code as evidence about the reviewed snapshot. Do not delegate or launch models. Do not read the author's private notes or session history.
+This checkout is separate from the author's worktree. Do not edit the author's worktree, main checkout, design, criteria, or verification configuration. You may run probes in your own checkout; assess the original snapshot, record the probe commands and results, and restore any tracked files you change. Save each probe script or command file under ${S.run.room}/review-${label}/probes/, not in /tmp or $TMPDIR, which are cleared after the run, and cite it by that path in your evidence. Never treat a passing probe on modified code as evidence about the reviewed snapshot. Do not delegate or launch models. Do not read the author's private notes or session history.${S.auditors[0]?.vendor === 'gemini' ? `\n${GEMINI_REVIEWER}` : ''}
 
 ${designed ? `# Design\n${p.design}\n\n` : ''}# Test contract
 ${JSON.stringify(p.approvedContract || p.testContract)}
@@ -4671,7 +4709,7 @@ That measurement is the gate result for this snapshot: don't rerun the verificat
 ${JSON.stringify({ findings: p.findings, addressed: p.author.addressed })}
 
 Use resolutions to update existing IDs: open if still actionable, fixed only after inspecting the correction, refuted only with evidence that the finding was mistaken. Give concrete evidence for every resolution. Reopen an old ID when its defect recurs. Missing resolutions leave findings open.${designed ? ' In design review, leave code findings open until the implementation is fixed; check that the revised design explains their correction.' : ''} Add only genuinely new defects in findings; the engine assigns their IDs. Actionable minor findings count too. Put optional preferences and unrelated improvements in suggestions; do not manufacture findings to fill a quota.
-Return an evidenced met/partial/unmet assessment for every acceptance criterion. ${designed ? 'In code review, set requiresDesignRevision=true only if the implementation needs a materially different design; explain it in a finding. The engine will return the author to design review. In design review, keep that field false and express needed revisions as findings.' : 'This run has no design stage to return to: keep requiresDesignRevision false, and when the approach itself must change, say so in a finding; the author reworks it in the next implementation turn.'} Return complete=false if you cannot finish the review; an empty findings list is not approval in that case.`
+Return an evidenced met/partial/unmet assessment for every acceptance criterion, exactly one each, with criterion set to its bare ID (C1, not the criterion's text); challenges name their criterion the same way. ${designed ? 'In code review, set requiresDesignRevision=true only if the implementation needs a materially different design; explain it in a finding. The engine will return the author to design review. In design review, keep that field false and express needed revisions as findings.' : 'This run has no design stage to return to: keep requiresDesignRevision false, and when the approach itself must change, say so in a finding; the author reworks it in the next implementation turn.'} Return complete=false if you cannot finish the review; an empty findings list is not approval in that case.`
 }
 
 // The structured challenge a design review returns, and a code review without a design stage
@@ -5066,6 +5104,7 @@ function withTurn(schema, tag) {
 }
 
 const PAIR_STRINGS = { type: 'array', items: { type: 'string' } }
+const PAIR_CRITERION_ID = { type: 'string', description: 'The bare criterion ID, such as C1, never its text.' }
 const PAIR_SETUP_SCHEMA = strict({ type: 'object', properties: {
   ...SETUP_SCHEMA.properties,
   status: { type: 'string', enum: ['ok', 'dirty', 'needs-plan', 'needs-user', 'preflight', 'error'] },
@@ -5128,7 +5167,7 @@ const PAIR_REVIEW_SCHEMA = strict({ type: 'object', properties: {
   version: { type: 'string' }, complete: { type: 'boolean' }, summary: { type: 'string' },
   requiresDesignRevision: { type: 'boolean' },
   challenges: { type: 'array', items: { type: 'object', properties: {
-    criterion: { type: 'string' }, wrongImplementation: { type: 'string' }, rejectingCheckIds: PAIR_STRINGS,
+    criterion: PAIR_CRITERION_ID, wrongImplementation: { type: 'string' }, rejectingCheckIds: PAIR_STRINGS,
   } } },
   findings: { type: 'array', items: { type: 'object', properties: {
     severity: SEVERITY, statement: { type: 'string' }, evidence: { type: 'string' },
@@ -5136,7 +5175,9 @@ const PAIR_REVIEW_SCHEMA = strict({ type: 'object', properties: {
   resolutions: { type: 'array', items: { type: 'object', properties: {
     id: { type: 'string' }, status: { type: 'string', enum: ['open', 'fixed', 'refuted'] }, evidence: { type: 'string' },
   } } },
-  criteria: CHECK_SCHEMA.properties.criteria,
+  criteria: { type: 'array', items: { type: 'object', properties: {
+    ...CHECK_SCHEMA.properties.criteria.items.properties, criterion: PAIR_CRITERION_ID,
+  } } },
   suggestions: { type: 'array', items: { type: 'string' } },
 } })
 
@@ -5805,13 +5846,14 @@ async function pairRun() {
     }
     phase(p.stage === 'design' ? 'Review design' : 'Review code')
     const trim = (review, at) => {
+      pairNormalizeReview(S, review)
       const dropped = p.stage === 'design' || pairChallengesDue(S) ? pairTrimChallenges(S, review) : []
       if (dropped.length) S.notes.push(`review ${at}: dropped rejecting checks that do not cover the challenged criterion (${dropped.join('; ')}).`)
       return review
     }
     let review = trim(await pairReviewTurn(label), label)
     let error = pairIngestReview(S, review)
-    if (error && (p.stage === 'design' || pairChallengesDue(S)) && review?.complete === true && review.version === pairVersion(S) && pairChallengeError(S, review)) {
+    if (error && review?.complete === true && review.version === pairVersion(S) && pairCorrectableError(S, review)) {
       S.notes.push(`review ${label}: ${error} Requested one reviewer correction; the invalid review changed no findings.`)
       review = trim(await pairReviewTurn(`${label}-corrected`, { error, review }), `${label}-corrected`)
       error = pairIngestReview(S, review)

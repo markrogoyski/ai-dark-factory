@@ -953,3 +953,48 @@ test('the factory\'s pair strategy describes its retro as a pair process, not a 
   assert.ok(prompt.includes('Your subject is the workflow\'s process') && prompt.includes('The author drafts the design') && prompt.includes('\n# Pair retro: pair-test\n'))
   assert.ok(!prompt.includes('Seats are the debating models'))
 })
+
+test('a review that names a criterion by its ID and text counts for that ID', async () => {
+  for (const native of [false, true]) {
+    const { result, calls } = await run({ native, review: r => {
+      r.criteria = r.criteria.map(a => ({ ...a, criterion: `${a.criterion}: The requested behavior works.` }))
+      r.challenges = r.challenges.map(c => ({ ...c, criterion: `${c.criterion} - The requested behavior works.` }))
+      return r
+    } })
+    assert.equal(result.status, 'done')
+    assert.equal(result.final.readiness.state, 'ready')
+    assert.equal(calls.filter(c => c.kind === 'review').length, 2, 'no correction turn was needed')
+    assert.deepEqual(result.reviews.flatMap(r => r.criteria.map(a => a.criterion)), ['C1', 'C1'])
+  }
+  // Only an ID followed by a non-word character is taken: C1 does not claim C10's text.
+  const state = { criteria: [{ id: 'C1' }, { id: 'C10' }] }
+  const review = L.pairNormalizeReview(state, { criteria: [{ criterion: 'C10: ten' }, { criterion: ' C1 ' }, { criterion: 'C1x' }] })
+  assert.deepEqual(review.criteria.map(a => a.criterion), ['C10', 'C1', 'C1x'])
+})
+
+test('a review with missing, unknown or repeated criterion IDs gets one reviewer correction', async () => {
+  const state = { criteria: [{ id: 'C1' }, { id: 'C2' }] }
+  assert.equal(L.pairCriteriaError(state, { criteria: [{ criterion: 'C1' }, { criterion: 'C2' }] }), null)
+  assert.equal(L.pairCriteriaError(state, { criteria: [{ criterion: 'C1' }, { criterion: 'C1' }, { criterion: 'The second one' }] }),
+    'The review needs exactly one criteria assessment for each acceptance criterion, under its bare ID (C1, C2). Missing: C2. Not a criterion ID: "The second one". Repeated: C1.')
+  for (const native of [false, true]) {
+    const { result, calls } = await run({ native, review: (r, n) => { if (n === 2) r.criteria = [{ ...r.criteria[0], criterion: 'requested behavior' }]; return r } })
+    assert.equal(result.status, 'done')
+    const reviews = calls.filter(c => c.kind === 'review')
+    assert.deepEqual(reviews.map(c => c.label.replace(/^review /, '').replace(/ \(relay\)$/, '')), ['pair-design-1', 'pair-code-2', 'pair-code-2-corrected'])
+    assert.match(reviews[2].prompt, /Correct the previous structured review\nThe review needs exactly one criteria assessment/)
+    assert.match(result.notes.join(' '), /Not a criterion ID: "requested behavior"\. Requested one reviewer correction/)
+    const failed = await run({ native, review: (r, n) => { if (n >= 2) r.criteria = []; return r } })
+    assert.equal(failed.result.status, 'blocked')
+    assert.match(failed.result.stopReason, /Missing: C1\./)
+    assert.equal(failed.calls.filter(c => c.kind === 'review').length, 3, 'one bounded correction before stopping')
+  }
+})
+
+test('a Gemini reviewer is told that git fails in its sandbox; other reviewers are not', async () => {
+  const gemini = await run({ args: { reviewer: 'gemini' } })
+  const astra = await run({ args: { reviewer: 'astra', author: 'opus' } })
+  const reviewPrompts = r => r.calls.filter(c => c.kind === 'review').map(c => c.prompt)
+  for (const prompt of reviewPrompts(gemini)) assert.match(prompt, /Git commands fail in your sandbox/)
+  for (const prompt of reviewPrompts(astra)) assert.doesNotMatch(prompt, /Git commands fail in your sandbox/)
+})
