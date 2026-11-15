@@ -564,13 +564,17 @@ export function keepAwake({ platform = osPlatform(), env = process.env, pid = pr
 // A transport agent relays stdout through its own tool output, which a full Pair result (tens of
 // kilobytes of design and contract text) overflows. --brief keeps what a caller acts on and points
 // at the full result on disk.
-const BRIEF_DROPPED = ['task', 'design', 'testContract', 'replayMapping', 'reviews', 'report', 'repositoryNotes', 'forTheOrchestrator', 'provenance', 'plan', 'refs']
+const BRIEF_DROPPED = ['task', 'design', 'testContract', 'replayMapping', 'reviews', 'report', 'repositoryNotes', 'provenance', 'plan', 'refs']
+// forTheOrchestrator is guidance (about 1k characters, a few k at most with a handoff chain), and
+// the only thing that tells the orchestrator what to do next, so the brief keeps it, capped.
+const BRIEF_GUIDANCE_MAX = 4000
 export function briefResult(result) {
   const brief = Object.fromEntries(Object.entries(result || {}).filter(([key]) => !BRIEF_DROPPED.includes(key)))
   if (Array.isArray(result?.findings)) brief.findings = result.findings.map(f => ({ id: f.id, stage: f.stage, severity: f.severity, status: f.status, statement: String(f.statement || '').slice(0, 300) }))
   if (result?.final && typeof result.final === 'object') brief.final = Object.fromEntries(['author', 'model', 'worktree', 'snapshotRef', 'snapshotTree', 'readiness'].filter(key => key in result.final).map(key => [key, result.final[key]]))
   // The retro's notes and items are in its saved file and result.json; its markdown is what is shown.
   if (result?.retro && typeof result.retro === 'object') brief.retro = Object.fromEntries(['saved', 'error', 'markdown'].filter(key => key in result.retro).map(key => [key, result.retro[key]]))
+  if (typeof result?.forTheOrchestrator === 'string' && result.forTheOrchestrator.length > BRIEF_GUIDANCE_MAX) brief.forTheOrchestrator = result.forTheOrchestrator.slice(0, BRIEF_GUIDANCE_MAX) + ' [truncated; the rest is in resultFile]'
   if (result?.hostRunDir) brief.resultFile = join(result.hostRunDir, 'result.json')
   return brief
 }

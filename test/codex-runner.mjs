@@ -532,14 +532,18 @@ test('a standalone run keeps the Mac awake with caffeinate unless disabled or of
 
 test('--brief prints what a transport relays and points at the full result', () => {
   assert.equal(parseCLI(['--workflow', 'pair', '--brief', '--', 'Do it'], '/repo').brief, true)
-  const result = { status: 'ready', stage: 'code', design: 'x'.repeat(50000), testContract: { checks: [] }, reviews: [{}], task: 'long',
+  const result = { status: 'ready', stage: 'code', design: 'x'.repeat(50000), testContract: { checks: [] }, reviews: [{}], task: 'long', forTheOrchestrator: 'Read final.readiness first.',
     findings: [{ id: 'P1', stage: 'design', severity: 'minor', status: 'fixed', statement: 's'.repeat(400), evidence: 'e', history: [] }],
     final: { worktree: '/wt', snapshotRef: 'r', diff: 'd'.repeat(20000), readiness: { state: 'ready' } }, metrics: { turns: 9 }, hostRunDir: '/repo/.council/host-a' }
   const brief = briefResult(result)
-  assert.deepEqual(Object.keys(brief).sort(), ['final', 'findings', 'hostRunDir', 'metrics', 'resultFile', 'stage', 'status'])
+  assert.deepEqual(Object.keys(brief).sort(), ['final', 'findings', 'forTheOrchestrator', 'hostRunDir', 'metrics', 'resultFile', 'stage', 'status'])
   assert.deepEqual(brief.final, { worktree: '/wt', snapshotRef: 'r', readiness: { state: 'ready' } })
   assert.deepEqual(brief.findings, [{ id: 'P1', stage: 'design', severity: 'minor', status: 'fixed', statement: 's'.repeat(300) }])
   assert.equal(brief.resultFile, '/repo/.council/host-a/result.json')
+  assert.equal(brief.forTheOrchestrator, 'Read final.readiness first.')
+  assert.ok(!('design' in brief) && !('reviews' in brief) && !('task' in brief))
+  const capped = briefResult({ ...result, forTheOrchestrator: 'g'.repeat(9000) }).forTheOrchestrator
+  assert.ok(capped.length < 4100 && capped.endsWith('resultFile]'))
   assert.ok(JSON.stringify(brief).length < 1000)
   const retro = { worked: [{ what: 'w' }], changes: [{ change: 'c' }], saved: '/r.md', error: '', notes: [{ turn: 't', text: 'n'.repeat(400) }], markdown: '### Process retro' }
   assert.deepEqual(briefResult({ ...result, retro }).retro, { saved: '/r.md', error: '', markdown: '### Process retro' })
