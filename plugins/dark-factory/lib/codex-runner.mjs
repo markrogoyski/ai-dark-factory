@@ -28,6 +28,8 @@ Git, and authenticated CLIs for the selected models.
   --author MODEL             Pair author (default in Codex: astra)
   --reviewer MODEL           Pair reviewer (default: other vendor)
   --max-reviews N            Pair review budget across design and code (default: 8)
+  --no-design                Pair: skip the design stage; the author writes the deliverable
+                             directly (for a document or plan deliverable)
   --args-file FILE           Full workflow arguments as a JSON object
   --output FILE              Also write the final result JSON to this path
   --brief                    Print a compact result on stdout (status, readiness, findings,

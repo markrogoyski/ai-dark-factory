@@ -1,0 +1,64 @@
+You are running a short retrospective on one run of /pair, a workflow in which one author designs and implements a change and one independent reviewer reviews the design and then the code until no finding is open. Its author is still tuning the workflow and wants to know what in its process to change. Your subject is the workflow's process, not the task: don't judge the solution, don't redo the work, and read the code under review only to confirm a point about the process.
+
+# What you have
+- The process notes at the end. During the run, every agent could say in a line or two what in its turn's instructions, inputs or tools got in its way. The author drafts the design and then implements and fixes it; the reviewer reviews the design and then each measured snapshot, in a fresh context each time; relays are small agents that pass prompts to the Codex CLI or the Gemini CLI (agy); setup creates the run.
+- The run facts at the end, computed by the workflow, and the run's report below.
+- The run directory, /repo/.council/pair-test: TASK.md; room/ holds every post, by round; jobs/ holds each Codex and Gemini turn's prompt and log. `dark-factory usage --run-dir '/repo/.council/pair-test'` prints their token use.
+- The workflow's source, if a change needs it: workflows/pair.js (the prompts, limits and round structure) and bin/dark-factory (the CLI the agents run), both in the dark-factory plugin's directory, the parent of the bin/ that `command -v dark-factory` prints. Both are long, so grep for the instruction a note is about rather than reading them whole.
+
+# What to look for
+Weigh the notes; don't count them. One agent's complaint is a lead to check against the posts and facts; the same problem from several agents or turns is a pattern. Be sceptical of notes that ask for more of everything (more rounds, more context, longer posts) unless the run shows the lack cost something, and of a losing seat's complaints about how it was scored. Look past the notes too: posts that repeat each other, rounds in which nothing changed, checks that failed, relays that retried, posts far over their limit. If the run went smoothly, say so and suggest fewer changes; don't invent problems.
+
+Return up to 3 things that worked and should be kept, and 3 to 5 changes, the most valuable first. Each change concrete enough to make (a specific prompt, limit, step or command), with why, the evidence from this run (turn labels such as r1:A, file paths, run facts) and where it would change.
+
+# Save it
+1. Write /repo/.council/pair-test/retro.md in this shape:
+```markdown
+# Council retro: pair-test
+
+<one line: the task, the mode, and how the run ended>
+
+## What worked
+
+- <what>: <evidence>
+
+## Changes to make
+
+1. **<change>** <why>. Evidence: <evidence>. Where: <where>.
+```
+Don't copy the process notes or run facts into it; the next command attaches them exactly.
+2. Run this with the Bash tool, exactly as written: dark-factory retro --run-dir '/repo/.council/pair-test' --expect 862-5f3abd8f
+   The last line it prints is JSON. "ok": set saved to its "path". "sandboxed": run the same command again with the sandbox disabled (dangerouslyDisableSandbox: true). "error", or "sandboxed" again: set saved to "" and error to what it printed.
+
+# The report
+
+Pair: Claude Opus authors; Codex Astra reviews.
+
+Readiness: ready. Reviews: 2/8.
+
+Verification: passed on the reviewed snapshot.
+
+Replay: 4 file/command records; 0 overlay exclusions. Base outcomes require reviewer interpretation.
+
+P1: fixed — Cover the boundary case. (The boundary test now exists.)
+
+# Process notes and run facts
+
+=====BEGIN PAYLOAD 862-5f3abd8f=====
+## Process notes
+
+- None: no turn reported anything in its way.
+
+## Run facts
+
+- Run pair-test in /repo, implement mode. Task: Implement the behavior
+- Seats: A=Claude Opus (high). Panel: . Checkers: sonnet.
+- Outcome: the pair strategy, Claude Opus authoring and Codex Astra reviewing; 2 of at most 8 reviews (design 0, code 2), ended at the code stage. Findings: code minor fixed 1. Verification command: `node test.cjs`.
+- Claude agent turns: 7 (setup 1, author 2, checker 2, relay 2). Codex turns: 2 (reviewer 2).
+- Codex and Gemini turn times: median 1s; slowest review-pair-code-1 1s, review-pair-code-2 1s.
+- Ledger: 0 items (), 0 challenges, 0 ruled by the panel. Questions raised: 0.
+- Ledger by kind: .
+- Votes by round: none.
+- Final readiness: ready: the final version was checked and nothing known stands against it.
+- Problems during the run: none.
+=====END PAYLOAD 862-5f3abd8f=====

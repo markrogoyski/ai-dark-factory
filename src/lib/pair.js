@@ -4,8 +4,18 @@ function newPairState() {
 }
 
 // Pair decisions are shared by both hosts. Only the reviewer can close findings.
+// A string task may also start with --no-design, among the other flags.
+const PAIR_SWITCHES = { 'no-design': ['design', false] }
 function parsePairArgs(args) {
-  return parseArgs(args)
+  return parseArgs(args, PAIR_SWITCHES)
+}
+
+// design: false skips the design stage, for a task whose deliverable is itself a document or a
+// plan: there the approved design is the deliverable, and writing and reviewing it twice paid for
+// it twice. The first author turn then writes the deliverable and its test contract, and review
+// starts at the measured snapshot. Factory never sets it.
+function pairDesigned(S) {
+  return S.pairOptions?.design !== false
 }
 
 function parsePairConfig(args) {
@@ -18,6 +28,8 @@ function parsePairConfig(args) {
   const reviewer = parseSeat(raw.reviewer || (author.vendor === 'claude' ? 'astra' : 'opus'), raw.effort)
   const maxReviews = raw.maxReviews === undefined ? 8 : Number(raw.maxReviews)
   if (!Number.isSafeInteger(maxReviews) || maxReviews < 2 || maxReviews > 100) throw new Error('pair: maxReviews must be an integer from 2 to 100.')
+  if (raw.design !== undefined && typeof raw.design !== 'boolean') throw new Error('pair: design must be true or false (--no-design in a string task).')
+  const design = raw.design !== false
   // The process retro is on unless retro: false, as in the other workflows.
   const config = parseConfig({ ...raw, mode: 'implement',
     simple: { implementer: author.key, reviewer: reviewer.key } }, { workflow: 'pair', tier: 'simple' })
@@ -37,12 +49,14 @@ function parsePairConfig(args) {
   return { ...config, raw, tier: 'pair', simple: null, panel: [], specReviewers: [],
     roles: { ...(retro ? { retro } : {}), setup }, lineup: [hostSeat(config.host, author)],
     auditors: [{ ...hostSeat(config.host, reviewer), lens: 'review', id: 'PR' }],
-    pairOptions: { author, reviewer, maxReviews } }
+    pairOptions: { author, reviewer, maxReviews, design } }
 }
 
+// Without a design stage the contract is the author's to revise with the code, so it is part of
+// the reviewed version: a contract change on the same tree is a new version, not a stall.
 function pairVersion(S) {
   return S.pair.stage === 'design' ? `design:${promptHash(JSON.stringify([S.pair.design, S.pair.testContract]))}:${S.pair.measurement?.snapshot?.tree || 'base'}`
-    : `code:${S.pair.measurement?.snapshot?.tree || 'unmeasured'}`
+    : `code:${S.pair.measurement?.snapshot?.tree || 'unmeasured'}${pairDesigned(S) ? '' : `:${promptHash(JSON.stringify(S.pair.approvedContract))}`}`
 }
 
 function pairReviewTag(S) {
@@ -117,6 +131,13 @@ function pairTrimChallenges(S, review) {
   return dropped
 }
 
+// Without a design stage no design review challenged the contract, so a code review does: the
+// first one, and any after the contract changed since a review last passed the challenge check.
+function pairChallengesDue(S) {
+  const p = S.pair
+  return !pairDesigned(S) && p.stage === 'code' && !!p.approvedContract && p.challengedContract !== promptHash(JSON.stringify(p.approvedContract))
+}
+
 function pairChallengeError(S, review) {
   const contract = S.pair.testContract, error = pairContractError(S, contract)
   if (error) return error
@@ -126,7 +147,7 @@ function pairChallengeError(S, review) {
     const given = Array.isArray(challenges) ? challenges.map(c => c?.criterion) : []
     const missing = S.criteria.map(c => c.id).filter(id => !given.includes(id))
     const repeated = given.filter((id, i) => given.indexOf(id) !== i)
-    return `Design review needs exactly one challenge for each acceptance criterion (${S.criteria.map(c => c.id).join(', ')}).` +
+    return `${S.pair.stage === 'code' ? 'This code review' : 'Design review'} needs exactly one challenge for each acceptance criterion (${S.criteria.map(c => c.id).join(', ')}).` +
       `${missing.length ? ` Missing: ${missing.join(', ')}.` : ''}${repeated.length ? ` Repeated: ${[...new Set(repeated)].join(', ')}.` : ''}`
   }
   for (const c of challenges) {
@@ -165,6 +186,19 @@ function pairMappingError(S) {
   return missing.length ? `No replay mapping for ${missing.map(c => c.id).join(', ')}.` : null
 }
 
+// Without a design stage the author's contract is the obligation from this turn on. An empty one
+// after the first keeps the contract already in force. Returns why it can't be accepted, or null.
+function pairAdoptContract(S, author) {
+  const p = S.pair, given = author.testContract
+  const contract = p.approvedContract && !given?.testRoots?.length && !given?.checks?.length ? p.approvedContract : given
+  const error = pairContractError(S, contract)
+  if (error) return error
+  p.testContract = contract
+  p.approvedContract = JSON.parse(JSON.stringify(contract))
+  p.replayMapping = author.replayMapping || []
+  return pairMappingError(S)
+}
+
 function pairReplayReadiness(S, blocked, incomplete) {
   const p = S.pair, replay = p.measurement?.replay, request = pairReplayRequest(S)
   const mappingIdentity = entries => JSON.stringify(entries?.map(e => [e.file, e.command, e.checkIds, e.fixtures]))
@@ -201,7 +235,8 @@ function pairReplayReadiness(S, blocked, incomplete) {
 function pairIngestReview(S, review) {
   const p = S.pair
   if (!review || review.version !== pairVersion(S) || review.complete !== true) return 'The reviewer did not complete a review of the current version.'
-  if (p.stage === 'design') {
+  const challenged = pairChallengesDue(S)
+  if (p.stage === 'design' || challenged) {
     const error = pairChallengeError(S, review)
     if (error) return error
   }
@@ -234,6 +269,7 @@ function pairIngestReview(S, review) {
     if (same) { same.history.push({ review: p.reviews.length + 1, status: 'open', evidence: f.evidence }); continue }
     p.findings.push({ ...f, id: `P${p.findings.length + 1}`, stage: p.stage, status: 'open', resolution: '', history: [] })
   }
+  if (challenged) p.challengedContract = promptHash(JSON.stringify(p.approvedContract))
   // The process note is for the retro (S.processNotes), not for the author's next turn.
   const { process: note, ...kept } = review
   p.lastReview = kept
@@ -268,7 +304,7 @@ function pairReadiness(S) {
     else if (assessments[0].status !== 'met') blocked.push(`Criterion ${c.id} is ${assessments[0].status}.`)
   }
   if (p.stage === 'code') {
-    if (!p.approvedDesign) incomplete.push('The design has not passed review.')
+    if (!p.approvedDesign && pairDesigned(S)) incomplete.push('The design has not passed review.')
     if (!p.approvedContract) incomplete.push('The test contract has not passed review.')
     const m = p.measurement
     if (!m || m.status !== 'done' || !/^[0-9a-f]{40,64}$/.test(m.snapshot?.tree || '')) incomplete.push('No measured snapshot of the current implementation.')

@@ -1,7 +1,7 @@
 // runtime: "cli" (Claude Code only) hands the whole run to the standalone runner. It is a
 // transport choice, not a Pair option, so it is taken off before the engine parses the args.
 function pairTransport(input, hosted) {
-  const raw = parseArgs(input)
+  const raw = parsePairArgs(input)
   const { runtime, resume, ...rest } = raw
   if (runtime === undefined && resume === undefined) return { args: input, cli: null }
   if (runtime !== 'cli') throw new Error(runtime === undefined ? 'pair: resume takes the hostRunDir of an earlier runtime: "cli" run, with runtime: "cli".' : 'pair: runtime must be "cli" (the standalone runtime) or omitted.')

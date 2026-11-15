@@ -49,7 +49,7 @@ async function run(options = {}) {
     } else if (kind === 'review') {
       Object.assign(value, { version: prompt.match(/^Version: (.+)$/m)[1], complete: true, summary: 'Reviewed.',
         requiresDesignRevision: false, criteria: [{ criterion: 'C1', status: 'met', note: 'Checked the behavior against the criterion.' }] })
-      value.challenges = /# Review stage: design/.test(prompt) ? challenges() : []
+      value.challenges = /Return exactly one structured challenge per criterion/.test(prompt) ? challenges() : []
       reviewNumber++
       if (options.review) value = await options.review(value, reviewNumber, call)
     } else if (kind === 'measure') {
@@ -317,6 +317,113 @@ test('code findings can reopen design review without being closed by a plan', as
   assert.equal(calls.filter(c => c.kind === 'review')[2].checkout, 'A-pair-code-2', 'revised design review sees current implementation')
 })
 
+test('design: false and --no-design skip the design stage; anything else is refused', () => {
+  assert.equal(L.parsePairConfig('Implement it').pairOptions.design, true)
+  assert.equal(L.parsePairConfig({ task: 'x', design: false }).pairOptions.design, false)
+  for (const text of ['--no-design Write the plan', '--author astra --no-design --max-reviews 4 Write the plan', '--no-design --author astra Write the plan']) {
+    const c = L.parsePairConfig(text)
+    assert.equal(c.pairOptions.design, false, text)
+    assert.equal(c.task, 'Write the plan', text)
+  }
+  assert.equal(L.parsePairConfig('--author astra Write --no-design notes').task, 'Write --no-design notes', 'only leading flags')
+  assert.equal(L.parseArgs('--no-design Write the plan').task, '--no-design Write the plan', 'the switch is Pair-only')
+  for (const design of ['false', 0, null]) assert.throws(() => L.parsePairConfig({ task: 'x', design }), /design must be true or false/)
+  const factory = L.factoryPairConfig({ raw: { task: 'x', strategy: 'pair', pair: { design: false } }, roles: {} })
+  assert.equal(factory.pairOptions.design, true, 'factory always designs first')
+  assert.match(L.executionPlan({ ...L.parsePairConfig({ task: 'x', design: false }), controls: {} }).effort, /no design stage/)
+})
+
+test('without a design stage the author writes the deliverable and review starts at the measured snapshot', async () => {
+  for (const native of [false, true]) {
+    const { result, calls, measurements, phases } = await run({ native, args: { design: false } })
+    assert.equal(result.status, 'done')
+    assert.equal(result.final.readiness.state, 'ready')
+    assert.equal(result.delivery.status, 'pending')
+    assert.deepEqual(result.reviews.map(r => r.stage), ['code'])
+    assert.ok(!phases.includes('Design') && !phases.includes('Review design'))
+    const authors = calls.filter(c => c.kind === 'author'), reviews = calls.filter(c => c.kind === 'review')
+    assert.equal(authors.length, 1)
+    assert.equal(reviews.length, 1)
+    assert.equal(authors[0].label, 'pair-code-1')
+    assert.equal(result.final.snapshotRef, 'refs/council/pair-test/A-pair-code-1')
+    assert.equal(measurements.length, 1)
+    assert.deepEqual(measurements[0].replay, { testRoots: ['tests'], mapping: mapping() })
+    assert.deepEqual(result.testContract, contract())
+    assert.match(authors[0].prompt, /This run skips the design stage: write the deliverable itself/)
+    assert.ok(!/approved design|reviewed design|# Current design/.test(authors[0].prompt))
+    assert.match(reviews[0].prompt, /no one has reviewed the test contract above/)
+    assert.ok(!/approved design|# Design\n|return the author to design review/.test(reviews[0].prompt))
+    assert.match(reviews[0].prompt, /^Version: code:1{40}:[0-9a-f-]+$/m)
+  }
+})
+
+test('without a design stage a design-revision request stays at the code stage', async () => {
+  const { result, calls } = await run({ args: { design: false }, review: (r, n) => {
+    if (n === 1) { r.findings = [finding('The approach cannot handle streaming.')]; r.requiresDesignRevision = true }
+    if (n === 2) r.resolutions = [{ id: 'P1', status: 'fixed', evidence: 'The reworked implementation handles streams.' }]
+    return r
+  } })
+  assert.equal(result.status, 'done')
+  assert.deepEqual(result.reviews.map(r => r.stage), ['code', 'code'])
+  assert.deepEqual(calls.filter(c => c.kind === 'author').map(c => c.label), ['pair-code-1', 'pair-code-2'])
+  assert.match(calls.filter(c => c.kind === 'author')[1].prompt, /"requiresDesignRevision":true/)
+})
+
+test('without a design stage the author owns the contract: corrected once, kept when omitted, revisable', async () => {
+  let authors = 0
+  const corrected = await run({ args: { design: false }, author: a => { if (++authors === 1) a.testContract.checks[0].boundaries = ''; return a } })
+  assert.equal(corrected.result.status, 'done')
+  assert.deepEqual(corrected.calls.filter(c => c.kind === 'author').map(c => c.label), ['pair-code-1', 'pair-code-1-corrected'])
+  assert.match(corrected.calls.filter(c => c.kind === 'author')[1].prompt, /could not accept your test contract or replay mapping/)
+  assert.match(corrected.result.notes.join(' '), /one author correction/)
+  const refused = await run({ args: { design: false }, author: a => { a.testContract.checks[0].boundaries = ''; return a } })
+  assert.equal(refused.result.status, 'blocked')
+  assert.equal(refused.result.reviews.length, 0)
+  assert.equal(refused.measurements.length, 0)
+  authors = 0
+  const kept = await run({ args: { design: false }, author: a => { if (++authors > 1) a.testContract = { testRoots: [], checks: [] }; return a },
+    review: (r, n) => { if (n === 1) r.findings = [finding('Cover the boundary.')]; else r.resolutions = [{ id: 'P1', status: 'fixed', evidence: 'Covered.' }]; return r } })
+  assert.equal(kept.result.status, 'done')
+  assert.deepEqual(kept.result.testContract, contract())
+  const keptReviews = kept.calls.filter(c => c.kind === 'review')
+  assert.match(keptReviews[0].prompt, /No review has challenged this contract yet\. Return exactly one structured challenge per criterion/)
+  assert.match(keptReviews[1].prompt, /Return challenges=\[\] during code review\./, 'an unchanged contract is not challenged again')
+  // A contract-only revision on the same tree is a new version, not a stall.
+  authors = 0
+  const revised = await run({ sameTree: true, args: { design: false }, author: a => { if (++authors > 1) a.testContract.checks[0].boundaries = 'Zero, one and the adjacent value.'; return a },
+    review: (r, n) => { if (n === 1) r.findings = [finding('The boundary check omits one.')]; else r.resolutions = [{ id: 'P1', status: 'fixed', evidence: 'The contract now covers one.' }]; return r } })
+  assert.equal(revised.result.status, 'done')
+  assert.equal(revised.result.testContract.checks[0].boundaries, 'Zero, one and the adjacent value.')
+  const versions = revised.calls.filter(c => c.kind === 'review').map(c => c.prompt.match(/^Version: (.+)$/m)[1])
+  assert.notEqual(versions[0], versions[1])
+  assert.ok(revised.calls.filter(c => c.kind === 'review').every(c => /No review has challenged this contract yet/.test(c.prompt)), 'a changed contract is challenged again')
+})
+
+test('without a design stage a code review of a new contract must challenge every criterion', async () => {
+  for (const native of [false, true]) {
+    // Missing, then supplied on the one correction: the review counts once and the run completes.
+    const corrected = await run({ native, args: { design: false }, review: (r, n) => ({ ...r, challenges: n === 1 ? [] : r.challenges }) })
+    assert.equal(corrected.result.status, 'done')
+    const reviews = corrected.calls.filter(c => c.kind === 'review')
+    assert.equal(reviews.length, 2)
+    assert.match(reviews[1].prompt, /This code review needs exactly one challenge for each acceptance criterion/)
+    assert.deepEqual(corrected.result.reviews.map(r => r.stage), ['code'])
+    assert.match(corrected.result.notes.join(' '), /one reviewer correction/)
+  }
+  for (const change of [() => [], c => [c[0], c[0]], c => [{ ...c[0], rejectingCheckIds: ['missing'] }], c => [{ ...c[0], wrongImplementation: ' ' }]]) {
+    const { result, calls } = await run({ args: { design: false }, review: r => ({ ...r, challenges: change(r.challenges) }) })
+    assert.equal(result.status, 'blocked', String(change))
+    assert.match(result.stopReason, /challenge/i)
+    assert.equal(calls.filter(c => c.kind === 'review').length, 2, 'one bounded correction before stopping')
+    assert.equal(result.reviews.length, 0)
+    assert.notEqual(result.final.readiness.state, 'ready')
+  }
+  // A stray check beside a covering one is trimmed, as in design review, without a correction.
+  const trimmed = await run({ args: { design: false }, review: r => { r.challenges[0].rejectingCheckIds = ['T1', 'T9']; return r } })
+  assert.equal(trimmed.result.status, 'done')
+  assert.equal(trimmed.calls.filter(c => c.kind === 'review').length, 1)
+})
+
 test('dirty trees, absent references and missing criteria stop before author turns', async () => {
   for (const fixture of [{ dirty: [' M source.js'] }, { criteria: [] }, { refs: [{ source: '/plan', path: '/outside/plan', inWorktrees: false }] }]) {
     const { result, calls } = await run({ setup: fixture })
@@ -345,6 +452,22 @@ test('pair prompts have reviewed golden coverage', async () => {
     return r
   } })
   const dir = new URL('test/golden/pair/', root)
+  if (process.env.UPDATE_GOLDEN) mkdirSync(dir, { recursive: true })
+  for (const [i, call] of calls.entries()) {
+    const file = new URL(`${i}-${call.kind}.txt`, dir)
+    const value = call.prompt.replace(/\n*$/, '\n')
+    if (process.env.UPDATE_GOLDEN) writeFileSync(file, value)
+    else assert.equal(value, readFileSync(file, 'utf8'), `Prompt changed: ${fileURLToPath(file)}`)
+  }
+})
+
+test('pair prompts without a design stage have reviewed golden coverage', async () => {
+  const { calls } = await run({ native: true, args: { design: false }, review: (r, n) => {
+    if (n === 1) r.findings = [finding('Cover the boundary case.')]
+    if (n === 2) r.resolutions = [{ id: 'P1', status: 'fixed', evidence: 'The boundary test now exists.' }]
+    return r
+  } })
+  const dir = new URL('test/golden/pair-no-design/', root)
   if (process.env.UPDATE_GOLDEN) mkdirSync(dir, { recursive: true })
   for (const [i, call] of calls.entries()) {
     const file = new URL(`${i}-${call.kind}.txt`, dir)

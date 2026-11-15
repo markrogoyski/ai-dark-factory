@@ -8,6 +8,7 @@ feedback before implementation and after every revision:
 ```text
 /dark-factory:pair Implement the retry policy
 /dark-factory:pair --author astra --reviewer opus Add cancellation support
+/dark-factory:pair --no-design Write the utility refactoring plan in UTIL_REFACTOR_PLAN.md
 ```
 
 In Codex:
@@ -15,6 +16,7 @@ In Codex:
 ```text
 $dark-factory --workflow pair Implement the retry policy
 $dark-factory --workflow pair --author opus --reviewer astra Add cancellation support
+$dark-factory --workflow pair --no-design Write the utility refactoring plan in UTIL_REFACTOR_PLAN.md
 ```
 
 Pair defaults to Claude Opus author and Codex Astra reviewer in Claude Code, and Codex Astra
@@ -85,6 +87,33 @@ Codex models in the Codex host.
    receive stable IDs. Only the reviewer can mark them fixed or refuted, with evidence.
 5. The author fixes findings and failed checks, then verification and review repeat. A material
    approach problem can send the task back through design review before implementation continues.
+
+### Without a design stage
+
+`design: false` (`--no-design` at the start of a string task, or on the Codex runner's command
+line) skips step 2, the design and its review. Use it when the deliverable is itself a document or a
+plan: there the approved design is the deliverable, and a run that designs first writes and
+reviews the same text twice. In one such run the approved design was 19.4K characters and the
+delivered plan 18.8K; the implementation turn re-read the code only to transcribe the design,
+and about 5.5 of 23.6 minutes went to doing it twice.
+
+The first author turn writes the deliverable and its test contract together, under the same
+contract rules (a document's criteria are usually inspection checks, with `testRoots` empty when
+no check is a test), plus the replay mapping. A malformed contract or mapping gets the same single
+correction attempt. The run then loops through the code stage only: measure, code review, fix.
+Because no design review approved the contract, the code reviewer reviews it as part of the
+artifact: its test roots against the base layout, its coverage of the request and every
+criterion, and whether its checks would reject a plausible wrong implementation. The first code
+review, and any review after the contract changed since a review last passed this check, returns
+the same structured challenge a design review does (one plausible wrong implementation per
+criterion, with the contract checks that reject it), under the same validation and single
+correction. The author keeps the contract current in every turn (an empty one keeps the
+contract in force), so a contract change counts as a new version, and stall detection sees it as
+progress. A reviewer who
+finds the approach itself must change files a finding and the author reworks it in the next
+turn; there is no design stage to return to, and a `requiresDesignRevision` flag only blocks
+readiness until a later review clears it. The review budget, stall detection, and readiness are
+otherwise unchanged. Factory's pair strategy always designs first.
 
 All actionable findings, including minor ones, must close. Optional preferences are reported
 separately. The author retains its CLI session across design and implementation; native Claude
@@ -168,7 +197,7 @@ factory's rule instead: it always records the run facts and runs the model retro
 notable run.
 
 Object arguments, or the Codex runner's `--args-file`, accept `task`, `author`, `reviewer`,
-`maxReviews`, `effort`, `context`, `plan`, `criteria`, `verify`, `repo`, `allowDirty`,
+`maxReviews`, `design` (default true), `effort`, `context`, `plan`, `criteria`, `verify`, `repo`, `allowDirty`,
 `timeoutMin`, and `retro`. The existing model catalog and effort mapping apply. Pass absolute reference
 paths in `plan`, including uncommitted documents. Worktrees start at HEAD; tracked local edits
 require explicit `allowDirty` or an already clean checkout. Factory tier, panel, audit, and
