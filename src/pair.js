@@ -185,7 +185,7 @@ function pairReviewTurn(label, correction = null) {
   }, 'reviewer', a.name)
   return externalTurn({ key: `review-${label}`, threadKey: `review-${label}`, fresh: true,
     vendor: a.vendor, model: a.model, effort: a.effort, role: 'reviewer', who: a.name,
-    sandbox: 'workspace-write', cwd: checkout, writable: [`${S.run.runDir}/jobs`, `${S.run.runDir}/logs`],
+    sandbox: 'workspace-write', cwd: checkout, writable: [`${S.run.room}/review-${label}`, `${S.run.runDir}/jobs`, `${S.run.runDir}/logs`],
     timeoutKind: 'audit', checkout: `A-${pairReviewTag(S)}`,
   }, prompt, PAIR_REVIEW_SCHEMA, `review ${label}`, ph)
 }

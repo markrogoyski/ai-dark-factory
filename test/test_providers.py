@@ -304,6 +304,27 @@ sys.exit(int(os.environ.get('CLAUDE_TEST_EXIT', '0')))
                 self.assertEqual(result['result']['turn'], 'r0-A')
         self.assertEqual(len(self.calls()), 1)
 
+    def test_seat_run_creates_missing_writable_roots_only_inside_the_run(self):
+        out = {'type': 'result', 'subtype': 'success', 'session_id': 'session-cli',
+               'structured_output': {'answer': 'done', 'turn': 'r0-A'}}
+        payload = 'Review.\n<<<OUTPUT_SCHEMA\n' + json.dumps(self.schema) + '\nOUTPUT_SCHEMA>>>\n'
+        prompt = os.path.join(self.root, 'roots-prompt.md')
+        council.write(prompt, payload)
+        inside = os.path.join(self.root, 'room', 'review-pair-code-1')
+        outside = os.path.join(self.root + '-elsewhere', 'probes')
+        cmd = [sys.executable, CLI, 'seat-run', '--vendor', 'claude', '--run-dir', self.root,
+               '--seat', 'R', '--job', 'roots-job', '--model', 'sonnet', '--cwd', self.cwd,
+               '--writable', inside, '--writable', outside,
+               '--prompt-file', prompt, '--expect', council.prompt_hash(payload), '--no-transcript', '--max-wait', '10']
+        with mock.patch.dict(os.environ, {'CLAUDE_TEST_RESULT': json.dumps(out), 'COUNCIL_JOB_POLL': '0.01'}):
+            process = subprocess.run(cmd, text=True, capture_output=True, timeout=15)
+        self.assertEqual(process.returncode, 0, process.stderr)
+        self.assertEqual(json.loads(process.stdout)['status'], 'done')
+        self.assertTrue(os.path.isdir(inside))
+        self.assertFalse(os.path.exists(outside))
+        args = self.calls()[0]['args']
+        self.assertIn(inside, [args[i + 1] for i, v in enumerate(args) if v == '--add-dir'])
+
 
 class CodexRecovery(unittest.TestCase):
     def test_first_turn_timeout_keeps_the_streamed_thread_for_recovery(self):

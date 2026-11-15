@@ -50,8 +50,10 @@ For a ready result on the unchanged base, the helper can apply and stage the rev
 dark-factory apply --run-dir <runDir> --result <saved-result.json>
 ```
 
-It checks the snapshot identity and resulting index tree, refuses tracked edits and local-file
-collisions, and leaves committing to the caller. Supply the full workflow result
+It checks the snapshot identity and resulting index tree, refuses tracked edits, untracked files
+other than those recorded at setup (run.json `deliveryBaseline`), and local-file collisions, and
+leaves committing to the caller. Copying files by hand is not delivery until `verify-delivery`
+reports `delivered`. Supply the full workflow result
 (`artifactType: "dark-factory-result"`, `artifactVersion: 1`), never the compact summary.
 Codex saves it as `runDir/result.json`, allowing `--result` to be omitted. A native workflow
 run returns it inline: pass the workflow task's output file as `--result` unchanged, since the

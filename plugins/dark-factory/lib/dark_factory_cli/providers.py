@@ -69,6 +69,18 @@ def turn_done(spec, thread, started, usage, result, **extra):
             'elapsedSec': round(time.time() - started, 1), 'usage': usage, 'result': result, **extra}
 
 
+def make_run_roots(run_dir, roots):
+    """Create the writable roots inside the run directory that don't exist yet (a reviewer's
+    room/review-<label>, for one), here, outside the vendor's sandbox, so the vendor starts with
+    every root it was granted. Roots outside the run directory are left alone."""
+    if not run_dir:
+        return
+    base = os.path.realpath(run_dir) + os.sep
+    for root in roots or []:
+        if os.path.realpath(root).startswith(base):
+            os.makedirs(root, exist_ok=True)
+
+
 def cmd_seat_run(a):
     checked = pin_guard(getattr(a, 'run_dir', None))
     if checked:
@@ -86,6 +98,7 @@ def cmd_seat_run(a):
         return
     if a.vendor == 'gemini' and not checked:
         ensure_agy_grant(os.path.dirname(os.path.abspath(a.run_dir)))   # fails now, not inside the job
+    make_run_roots(getattr(a, 'run_dir', None), getattr(a, 'writable', None))
     if a.checkout:
         # An auditor works in a checkout of the version under review, made here, outside the
         # vendor's sandbox, which can't write the repository's worktree records.
