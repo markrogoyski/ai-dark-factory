@@ -132,7 +132,8 @@ whole Pair on the standalone runner instead: one Sonnet transport agent writes t
 a file, runs `dark-factory-codex --workflow pair --brief --args-file FILE [--cwd REPO]` in the
 background outside the Bash sandbox (the runner starts the Claude and Codex CLIs), waits for its
 exit-code file, and returns the compact result `--brief` prints: status, stage, readiness,
-findings, notes, metrics and `hostRunDir`, with `resultFile` naming the full `result.json`, which
+findings, notes, metrics, `forTheOrchestrator` (the guidance the orchestrating session acts on,
+including showing the retro) and `hostRunDir`, with `resultFile` naming the full `result.json`, which
 is too large for an agent to relay. The runner's Claude setup turn runs `dark-factory init` inside
 Claude's own sandbox, which refuses to write files such as `.gitmodules` anywhere; when copying an
 ignored dependency directory hits one, init leaves those files out and names each on stderr. There are no per-turn relays or measurement
