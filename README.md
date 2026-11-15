@@ -31,25 +31,27 @@ For example, to have a council work out a subtle bug:
 How they fit together:
 
 ```text
-  /dark-factory:run-plan    plan.json: tasks in dependency order, then acceptance
+  run-plan    a plan of many tasks, worked one at a time
      |
-     +-- each eligible task --> a factory or pair run --> ready? --yes--> apply, verify, commit
-     |                                                      '----no-----> park; dependents wait
-     '-- every task done -----> council investigation: is the whole plan implemented?
+     +-- each task, in dependency order, goes through factory or pair:
+     |       reviewed and verified --> committed
+     |       not ready -------------> parked; tasks that depend on it wait
+     |
+     '-- when every task is done, a council checks the whole plan was implemented
 
-  /dark-factory:factory
+  factory     chooses how much process a task needs
      |
-  intake (Opus, read-only) picks a tier and a strategy
+  an intake agent reads the task and the code, then picks:
      |
-     +-- pair strategy ------------------------> Pair
-     +-- simple -------> Simple ---------------> (escalates to Fix or Feature)
-     +-- fix ----------> Council, two seats
-     +-- feature ------> Feature --------------> (escalates to Architecture)
-     +-- architecture -> Architecture            (designs only: returns milestones)
+     +-- a small, clear change ----> Simple        one implementer, one reviewer
+     |                                              (moves up to Fix or Feature if it struggles)
+     +-- a subtle bug -------------> Fix           a council
+     +-- a new feature ------------> Feature       two plans debated, then built in checked steps
+     |                                              (moves up to Architecture if it is too big)
+     +-- a design or a plan -------> Architecture  designs only, returns milestones to build
+     '-- a scoped change, one owner -> Pair          one author, one reviewer
 
-  /dark-factory:pair        one author and one reviewer, looping until review passes
-  /dark-factory:council     seats solve blind, debate on a ledger, converge on one result
-  /dark-factory:ensemble    independent candidates, reviewed and ranked for you to choose
+  council and ensemble are used on their own, as in the table above.
 ```
 
 Every workflow shares the same guarantees. Seats work in their own git worktrees from HEAD.
