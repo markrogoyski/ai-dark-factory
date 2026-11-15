@@ -33,8 +33,13 @@ this repo.
 
 ## Verifying
 
-- `make check` runs every gate (no models). `SIM_ONLY=scenarioX node test/sim.mjs` runs one
-  sim scenario.
+- `make check` (the default target) runs every gate (no models). `SIM_ONLY=scenarioX node
+  test/sim.mjs` runs one sim scenario. `make installed` (needs the `claude` CLI) is separate.
+- `make hooks` changes this clone's git config so every commit runs `make check`; `make unhooks`
+  undoes it. Never run it as a side effect of checking something else.
+- The helper's git calls name their repository by path; an inherited repository location
+  (`GIT_REPO_ENV`, as a git hook exports) is dropped. Keep the list in `common.py`,
+  `lib/engine.mjs` and the Makefile's `unexport` equal.
 - `./install.sh` installs this checkout as the plugin, once. The installed plugin is read from
   `plugins/dark-factory/` live, so an edit needs only `make build`, then `/reload-plugins` or a
   new session.

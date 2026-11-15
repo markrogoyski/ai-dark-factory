@@ -7,13 +7,27 @@ published one:
 
     ./install.sh                 # once: builds from src/, installs this checkout as the plugin, removes pre-plugin copies
     make build                   # after editing src/; then /reload-plugins or a new session (the plugin is read live)
-    make check                   # all code, host, and installer gates; no models or installed Claude plugin required
-    make installed               # separately check that the local Claude plugin is this checkout
-    make hooks                   # run `make check` before every commit (there is no CI)
+    make check                   # (or plain `make`) all code, host, and installer gates; no models or installed Claude plugin required
+    make installed               # separately check, with the `claude` CLI, that the local Claude plugin is this checkout
+    make hooks                   # run `make check` before every commit (there is no CI); see below
+    make unhooks                 # turn that off again
+    make clean                   # remove __pycache__ and .pytest_cache left by ad hoc test runs
+
+**The pre-commit hook.** `make hooks` sets `core.hooksPath=.githooks` in this clone's git
+config, not in any tracked file, so it lasts until `make unhooks` (or `git config --unset
+core.hooksPath`) and is never turned on by `make` or `make check`. It refuses to replace a hooks
+path you set yourself. The hook runs `make check` on the working tree, so unstaged edits are
+tested too; `git commit --no-verify` skips it once. Git exports `GIT_INDEX_FILE` to a pre-commit
+hook, and `GIT_DIR` too from a linked worktree; the Makefile unexports these and the helper drops
+them itself (`GIT_REPO_ENV` in `dark_factory_cli/common.py`, mirrored in `lib/engine.mjs` and
+the Makefile; `test/test_git_environment.py` keeps the three lists equal).
+
+`NODE=… PYTHON=…` choose the interpreters that run the gates; scripts the tests start through
+their shebangs still use `node` and `python3` from `PATH`.
 
 The pieces of `make check`:
 
-    make syntax                  # every script, runner and helper parses
+    make syntax                  # every script, runner, helper, test, fixture and shell script parses (static parses the workflows)
     node test/sim.mjs            # the real script against stub agents, and bin/dark-factory against a stub agy and real git
     SIM_ONLY=scenarioBallot,scenarioMeasure node test/sim.mjs   # just those
     node --test test/logic.mjs test/pair.mjs test/improvements.mjs # decision logic, and Pair scenarios through both hosts

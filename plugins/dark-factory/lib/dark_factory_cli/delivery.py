@@ -7,7 +7,7 @@ import re
 import subprocess
 
 from . import common, jobs
-from .common import CouncilError, git, load_run, read, write_json
+from .common import CouncilError, git, git_env, load_run, read, write_json
 from .jobs import job_dir, register_job_runner, settle_existing_job, start_job
 from .pinning import pin_guard
 from .snapshots import worktree_tree
@@ -35,7 +35,7 @@ def checkout_file(repo, rel):
         mode = '100755' if os.stat(path).st_mode & 0o111 else '100644'
     else:
         raise CouncilError(f'delivery does not support directory/submodule changes: {rel}')
-    blob = subprocess.run(['git', 'hash-object', '--stdin'], cwd=repo, input=data, capture_output=True, check=True, close_fds=True)
+    blob = subprocess.run(['git', 'hash-object', '--stdin'], cwd=repo, env=git_env(), input=data, capture_output=True, check=True, close_fds=True)
     return {'mode': mode, 'blob': blob.stdout.decode().strip(), 'sha256': hashlib.sha256(data).hexdigest()}
 
 
@@ -88,7 +88,7 @@ def inspect_delivery(run, final, manifest, diagnostic=False):
     repo = run['repoRoot']
     ref = delivery_snapshot(run, final, diagnostic)
     head = git('rev-parse', 'HEAD', cwd=repo).strip()
-    ancestor = subprocess.run(['git', 'merge-base', '--is-ancestor', run['head'], head], cwd=repo,
+    ancestor = subprocess.run(['git', 'merge-base', '--is-ancestor', run['head'], head], cwd=repo, env=git_env(),
                               stdin=subprocess.DEVNULL, capture_output=True, close_fds=True)
     if ancestor.returncode != 0:
         raise CouncilError('main HEAD no longer descends from the setup commit')
@@ -233,10 +233,10 @@ def cmd_apply(a):
                 raise CouncilError(f'the reviewed change touches {path}, which overlaps the local edit to {kept} recorded at setup '
                                    '(run.json deliveryBaseline); nothing was applied, and that edit must be committed, '
                                    'moved or reverted before apply')
-    patch = subprocess.check_output(['git', 'diff', '--binary', '--no-ext-diff', run['head'], ref], cwd=repo, close_fds=True)
+    patch = subprocess.check_output(['git', 'diff', '--binary', '--no-ext-diff', run['head'], ref], cwd=repo, env=git_env(), close_fds=True)
     if patch:
         for flags in (['--check', '--index'], ['--index']):
-            r = subprocess.run(['git', 'apply', *flags, '-'], input=patch, cwd=repo, capture_output=True, close_fds=True)
+            r = subprocess.run(['git', 'apply', *flags, '-'], input=patch, cwd=repo, env=git_env(), capture_output=True, close_fds=True)
             if r.returncode:
                 raise CouncilError(r.stderr.decode(errors='replace').strip())
     tree = git('write-tree', cwd=repo).strip()

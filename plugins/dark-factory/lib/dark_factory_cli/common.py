@@ -35,6 +35,15 @@ TAIL_LINES = 40
 VERIFICATION_BASE_ENV = ('PATH', 'HOME', 'USER', 'LOGNAME', 'SHELL', 'TMPDIR', 'TMP', 'TEMP',
                          'LANG', 'LC_ALL', 'LC_CTYPE', 'SYSTEMROOT')
 EXECUTOR_CONTEXT = ('DARK_FACTORY_PIN', 'DARK_FACTORY_INVOCATION', 'DARK_FACTORY_SEAT_SPEC')
+# What tells git which repository, index and objects to use (`git rev-parse --local-env-vars`,
+# less the `-c` config overrides). Git exports some of these to hooks: a pre-commit hook gets
+# GIT_INDEX_FILE (relative, or the outer commit's index.lock), and GIT_DIR from a linked
+# worktree. Every git call here names its repository by cwd, so an inherited one is never meant,
+# and would turn calls in the worktrees and repositories this helper chooses into calls on the
+# caller's repository.
+GIT_REPO_ENV = ('GIT_DIR', 'GIT_WORK_TREE', 'GIT_INDEX_FILE', 'GIT_COMMON_DIR', 'GIT_OBJECT_DIRECTORY',
+                'GIT_ALTERNATE_OBJECT_DIRECTORIES', 'GIT_IMPLICIT_WORK_TREE', 'GIT_GRAFT_FILE',
+                'GIT_NO_REPLACE_OBJECTS', 'GIT_REPLACE_REF_BASE', 'GIT_SHALLOW_FILE', 'GIT_PREFIX', 'GIT_CONFIG')
 
 
 class CouncilError(Exception):
@@ -82,8 +91,14 @@ def split_schema(payload):
     return prompt, schema
 
 
+def git_env(env=None):
+    """The environment without an inherited repository location (GIT_REPO_ENV)."""
+    return {k: v for k, v in (os.environ if env is None else env).items() if k not in GIT_REPO_ENV}
+
+
 def git(*args, cwd=None, env=None, check=True):
-    r = subprocess.run(['git', *args], cwd=cwd, env=env, stdin=subprocess.DEVNULL,
+    """Run git in cwd. An explicit env is used as given, so build it from git_env()."""
+    r = subprocess.run(['git', *args], cwd=cwd, env=git_env() if env is None else env, stdin=subprocess.DEVNULL,
                        capture_output=True, text=True, close_fds=True)
     if check and r.returncode != 0:
         raise CouncilError(f"git {' '.join(args)} failed: {r.stderr.strip() or r.stdout.strip()}")

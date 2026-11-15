@@ -52,6 +52,10 @@ def cmd_hash(a):
 
 
 def main():
+    # Started from a git hook, the helper would pass the caller's repository location to every
+    # seat, gate and runner it starts, which all work in repositories it names by path.
+    for k in common.GIT_REPO_ENV:
+        os.environ.pop(k, None)
     if len(sys.argv) == 3 and sys.argv[1] == '_job':
         cmd_job(sys.argv[2])
         return

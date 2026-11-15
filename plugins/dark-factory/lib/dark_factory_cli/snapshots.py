@@ -8,7 +8,7 @@ import sys
 import threading
 
 from . import common
-from .common import CouncilError, DEPS, SNAPSHOT_EXCLUDES, git, load_run, oneline, seat_tree, write
+from .common import CouncilError, DEPS, SNAPSHOT_EXCLUDES, git, git_env, load_run, oneline, seat_tree, write
 
 
 def clone_deps(src_root, dst_root):
@@ -23,7 +23,7 @@ def clone_deps(src_root, dst_root):
         src, dst = os.path.join(src_root, d), os.path.join(dst_root, d)
         if not os.path.isdir(src) or os.path.exists(dst):
             continue
-        ignored = subprocess.run(['git', 'check-ignore', '-q', d], cwd=src_root,
+        ignored = subprocess.run(['git', 'check-ignore', '-q', d], cwd=src_root, env=git_env(),
                                  stdin=subprocess.DEVNULL, close_fds=True).returncode == 0
         if not ignored:
             continue
@@ -74,7 +74,7 @@ def copy_agent_docs(root, wt, untracked=False):
         src, dst = os.path.join(root, name), os.path.join(wt, name)
         if not os.path.isfile(src) or os.path.exists(dst):
             continue
-        ignored = subprocess.run(['git', 'check-ignore', '-q', name], cwd=root, stdin=subprocess.DEVNULL,
+        ignored = subprocess.run(['git', 'check-ignore', '-q', name], cwd=root, env=git_env(), stdin=subprocess.DEVNULL,
                                  capture_output=True, close_fds=True).returncode == 0
         if ignored or (untracked and not git('ls-files', '--', name, cwd=root).strip()):
             shutil.copy2(src, dst)
@@ -106,7 +106,7 @@ def worktree_tree(run, wt, index_name, base=None):
     excludes = os.path.join(run['runDir'], 'tmp', 'snapshot-excludes')
     if not os.path.exists(excludes):
         write(excludes, '\n'.join(SNAPSHOT_EXCLUDES) + '\n')
-    env = dict(os.environ, GIT_INDEX_FILE=idx)
+    env = dict(git_env(), GIT_INDEX_FILE=idx)
     if os.path.exists(idx):
         os.remove(idx)
     try:
@@ -123,7 +123,7 @@ def seat_head(run, wt):
     there); otherwise the base commit, so a seat that moved HEAD elsewhere is still measured
     against the base."""
     head = git('rev-parse', '--verify', '--quiet', 'HEAD', cwd=wt, check=False).strip()
-    if head and subprocess.run(['git', 'merge-base', '--is-ancestor', run['head'], head], cwd=wt,
+    if head and subprocess.run(['git', 'merge-base', '--is-ancestor', run['head'], head], cwd=wt, env=git_env(),
                                stdin=subprocess.DEVNULL, capture_output=True, close_fds=True).returncode == 0:
         return head
     return run['head']
@@ -142,7 +142,7 @@ def snapshot(run, seat, label, path=None, since=None):
     if base != run['head'] and tree == git('rev-parse', f'{base}^{{tree}}', cwd=wt).strip():
         commit = base
     else:
-        ident = dict(os.environ, GIT_AUTHOR_NAME='council', GIT_AUTHOR_EMAIL='council@localhost',
+        ident = dict(git_env(), GIT_AUTHOR_NAME='council', GIT_AUTHOR_EMAIL='council@localhost',
                      GIT_COMMITTER_NAME='council', GIT_COMMITTER_EMAIL='council@localhost')
         message = f'council {run["runId"]} {seat} {label}' + ('' if base == run['head'] else ': uncommitted changes')
         commit = git('commit-tree', tree, '-p', base, '-m', message, cwd=wt, env=ident).strip()

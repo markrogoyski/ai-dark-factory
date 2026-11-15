@@ -10,7 +10,7 @@ import subprocess
 import time
 
 from . import common, jobs, snapshots
-from .common import CouncilError, DEPS, git, load_run, prompt_hash, read, seat_tree, tail, write, write_json
+from .common import CouncilError, DEPS, git, git_env, load_run, prompt_hash, read, seat_tree, tail, write, write_json
 from .jobs import job_dir, register_job_brief, register_job_runner, settle_existing_job, start_job
 from .snapshots import drop_checkout, scratch_checkout, seat_head, tracked_changes, worktree_tree
 from .verification import VerificationInfrastructureError, crosstest, evidence_inputs, file_sha256, inspect_evidence, publish_evidence, safe_relative, suite, verification_concurrency, verification_environment, verification_settings, verification_temp
@@ -205,7 +205,7 @@ def run_replay(run, spec, snapshot_info, live, settings):
                     dst = safe_relative(cwd, path)
                     os.makedirs(os.path.dirname(dst), exist_ok=True)
                     mode, _, oid = trees['final'][path]
-                    data = subprocess.check_output(['git', 'cat-file', 'blob', oid], cwd=run['repoRoot'], close_fds=True)
+                    data = subprocess.check_output(['git', 'cat-file', 'blob', oid], cwd=run['repoRoot'], env=git_env(), close_fds=True)
                     with open(dst, 'wb') as f:
                         f.write(data)
                     os.chmod(dst, 0o755 if mode == '100755' else 0o644)

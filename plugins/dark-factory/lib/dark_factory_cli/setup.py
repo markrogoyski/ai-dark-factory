@@ -8,7 +8,7 @@ import subprocess
 import time
 
 from . import common
-from .common import CouncilError, ROOM_DIRS, SELF, VERIFICATION_BASE_ENV, git, load_run, read, write_json
+from .common import CouncilError, ROOM_DIRS, SELF, VERIFICATION_BASE_ENV, git, git_env, load_run, read, write_json
 from .delivery import checkout_changes, checkout_file
 from .retro import setup_started, timeline_event
 from .snapshots import clone_deps, copy_agent_docs
@@ -43,7 +43,7 @@ def in_worktrees(root, path):
     tracked = git('ls-files', '--error-unmatch', '--', rel, cwd=root, check=False)
     if not tracked.strip():
         return False
-    return subprocess.run(['git', 'diff', '--quiet', 'HEAD', '--', rel], cwd=root, stdin=subprocess.DEVNULL,
+    return subprocess.run(['git', 'diff', '--quiet', 'HEAD', '--', rel], cwd=root, env=git_env(), stdin=subprocess.DEVNULL,
                           capture_output=True, close_fds=True).returncode == 0
 
 

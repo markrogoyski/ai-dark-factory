@@ -1,3 +1,5 @@
 #!/bin/sh
-# Enabled by `make hooks`. Skip once with `git commit --no-verify`.
+# Enabled by `make hooks`, disabled by `make unhooks`. Skip once with `git commit --no-verify`.
+# Checks the working tree, not only what is staged. The Makefile drops the GIT_INDEX_FILE (and,
+# from a linked worktree, GIT_DIR) that git exports here, so the tests' own repositories work.
 exec make check

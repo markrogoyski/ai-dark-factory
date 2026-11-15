@@ -693,7 +693,14 @@ export async function runProvenance(repo, args, executor, final = {}) {
       environment: sha256(JSON.stringify(Object.fromEntries(['PATH', 'HOME', 'TMPDIR', 'CODEX_HOME', 'CLAUDE_CONFIG_DIR'].map(k => [k, process.env[k] || null])))) } })
 }
 
+// GIT_REPO_ENV in dark_factory_cli/common.py, which says why: a git hook exports the caller's
+// repository location, and every git call here names its repository with -C.
+export const GIT_REPO_ENV = ['GIT_DIR', 'GIT_WORK_TREE', 'GIT_INDEX_FILE', 'GIT_COMMON_DIR', 'GIT_OBJECT_DIRECTORY',
+  'GIT_ALTERNATE_OBJECT_DIRECTORIES', 'GIT_IMPLICIT_WORK_TREE', 'GIT_GRAFT_FILE',
+  'GIT_NO_REPLACE_OBJECTS', 'GIT_REPLACE_REF_BASE', 'GIT_SHALLOW_FILE', 'GIT_PREFIX', 'GIT_CONFIG']
+
 export async function bootstrap(argv, entry = 'bin/dark-factory-codex') {
+  for (const name of GIT_REPO_ENV) delete process.env[name]
   let directory = null, resume = null, workflow = null
   const rest = []
   for (let i = 0; i < argv.length; i++) {
