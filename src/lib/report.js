@@ -467,10 +467,10 @@ function retroPayload(S, facts, data) {
 }
 
 function retroPrompt(S, reportMd, payload, hash) {
-  return `You are running a short retrospective on one run of ${S.factory ? `/factory, a workflow that routes a task to a tier of process (the run facts say which tier this run used and why) and runs it; its higher tiers run /council, in which several AI models solve one task independently, debate it on an evidence ledger, and converge on one result${S.pair ? '; this run used the pair strategy instead, in which one author designs and implements and one independent reviewer reviews the design and then the code until no finding is open' : ''}` : '/council, a workflow in which several AI models solve one task independently, debate it on an evidence ledger, and converge on one result'}. Its author is still tuning the workflow and wants to know what in its process to change. Your subject is the council's process, not the task: don't judge the solution, don't redo the work, and read the code under review only to confirm a point about the process.
+  return `You are running a short retrospective on one run of ${S.factory ? `/factory, a workflow that routes a task to a tier of process (the run facts say which tier this run used and why) and runs it; its higher tiers run /council, in which several AI models solve one task independently, debate it on an evidence ledger, and converge on one result${S.pair ? '; this run used the pair strategy instead, in which one author designs and implements and one independent reviewer reviews the design and then the code until no finding is open' : ''}` : S.pair ? '/pair, a workflow in which one author designs and implements a change and one independent reviewer reviews the design and then the code until no finding is open' : '/council, a workflow in which several AI models solve one task independently, debate it on an evidence ledger, and converge on one result'}. Its author is still tuning the workflow and wants to know what in its process to change. Your subject is the ${S.pair && !S.factory ? 'workflow' : 'council'}'s process, not the task: don't judge the solution, don't redo the work, and read the code under review only to confirm a point about the process.
 
 # What you have
-- The process notes at the end. During the run, every agent could say in a line or two what in its turn's instructions, inputs or tools got in its way. Seats are the debating models; checkers verify claims and run the tests; the panel adjudicates disputed claims; auditors review the final version afterwards without seeing the debate; relays are small agents that pass prompts to the Codex CLI or the Gemini CLI (agy); setup creates the run.
+- The process notes at the end. During the run, every agent could say in a line or two what in its turn's instructions, inputs or tools got in its way. ${S.pair && !S.factory ? 'The author drafts the design and then implements and fixes it; the reviewer reviews the design and then each measured snapshot, in a fresh context each time; relays are small agents that pass prompts to the Codex CLI or the Gemini CLI (agy); setup creates the run.' : `Seats are the debating models; checkers verify claims and run the tests; the panel adjudicates disputed claims; auditors review the final version afterwards without seeing the debate; relays are small agents that pass prompts to the Codex CLI or the Gemini CLI (agy); setup creates the run.`}
 - The run facts at the end, computed by the workflow, and the run's report below.
 - The run directory, ${S.run.runDir}: TASK.md; room/ holds every post, by round; jobs/ holds each Codex and Gemini turn's prompt and log. \`${S.cli} usage --run-dir ${shq(S.run.runDir)}\` prints their token use.
 - The workflow's source, if a change needs it: workflows/${S.workflowName}.js (the prompts, limits and round structure) and bin/dark-factory (the CLI the agents run), both in the dark-factory plugin's directory, the parent of the bin/ that \`command -v dark-factory\` prints. Both are long, so grep for the instruction a note is about rather than reading them whole.
@@ -510,13 +510,14 @@ ${payload}
 =====END PAYLOAD ${hash}=====`
 }
 
-function retroMarkdown(r) {
+// A standalone /pair run names its own workflow; the factory's runs keep the council's line.
+function retroMarkdown(r, workflow = '') {
   const worked = (r.worked || []).filter(w => w && w.what)
   const changes = (r.changes || []).filter(c => c && c.change)
   const ev = t => oneLine(t, 300).replace(/\.$/, '')
   return [
     '### Process retro',
-    'The council\'s notes on its own process, for tuning the /council workflow.',
+    workflow ? `The run's notes on its own process, for tuning the ${workflow} workflow.` : 'The council\'s notes on its own process, for tuning the /council workflow.',
     worked.length ? `What worked:\n\n${worked.map(w => `- ${sentence(clip(w.what, 300))}${w.evidence ? ` (${ev(w.evidence)})` : ''}`).join('\n')}` : '',
     changes.length
       ? `What to change, most valuable first:\n\n${changes.map((c, i) =>

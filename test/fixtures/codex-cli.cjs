@@ -115,6 +115,15 @@ if ('signals' in schema.properties) {
     const verified = helper('verify', '--run-dir', runDir, '--path', process.cwd(), '--label', 'audit')
     result.evidenceReview = { status: evidence.status === 'ok' && verified.suite.passed ? 'complete' : 'incomplete', note: 'Verified the snapshot bundle and reran the gate.' }
   }
+} else if ('worked' in schema.properties) {
+  kind = 'retro'
+  const runDir = fs.readFileSync(runPath, 'utf8')
+  const hash = prompt.match(/--expect ([\w-]+)/)[1]
+  fs.writeFileSync(path.join(runDir, 'retro.md'), '# Council retro: fixture\n\nThe run went smoothly.\n')
+  const saved = helper('retro', '--run-dir', runDir, '--expect', hash, '--payload-file', path.join(runDir, 'retro-data.md'))
+  result.worked = [{ what: 'Fresh reviews', evidence: 'pair-review' }]
+  result.saved = saved.path || ''
+  result.error = saved.error || ''
 } else if ('saved' in schema.properties) {
   kind = 'record'
   const runDir = fs.readFileSync(runPath, 'utf8')

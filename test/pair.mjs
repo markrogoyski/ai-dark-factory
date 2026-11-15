@@ -38,7 +38,7 @@ async function run(options = {}) {
   async function respond(prompt, schema, meta) {
     let value = defaults(schema)
     const kind = 'runDir' in schema.properties ? 'setup' : 'design' in schema.properties ? 'author'
-      : 'version' in schema.properties ? 'review' : 'snapshot' in schema.properties ? 'measure' : 'unknown'
+      : 'version' in schema.properties ? 'review' : 'snapshot' in schema.properties ? 'measure' : 'worked' in schema.properties ? 'retro' : 'unknown'
     const call = { ...meta, kind, prompt, schema }
     calls.push(call)
     if (kind === 'setup') Object.assign(value, setup(), options.setup)
@@ -56,6 +56,9 @@ async function run(options = {}) {
       const label = prompt.match(/--label '([^']+)'/)[1]
       const replay = JSON.parse(prompt.match(/--replay-json '([^']+)'/)[1])
       Object.assign(value, await measure({ label, replay }))
+    } else if (kind === 'retro') {
+      Object.assign(value, { worked: [{ what: 'Fresh reviews', evidence: 'review pair-code-2' }], saved: '/x/retros/pair-test.md' })
+      if (options.retro) value = await options.retro(value, call)
     } else throw new Error(`Unexpected turn: ${kind}`)
     if (value === null) return null
     validateResult(value, schema)
@@ -68,7 +71,7 @@ async function run(options = {}) {
   }
   async function agent(prompt, opts) {
     const match = prompt.match(/=====BEGIN PAYLOAD \S+=====\n([\s\S]*)\n=====END PAYLOAD/)
-    if (!match) return respond(prompt, opts.schema, opts)
+    if (!match || opts.label === 'retro') return respond(prompt, opts.schema, opts)
     const payload = match[1]
     const schema = JSON.parse(payload.split('<<<OUTPUT_SCHEMA\n')[1].split('\nOUTPUT_SCHEMA>>>')[0])
     const value = await respond(payload, schema, { ...opts, relay: true })
@@ -101,6 +104,10 @@ test('pair selects the author and opposite-vendor reviewer without council roles
   assert.deepEqual(c.panel, [])
   assert.deepEqual(c.specReviewers, [])
   for (const maxReviews of [0, 1, 101, 2.2, 'oops']) assert.throws(() => L.parsePairConfig({ task: 'x', maxReviews }), /maxReviews/)
+  // The retro adds no CLI the pair does not already use.
+  const retro = args => L.parsePairConfig({ task: 'x', host: 'codex', ...args }).roles.retro.key
+  assert.deepEqual([retro({}), retro({ author: 'opus', reviewer: 'sonnet' }), retro({ author: 'gemini', reviewer: 'argon' }), L.parsePairConfig('x').roles.retro],
+    ['astra', 'sonnet', 'gemini', undefined])
   for (const key of ['tier', 'seats', 'audit', 'roles', 'evidence']) assert.throws(() => L.parsePairConfig({ task: 'x', [key]: false }), /not a pair option/)
 })
 
@@ -134,8 +141,46 @@ test('pair completes design and code review in both hosts with fresh independent
     } else assert.ok(reviews.every(r => r.relay))
     assert.ok(reviews.every(r => !r.prompt.includes('Continue with the boundary case.')), 'private notes never enter reviews')
     assert.match(authors[1].prompt, /Continue with the boundary case/)
-    assert.ok(!calls.some(c => ['intake', 'panel', 'retro'].includes(c.role)))
+    assert.ok(!calls.some(c => ['intake', 'panel'].includes(c.role)))
+    assert.equal(calls.at(-1).kind, 'retro', 'the process retro runs last')
+    assert.equal(calls.filter(c => c.kind === 'retro').length, 1)
   }
+})
+
+test('a pair run ends with a process retro holding the author and reviewer notes; retro: false turns it off', async () => {
+  for (const native of [false, true]) {
+    const { result, calls, phases } = await run({ native,
+      author: a => ({ ...a, process: 'The handoff omitted the base revision.' }),
+      review: (r, n) => ({ ...r, process: n === 1 ? 'None.' : 'The measurement record path was hard to find.' }) })
+    assert.equal(result.status, 'done')
+    const notes = result.retro.notes.map(n => `${n.turn} ${n.role}: ${n.text}`)
+    assert.deepEqual(notes, ['pair-design-1 author: The handoff omitted the base revision.', 'pair-code-2 author: The handoff omitted the base revision.',
+      'review pair-code-2 reviewer: The measurement record path was hard to find.'], 'every author and reviewer note kept; "None." dropped')
+    const authors = calls.filter(c => c.kind === 'author'), reviews = calls.filter(c => c.kind === 'review')
+    assert.ok([...authors, ...reviews].every(c => c.schema.required.includes('process')), 'author and reviewer turns can leave a note')
+    assert.ok(!calls.filter(c => c.kind === 'measure').some(c => 'process' in c.schema.properties), 'the measurement transport copies its result exactly')
+    const retro = calls.find(c => c.kind === 'retro')
+    assert.ok(retro.prompt.startsWith('You are running a short retrospective on one run of /pair, '), retro.prompt.slice(0, 120))
+    assert.ok(retro.prompt.includes('- review pair-code-2 (reviewer, Codex Astra): The measurement record path was hard to find.') ||
+      retro.prompt.includes('- review pair-code-2 (reviewer, Claude Opus): The measurement record path was hard to find.'), 'the notes reach the retro payload')
+    assert.ok(retro.prompt.includes('- Outcome: the pair strategy'), 'the retro sees the pair facts')
+    assert.ok(result.retro.markdown.startsWith('### Process retro\n\nThe run\'s notes on its own process, for tuning the /pair workflow.'), result.retro.markdown)
+    assert.ok(result.retro.markdown.includes('Saved to `/x/retros/pair-test.md`'))
+    assert.ok(result.forTheOrchestrator.endsWith(' Last, show retro.markdown as it is: notes on the workflow, not the user\'s project.'))
+    assert.equal(phases.at(-1), 'Retro')
+  }
+  for (const native of [false, true]) {
+    const { result, calls, phases } = await run({ native, args: { retro: false } })
+    assert.equal(result.status, 'done')
+    assert.ok(!calls.some(c => c.kind === 'retro'))
+    assert.ok(!calls.some(c => 'process' in c.schema.properties), 'no process field without a retro')
+    assert.equal(result.retro, undefined)
+    assert.ok(!phases.includes('Retro'))
+  }
+  // A run setup stopped before it made a run directory has nothing to review.
+  const { result, calls } = await run({ setup: { status: 'needs-user', error: 'Conflicting requirements.', questions: ['Which one?'] } })
+  assert.equal(result.status, 'needs-user')
+  assert.ok(!calls.some(c => c.kind === 'retro'))
 })
 
 test('pair repeatedly fixes both stages, retaining findings until reviewer closure', async () => {

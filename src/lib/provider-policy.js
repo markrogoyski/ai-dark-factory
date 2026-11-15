@@ -182,7 +182,7 @@ function reachableProviders(S, request) {
       const reachable = role === 'setup' || (role === 'checker' && !config.pairOptions)
         || (role === 'questions' && !config.pairOptions && !config.simple && !config.ensemble)
         || (role === 'spec' && config.specReviewers.length > 0)
-        || (role === 'retro' && config.retro && !config.ensemble && (!config.pairOptions || factoryContext))
+        || (role === 'retro' && config.retro && !config.ensemble)
         || (role === 'record' && factoryContext)
       if (reachable) add(seat, role, reason)
     }

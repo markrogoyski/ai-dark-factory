@@ -566,6 +566,8 @@ export function briefResult(result) {
   const brief = Object.fromEntries(Object.entries(result || {}).filter(([key]) => !BRIEF_DROPPED.includes(key)))
   if (Array.isArray(result?.findings)) brief.findings = result.findings.map(f => ({ id: f.id, stage: f.stage, severity: f.severity, status: f.status, statement: String(f.statement || '').slice(0, 300) }))
   if (result?.final && typeof result.final === 'object') brief.final = Object.fromEntries(['author', 'model', 'worktree', 'snapshotRef', 'snapshotTree', 'readiness'].filter(key => key in result.final).map(key => [key, result.final[key]]))
+  // The retro's notes and items are in its saved file and result.json; its markdown is what is shown.
+  if (result?.retro && typeof result.retro === 'object') brief.retro = Object.fromEntries(['saved', 'error', 'markdown'].filter(key => key in result.retro).map(key => [key, result.retro[key]]))
   if (result?.hostRunDir) brief.resultFile = join(result.hostRunDir, 'result.json')
   return brief
 }

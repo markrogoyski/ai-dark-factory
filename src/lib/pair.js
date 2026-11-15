@@ -18,7 +18,8 @@ function parsePairConfig(args) {
   const reviewer = parseSeat(raw.reviewer || (author.vendor === 'claude' ? 'astra' : 'opus'), raw.effort)
   const maxReviews = raw.maxReviews === undefined ? 8 : Number(raw.maxReviews)
   if (!Number.isSafeInteger(maxReviews) || maxReviews < 2 || maxReviews > 100) throw new Error('pair: maxReviews must be an integer from 2 to 100.')
-  const config = parseConfig({ ...raw, mode: 'implement', retro: false,
+  // The process retro is on unless retro: false, as in the other workflows.
+  const config = parseConfig({ ...raw, mode: 'implement',
     simple: { implementer: author.key, reviewer: reviewer.key } }, { workflow: 'pair', tier: 'simple' })
   // Setup writes the criteria and the gate, and the run inherits their quality: Sonnet setup dropped
   // a stated criterion and stopped on a guess where Opus setup did neither. So setup runs on Opus,
@@ -27,9 +28,14 @@ function parsePairConfig(args) {
   // setup reads only the model and always runs at medium.
   const setupKey = config.host === 'codex' && author.vendor !== 'claude' ? author.key : 'opus'
   const setup = raw.effort === undefined ? parseSeat(setupKey, ROLE_EFFORT.setup) : setupKey === author.key ? author : parseSeat(setupKey, author.effort)
-  // Reuse setup and transport, without acquiring council roles or Simple escalation rules.
+  // The Codex host's retro role, unless the run uses no CLI of its vendor: then Sonnet if a Claude
+  // participant is there, else the author's model, so the retro adds no CLI the pair doesn't need.
+  const used = [author.vendor, reviewer.vendor, setup.vendor]
+  const retro = !config.roles.retro ? null : used.includes(config.roles.retro.vendor) ? config.roles.retro
+    : parseSeat(used.includes('claude') ? 'sonnet' : author.key, ROLE_EFFORT.retro)
+  // Reuse setup, transport and the retro, without acquiring council roles or Simple escalation rules.
   return { ...config, raw, tier: 'pair', simple: null, panel: [], specReviewers: [],
-    roles: { setup }, lineup: [hostSeat(config.host, author)],
+    roles: { ...(retro ? { retro } : {}), setup }, lineup: [hostSeat(config.host, author)],
     auditors: [{ ...hostSeat(config.host, reviewer), lens: 'review', id: 'PR' }],
     pairOptions: { author, reviewer, maxReviews } }
 }
@@ -228,8 +234,10 @@ function pairIngestReview(S, review) {
     if (same) { same.history.push({ review: p.reviews.length + 1, status: 'open', evidence: f.evidence }); continue }
     p.findings.push({ ...f, id: `P${p.findings.length + 1}`, stage: p.stage, status: 'open', resolution: '', history: [] })
   }
-  p.lastReview = review
-  p.reviews.push({ stage: p.stage, label: p.label, ...review })
+  // The process note is for the retro (S.processNotes), not for the author's next turn.
+  const { process: note, ...kept } = review
+  p.lastReview = kept
+  p.reviews.push({ stage: p.stage, label: p.label, ...kept })
   return null
 }
 

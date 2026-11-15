@@ -461,6 +461,8 @@ test('installed pair workflow runs both author/reviewer directions and repeated 
     assert.ok(authors.every(c => c.vendor === (author === 'sol' ? 'codex' : 'claude')))
     assert.ok(reviewers.every(c => c.vendor === (author === 'sol' ? 'claude' : 'codex')))
     assert.equal(new Set(calls.map(c => c.vendor)).size, 2)
+    assert.equal(calls.filter(c => c.kind === 'retro').length, 1, 'a standalone pair run ends with the model retro')
+    assert.ok(result.retro.saved && existsSync(result.retro.saved), 'the retro is saved outside the run')
     // A crash can leave the last valid checkpoint without a final result file.
     rmSync(join(result.hostRunDir, 'result.json'))
     const resumed = JSON.parse(execFileSync(process.execPath, [cli, '--resume', result.hostRunDir], {
@@ -531,4 +533,6 @@ test('--brief prints what a transport relays and points at the full result', () 
   assert.deepEqual(brief.findings, [{ id: 'P1', stage: 'design', severity: 'minor', status: 'fixed', statement: 's'.repeat(300) }])
   assert.equal(brief.resultFile, '/repo/.council/host-a/result.json')
   assert.ok(JSON.stringify(brief).length < 1000)
+  const retro = { worked: [{ what: 'w' }], changes: [{ change: 'c' }], saved: '/r.md', error: '', notes: [{ turn: 't', text: 'n'.repeat(400) }], markdown: '### Process retro' }
+  assert.deepEqual(briefResult({ ...result, retro }).retro, { saved: '/r.md', error: '', markdown: '### Process retro' })
 })

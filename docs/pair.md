@@ -156,9 +156,20 @@ all criteria met, and all required checks passing. When no automated gate exists
 records that it was not run. Pair currently delivers implementations; use council or factory
 for standalone investigation and architecture work.
 
+Like the other workflows, Pair ends with a [process retro](process-retro.md) once setup has
+made a run. Setup, the author, the reviewer and the relays can each leave a process note (the
+measurement transport, which must return the helper's result exactly, leaves none), and one
+agent turns the notes, the run facts and the report into suggested changes to the workflow,
+returned as `retro` and saved outside the run. It runs on Sonnet in Claude Code. In the standalone runtime it runs on the Codex host's retro
+role (Astra) when the pair already uses Codex, otherwise on Sonnet, or on the author's model when
+no participant is Claude, so it never needs a CLI the pair doesn't. It counts toward `maxTurns`. A run that stops in setup has no retro.
+Pass `retro: false` in object arguments to turn it off. Factory's pair strategy keeps the
+factory's rule instead: it always records the run facts and runs the model retro only on a
+notable run.
+
 Object arguments, or the Codex runner's `--args-file`, accept `task`, `author`, `reviewer`,
-`maxReviews`, `effort`, `context`, `plan`, `criteria`, `verify`, `repo`, `allowDirty`, and
-`timeoutMin`. The existing model catalog and effort mapping apply. Pass absolute reference
+`maxReviews`, `effort`, `context`, `plan`, `criteria`, `verify`, `repo`, `allowDirty`,
+`timeoutMin`, and `retro`. The existing model catalog and effort mapping apply. Pass absolute reference
 paths in `plan`, including uncommitted documents. Worktrees start at HEAD; tracked local edits
 require explicit `allowDirty` or an already clean checkout. Factory tier, panel, audit, and
 historical-evidence options do not apply to Pair.

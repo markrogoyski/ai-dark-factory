@@ -64,11 +64,14 @@ function keepHostDiagnostics(label, result) {
 async function ask(prompt, opts, role, who) {
   reserveTurn()
   const selected = roleAgent(S, role, opts)
-  // measures is a host-runner capability; the native runtime gets only the options it knows.
-  const { measures, ...nativeOpts } = opts
+  // copies marks a transport told to return a printed result exactly, so it gets no process field
+  // to add. measures is a host-runner capability; the native runtime gets only the options it knows.
+  const { copies, ...rest } = opts
+  const { measures, ...nativeOpts } = rest
+  const schema = copies ? opts.schema : withProcess(opts.schema)
   const res = hostRuntime
-    ? await hostAgent(prompt, { ...opts, schema: withProcess(opts.schema) }, role, who)
-    : await agent(prompt, { ...nativeOpts, schema: withProcess(opts.schema) })
+    ? await hostAgent(prompt, { ...rest, schema }, role, who)
+    : await agent(prompt, { ...nativeOpts, schema })
   S.turnLog.push({ turn: opts.label, role, vendor: hostRuntime ? selected.vendor : 'claude', ok: !!res })
   keepProcess(opts.label, role, who || (hostRuntime ? selected.name : opts.model), res)
   return res
@@ -509,7 +512,7 @@ async function runRetro(o) {
     return { worked: [], changes: [], saved: '', error: 'the retro agent failed', notes: S.processNotes,
       markdown: `### Process retro\n\nThe retro agent failed. ${plural(S.processNotes.length, 'process note')} from the run ${S.processNotes.length === 1 ? 'is' : 'are'} in retro.notes.` }
   }
-  return { worked: r.worked || [], changes: r.changes || [], saved: r.saved || '', error: r.error || '', notes: S.processNotes, markdown: retroMarkdown(r) }
+  return { worked: r.worked || [], changes: r.changes || [], saved: r.saved || '', error: r.error || '', notes: S.processNotes, markdown: retroMarkdown(r, S.pair && !S.factory ? '/pair' : '') }
 }
 
 async function recordFacts(payload) {

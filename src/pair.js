@@ -89,7 +89,7 @@ async function pairRun() {
       try {
         p.measurement = pairMeasurementView(S, hostRuntime ? await hostRuntime.measure({ run: S.run, seat: 'A', label, replay: pairReplayRequest(S) })
           : await ask(pairMeasurePrompt(S, label), { label: `measure ${label}`, phase: 'Verify', schema: PAIR_MEASURE_SCHEMA,
-            model: transportModel, effort: 'low' }, 'checker'), PAIR_MEASURE_SCHEMA)
+            model: transportModel, effort: 'low', copies: true }, 'checker'), PAIR_MEASURE_SCHEMA)
       } catch (error) {
         if (fatalTurnError(error)) throw error
         p.measurement = { status: 'error', error: String(error?.message || error) }
@@ -150,6 +150,17 @@ async function pairRun() {
   }
   p.stop = `Review budget exhausted (${S.pairOptions.maxReviews}); work remains unresolved.`
   return pairResult(S)
+}
+
+// The process retro after a Pair run, standalone or as the factory's pair strategy, once setup has
+// made a run. A factory run always records its facts; it gets the model retro only when retroWanted.
+async function pairRetro(result) {
+  if (!S.run || (!S.factory && !S.retro)) return result
+  const ready = result.final.readiness
+  phase(retroWanted(S, { ready }) ? 'Retro' : 'Record')
+  const retro = await runRetro({ outcome: null, W: null, endorsements: [], fixPass: false, ready, audit: null, reportMd: result.report.markdown })
+  return { ...result, retro,
+    forTheOrchestrator: result.forTheOrchestrator + (retro && retro.markdown ? ' Last, show retro.markdown as it is: notes on the workflow, not the user\'s project.' : '') }
 }
 
 function pairAuthorTurn(label, correction = '') {

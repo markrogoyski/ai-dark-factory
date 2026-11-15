@@ -31,10 +31,19 @@ test('a factory pair run records its facts with the factory roles and reuses the
   assert.ok(codeReview.prompt.includes("don't rerun the verification command"))
 })
 
-test('a standalone pair run still has no retro', async () => {
+test('a standalone pair run ends with the model retro on the Codex retro role, and retro: false skips it', async () => {
   const { result, calls } = await simulate('pair', { retro: undefined })
-  assert.ok(!calls.some(c => ['record', 'retro'].includes(c.role)))
-  assert.equal(result.retro, undefined)
+  const retro = calls.filter(c => c.role === 'retro')
+  assert.equal(retro.length, 1)
+  assert.equal(calls.at(-1).role, 'retro')
+  assert.deepEqual([retro[0].vendor, retro[0].model], ['codex', L.parsePairConfig({ task: 'x', host: 'codex' }).roles.retro.model])
+  assert.equal(retro[0].payloadFile, '/repo/.council/demo/retro-data.md')
+  assert.ok(!calls.some(c => c.role === 'record'), 'facts are recorded only for factory runs')
+  assert.ok(calls.some(c => c.role === 'reviewer' && 'process' in c.schema.properties), 'pair turns can leave process notes')
+  assert.ok(result.retro && !result.retro.recorded)
+  const off = await simulate('pair', { retro: false })
+  assert.ok(!off.calls.some(c => ['record', 'retro'].includes(c.role)))
+  assert.equal(off.result.retro, undefined)
 })
 
 test('explain performs only intake for Factory and no turns for explicit Pair or Ensemble', async () => {
