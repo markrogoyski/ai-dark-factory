@@ -4,7 +4,7 @@
 
 **Autonomous agent workflows that plan and implement on their own, checked by multi-agent review across models from different vendors.**
 
-It is a workflow engine for Claude Code and Codex, with three ways to get that review:
+It is a workflow engine for Claude Code and Codex that has independent agents check each other's work, in three forms:
 
 - **Pair**: one author and one independent reviewer.
 - **Council**: several seats solve the task blind, debate it on an evidence ledger, and converge on one result.
