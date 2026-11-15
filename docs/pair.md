@@ -19,11 +19,11 @@ $dark-factory --workflow pair --author opus --reviewer astra Add cancellation su
 $dark-factory --workflow pair --no-design Write the utility refactoring plan in UTIL_REFACTOR_PLAN.md
 ```
 
-Pair defaults to Claude Opus author and Codex Astra reviewer in Claude Code, and Codex Astra
-author and Claude Opus reviewer in Codex. `author` and `reviewer` select the roles independently
-using the existing model names. An unspecified reviewer defaults to the other vendor. The
-default pair needs both authenticated CLIs. Explicit `--author sol --reviewer astra` uses only
-Codex models in the Codex host.
+Pair defaults to a Claude Opus author and a Codex Astra reviewer in Claude Code, and a Codex
+Astra author and a Claude Opus reviewer in Codex. `author` and `reviewer` take any seat name from
+[Choosing the models](models.md), independently. An unspecified reviewer defaults to the other
+vendor, so the default pair needs both authenticated CLIs. `--author sol --reviewer astra` uses
+only Codex models.
 
 ```text
   setup (Opus)        criteria, reference snapshots, the gate and its baseline; stops first
@@ -68,21 +68,28 @@ Codex models in the Codex host.
    any author turn, with one question per criterion: rewrite it so the run can check it, or drop
    it. Setup lists only what it has established: a tool that might be missing is checked with one
    command first, and doubt, or a check refused only in setup's own sandbox, goes into the
-   repository notes instead.
+   repository notes instead. The task itself is passed on unchanged: setup adds repository
+   observations and proposed interpretations beside it, never in place of it.
 2. The author drafts a design and concrete test contract: criterion IDs, inputs, expected
-   outcomes, boundaries, changed/preserved purpose, test files, commands, and fixtures. Criteria
-   unsuitable for tests name an inspection and reason. An exception or error message that the
-   task, a plan or a criterion specifies is asserted exactly, never by substring or a pattern
-   anchored only at its end. The reviewer verifies test roots against
-   the base configuration/layout and supplies a plausible wrong implementation plus rejecting
-   check IDs for every criterion. The engine requires complete, valid challenges before approval.
-   A reviewer who finds no rejecting check can return empty IDs with an evidenced finding,
-   a partial/unmet assessment, or a design revision request; this returns the design to its author.
-   A malformed contract or challenge gets one correction attempt before stopping. Correction turns count toward the
-   run's turn budget and never count as design approval.
+   outcomes, boundaries, changed/preserved purpose, test files, commands, and fixtures, and
+   reconciles setup's interpretations with the request. Criteria unsuitable for tests name an
+   inspection and reason. A final whole-suite obligation is a gate check: `kind: "gate"`,
+   `purpose: "preserved"`, the exact verification command, `file: ""` and `fixtures: []`. It
+   needs no replay mapping and doesn't replace the baseline checks for changed behaviour. An
+   exception or error message that the task, a plan or a criterion specifies is asserted
+   exactly, never by substring or a pattern anchored only at its end. The reviewer checks the
+   interpretations against the original request, the reference documents and explicit
+   decisions; a contradiction neither can resolve needs your input. It verifies test roots
+   against the base configuration/layout and supplies a plausible wrong implementation plus
+   rejecting check IDs for every criterion. The engine requires complete, valid challenges
+   before approval. A reviewer who finds no rejecting check can return empty IDs with an
+   evidenced finding, a partial/unmet assessment, or a design revision request; this returns
+   the design to its author. A malformed contract or challenge gets one correction attempt
+   before stopping. Correction turns count toward the run's turn budget and never count as
+   design approval.
 3. The author implements the reviewed design in its own worktree. The helper snapshots the
    change, replays the current mapped tests on the original base and final snapshot in disposable
-   checkouts, and runs the existing full verification gate.
+   checkouts, and runs the full verification gate.
 4. A fresh reviewer context inspects that snapshot, the tests, and every criterion. Findings
    receive stable IDs. Only the reviewer can mark them fixed or refuted, with evidence.
 5. The author fixes findings and failed checks, then verification and review repeat. A material
@@ -109,14 +116,16 @@ the same structured challenge a design review does (one plausible wrong implemen
 criterion, with the contract checks that reject it), under the same validation and single
 correction. The author keeps the contract current in every turn (an empty one keeps the
 contract in force), so a contract change counts as a new version, and stall detection sees it as
-progress. A reviewer who
-finds the approach itself must change files a finding and the author reworks it in the next
-turn; there is no design stage to return to, and a `requiresDesignRevision` flag only blocks
-readiness until a later review clears it. The review budget, stall detection, and readiness are
-otherwise unchanged. Factory's pair strategy always designs first.
+progress. A reviewer who finds the approach itself must change files a finding and the author
+reworks it in the next turn; there is no design stage to return to, and a
+`requiresDesignRevision` flag only blocks readiness until a later review clears it. The review
+budget, stall detection, and readiness are otherwise unchanged. Factory's pair strategy always
+designs first.
+
+### Sessions, measurement and review
 
 All actionable findings, including minor ones, must close. Optional preferences are reported
-separately. The author retains its CLI session across design and implementation; native Claude
+separately. The author keeps its CLI session across design and implementation; native Claude
 workflow turns carry an explicit handoff and private notes. Review contexts and checkouts are
 fresh each time. Codex's runner executes measurements directly; Claude's workflow uses a
 transport turn, on the Claude participant's model, to run the same helper with `--brief`. That
@@ -124,8 +133,11 @@ prints everything the engine checks, leaving out what each execution printed, it
 and its log digest, so the transport retypes about a third of the record (8k characters instead of
 22k on average). Both hosts hand the engine and the prompts that same summary. The author and
 reviewer read the output tails in the job's full record, `<runDir>/jobs/measure-A-<label>/status.json`,
-which their prompts name, or in the logs it lists. Its existing CLI relay handles external participants.
-There is no council, panel, voting, or automatic escalation.
+which their prompts name, or in the logs it lists. External participants' turns go through the
+CLI relay. There is no council, panel, voting, or automatic escalation.
+
+How the mapped tests are replayed on base and snapshot, and what evidence each replay records,
+is in [Pair replay](verification-and-delivery.md#pair-replay).
 
 In Claude Code, `runtime: "cli"` (or `--runtime cli` at the start of a string task) runs the
 whole Pair on the standalone runner instead: one Sonnet transport agent writes the arguments to
@@ -134,83 +146,79 @@ background outside the Bash sandbox (the runner starts the Claude and Codex CLIs
 exit-code file, and returns the compact result `--brief` prints: status, stage, readiness,
 findings, notes, metrics, `forTheOrchestrator` (the guidance the orchestrating session acts on,
 including showing the retro) and `hostRunDir`, with `resultFile` naming the full `result.json`, which
-is too large for an agent to relay. The runner's Claude setup turn runs `dark-factory init` inside
-Claude's own sandbox, which refuses to write files such as `.gitmodules` anywhere; when copying an
-ignored dependency directory hits one, init leaves those files out and names each on stderr. There are no per-turn relays or measurement
+is too large for an agent to relay. There are no per-turn relays or measurement
 transports; the Claude author resumes its CLI session between turns, and the result records
 exact `elapsedMs` and a checkpoint. The transport names the participants explicitly (Opus author
 and Astra reviewer unless you choose others), so the runner's Codex defaults don't apply. To
 resume an interrupted run, repeat the same arguments and add `resume` with the earlier result's
 `hostRunDir`: `{"task": "…", "runtime": "cli", "resume": "/repo/.council/host-abc123"}`. Changed
-arguments are refused on resume. The native path stays the default. The option is refused in the
-Codex host, which always runs this runtime. Factory doesn't support it yet: its runner path
+arguments are refused on resume. The native path is the default. The option is refused in the
+Codex host, which always runs this runtime. Factory doesn't support it: its runner path
 applies Codex role defaults to intake and the tiers.
 
-Each implementation response maps approved check IDs to current files, focused commands, and
-fixtures. Each focused command must isolate one test file. Separate files are preferred for
-new-API and preserved-behavior tests; explicit user or plan file requirements take precedence.
-Shared files need focused selections and a review of base loadability. A whole-suite final
-obligation uses a designated-gate contract check without a replay mapping. Only
-added/modified regular test and fixture files under the reviewed test roots are overlaid, using
-snapshot bytes. Unchanged files use the base copy. Production/config/dependency changes, unsafe
-paths and symlinks are excluded; renames/deletions are reported explicitly and are not overlaid.
-Dependencies needed for replay must be visible to the reviewer, rather than silently copied.
-Each execution gets a fresh checkout and the captured verification environment. Replay supplements
-the full gate and uses the helper's focused-test timeout (default 300 seconds per command).
-Base replay copies ignored dependencies from the original run repository and reports that author
-dependency changes were excluded. Final replay uses the author's dependency installation, like
-the full gate, so a package addition or upgrade can pass its final focused checks. Each command
-gets a fresh dependency copy. Ignored dependencies still have the checkpoint limitations in [Process controls](process-controls.md#resume).
-
-The helper's raw replay evidence, in the job's `status.json`, is at file/command granularity,
-with check IDs, base/snapshot identity, cwd, exit/signal/timeout, launch errors, logs and output
-tails. The measurement summary the engine reads drops the cwd, log digests and tails. A base fatal is a result even when no
-individual assertions ran. Base passes, timeouts and tool errors also require reviewer judgment;
-none automatically establishes or rejects intended changed behavior. An excluded or unscheduled
-file has no execution result. Every changed check needs a base result; every executable check
-needs a passing final result. Missing evidence is incomplete, and observed final failures block.
-Only the reviewer can close findings, and the final review examines the whole implementation,
-including omissions or weakening of the agreed checks and regressions introduced by fixes.
-There is no extra review stage, chronological TDD enforcement, or separate contract-version system.
+### When the run stops
 
 `maxReviews` (CLI: `--max-reviews`) limits total reviews across both stages, default **8**.
 An unchanged artifact with the same open findings and verification results on consecutive
-attempts stops as stalled; a criterion the reviewer moves between partial and met on the same
-bytes does not count as progress. When the measurement itself fails for environmental reasons
-(its disposable checkout can't be made, or the gate's environment fails after bounded recovery),
-the run stops after that code review: readiness is `unverified` when no finding is open, with
-the cause in `final.readiness.infrastructure`, and the reviewer is told not to file the missing
-evidence as a finding. Budget exhaustion, incomplete reviews, failed required checks, or unresolved findings
-never report readiness. A ready result requires review of the exact measured final snapshot,
-all criteria met, and all required checks passing. When no automated gate exists, the result
-records that it was not run. Pair currently delivers implementations; use council or factory
-for standalone investigation and architecture work.
+attempts stops as stalled, as do unchanged unmet criteria or failed verification even with no
+open finding; a criterion the reviewer moves between partial and met on the same bytes does not
+count as progress. A clean review that still lacks evidence returns a precise incomplete result
+without another author/reviewer cycle. When the measurement itself fails for environmental
+reasons (its disposable checkout can't be made, or the gate's environment fails after bounded
+recovery), the run stops after that code review: readiness is `unverified` when no finding is
+open, with the cause in `final.readiness.infrastructure`, and the reviewer is told not to file
+the missing evidence as a finding. Budget exhaustion, incomplete reviews, failed required checks,
+or unresolved findings never report readiness. A ready result requires review of the exact
+measured final snapshot, all criteria met, and all required checks passing. When no automated
+gate exists, the result records that it was not run. Pair delivers changes (code, or a document
+with `design: false`); use council or factory for investigation and architecture work.
 
 Like the other workflows, Pair ends with a [process retro](process-retro.md) once setup has
 made a run. Setup, the author, the reviewer and the relays can each leave a process note (the
 measurement transport, which must return the helper's result exactly, leaves none), and one
 agent turns the notes, the run facts and the report into suggested changes to the workflow,
-returned as `retro` and saved outside the run. It runs on Sonnet in Claude Code. In the standalone runtime it runs on the Codex host's retro
-role (Astra) when the pair already uses Codex, otherwise on Sonnet, or on the author's model when
-no participant is Claude, so it never needs a CLI the pair doesn't. It counts toward `maxTurns`. A run that stops in setup has no retro.
-Pass `retro: false` in object arguments, or `--no-retro` at the start of a string task or on the
-Codex runner's command line, to turn it off. Factory's pair strategy keeps the
-factory's rule instead: it always records the run facts and runs the model retro only on a
-notable run.
+returned as `retro` and saved outside the run. It runs on Sonnet in Claude Code. In the
+standalone runtime it runs on the Codex host's retro role (Astra) when the pair already uses
+Codex, otherwise on Sonnet, or on the author's model when no participant is Claude, so it never
+needs a CLI the pair doesn't. It counts toward `maxTurns`. A run that stops in setup has no retro.
+Factory's pair strategy keeps the factory's rule instead: it always records the run facts and
+runs the model retro only on a notable run.
 
-Object arguments, or the Codex runner's `--args-file`, accept `task`, `author`, `reviewer`,
-`maxReviews`, `design` (default true), `effort`, `context`, `plan`, `criteria`, `verify`, `repo`, `allowDirty`,
-`timeoutMin`, and `retro`. The existing model catalog and effort mapping apply. Pass absolute reference
-paths in `plan`, including uncommitted documents. Worktrees start at HEAD; tracked local edits
-require explicit `allowDirty` or an already clean checkout. Factory tier, panel, audit, and
-historical-evidence options do not apply to Pair.
+## Arguments
+
+Object arguments, or the Codex runner's `--args-file`:
+
+| arg | default | |
+|---|---|---|
+| `task` | required | |
+| `author` | `opus` in Claude Code, `astra` in Codex | any seat name; `--author` at the start of a string task |
+| `reviewer` | the other vendor: `astra` for a Claude author, else `opus` | `--reviewer` |
+| `maxReviews` | 8 | total reviews across design and code, 2–100; `--max-reviews` |
+| `design` | true | `false` (`--no-design`) skips the design stage; see [above](#without-a-design-stage) |
+| `effort` | `high` | for both participants, or per seat: `{astra: 'xhigh'}` |
+| `context` | | extra context for every turn |
+| `plan` | | absolute path or list of paths: reference documents, including uncommitted ones |
+| `criteria` | written by setup | your own acceptance criteria, as a list of strings |
+| `verify` | found by setup | the verification command |
+| `repo` | session cwd | run against another repository |
+| `allowDirty` | false | worktrees start at HEAD, so tracked local edits are refused unless set |
+| `timeoutMin` | 90 | deadline for a Codex or Gemini turn, in minutes |
+| `retro` | true | `false` (`--no-retro`) turns off the [process retro](process-retro.md) |
+| `runtime` | native | `"cli"` (`--runtime cli`) runs on the standalone runner; Claude Code only |
+
+Factory tier, panel, audit, and historical-evidence options (`tier`, `seats`, `simple`, `panel`,
+`spec`, `audit`, `roles`, `evidence`) are refused.
+
+## Results
 
 Results open with `summary` (status, readiness, open findings, snapshot, gate result, and the
-cleanup command for after delivery), followed by `design`, `testContract`, `replayMapping`, `reviews`, `findings`, `stopReason`,
-`final.replay`, and `final.readiness`. `final.suite` and `final.replay` are the measurement summary;
-the job's `status.json` keeps the output tails. Replay requests and logs participate in existing cache and
-checkpoint integrity. Ignored dependency directories and external toolchains retain the checkpoint
-limitations in [Process controls](process-controls.md#resume). Changes stay
-in `final.worktree`; a ready snapshot has `delivery.status: pending`. Apply it within the user's
-authorization, then use the [delivery verification](verification-and-delivery.md). Pair does not automatically launch a council when it stops. The Codex host supports validated checkpoint resume; changed task inputs or evidence require a new run.
-
+cleanup command for after delivery), followed by `design`, `testContract`, `replayMapping`,
+`reviews`, `findings`, `stopReason`, `final.replay`, and `final.readiness`. `final.suite` and
+`final.replay` are the measurement summary; the job's `status.json` keeps the output tails.
+Replay requests and logs are part of the cache and checkpoint integrity checks. Ignored
+dependency directories and external toolchains have the checkpoint limitations in
+[Process controls](process-controls.md#resume). Changes stay in `final.worktree`; a ready
+snapshot has `delivery.status: pending`. Apply it within the user's authorization, then follow
+[delivery](verification-and-delivery.md#delivery). Pair never launches a council when it stops.
+The Codex host supports validated checkpoint resume; changed task inputs or evidence require a
+new run.

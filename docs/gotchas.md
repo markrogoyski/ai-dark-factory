@@ -1,4 +1,4 @@
-# Gotchas
+# Gotchas and troubleshooting
 
 [Documentation index](README.md) · [Project README](../README.md)
 
@@ -19,7 +19,6 @@
 - agy's sandbox blocks shell writes anywhere under the directory agy starts in, and from inside
   the repository it blocks even reads under `.council/`. So a Gemini seat starts in an empty
   directory under `$TMPDIR/council-agy/`, and its prompt names the worktree by absolute path.
-
 - A Codex or Gemini turn that fails because the model is at capacity or rate-limited is retried
   once, after 90 seconds, inside the job. A used-up quota is not retried: swap the vendor's
   seats out with `--seats`.
@@ -37,10 +36,29 @@
 - Ignored dependency directories (`vendor/`, `node_modules/`) are copied into each worktree
   with APFS clones (`cp -c`), not symlinked. A symlinked `vendor/` makes Composer autoload the
   *main* tree's classes.
-- Cost: roughly 30–50 agent turns per run at the defaults. On the toy [smoke test](council.md#smoke-test-2026-10-11), a Codex
-  turn used 74–101k input tokens (65–78% cached), nearly all of it Codex's own fixed overhead:
-  the whole room was about 5k tokens. That run used 22 agents, about 840k Claude subagent
-  tokens, and 525k Codex input tokens (6k output) over six Codex turns, and took 4.3 minutes.
+- Claude's own sandbox refuses to write files such as `.gitmodules` anywhere, so when the
+  standalone runner's Claude setup turn runs `dark-factory init` and copying an ignored
+  dependency directory hits one, init leaves those files out and names each on stderr.
 - `codex exec resume` reports usage as the thread's running total, not the turn's.
   `bin/dark-factory` subtracts the previous total, so `dark-factory usage` is per turn.
 
+## Troubleshooting
+
+- **Start with the run's own record.** `final.readiness` and the report's "Problems during the
+  run" section name most failures; [Reading a result](results.md) explains the statuses.
+  `dark-factory jobs --run-dir <runDir>` lists every Codex, Gemini and measurement job with its
+  status, and each job's `<runDir>/jobs/<key>/` holds its prompt, `status.json`, `out.json` and stderr.
+  `dark-factory usage --run-dir <runDir>` shows tokens per model and role.
+- **An agent or relay "returned nothing".** In Claude Code the cause is in the workflow's state
+  file, not the run directory: `~/.claude/projects/<project>/<session-id>/workflows/wf_<id>.json`.
+  Its `workflowProgress[]` entries with `state: "error"` carry the `error` text, for example
+  `blocked by safety classifier`, with `blocked: true`. A blocked agent leaves no transcript,
+  and a blocked relay leaves no `jobs/<key>/` directory, because the vendor CLI never ran; don't
+  read that as a Codex or Gemini failure.
+- **A Codex or Gemini seat fails at once.** Run `--prepare` (Codex host) or check the
+  `Bash(dark-factory:*)` allow rule and the agy settings under
+  [Install in Claude Code](../README.md#install-in-claude-code); setup's preflight names the
+  CLI it couldn't start.
+- **A resume is refused.** Resume checks the engine, HEAD, tracked changes, reference bytes and
+  saved evidence, and refuses on any mismatch rather than reset; start a new run, carrying any
+  answers in `context`. See [Process controls](process-controls.md#resume).

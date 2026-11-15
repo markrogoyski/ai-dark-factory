@@ -2,6 +2,8 @@
 
 [Documentation index](README.md) · [Project README](../README.md)
 
+## Explain and prepare
+
 Use `--explain` to inspect the resolved process before implementation:
 
 ```text
@@ -22,21 +24,26 @@ CLI answers `--version` (the same sandbox and Gemini-settings probe setup makes)
 that absolute `plan` documents exist. Tracked changes absent from HEAD are a warning, because
 setup decides them for the run's mode. Authentication is reported as unknown. Every new single
 run makes the same check first and stops with status `preflight` before intake when anything
-blocks, so a missing CLI no longer costs an intake turn. Resume and Run-plan are not prepared.
-The same controls are available as object arguments in Claude Code.
+blocks, so a missing CLI costs no intake turn. Resume and Run-plan are not prepared. The same
+controls are available as object arguments in Claude Code.
 
-`maxTurns` (`--max-turns`) limits workflow model turns, including orchestration and explicit
-recovery turns. Provider transport retries within a turn remain governed by that CLI helper.
-`maxRunMin` (`--max-run-min`) requires the standalone runner, which cancels active jobs at the deadline.
-Native Claude workflows reject this option before launching work because they have no replay-safe
-clock; use `maxTurns` there, or launch through `dark-factory-codex` for a time limit. Run-plan uses
-that runner from both hosts and retains its time limits. `--timeout-min` remains the
-per-turn deadline, and `--concurrency` bounds simultaneous turns in Codex. These are limits,
-not price forecasts. Exhausted required work remains incomplete. An optional retrospective
-that could not run does not erase a completed review. Codex retains spent turns and active
-elapsed time across resumes; time spent waiting between invocations is excluded.
-Codex also retains `--concurrency` and `--timeout-min` across resumes. Supply either flag on
-resume to override its saved value; that override becomes the default for subsequent resumes.
+## Budgets
+
+- `maxTurns` (`--max-turns`) limits workflow model turns, including orchestration and explicit
+  recovery turns. Retries inside a provider's CLI helper don't count.
+- `maxRunMin` (`--max-run-min`) needs the standalone runner, which cancels active jobs at the
+  deadline. Native Claude Code workflows reject it before launching work, because they have no
+  replay-safe clock: use `maxTurns` there, or launch through `dark-factory-codex`. Run-plan uses
+  that runner from both hosts, so its time limits always apply.
+- `--timeout-min` is the per-turn deadline, and `--concurrency` bounds simultaneous turns in Codex.
+
+These are limits, not price forecasts. Required work that runs out of budget is reported
+incomplete; an optional retro that couldn't run doesn't erase a completed review. Across
+resumes, Codex keeps the spent turns and active elapsed time (time between invocations is not
+counted), and the saved `--concurrency` and `--timeout-min`. Passing either flag on resume
+overrides its saved value for that and later resumes.
+
+## Repairs
 
 For Council and Factory's independent tiers, opt into repeated repairs with:
 
@@ -44,15 +51,15 @@ For Council and Factory's independent tiers, opt into repeated repairs with:
 {"task":"Fix the boundary case","repair":{"maxPasses":2,"minor":"block"},"maxTurns":60,"maxRunMin":45}
 ```
 
-Each repair is measured, then reviewed in fresh contexts and separate checkouts. Existing
-findings retain stable IDs and evidence. The loop stops on readiness, unchanged artifacts and
-verification outcomes, missing review, or the repair limit (1–20 passes). Reworded notes and
-reordered findings or criteria do not count as repair progress. The default minor policy
-requires actionable minor findings to close; `minor: "report"` retains them in the report without
-making them repair obligations. Preferences remain suggestions. Simple uses this fresh-review
-loop by default with one repair pass and retains its escalation rules. Council, Fix, Feature,
-and Architecture retain their original audit path unless `repair` is supplied. Pair continues
-to use its separate design-and-code `maxReviews` budget and strict finding closure.
+(`maxRunMin` only on the standalone runner.) Each repair is measured, then reviewed in fresh
+contexts and separate checkouts. Findings keep stable IDs and evidence. The loop stops on
+readiness, unchanged artifacts and verification outcomes, a missing review, or the repair limit
+(1–20 passes). Reworded notes and reordered findings or criteria don't count as progress. By
+default actionable minor findings must close; `minor: "report"` lists them in the report without
+making them repair obligations. Preferences stay suggestions. Simple uses this loop by default,
+with one repair pass, and keeps its escalation rules. Without `repair`, Council, Fix, Feature and
+Architecture use their one-pass audit. Pair has its own design-and-code `maxReviews` budget and
+strict finding closure instead.
 
 ## Resume
 

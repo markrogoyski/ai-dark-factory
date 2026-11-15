@@ -25,5 +25,6 @@ also with `--no-retro` at the start of a string task or on the Codex runner's co
 
 One note is a lead and the same note across turns or runs is a pattern, so read `retros/`
 across several runs before changing anything. Transcripts still explain a failure better than
-any note: no seat would have diagnosed the relay indentation bug.
+any note: a relay that mangled its prompt's indentation was found in the transcripts, and no
+seat's note pointed at it.
 

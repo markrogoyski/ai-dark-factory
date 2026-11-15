@@ -43,7 +43,7 @@ Use `--workflow run-plan --plan-file /absolute/path/plan.json` when the user req
 implementation of an entire plan with local commits. Run-plan owns task scheduling,
 delivery, commits, budgets, and final acceptance; do not reproduce that loop in chat. The
 versioned JSON plan may be untracked on the intended branch. Tracked code must be clean; local plans, named references, and root agent instruction files are frozen by hash and preserved.
-See the repository README's Run-plan section for its schema. Plan creation and committing it
+See docs/run-plan.md in the dark-factory repository for its schema. Plan creation and committing it
 are within an authorized run-plan setup; preserve unrelated work. Model choices belong in
 the plan's defaults/task args. Both hosts use the standalone runtime's Codex profile for plan runs.
 Repeat the same command to resume, without `--resume`. For parked tasks, pass an args file with

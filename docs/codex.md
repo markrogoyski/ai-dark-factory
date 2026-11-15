@@ -5,7 +5,7 @@
 The skill runs the same factory/council JavaScript through a local Node runner. Tier routing,
 escalation, verification, scoring, and readiness stay in that shared engine. Model turns are
 separate CLI sessions; the runner starts them directly and bounds their concurrency. It does
-not need Claude relay agents. All four factory tiers, Pair, Council, and Ensemble are available through the same shared engine.
+not need Claude relay agents. All four factory tiers, Pair, Council, Ensemble and Run-plan run on it.
 
 You need Node, Python 3, Git, and authenticated `codex` and `claude` CLIs: the default Codex
 profile has a Claude Opus seat. Pass `--seats astra,sol` for an OpenAI-only run. Gemini seats
@@ -23,9 +23,10 @@ Headless Claude processes run with `CLAUDE_CODE_DISABLE_AUTO_MEMORY=1`, includin
 turns and fresh reviewers. Claude's [auto memory is shared across worktrees](https://code.claude.com/docs/en/memory#storage-location),
 so disabling it keeps project notes out of these independent sessions without changing account settings.
 
-Simple uses Astra to implement and a fresh Astra session to review. Fix, Feature and
-Architecture use Opus, Astra and Sol seats. Orchestration roles can be changed through
-`roles`, for example `{"intake": "sol", "checker": {"model": "astra", "effort": "high"}}`.
+The Codex host has its own defaults: Simple uses Astra to implement and a fresh Astra session to
+review, and Fix, Feature and Architecture use Opus, Astra and Sol seats. [Choosing the
+models](models.md#defaults) lists every role on both hosts, and the `roles` option for the
+orchestration roles.
 
 You can also invoke the runner without installing a skill:
 

@@ -57,7 +57,8 @@ Neutral checks run the verification gate on a snapshot, never on a live worktree
 in fresh contexts, and code, not a model, decides readiness. Nothing reaches your checkout until
 it is delivered, by you or by a plan run you authorized to commit. [Architecture](docs/architecture.md#pieces) shows where
 each part runs in Claude Code and in Codex. Model names in the diagrams are the Claude Code
-defaults; the Codex profile substitutes OpenAI models for most roles, as each section says.
+defaults; the Codex profile substitutes OpenAI models for most roles
+([both hosts' defaults](docs/models.md#defaults)).
 
 ## Install in Claude Code
 
@@ -107,7 +108,10 @@ repository has a Gemini seat.
     /dark-factory:pair --author opus --reviewer sonnet Implement the retry policy
     /dark-factory:council --seats opus,sonnet Fix the cancellation in ...
 
-[Choosing the models](docs/models.md) lists every seat name.
+The factory's defaults use Codex in several roles (the Simple reviewer, the panel, the spec
+review and the audit), so a Claude-only factory run has to move each of them;
+[Choosing the models](docs/models.md) has the full example, every seat name and each host's
+defaults.
 
 **Try it.** In a repository with a clean working tree, with `codex` installed (the Simple tier's
 reviewer is Codex Astra):
@@ -160,19 +164,33 @@ Gemini seats). Runner options, resume, and the standalone CLI are in
     /dark-factory:ensemble  Compare fixes for the iterator boundary
     /dark-factory:run-plan  {planFile: "/absolute/path/plan.json", repo: "/path/to/project"}
 
-Each run works in git worktrees and reports a result with a `final.readiness`. A ready change
-stays in its worktree until you deliver it. The Codex runtime saves the full result as
-`<runDir>/result.json`; a native Claude Code run returns it inline, so save that JSON to a file
-first, then pass it to both commands:
+Each run works in git worktrees and reports a result with a `final.readiness`;
+[Reading a result](docs/results.md) explains the statuses and what to do next. A ready change
+stays in its worktree until you deliver it. In Claude Code, pass the workflow task's output
+file (or a saved copy of the returned result) as `--result`; a Codex run saves
+`<runDir>/result.json`, which both commands read by default:
 
-    dark-factory apply --run-dir <runDir> --result <saved-result.json>
-    dark-factory verify-delivery --run-dir <runDir> --result <saved-result.json>
+    dark-factory apply           --run-dir <runDir> --result <task-output-or-result.json>
+    dark-factory verify-delivery --run-dir <runDir> --result <task-output-or-result.json>
+    dark-factory cleanup         --run-dir <runDir>    # once delivered: worktrees and refs; --all also removes the run directory
 
-For a Codex run, use `<runDir>/result.json` as the result file; `apply` also defaults to it.
+`apply` stages the reviewed snapshot without committing; `verify-delivery` checks the delivered
+bytes and reruns the gate in your checkout. See [Verification and delivery](docs/verification-and-delivery.md).
 
-Roughly 30-50 agent turns for a council run, 6-9 for a Simple factory change. Choose the
-models with `--seats` (council, ensemble) or `--author` and `--reviewer` (pair); every seat name
-is in [Choosing the models](docs/models.md).
+Rough cost, in agent turns at the defaults:
+
+| run | agent turns |
+|---|---|
+| factory, Simple tier | 6–9 |
+| pair | 12–17 in recent runs (`maxReviews` caps the reviews at 8) |
+| factory, Fix tier | 15–25 |
+| ensemble, 4 candidates × 2 lenses | about 18, before relays and retries |
+| factory, Feature tier | 25–40 |
+| council | 30–50 |
+| factory, Architecture tier | 35–50 |
+
+Choose the models with `--seats` (council, ensemble) or `--author` and `--reviewer` (pair);
+every seat name and default is in [Choosing the models](docs/models.md).
 
 ## Documentation
 
@@ -181,9 +199,9 @@ Everything beyond installation and a first run is in [`docs/`](docs/README.md):
 | | |
 |---|---|
 | **Workflows** | [Factory](docs/factory.md) · [Pair](docs/pair.md) · [Council](docs/council.md) · [Ensemble](docs/ensemble.md) · [Run-plan](docs/run-plan.md) |
-| **Using them** | [Choosing the models](docs/models.md) · [Running in Codex](docs/codex.md) · [Process controls and resume](docs/process-controls.md) · [Verification and delivery](docs/verification-and-delivery.md) |
+| **Using them** | [Reading a result](docs/results.md) · [Choosing the models](docs/models.md) · [Running in Codex](docs/codex.md) · [Process controls and resume](docs/process-controls.md) · [Verification and delivery](docs/verification-and-delivery.md) |
 | **Measuring and tuning** | [Evaluating process value](docs/evaluation.md) · [Process retro](docs/process-retro.md) |
-| **Internals** | [Architecture](docs/architecture.md) · [Pinning the engine](docs/engine-pinning.md) · [Development](docs/development.md) · [Gotchas](docs/gotchas.md) |
+| **Internals** | [Architecture](docs/architecture.md) · [Pinning the engine](docs/engine-pinning.md) · [Development](docs/development.md) · [Gotchas and troubleshooting](docs/gotchas.md) |
 
 To work on dark-factory itself, run `./install.sh` once, then `make build` after editing `src/`
 and `make check` before committing; see [Development](docs/development.md).

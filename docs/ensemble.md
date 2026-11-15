@@ -7,10 +7,13 @@
 $dark-factory --workflow ensemble --seats sol,astra Compare fixes for the iterator boundary
 ```
 
-Ensemble uses the shared setup, separate worktrees, neutral snapshot checks, verification gate,
-and host adapters. It retains its distinct stances and review lenses, followed by an advisory
-comparison. It does not debate, repair, or select a winner. Specify `mode: "implement"` or
-`"investigate"` when the wording is ambiguous.
+Use ensemble when you want several independent attempts at one task and will choose between
+them yourself: a subtle bug, a design fork, an investigation where the obvious answer may be
+wrong. Each candidate works blind under its own stance, is measured and reviewed through
+several lenses, and an advisory comparison ranks them. Ensemble does not debate, repair, or pick
+a winner; the [council](council.md) is the workflow that converges on one result. It shares the
+council's setup (without the spec review), worktrees, neutral snapshot checks and verification
+gate. Pass `mode: "implement"` or `"investigate"` when the wording is ambiguous.
 
 ```text
   setup: run dir, a worktree per candidate, criteria, gate (no spec review)
@@ -34,19 +37,29 @@ uses trace-code, history, falsify, empirical, outside-in and analogy, reviewed f
 refute and completeness. `candidates` and `reviewers` take that many from the front of each
 list.
 
-Object arguments support `candidates` (2–6, default 4), `reviewers` (1–4, default 2; capped by
-available lenses), and `models: {solve, review, compare}`. Claude defaults remain Sonnet solvers,
-per-lens Sonnet/Opus reviewers, and an Opus comparison. Codex defaults use Astra solvers,
-Astra reviewers, and an Astra comparison. Explicit `seats` chooses candidate models, using
-the shared model catalog. If `candidates` is also supplied, its count must match `seats`.
-References, criteria, verification, dirty-tree policy, explanation and run budgets are shared.
+## Arguments
 
-Each candidate includes its measured `final.snapshotRef`, `final.readiness`, review gaps, and
-`delivery` status. Missing reviewers, stale reviewed trees, failed gates, or failed criteria
-cannot become a ready candidate. The overall result remains `advisory` with delivery
-`pending-selection` (Codex exit 2). Selecting an unchanged ready implementation allows its
-candidate object to be saved as the delivery result for `verify-delivery`. A merged change
-needs fresh measurement and independent review. With four candidates and two lenses the clean
-path is now about 18 turns: setup, four solvers, four neutral checks, eight reviews, and comparison,
-before external relay overhead or retries.
+| arg | default | |
+|---|---|---|
+| `task` | required | |
+| `mode` | auto | `implement` or `investigate` |
+| `candidates` | 4 | 2–6 |
+| `reviewers` | 2 | review lenses per candidate, 1–4, capped by the mode's lenses |
+| `seats` | | candidate models, one per candidate (its length must match `candidates` when both are given); see [Choosing the models](models.md) |
+| `models` | Claude Code: Sonnet solvers, Sonnet or Opus per lens, Opus compare; Codex: Astra for all three | `{solve, review, compare}` |
+| `effort` | | for every solver, reviewer and the comparison |
+| `plan`, `context`, `criteria`, `verify`, `repo`, `allowDirty` | | as in the [council](council.md#arguments) |
+| `explain`, `maxTurns` | | see [Process controls](process-controls.md) |
 
+## The result
+
+Each candidate has its measured `final.snapshotRef`, `final.readiness`, review gaps, and
+`delivery` status. A candidate with a missing review, a reviewed tree that is stale, a failing
+gate or an unmet criterion is never ready. The overall result is always `advisory`, with delivery
+`pending-selection` (Codex exit 2). An unchanged ready candidate can be delivered by saving its
+candidate object as the delivery result for `verify-delivery`. A merge of candidates is a new change: it
+needs its own measurement and independent review, for example a [pair](pair.md) run with the
+merge plan as its task.
+
+With four candidates and two lenses the clean path is about 18 turns: setup, four solvers, four
+neutral checks, eight reviews, and the comparison, before relays and retries.

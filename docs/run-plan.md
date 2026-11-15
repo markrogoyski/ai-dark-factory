@@ -30,7 +30,9 @@ on the intended feature branch; the plan run does not publish, deploy, or switch
      '-- otherwise --------> incomplete: answer the parked tasks, rerun the same command
 ```
 
-Create a plan such as `plan.json`. It may remain untracked; its bytes are frozen for the run. A tracked plan retains the existing behavior of committing progress with each task:
+Create a plan such as `plan.json`. It may stay untracked: its bytes are frozen for the run and
+progress is kept in the run's `state.json`. A tracked plan also has its `progress` field committed
+with each task:
 
 ```json
 {
@@ -70,8 +72,7 @@ Create a plan such as `plan.json`. It may remain untracked; its bytes are frozen
 `workflow` defaults to `factory`. Task IDs are stable; dependencies can appear in any order,
 but missing IDs and cycles are rejected. Each task and final acceptance need explicit criteria.
 The limits above are also the defaults. Turn limits count workflow model turns, including failed
-turns and explicit recovery turns; provider transport retries remain governed by the existing CLI
-helper. These are execution limits, not dollar forecasts. Final acceptance uses a fresh Council
+turns and explicit recovery turns; retries inside a provider's CLI helper don't count. These are execution limits, not dollar forecasts. Final acceptance uses a fresh Council
 investigation after independently running `acceptance.verify`; both must pass on the integrated
 revision. Its model options go in `acceptance.args`.
 
@@ -88,8 +89,7 @@ node plugins/dark-factory/bin/dark-factory-codex --workflow run-plan --cwd /path
 In Claude Code, invoke `/dark-factory:run-plan` with object arguments
 `{planFile: "/absolute/path/plan.json", repo: "/path/to/project"}`. A transport turn
 launches the same standalone controller. Plan runs use its Codex model profile on both hosts;
-explicit participants in task/default args override that profile. Existing native workflows
-retain their original behavior. Node, Python, Git, and the selected authenticated CLIs are required.
+explicit participants in task/default args override that profile. Node, Python, Git, and the selected authenticated CLIs are required.
 
 Reference documents named in task/default `plan` options are frozen by hash for the plan run;
 changes invalidate resume. Keep the plan run's own changing JSON file out of those references.
@@ -143,11 +143,11 @@ Reinvoking leaves a parked task idle until an answer requests a retry within its
 Rollback only removes the recorded delivery bytes; unexpected edits are preserved.
 Unexpected edits, changed HEAD/branch/requirements, or a still-running child stop recovery with
 a diagnostic. Ordinary interrupted tasks are parked with their artifacts retained; an answer
-can retry them if attempts remain. Child checkpoints retain their existing strict validation.
+can retry them if attempts remain. Child checkpoints are validated as strictly as any other resume.
 There is no background supervisor: an interrupted plan run is resumable, not guaranteed to keep
 running after its host closes. Final acceptance checks the settled criteria without a new specification
 review; its Council must return ready with every criterion met on the integrated repository.
-Final acceptance failures are parked for inspection; v1 does not
+Final acceptance failures are parked for inspection; the plan run does not
 invent repair scope or weaken acceptance criteria.
 
 Untracked execution plans, named reference documents, and root-level local agent instruction files

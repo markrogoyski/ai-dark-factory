@@ -3,6 +3,9 @@
 [Documentation index](README.md) · [Project README](../README.md)
 
 The council is the multi-model debate behind `/dark-factory:council` and the Fix tier of the factory.
+It is the sibling of [`/dark-factory:ensemble`](ensemble.md): ensemble returns ranked candidates
+for you to pick from, while the council argues until it agrees, and falls back to an evidence
+scorecard when it can't.
 
 ## How a council run goes
 
@@ -303,3 +306,8 @@ place), with all four seats at `effort: 'low'` and `rounds: 1`:
 - The 2–2 vote went to the scorecard, which ranked Opus's position first.
 - Opus wrote the final version and adopted Astra's extra tests.
 - All three others endorsed it, with their preference recorded as dissent.
+
+Cost: a Codex turn used 74–101k input tokens (65–78% cached), nearly all of it Codex's own
+fixed overhead: the whole room was about 5k tokens. The run used 22 agents, about 840k Claude
+subagent tokens, and 525k Codex input tokens (6k output) over six Codex turns, and took 4.3
+minutes.

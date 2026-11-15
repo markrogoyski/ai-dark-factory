@@ -973,7 +973,7 @@ async function scenarioLineup() {
   const hydrogen = await run('lineup-hydrogen', quick('test-lineup-d'), { task: 'Fix the flaky retry', effort: 'max', rounds: 1 })
   assert.ok(hydrogen.calls.some(c => /--model 'gemini-4-hydrogen-xhigh'/.test(c.raw)), 'max maps to Hydrogen xhigh')
 
-  await assert.rejects(run('lineup-bad', quick('x'), { task: 'Fix it', seats: 'opus,gpt' }), /unknown seat 'gpt'.*gemini:<model-slug>/)
+  await assert.rejects(run('lineup-bad', quick('x'), { task: 'Fix it', seats: 'opus,gpt' }), /unknown seat 'gpt'.*gemini:<model-id>/)
   return 'default lineup has Gemini; --seats prefix, comma string, argon, gemini:<slug> and effort mapping ok'
 }
 

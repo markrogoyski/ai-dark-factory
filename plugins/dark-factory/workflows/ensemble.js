@@ -173,7 +173,7 @@ function parseSeat(spec, effortSpec) {
   if (CATALOG[key]) s = { key, ...CATALOG[key] }
   else if (key.startsWith('codex:') && key.length > 6) s = { key, vendor: 'codex', model: key.slice(6), name: `Codex ${key.slice(6)}` }
   else if (key.startsWith('gemini:') && key.length > 7) s = { key, vendor: 'gemini', model: key.slice(7), name: `Gemini ${key.slice(7)}`, slug: true }
-  else throw new Error(`council: unknown seat '${spec}'. Known: ${Object.keys(CATALOG).join(', ')}, codex:<model-slug> or gemini:<model-slug>.`)
+  else throw new Error(`council: unknown seat '${spec}'. Known: ${Object.keys(CATALOG).join(', ')}, codex:<model-id> or gemini:<model-id>.`)
   const e = effortSpec && typeof effortSpec === 'object' ? effortSpec[key] : effortSpec
   s.effort = e ? String(e).toLowerCase() : 'high'
   const valid = s.vendor === 'codex' ? CODEX_EFFORTS : CLAUDE_EFFORTS

@@ -17,7 +17,13 @@ wasn't enough.
 | `feature` | Opus and Astra plan it blind and debate the plans; the chosen plan's author builds it in checked increments; a three-lens audit | 25–40 |
 | `architecture` | Opus, Astra and Sonnet design it blind and debate the designs; the chosen design's author writes a milestone plan; a three-lens review and one revision; nothing is built | 35–50 |
 
-The table describes the independent strategy. Factory can also select Pair for scoped implementations with one clear approach. Use `strategy: "independent"` to retain the tier's competing-attempt process, or `strategy: "pair"` with `pair: {author, reviewer, maxReviews}` to request Pair. Task tier and collaboration strategy are reported separately. Explicit independent-process options (`seats`, `simple`, `panel`, `spec`, `audit`, `roles`, or `evidence`) keep automatic routing on the independent strategy; combining them with an explicit Pair strategy is rejected rather than silently discarding them.
+The table describes the independent strategy. Intake can also choose [Pair](pair.md) for a
+scoped implementation with one clear approach. `strategy: "independent"` keeps the tier's
+competing-attempt process; `strategy: "pair"`, with `pair: {author, reviewer, maxReviews}`,
+asks for Pair. The result reports the tier and the strategy separately. Passing an
+independent-process option (`seats`, `simple`, `panel`, `spec`, `audit`, `roles` or `evidence`)
+keeps automatic routing on the independent strategy, and combining one with `strategy: "pair"`
+is rejected rather than silently ignored.
 
 ```text
   task
@@ -49,9 +55,9 @@ The table describes the independent strategy. Factory can also select Pair for s
     Feature --more than 4 increments--------> Architecture, before anything is built
 ```
 
-The model names below describe the Claude profile. Codex uses its own OpenAI defaults while
-keeping the same stages and rules; explicit `seats`, `simple`, `panel`, `spec`, `audit`, and
-`roles` options override the Codex defaults.
+The model names below are the Claude Code defaults. The Codex host keeps the same stages and
+rules with its own defaults; [Choosing the models](models.md#defaults) lists both, and the
+options that override them.
 
 - **Intake.** An Opus agent reads the task, any document it names and the code, without
   running anything, and returns a tier, a mode, its reasons and the signals it went on
@@ -159,8 +165,11 @@ keeping the same stages and rules; explicit `seats`, `simple`, `panel`, `spec`, 
 - **The Simple tier** reuses the council's machinery: the setup agent (1–3 criteria, one
   worktree), the neutral checker, the audit with a single `review` lens (IDs `XR1`, `TXR1`), the
   panel for blocker and major findings, and the audit's one fix pass. A failing verification
-  command also earns the fix pass. Every repair receives a fresh independent code review as well as neutral verification. The default repair budget is one pass; `repair: {maxPasses: 2}` allows a bounded additional pass. `simple: {implementer, reviewer, maxLines, maxFiles}` changes it, and
-  every `/dark-factory:council` argument passes through to the council tiers.
+  command also earns the fix pass. Every repair gets a fresh independent code review as well as
+  the neutral check. The default budget is one repair pass; `repair: {maxPasses: 2}` allows one
+  more (see [Process controls](process-controls.md#repairs)).
+  `simple: {implementer, reviewer, maxLines, maxFiles}` changes the tier, and every
+  `/dark-factory:council` argument passes through to the council tiers.
 - **Facts on every run.** Each factory run puts a JSON facts block in its retro payload: tier,
   how it was chosen, intake's signals, the escalation (from the tier it started at, with each
   step when there were two), readiness, turns by role, review findings, the number of

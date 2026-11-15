@@ -14,7 +14,7 @@ published one:
 The pieces of `make check`:
 
     make syntax                  # every script, runner and helper parses
-    node test/sim.mjs            # the real script against stub agents, and bin/dark-factory against a stub agy and real git; 42 scenarios
+    node test/sim.mjs            # the real script against stub agents, and bin/dark-factory against a stub agy and real git
     SIM_ONLY=scenarioBallot,scenarioMeasure node test/sim.mjs   # just those
     node --test test/logic.mjs test/pair.mjs test/improvements.mjs # decision logic, and Pair scenarios through both hosts
     make host-test               # Codex routing, runner, installation, checkpoints, run-plan, engine pinning and provider policy, with stub CLIs
@@ -29,8 +29,6 @@ sim compares against them. The prompts are the product, so a change to one shows
 failure naming the line. After an intended change, run `UPDATE_GOLDEN=1 node test/sim.mjs` and
 read `git diff test/golden` before committing. The CLI's polling intervals can be shortened
 for tests with `COUNCIL_JOB_POLL`, `COUNCIL_TRANSCRIPT_POLL` and `COUNCIL_TRANSCRIPT_WAIT`.
-
-`plugins/dark-factory/workflows/ensemble.js` is generated from the shared sources, like the other workflows.
 
 Requirements, the permission rule and agy settings are under
 [Install in Claude Code](../README.md#install-in-claude-code); `make check` itself needs only Node,
