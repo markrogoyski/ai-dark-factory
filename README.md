@@ -22,7 +22,7 @@ For example, to have a council work out a subtle bug:
 
 | workflow | use it for | who works | what you get back |
 |---|---|---|---|
-| [`factory`](docs/factory.md) | any task where you don't know how much review it needs: Factory sizes it for you | an Opus intake reads the task and the code, then picks the lightest process that fits, from one reviewed change up to a council | the finished result; if the chosen process turns out too light, the run moves up to a heavier one on its own |
+| [`factory`](docs/factory.md) | any task where you don't know how much review it needs: Factory sizes it for you | an intake agent reads the task and the code, then picks the lightest process that fits, from one reviewed change up to a council | the finished result; if the chosen process turns out too light, the run moves up to a heavier one on its own |
 | [`pair`](docs/pair.md) | a scoped change one agent should own | one author, one reviewer in a fresh context per review | a reviewed, measured snapshot, or the open findings |
 | [`council`](docs/council.md) | a subtle bug, a real trade-off, an investigation where the obvious answer may be wrong | 2–6 seats from several vendors solve blind, then debate | one converged result, or the scorecard's pick |
 | [`ensemble`](docs/ensemble.md) | several independent attempts to choose from | 2–6 solvers with distinct stances, reviewed per lens | ranked candidates for you to pick or merge |
