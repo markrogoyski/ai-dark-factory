@@ -1,7 +1,7 @@
 export const meta = {
   name: 'pair',
   description: 'One author and one independent reviewer take a task from design through implementation, repeating review until the verified result has no open findings',
-  whenToUse: 'Use for a scoped implementation with one author and one reviewer. The author drafts a design, revises it until review passes, implements it, and fixes review findings until the exact measured snapshot passes review and required checks. No council, voting, or automatic escalation. Defaults to Claude Opus author and Codex Astra reviewer in Claude Code; Codex Astra author and Claude Opus reviewer in Codex. Object args: {task, author, reviewer, maxReviews, design, effort, plan, context, criteria, verify, repo, allowDirty, timeoutMin, retro}. String tasks may start with --author opus --reviewer astra --max-reviews 8 --no-design. Pass design: false (--no-design) when the deliverable is itself a document or plan: the author writes it directly and review starts at the measured result, instead of paying for a design that is the deliverable. maxReviews is the total review budget across design and code (default 8); exhaustion or stalled progress returns unresolved work, never success. Pass absolute paths in plan for uncommitted reference documents. Work takes place in a separate worktree from HEAD; review contexts are fresh. Inspect final.readiness and present remaining findings before delivery. Apply the reviewed snapshot only within the user\'s authorization, then use dark-factory verify-delivery to check the delivered bytes and gate. This workflow does not publish, deploy, or automatically start a council.',
+  whenToUse: 'Use for a scoped implementation with one author and one reviewer. The author drafts a design, revises it until review passes, implements it, and fixes review findings until the exact measured snapshot passes review and required checks. No council, voting, or automatic escalation. Defaults to Claude Opus author and Codex Astra reviewer in Claude Code; Codex Astra author and Claude Opus reviewer in Codex. Object args: {task, author, reviewer, maxReviews, design, effort, plan, context, criteria, verify, repo, allowDirty, timeoutMin, retro}. String tasks may start with --author opus --reviewer astra --max-reviews 8 --no-design --no-retro. Pass design: false (--no-design) when the deliverable is itself a document or plan: the author writes it directly and review starts at the measured result, instead of paying for a design that is the deliverable. maxReviews is the total review budget across design and code (default 8); exhaustion or stalled progress returns unresolved work, never success. Pass absolute paths in plan for uncommitted reference documents. Work takes place in a separate worktree from HEAD; review contexts are fresh. Inspect final.readiness and present remaining findings before delivery. Apply the reviewed snapshot only within the user\'s authorization, then use dark-factory verify-delivery to check the delivered bytes and gate. The run ends with a process retro on the workflow; pass retro: false (--no-retro) to skip it. This workflow does not publish, deploy, or automatically start a council.',
   phases: [
     { title: 'Setup', detail: 'author establishes criteria, references, worktree, and verification' },
     { title: 'Design', detail: 'author drafts or revises the design' },
@@ -4190,8 +4190,8 @@ function newPairState() {
 }
 
 // Pair decisions are shared by both hosts. Only the reviewer can close findings.
-// A string task may also start with --no-design, among the other flags.
-const PAIR_SWITCHES = { 'no-design': ['design', false] }
+// A string task may also start with --no-design or --no-retro, among the other flags.
+const PAIR_SWITCHES = { 'no-design': ['design', false], 'no-retro': ['retro', false] }
 function parsePairArgs(args) {
   return parseArgs(args, PAIR_SWITCHES)
 }
@@ -4216,7 +4216,7 @@ function parsePairConfig(args) {
   if (!Number.isSafeInteger(maxReviews) || maxReviews < 2 || maxReviews > 100) throw new Error('pair: maxReviews must be an integer from 2 to 100.')
   if (raw.design !== undefined && typeof raw.design !== 'boolean') throw new Error('pair: design must be true or false (--no-design in a string task).')
   const design = raw.design !== false
-  // The process retro is on unless retro: false, as in the other workflows.
+  // The process retro is on unless retro: false (--no-retro in a string task), as in the other workflows.
   const config = parseConfig({ ...raw, mode: 'implement',
     simple: { implementer: author.key, reviewer: reviewer.key } }, { workflow: 'pair', tier: 'simple' })
   // Setup writes the criteria and the gate, and the run inherits their quality: Sonnet setup dropped

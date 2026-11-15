@@ -332,6 +332,16 @@ test('design: false and --no-design skip the design stage; anything else is refu
   for (const design of ['false', 0, null]) assert.throws(() => L.parsePairConfig({ task: 'x', design }), /design must be true or false/)
   const factory = L.factoryPairConfig({ raw: { task: 'x', strategy: 'pair', pair: { design: false } }, roles: {} })
   assert.equal(factory.pairOptions.design, true, 'factory always designs first')
+  // --no-retro is the string form of retro: false, also a Pair-only switch.
+  assert.equal(L.parsePairConfig('Implement it').retro, true)
+  for (const text of ['--no-retro Write the plan', '--no-design --no-retro Write the plan', '--author astra --no-retro --max-reviews 4 Write the plan']) {
+    const c = L.parsePairConfig(text)
+    assert.equal(c.retro, false, text)
+    assert.ok(!c.roles.retro, text)
+    assert.equal(c.task, 'Write the plan', text)
+  }
+  assert.equal(L.parsePairConfig({ task: 'x', retro: false }).retro, false)
+  assert.equal(L.parseArgs('--no-retro Write the plan').task, '--no-retro Write the plan', 'the switch is Pair-only')
   assert.match(L.executionPlan({ ...L.parsePairConfig({ task: 'x', design: false }), controls: {} }).effort, /no design stage/)
 })
 

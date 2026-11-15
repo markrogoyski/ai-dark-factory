@@ -4173,8 +4173,8 @@ function newPairState() {
 }
 
 // Pair decisions are shared by both hosts. Only the reviewer can close findings.
-// A string task may also start with --no-design, among the other flags.
-const PAIR_SWITCHES = { 'no-design': ['design', false] }
+// A string task may also start with --no-design or --no-retro, among the other flags.
+const PAIR_SWITCHES = { 'no-design': ['design', false], 'no-retro': ['retro', false] }
 function parsePairArgs(args) {
   return parseArgs(args, PAIR_SWITCHES)
 }
@@ -4199,7 +4199,7 @@ function parsePairConfig(args) {
   if (!Number.isSafeInteger(maxReviews) || maxReviews < 2 || maxReviews > 100) throw new Error('pair: maxReviews must be an integer from 2 to 100.')
   if (raw.design !== undefined && typeof raw.design !== 'boolean') throw new Error('pair: design must be true or false (--no-design in a string task).')
   const design = raw.design !== false
-  // The process retro is on unless retro: false, as in the other workflows.
+  // The process retro is on unless retro: false (--no-retro in a string task), as in the other workflows.
   const config = parseConfig({ ...raw, mode: 'implement',
     simple: { implementer: author.key, reviewer: reviewer.key } }, { workflow: 'pair', tier: 'simple' })
   // Setup writes the criteria and the gate, and the run inherits their quality: Sonnet setup dropped

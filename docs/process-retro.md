@@ -3,7 +3,8 @@
 [Documentation index](README.md) · [Project README](../README.md)
 
 For now, while the workflow is being tuned, each run reviews its own process: council, factory
-and pair runs alike (ensemble has no retro). Turn it off with `retro: false`.
+and pair runs alike (ensemble has no retro). Turn it off with `retro: false`, or in a pair run
+also with `--no-retro` at the start of a string task or on the Codex runner's command line.
 
 - **Notes during the run, not a retro at the end.** Every agent's output has a `process` field:
   at most two sentences on what in that turn's instructions, inputs or tools got in its way,
