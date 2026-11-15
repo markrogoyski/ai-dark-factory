@@ -467,10 +467,10 @@ function retroPayload(S, facts, data) {
 }
 
 function retroPrompt(S, reportMd, payload, hash) {
-  return `You are running a short retrospective on one run of ${S.factory ? `/factory, a workflow that routes a task to a tier of process (the run facts say which tier this run used and why) and runs it; its higher tiers run /council, in which several AI models solve one task independently, debate it on an evidence ledger, and converge on one result${S.pair ? '; this run used the pair strategy instead, in which one author designs and implements and one independent reviewer reviews the design and then the code until no finding is open' : ''}` : S.pair ? '/pair, a workflow in which one author designs and implements a change and one independent reviewer reviews the design and then the code until no finding is open' : '/council, a workflow in which several AI models solve one task independently, debate it on an evidence ledger, and converge on one result'}. Its author is still tuning the workflow and wants to know what in its process to change. Your subject is the ${S.pair && !S.factory ? 'workflow' : 'council'}'s process, not the task: don't judge the solution, don't redo the work, and read the code under review only to confirm a point about the process.
+  return `You are running a short retrospective on one run of ${S.factory ? `/factory, a workflow that routes a task to a tier of process (the run facts say which tier this run used and why) and runs it; its higher tiers run /council, in which several AI models solve one task independently, debate it on an evidence ledger, and converge on one result${S.pair ? '; this run used the pair strategy instead, in which one author designs and implements and one independent reviewer reviews the design and then the code until no finding is open' : ''}` : S.pair ? '/pair, a workflow in which one author designs and implements a change and one independent reviewer reviews the design and then the code until no finding is open' : '/council, a workflow in which several AI models solve one task independently, debate it on an evidence ledger, and converge on one result'}. Its author is still tuning the workflow and wants to know what in its process to change. Your subject is the ${S.pair ? 'workflow' : 'council'}'s process, not the task: don't judge the solution, don't redo the work, and read the code under review only to confirm a point about the process.
 
 # What you have
-- The process notes at the end. During the run, every agent could say in a line or two what in its turn's instructions, inputs or tools got in its way. ${S.pair && !S.factory ? 'The author drafts the design and then implements and fixes it; the reviewer reviews the design and then each measured snapshot, in a fresh context each time; relays are small agents that pass prompts to the Codex CLI or the Gemini CLI (agy); setup creates the run.' : `Seats are the debating models; checkers verify claims and run the tests; the panel adjudicates disputed claims; auditors review the final version afterwards without seeing the debate; relays are small agents that pass prompts to the Codex CLI or the Gemini CLI (agy); setup creates the run.`}
+- The process notes at the end. During the run, every agent could say in a line or two what in its turn's instructions, inputs or tools got in its way. ${S.pair ? 'The author drafts the design and then implements and fixes it; the reviewer reviews the design and then each measured snapshot, in a fresh context each time; relays are small agents that pass prompts to the Codex CLI or the Gemini CLI (agy); setup creates the run.' : `Seats are the debating models; checkers verify claims and run the tests; the panel adjudicates disputed claims; auditors review the final version afterwards without seeing the debate; relays are small agents that pass prompts to the Codex CLI or the Gemini CLI (agy); setup creates the run.`}
 - The run facts at the end, computed by the workflow, and the run's report below.
 - The run directory, ${S.run.runDir}: TASK.md; room/ holds every post, by round; jobs/ holds each Codex and Gemini turn's prompt and log. \`${S.cli} usage --run-dir ${shq(S.run.runDir)}\` prints their token use.
 - The workflow's source, if a change needs it: workflows/${S.workflowName}.js (the prompts, limits and round structure) and bin/dark-factory (the CLI the agents run), both in the dark-factory plugin's directory, the parent of the bin/ that \`command -v dark-factory\` prints. Both are long, so grep for the instruction a note is about rather than reading them whole.
@@ -483,7 +483,7 @@ Return up to 3 things that worked and should be kept, and 3 to 5 changes, the mo
 # Save it
 1. Write ${S.run.runDir}/retro.md in this shape:
 \`\`\`markdown
-# Council retro: ${S.run.runId}
+# ${S.pair ? 'Pair' : 'Council'} retro: ${S.run.runId}
 
 <one line: the task, the mode, and how the run ended>
 
@@ -510,7 +510,7 @@ ${payload}
 =====END PAYLOAD ${hash}=====`
 }
 
-// A standalone /pair run names its own workflow; the factory's runs keep the council's line.
+// A pair run names its workflow, /pair or the factory's pair strategy; the factory's other runs keep the council's line.
 function retroMarkdown(r, workflow = '') {
   const worked = (r.worked || []).filter(w => w && w.what)
   const changes = (r.changes || []).filter(c => c && c.change)
