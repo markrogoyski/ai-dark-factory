@@ -125,6 +125,13 @@ function pairTrimChallenges(S, review) {
   return dropped
 }
 
+// Without a design stage no design review challenged the contract, so a code review does: the
+// first one, and any after the contract changed since a review last passed the challenge check.
+function pairChallengesDue(S) {
+  const p = S.pair
+  return !pairDesigned(S) && p.stage === 'code' && !!p.approvedContract && p.challengedContract !== promptHash(JSON.stringify(p.approvedContract))
+}
+
 function pairChallengeError(S, review) {
   const contract = S.pair.testContract, error = pairContractError(S, contract)
   if (error) return error
@@ -134,7 +141,7 @@ function pairChallengeError(S, review) {
     const given = Array.isArray(challenges) ? challenges.map(c => c?.criterion) : []
     const missing = S.criteria.map(c => c.id).filter(id => !given.includes(id))
     const repeated = given.filter((id, i) => given.indexOf(id) !== i)
-    return `Design review needs exactly one challenge for each acceptance criterion (${S.criteria.map(c => c.id).join(', ')}).` +
+    return `${S.pair.stage === 'code' ? 'This code review' : 'Design review'} needs exactly one challenge for each acceptance criterion (${S.criteria.map(c => c.id).join(', ')}).` +
       `${missing.length ? ` Missing: ${missing.join(', ')}.` : ''}${repeated.length ? ` Repeated: ${[...new Set(repeated)].join(', ')}.` : ''}`
   }
   for (const c of challenges) {
@@ -222,7 +229,8 @@ function pairReplayReadiness(S, blocked, incomplete) {
 function pairIngestReview(S, review) {
   const p = S.pair
   if (!review || review.version !== pairVersion(S) || review.complete !== true) return 'The reviewer did not complete a review of the current version.'
-  if (p.stage === 'design') {
+  const challenged = pairChallengesDue(S)
+  if (p.stage === 'design' || challenged) {
     const error = pairChallengeError(S, review)
     if (error) return error
   }
@@ -255,6 +263,7 @@ function pairIngestReview(S, review) {
     if (same) { same.history.push({ review: p.reviews.length + 1, status: 'open', evidence: f.evidence }); continue }
     p.findings.push({ ...f, id: `P${p.findings.length + 1}`, stage: p.stage, status: 'open', resolution: '', history: [] })
   }
+  if (challenged) p.challengedContract = promptHash(JSON.stringify(p.approvedContract))
   p.lastReview = review
   p.reviews.push({ stage: p.stage, label: p.label, ...review })
   return null

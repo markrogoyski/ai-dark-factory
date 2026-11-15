@@ -103,9 +103,13 @@ no check is a test), plus the replay mapping. A malformed contract or mapping ge
 correction attempt. The run then loops through the code stage only: measure, code review, fix.
 Because no design review approved the contract, the code reviewer reviews it as part of the
 artifact: its test roots against the base layout, its coverage of the request and every
-criterion, and whether its checks would reject a plausible wrong implementation. The author
-keeps the contract current in every turn (an empty one keeps the contract in force), so a
-contract change counts as a new version, and stall detection sees it as progress. A reviewer who
+criterion, and whether its checks would reject a plausible wrong implementation. The first code
+review, and any review after the contract changed since a review last passed this check, returns
+the same structured challenge a design review does (one plausible wrong implementation per
+criterion, with the contract checks that reject it), under the same validation and single
+correction. The author keeps the contract current in every turn (an empty one keeps the
+contract in force), so a contract change counts as a new version, and stall detection sees it as
+progress. A reviewer who
 finds the approach itself must change files a finding and the author reworks it in the next
 turn; there is no design stage to return to, and a `requiresDesignRevision` flag only blocks
 readiness until a later review clears it. The review budget, stall detection, and readiness are

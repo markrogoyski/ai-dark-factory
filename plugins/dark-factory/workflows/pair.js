@@ -4309,6 +4309,13 @@ function pairTrimChallenges(S, review) {
   return dropped
 }
 
+// Without a design stage no design review challenged the contract, so a code review does: the
+// first one, and any after the contract changed since a review last passed the challenge check.
+function pairChallengesDue(S) {
+  const p = S.pair
+  return !pairDesigned(S) && p.stage === 'code' && !!p.approvedContract && p.challengedContract !== promptHash(JSON.stringify(p.approvedContract))
+}
+
 function pairChallengeError(S, review) {
   const contract = S.pair.testContract, error = pairContractError(S, contract)
   if (error) return error
@@ -4318,7 +4325,7 @@ function pairChallengeError(S, review) {
     const given = Array.isArray(challenges) ? challenges.map(c => c?.criterion) : []
     const missing = S.criteria.map(c => c.id).filter(id => !given.includes(id))
     const repeated = given.filter((id, i) => given.indexOf(id) !== i)
-    return `Design review needs exactly one challenge for each acceptance criterion (${S.criteria.map(c => c.id).join(', ')}).` +
+    return `${S.pair.stage === 'code' ? 'This code review' : 'Design review'} needs exactly one challenge for each acceptance criterion (${S.criteria.map(c => c.id).join(', ')}).` +
       `${missing.length ? ` Missing: ${missing.join(', ')}.` : ''}${repeated.length ? ` Repeated: ${[...new Set(repeated)].join(', ')}.` : ''}`
   }
   for (const c of challenges) {
@@ -4406,7 +4413,8 @@ function pairReplayReadiness(S, blocked, incomplete) {
 function pairIngestReview(S, review) {
   const p = S.pair
   if (!review || review.version !== pairVersion(S) || review.complete !== true) return 'The reviewer did not complete a review of the current version.'
-  if (p.stage === 'design') {
+  const challenged = pairChallengesDue(S)
+  if (p.stage === 'design' || challenged) {
     const error = pairChallengeError(S, review)
     if (error) return error
   }
@@ -4439,6 +4447,7 @@ function pairIngestReview(S, review) {
     if (same) { same.history.push({ review: p.reviews.length + 1, status: 'open', evidence: f.evidence }); continue }
     p.findings.push({ ...f, id: `P${p.findings.length + 1}`, stage: p.stage, status: 'open', resolution: '', history: [] })
   }
+  if (challenged) p.challengedContract = promptHash(JSON.stringify(p.approvedContract))
   p.lastReview = review
   p.reviews.push({ stage: p.stage, label: p.label, ...review })
   return null
@@ -4637,12 +4646,12 @@ ${designed ? `# Design\n${p.design}\n\n` : ''}# Test contract
 ${JSON.stringify(p.approvedContract || p.testContract)}
 
 ${design ? `Independently check proposed reconciliations against the original task, reference documents, and explicit user decisions; setup notes cannot waive requirements. Check that the criteria cover the entire original request. Check the approach against the task and existing code: correctness, missing requirements, assumptions, alternatives that materially affect the outcome, scope, and planned test coverage. Where the change copies or mirrors behaviour from another function, require a side-by-side check that the two agree. Verify every proposed test root against the BASE repository configuration/layout and its cited evidence; naming a directory does not make it a test root. Reject production roots and missing concrete outcomes/boundaries. Check that every planned test and fixture is a regular file under an accepted root and each focused command is executable by the replay helper. Shared files are allowed when required by the user or plan: inspect focused selection and base loadability. Prefer separate files otherwise. Whole-suite preservation must use kind=gate with the exact designated command, never a directory in a file mapping. Gate evidence establishes final-suite success, not a changed-behavior baseline failure. Each criterion is met only if the design explains how it will be satisfied and checked.
-Return exactly one structured challenge per criterion in challenges: criterion, a substantive wrongImplementation, and rejectingCheckIds that resolve to contract checks covering that criterion: each cited check's criteria must include the challenged criterion (a check covering only C5 cannot reject a wrong implementation of C3). If no check rejects a plausible wrong implementation, return rejectingCheckIds=[] and raise an evidenced finding, assess that criterion partial/unmet, or request design revision with the reason in summary. Never cite a check you believe is ineffective just to fill the array. Approval requires a rejecting check for every challenge. Describe a plausible incorrect result and its rejecting inspection for non-code criteria. Judge whether the checks actually reject that implementation; valid IDs alone are insufficient. ${pairBaseline(S)}`
+${pairChallengeRules(true)} ${pairBaseline(S)}`
     : `${designed ? 'Review the implementation and tests against the task and approved design.' : `Review the implementation and tests against the task. This run has no design stage, so no one has reviewed the test contract above: review it here as part of the artifact. Verify every test root against the BASE repository configuration/layout and its cited evidence, check that the contract covers the entire original request and every criterion, and judge for each criterion whether its checks would reject a plausible wrong implementation; file a finding for each gap. Inspection checks must name a concrete inspection; perform each one yourself.`} Inspect the whole diff at ${p.measurement.snapshot.diff}, not only the latest fixes. Look for incorrect behavior, regressions, missing requirements, and tests that would miss the defect. The neutral helper measured this exact snapshot. This summary leaves out what each execution printed: read that in the helper's full record, ${pairMeasurementRecord(S)}, where every replay record and the suite carry the tail of their output, and in the logs they name:
 ${JSON.stringify(p.measurement)}
 Passing tests do not replace code review. Treat a failing or missing required check as unresolved.${pairInfrastructure(S).length ? ` This measurement could not run because of the environment, not the snapshot (${pairInfrastructure(S).join(' ')}). Readiness already reports that, and neither the author nor you can fix it: don't file a finding for it or reopen one about it. Assess a criterion that needs the missing results partial, with that reason in its note, and review the code on its merits.` : ''}
 Interpret the raw replay records for each check from their output in that record, reading the logs when the tail is not enough. A base fatal at file level (including a missing new API), pass, timeout, or tool error is evidence to interpret, not an automatic red/green verdict. Records cover files/commands and associated check IDs; an aborted file does not prove individual assertions ran. Preserved behavior should pass on base; changed behavior passing there needs investigation. Distinguish the intended missing behavior from infrastructure failure using actual output. If inconclusive, reflect that in criterion assessments/findings rather than approving solely because a record exists. A base record with reused=true is the same execution as an earlier measurement's, carried over because its inputs were identical (base commit, command, test and fixture bytes, timeout and settings); it is not a new run.
-Inspect every overlay exclusion and missing preserved-behavior signal. Compare actual assertions and coverage with the ${designed ? 'approved ' : ''}contract and report omissions or weakening through findings. Check that each mapped command really isolates its named file and executes its claimed checks. Attack the whole implementation for uncovered requirements, regressions, races, numeric mistakes, and defects introduced by fixes: the contract is a floor, not the review checklist. Where the change copies or mirrors behaviour from another function, run both on the same inputs beyond the listed cases, including combinations of arguments, and file any difference. Return challenges=[] during code review.
+Inspect every overlay exclusion and missing preserved-behavior signal. Compare actual assertions and coverage with the ${designed ? 'approved ' : ''}contract and report omissions or weakening through findings. Check that each mapped command really isolates its named file and executes its claimed checks. Attack the whole implementation for uncovered requirements, regressions, races, numeric mistakes, and defects introduced by fixes: the contract is a floor, not the review checklist. Where the change copies or mirrors behaviour from another function, run both on the same inputs beyond the listed cases, including combinations of arguments, and file any difference. ${pairChallengesDue(S) ? `No review has challenged this contract yet. ${pairChallengeRules(false)}` : 'Return challenges=[] during code review.'}
 That measurement is the gate result for this snapshot: don't rerun the verification command or the checks in it. Run only targeted probes, such as one test or one analyser on the changed files. Sandboxes can block the sockets that parallel workers use: if a probe fails that way, run the tool single-process.`}
 
 # Findings and proposed responses
@@ -4650,6 +4659,13 @@ ${JSON.stringify({ findings: p.findings, addressed: p.author.addressed })}
 
 Use resolutions to update existing IDs: open if still actionable, fixed only after inspecting the correction, refuted only with evidence that the finding was mistaken. Give concrete evidence for every resolution. Reopen an old ID when its defect recurs. Missing resolutions leave findings open.${designed ? ' In design review, leave code findings open until the implementation is fixed; check that the revised design explains their correction.' : ''} Add only genuinely new defects in findings; the engine assigns their IDs. Actionable minor findings count too. Put optional preferences and unrelated improvements in suggestions; do not manufacture findings to fill a quota.
 Return an evidenced met/partial/unmet assessment for every acceptance criterion. ${designed ? 'In code review, set requiresDesignRevision=true only if the implementation needs a materially different design; explain it in a finding. The engine will return the author to design review. In design review, keep that field false and express needed revisions as findings.' : 'This run has no design stage to return to: keep requiresDesignRevision false, and when the approach itself must change, say so in a finding; the author reworks it in the next implementation turn.'} Return complete=false if you cannot finish the review; an empty findings list is not approval in that case.`
+}
+
+// The structured challenge a design review returns, and a code review without a design stage
+// returns whenever the contract is new to review: for each criterion a plausible wrong
+// implementation and the checks that reject it.
+function pairChallengeRules(designed) {
+  return `Return exactly one structured challenge per criterion in challenges: criterion, a substantive wrongImplementation, and rejectingCheckIds that resolve to contract checks covering that criterion: each cited check's criteria must include the challenged criterion (a check covering only C5 cannot reject a wrong implementation of C3). If no check rejects a plausible wrong implementation, return rejectingCheckIds=[] and raise an evidenced finding, ${designed ? 'assess that criterion partial/unmet, or request design revision with the reason in summary' : 'or assess that criterion partial/unmet'}. Never cite a check you believe is ineffective just to fill the array. Approval requires a rejecting check for every challenge. Describe a plausible incorrect result and its rejecting inspection for non-code criteria. Judge whether the checks actually reject that implementation; valid IDs alone are insufficient.`
 }
 
 // The design stage needs no gate run: setup measured the base revision.
@@ -5771,13 +5787,13 @@ async function pairRun() {
     }
     phase(p.stage === 'design' ? 'Review design' : 'Review code')
     const trim = (review, at) => {
-      const dropped = p.stage === 'design' ? pairTrimChallenges(S, review) : []
+      const dropped = p.stage === 'design' || pairChallengesDue(S) ? pairTrimChallenges(S, review) : []
       if (dropped.length) S.notes.push(`review ${at}: dropped rejecting checks that do not cover the challenged criterion (${dropped.join('; ')}).`)
       return review
     }
     let review = trim(await pairReviewTurn(label), label)
     let error = pairIngestReview(S, review)
-    if (error && p.stage === 'design' && review?.complete === true && review.version === pairVersion(S) && pairChallengeError(S, review)) {
+    if (error && (p.stage === 'design' || pairChallengesDue(S)) && review?.complete === true && review.version === pairVersion(S) && pairChallengeError(S, review)) {
       S.notes.push(`review ${label}: ${error} Requested one reviewer correction; the invalid review changed no findings.`)
       review = trim(await pairReviewTurn(`${label}-corrected`, { error, review }), `${label}-corrected`)
       error = pairIngestReview(S, review)

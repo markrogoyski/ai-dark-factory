@@ -49,7 +49,7 @@ async function run(options = {}) {
     } else if (kind === 'review') {
       Object.assign(value, { version: prompt.match(/^Version: (.+)$/m)[1], complete: true, summary: 'Reviewed.',
         requiresDesignRevision: false, criteria: [{ criterion: 'C1', status: 'met', note: 'Checked the behavior against the criterion.' }] })
-      value.challenges = /# Review stage: design/.test(prompt) ? challenges() : []
+      value.challenges = /Return exactly one structured challenge per criterion/.test(prompt) ? challenges() : []
       reviewNumber++
       if (options.review) value = await options.review(value, reviewNumber, call)
     } else if (kind === 'measure') {
@@ -340,6 +340,9 @@ test('without a design stage the author owns the contract: corrected once, kept 
     review: (r, n) => { if (n === 1) r.findings = [finding('Cover the boundary.')]; else r.resolutions = [{ id: 'P1', status: 'fixed', evidence: 'Covered.' }]; return r } })
   assert.equal(kept.result.status, 'done')
   assert.deepEqual(kept.result.testContract, contract())
+  const keptReviews = kept.calls.filter(c => c.kind === 'review')
+  assert.match(keptReviews[0].prompt, /No review has challenged this contract yet\. Return exactly one structured challenge per criterion/)
+  assert.match(keptReviews[1].prompt, /Return challenges=\[\] during code review\./, 'an unchanged contract is not challenged again')
   // A contract-only revision on the same tree is a new version, not a stall.
   authors = 0
   const revised = await run({ sameTree: true, args: { design: false }, author: a => { if (++authors > 1) a.testContract.checks[0].boundaries = 'Zero, one and the adjacent value.'; return a },
@@ -348,6 +351,32 @@ test('without a design stage the author owns the contract: corrected once, kept 
   assert.equal(revised.result.testContract.checks[0].boundaries, 'Zero, one and the adjacent value.')
   const versions = revised.calls.filter(c => c.kind === 'review').map(c => c.prompt.match(/^Version: (.+)$/m)[1])
   assert.notEqual(versions[0], versions[1])
+  assert.ok(revised.calls.filter(c => c.kind === 'review').every(c => /No review has challenged this contract yet/.test(c.prompt)), 'a changed contract is challenged again')
+})
+
+test('without a design stage a code review of a new contract must challenge every criterion', async () => {
+  for (const native of [false, true]) {
+    // Missing, then supplied on the one correction: the review counts once and the run completes.
+    const corrected = await run({ native, args: { design: false }, review: (r, n) => ({ ...r, challenges: n === 1 ? [] : r.challenges }) })
+    assert.equal(corrected.result.status, 'done')
+    const reviews = corrected.calls.filter(c => c.kind === 'review')
+    assert.equal(reviews.length, 2)
+    assert.match(reviews[1].prompt, /This code review needs exactly one challenge for each acceptance criterion/)
+    assert.deepEqual(corrected.result.reviews.map(r => r.stage), ['code'])
+    assert.match(corrected.result.notes.join(' '), /one reviewer correction/)
+  }
+  for (const change of [() => [], c => [c[0], c[0]], c => [{ ...c[0], rejectingCheckIds: ['missing'] }], c => [{ ...c[0], wrongImplementation: ' ' }]]) {
+    const { result, calls } = await run({ args: { design: false }, review: r => ({ ...r, challenges: change(r.challenges) }) })
+    assert.equal(result.status, 'blocked', String(change))
+    assert.match(result.stopReason, /challenge/i)
+    assert.equal(calls.filter(c => c.kind === 'review').length, 2, 'one bounded correction before stopping')
+    assert.equal(result.reviews.length, 0)
+    assert.notEqual(result.final.readiness.state, 'ready')
+  }
+  // A stray check beside a covering one is trimmed, as in design review, without a correction.
+  const trimmed = await run({ args: { design: false }, review: r => { r.challenges[0].rejectingCheckIds = ['T1', 'T9']; return r } })
+  assert.equal(trimmed.result.status, 'done')
+  assert.equal(trimmed.calls.filter(c => c.kind === 'review').length, 1)
 })
 
 test('dirty trees, absent references and missing criteria stop before author turns', async () => {

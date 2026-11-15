@@ -121,13 +121,13 @@ async function pairRun() {
     }
     phase(p.stage === 'design' ? 'Review design' : 'Review code')
     const trim = (review, at) => {
-      const dropped = p.stage === 'design' ? pairTrimChallenges(S, review) : []
+      const dropped = p.stage === 'design' || pairChallengesDue(S) ? pairTrimChallenges(S, review) : []
       if (dropped.length) S.notes.push(`review ${at}: dropped rejecting checks that do not cover the challenged criterion (${dropped.join('; ')}).`)
       return review
     }
     let review = trim(await pairReviewTurn(label), label)
     let error = pairIngestReview(S, review)
-    if (error && p.stage === 'design' && review?.complete === true && review.version === pairVersion(S) && pairChallengeError(S, review)) {
+    if (error && (p.stage === 'design' || pairChallengesDue(S)) && review?.complete === true && review.version === pairVersion(S) && pairChallengeError(S, review)) {
       S.notes.push(`review ${label}: ${error} Requested one reviewer correction; the invalid review changed no findings.`)
       review = trim(await pairReviewTurn(`${label}-corrected`, { error, review }), `${label}-corrected`)
       error = pairIngestReview(S, review)
