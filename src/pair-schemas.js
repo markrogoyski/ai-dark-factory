@@ -81,6 +81,8 @@ const PAIR_MEASURE_SCHEMA = strict({ type: 'object', properties: {
   scratchError: { type: 'string', description: 'Why the disposable verification checkout failed; empty when it succeeded.' },
   snapshot: { type: 'object', properties: { ref: { type: 'string' }, tree: { type: 'string' }, diff: { type: 'string' } } },
   suite: { type: 'object', properties: { ran: { type: 'boolean' }, passed: { type: 'boolean' }, command: { type: 'string' },
-    failureKind: { type: 'string' }, log: { type: 'string' } } },
+    failureKind: { type: 'string' }, log: { type: 'string' },
+    overrides: { type: 'array', description: 'The explicit env overrides from verification.json the gate ran with, sorted by name.',
+      items: { type: 'object', properties: { name: { type: 'string' }, value: { type: 'string' } } } } } },
   replay: PAIR_REPLAY_RESULT,
 } })

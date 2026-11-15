@@ -23,6 +23,14 @@ Headless Claude processes run with `CLAUDE_CODE_DISABLE_AUTO_MEMORY=1`, includin
 turns and fresh reviewers. Claude's [auto memory is shared across worktrees](https://code.claude.com/docs/en/memory#storage-location),
 so disabling it keeps project notes out of these independent sessions without changing account settings.
 
+Pair's setup on this runtime is a sandboxed model turn (workspace-write, no network), so it does
+not measure the baseline. After setup returns, the engine asks the runner, which runs outside the
+models' sandboxes, to measure the base revision with the run's `verify.sh` and
+`verification.json`, and uses that result instead of setup's. Setup is told not to add overrides
+for failures it sees only inside its sandbox, such as a refused socket bind; any overrides the
+gate ran with are listed in `final.suite.overrides` and in the report. Council and the factory
+tiers still measure their baseline from the setup turn. See [Pair](pair.md).
+
 The Codex host has its own defaults: Simple uses Astra to implement and a fresh Astra session to
 review, and Fix, Feature and Architecture use Opus, Astra and Sol seats. [Choosing the
 models](models.md#defaults) lists every role on both hosts, and the `roles` option for the

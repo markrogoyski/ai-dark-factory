@@ -23,6 +23,13 @@ job captures its command and overrides before execution and records cwd, output,
 and timing. Only explicit overrides are recorded, not the caller's full environment; keep
 credentials out of this configuration.
 
+Pair's baseline is measured by setup natively in Claude Code. On the standalone runtime (the
+Codex host, `runtime: "cli"`, Run-plan) the runner measures it after setup returns, outside
+setup's sandbox, and setup is told not to add overrides for failures it sees only inside that
+sandbox (refused socket binds, network). Pair results report the overrides the measured gate
+ran with in `final.suite.overrides` ({} when none) and name them in `report.markdown`; they
+don't affect readiness. Council and the factory tiers still measure their baseline from setup.
+
 Neutral measurement includes the configuration and raw evidence in its cache identity.
 Factory baseline and increment checks run in disposable snapshots; a live-worktree pass
 cannot replace a failed snapshot check, and a gate that alters tracked snapshot files fails.

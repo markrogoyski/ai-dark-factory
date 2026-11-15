@@ -73,7 +73,45 @@ function pairMeasurementView(S, m, schema) {
     ? Object.fromEntries(Object.entries(s.properties).map(([k, x]) => [k, pick(v && typeof v === 'object' && !Array.isArray(v) ? v[k] : undefined, x)]))
     : s.type === 'array' ? (Array.isArray(v) ? v.map(x => pick(x, s.items)) : [])
     : v ?? (s.type === 'string' ? '' : s.type === 'boolean' ? false : 0)
-  return { ...pick(m, schema), status: m.status === 'done' ? 'done' : 'error' }
+  const view = { ...pick(m, schema), status: m.status === 'done' ? 'done' : 'error' }
+  // The full record keeps verification.json's explicit env as an object; the brief lists it sorted
+  // by name (a strict schema cannot hold a free-form object). The base environment is never shown.
+  const env = m.verification?.env
+  if (view.suite && 'overrides' in view.suite && env && typeof env === 'object' && !Array.isArray(env))
+    view.suite.overrides = Object.keys(env).sort().map(name => ({ name, value: String(env[name]) }))
+  return view
+}
+
+// The baseline note on the standalone runtime: the reason and the end of the failing output on one
+// line of at most 300 characters. A reason is capped at 120 characters when a tail follows it, so
+// the tail keeps at least its last 164 characters, where a test runner prints its summary.
+function pairBaselineNote(reason, tail) {
+  const flat = s => String(s ?? '').replace(/\s+/g, ' ').trim()
+  const head = (s, n) => s.length <= n ? s : `${s.slice(0, n - 1)}…`
+  const end = (s, n) => s.length <= n ? s : `…${s.slice(s.length - n + 1)}`
+  const r = flat(reason), t = flat(tail)
+  if (!t) return head(r, 300)
+  const h = head(r, 120)
+  return `${h}; failing tail: ${end(t, 300 - h.length - 16)}`
+}
+
+// The baseline from the runner's own measurement of the base revision (the full helper record, or
+// {status: 'error'} when the request threw). It replaces what setup reported, because setup on the
+// standalone runtime is a sandboxed model turn where a refused socket bind or network call fails a
+// gate that passes outside it.
+function pairBaselineResult(S, m) {
+  if (!S.verify) { S.baselineOk = true; S.baselineNote = ''; return true }
+  const suite = m?.suite
+  const reason = !m ? 'the baseline measurement returned nothing'
+    : m.status !== 'done' ? `the baseline measurement failed: ${m.error || m.status || 'no reason given'}`
+    : !suite?.ran ? `the verification command did not run (${suite?.failureKind || 'no reason recorded'})`
+    : String(suite.command || '').trim() !== S.verify ? `the baseline ran ${suite.command}, not the verification command`
+    : suite.timedOut ? 'the verification command timed out'
+    : !suite.passed ? `the verification command exited ${suite.exitCode ?? 'without an exit code'}`
+    : ''
+  S.baselineOk = !reason
+  S.baselineNote = reason ? pairBaselineNote(reason, suite?.tail) : ''
+  return S.baselineOk
 }
 
 // The helper's full record of the current measurement: the view above plus what each execution
@@ -374,15 +412,22 @@ function pairReviewClean(S) {
     S.criteria.every(c => r.criteria.filter(a => a.criterion === c.id).length === 1 && r.criteria.some(a => a.criterion === c.id && a.status === 'met' && a.note?.trim()))
 }
 
+// The explicit env overrides from verification.json the measured gate ran with, by name; {} when
+// there are none or nothing was measured. They are reported, and never change readiness.
+function pairOverrides(S, m) {
+  return Object.fromEntries((Array.isArray(m?.suite?.overrides) ? m.suite.overrides : []).map(o => [o.name, o.value]))
+}
+
 function pairResult(S, status = 'blocked') {
   const p = S.pair, m = p.stage === 'code' ? p.measurement : null
-  const ready = pairReadiness(S)
+  const ready = pairReadiness(S), overrides = pairOverrides(S, m)
   if (p.stage !== 'code' && ready.state === 'ready') {
     ready.state = 'incomplete'; ready.incomplete.push('Implementation has not been reviewed.')
   }
   const report = [`Pair: ${S.pairOptions.author.name} authors; ${S.pairOptions.reviewer.name} reviews.`,
     `Readiness: ${ready.state}. Reviews: ${p.reviews.length}/${S.pairOptions.maxReviews}.`,
     `Verification: ${!S.verify ? 'no automated gate configured; no test pass claimed' : !m?.suite?.ran ? 'not run on a final snapshot' : m.suite.passed ? 'passed on the reviewed snapshot' : 'failed on the reviewed snapshot'}.`,
+    ...(Object.keys(overrides).length ? [`Verification overrides: the gate ran with explicit environment overrides from verification.json: ${Object.keys(overrides).sort().join(', ')}.`] : []),
     `Replay: ${m?.replay?.records?.length || 0} file/command records; ${m?.replay?.exclusions?.length || 0} overlay exclusions. Base outcomes require reviewer interpretation.`,
     ...ready.infrastructure, ...ready.blocked, ...ready.incomplete,
     ...p.findings.map(f => `${f.id}: ${f.status} — ${f.statement}${f.resolution ? ` (${f.resolution})` : ''}`)].join('\n\n')
@@ -406,7 +451,7 @@ function pairResult(S, status = 'blocked') {
     final: { author: 'A', model: S.pairOptions.author.name, summary: p.author?.summary || '',
       worktree: S.seats[0]?.wt || null, post: p.label && S.run ? `${S.run.room}/${p.label}/A.md` : null,
       snapshotRef: m?.snapshot?.ref || null, snapshotTree: m?.snapshot?.tree || null, diff: m?.snapshot?.diff || null,
-      suite: m?.suite || null, replay: m?.replay || null, criteria: p.lastReview?.criteria || [], readiness: ready },
+      suite: m?.suite ? { ...m.suite, overrides: pairOverrides(S, m) } : null, replay: m?.replay || null, criteria: p.lastReview?.criteria || [], readiness: ready },
     delivery: { status: status === 'done' && ready.state === 'ready' ? 'pending' : 'not-ready' } }
 }
 

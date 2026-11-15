@@ -29,6 +29,9 @@ only Codex models.
   setup (Opus)        criteria, reference snapshots, the gate and its baseline; stops first
      |                on needs-plan, a dirty tree, conflicting requirements, or a criterion
      |                nothing in the run can verify (needs-user)
+     |
+  baseline            natively, setup measured it; on the standalone runtime the runner
+     |                measures the base itself (helper), outside setup's sandbox
      v
   DESIGN STAGE
   author: design + test contract  ----------->  reviewer: design review, with a plausible
@@ -70,6 +73,19 @@ only Codex models.
    command first, and doubt, or a check refused only in setup's own sandbox, goes into the
    repository notes instead. The task itself is passed on unchanged: setup adds repository
    observations and proposed interpretations beside it, never in place of it.
+
+   Setup writes the gate to `verify.sh` and its explicit overrides to `verification.json`. Who
+   measures the baseline depends on the runtime. Natively in Claude Code, setup runs
+   `dark-factory measure --label base` itself and reports `baselinePasses` and `baselineNote`.
+   On the standalone runtime (the Codex host, `runtime: "cli"`, and Run-plan) setup is a
+   sandboxed model turn, where a refused socket bind or a blocked network call can fail a gate
+   that passes outside it. There setup is told not to measure, and not to add overrides, PATH
+   wrappers or debug flags for failures it sees only inside its own sandbox. After setup returns,
+   the engine asks the runner to measure the base revision (job `measure-A-base`, no model turn),
+   and that measurement replaces setup's `baselinePasses` and `baselineNote`. A failing baseline
+   is reported to the author and reviewer as the reason and the end of the failing output, on
+   one line of at most 300 characters, and the run continues as it does for any failing
+   baseline. Factory's pair strategy works the same way.
 2. The author drafts a design and concrete test contract: criterion IDs, inputs, expected
    outcomes, boundaries, changed/preserved purpose, test files, commands, and fixtures, and
    reconciles setup's interpretations with the request. Criteria unsuitable for tests name an
@@ -215,6 +231,12 @@ Results open with `summary` (status, readiness, open findings, snapshot, gate re
 cleanup command for after delivery), followed by `design`, `testContract`, `replayMapping`,
 `reviews`, `findings`, `stopReason`, `final.replay`, and `final.readiness`. `final.suite` and
 `final.replay` are the measurement summary; the job's `status.json` keeps the output tails.
+`final.suite.overrides` (also in `summary.final.suite`) is the explicit `env` object from the
+run's `verification.json` that the measured gate ran with, as the measurement read it, and `{}`
+when there are none; the base environment is never included. When it is non-empty,
+`report.markdown` says so in a "Verification overrides" line naming each variable, so an
+override setup added (a `PATH` wrapper, a debug flag) is visible. Overrides never change
+`final.readiness`.
 Replay requests and logs are part of the cache and checkpoint integrity checks. Ignored
 dependency directories and external toolchains have the checkpoint limitations in
 [Process controls](process-controls.md#resume). Changes stay in `final.worktree`; a ready

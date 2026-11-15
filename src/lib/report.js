@@ -623,7 +623,7 @@ function compactResult(S, result) {
     final: { readiness: f.readiness, snapshotRef: f.snapshotRef || null, snapshotTree: f.snapshotTree || null,
       post: f.post || null, diff: f.diff || null, worktree: f.worktree || null,
       suite: f.suite ? { ran: f.suite.ran, passed: f.suite.passed, command: f.suite.command || S.verify, log: f.suite.log || null,
-        ...(f.suite.failureKind ? { failureKind: f.suite.failureKind } : {}) } : null },
+        ...(f.suite.failureKind ? { failureKind: f.suite.failureKind } : {}), ...(f.suite.overrides ? { overrides: f.suite.overrides } : {}) } : null },
     findings: (result.findings || []).filter(f => f.status === 'open').map(f => ({ id: f.id, severity: f.severity, statement: f.statement })),
     questions: result.questions || [], delivery: result.delivery || null,
     artifacts: { room: result.room || S.run?.room || null, verification: result.runDir ? `${result.runDir}/verification.json` : null,

@@ -15,6 +15,15 @@ const root = new URL('../', import.meta.url)
 const source = readFileSync(new URL('plugins/dark-factory/workflows/pair.js', root), 'utf8').replace(/^export const meta\s*=/m, 'const meta =')
 const execute = new (Object.getPrototypeOf(async function () {}).constructor)('agent', 'parallel', 'pipeline', 'phase', 'log', 'args', 'budget', 'workflow', 'factoryRuntime', source)
 
+// A copied value cut to the schema, each missing field taking its type's empty value, as a native
+// transport copying the helper's brief returns it.
+function fit(value, schema) {
+  if (schema.type === 'object') return Object.fromEntries(Object.entries(schema.properties).map(([k, s]) =>
+    [k, fit(value && typeof value === 'object' && !Array.isArray(value) ? value[k] : undefined, s)]))
+  if (schema.type === 'array') return Array.isArray(value) ? value.map(v => fit(v, schema.items)) : []
+  return value ?? defaults(schema)
+}
+
 function defaults(schema) {
   if (schema.enum) return schema.enum[0]
   if (schema.type === 'object') return Object.fromEntries(Object.entries(schema.properties).map(([k, v]) => [k, defaults(v)]))
@@ -32,8 +41,13 @@ const measurement = (label, tree = 'a'.repeat(40)) => ({ status: 'done', error: 
 }, suite: { ran: true, passed: true, command: 'node test.cjs', failureKind: '', log: `/repo/.council/pair-test/logs/suite-A-${label}.log` }, replay: replay(tree) })
 const finding = statement => ({ severity: 'minor', statement, evidence: 'src/example.js:12 lacks the required case.' })
 
+// The runner's own measurement of the base revision (the full helper record).
+const baseRecord = () => helperRecord({ status: 'done', error: '', snapshot: {
+  ref: 'refs/council/pair-test/A-base', tree: 'b'.repeat(40), diff: '/repo/.council/pair-test/room/base/A.diff',
+}, suite: { ran: true, passed: true, command: 'node test.cjs', failureKind: '', log: '/repo/.council/pair-test/logs/suite-A-base.log' } })
+
 async function run(options = {}) {
-  const calls = [], measurements = [], phases = []
+  const calls = [], measurements = [], phases = [], baselines = [], events = []
   let reviewNumber = 0
   async function respond(prompt, schema, meta) {
     let value = defaults(schema)
@@ -41,6 +55,7 @@ async function run(options = {}) {
       : 'version' in schema.properties ? 'review' : 'snapshot' in schema.properties ? 'measure' : 'worked' in schema.properties ? 'retro' : 'unknown'
     const call = { ...meta, kind, prompt, schema }
     calls.push(call)
+    events.push(kind)
     if (kind === 'setup') Object.assign(value, setup(), options.setup)
     else if (kind === 'author') {
       Object.assign(value, { status: 'done', summary: 'Implemented the behavior.', design: 'Implement the behavior and cover it with tests.', notes: 'Continue with the boundary case.' })
@@ -55,7 +70,7 @@ async function run(options = {}) {
     } else if (kind === 'measure') {
       const label = prompt.match(/--label '([^']+)'/)[1]
       const replay = JSON.parse(prompt.match(/--replay-json '([^']+)'/)[1])
-      Object.assign(value, await measure({ label, replay }))
+      value = fit(await measure({ label, replay }), schema)
     } else if (kind === 'retro') {
       Object.assign(value, { worked: [{ what: 'Fresh reviews', evidence: 'review pair-code-2' }], saved: '/x/retros/pair-test.md' })
       if (options.retro) value = await options.retro(value, call)
@@ -82,11 +97,19 @@ async function run(options = {}) {
     turn: async request => {
       const value = await respond(request.prompt, request.schema, request)
       return value && { status: 'done', result: value }
-    }, measure: async request => helperRecord(await measure(request)),
+    }, measure: async request => {
+      if (request.label === 'base') {
+        baselines.push(request)
+        events.push('measure:base')
+        return options.baseline ? options.baseline(baseRecord(), baselines.length) : baseRecord()
+      }
+      const full = helperRecord(await measure(request))
+      return options.record ? options.record(full) : full
+    },
   }
   const result = await execute(agent, () => { throw new Error('Pair must not launch a panel') }, null,
     title => phases.push(title), () => {}, { task: 'Implement the behavior', repo: '/repo', ...(options.native ? {} : { host: 'codex' }), ...options.args }, {}, null, runtime)
-  return { result, calls, measurements, phases }
+  return { result, calls, measurements, phases, baselines, events }
 }
 
 test('pair selects the author and opposite-vendor reviewer without council roles', () => {
@@ -268,7 +291,7 @@ test('the native transport copies the brief measurement and both hosts see the s
     seen[native] = { suite: result.final.suite, replay: result.final.replay, prompt: code.prompt.match(/^\{"status".*$/m)[0] }
   }
   assert.deepEqual(seen[true], seen[false])
-  assert.deepEqual(seen[true].suite, { ran: true, passed: true, command: 'node test.cjs', failureKind: '', log: '/repo/.council/pair-test/logs/suite-A-pair-code-2.log' })
+  assert.deepEqual(seen[true].suite, { ran: true, passed: true, command: 'node test.cjs', failureKind: '', log: '/repo/.council/pair-test/logs/suite-A-pair-code-2.log', overrides: {} })
   const { calls } = await run({ native: true, review: (r, n) => { if (n === 2) r.findings = [finding('Cover the boundary.')]; return r } })
   const authors = calls.filter(c => c.kind === 'author')
   assert.ok(authors[2].prompt.includes('The measurement leaves out what each execution printed: read it in /repo/.council/pair-test/jobs/measure-A-pair-code-2/status.json,'))
@@ -287,13 +310,160 @@ test('the helper prints the same brief measurement the engine reads', async () =
   mkdirSync(join(dir, 'jobs', 'measure-A-pair-code-2'), { recursive: true })
   writeFileSync(join(dir, 'jobs', 'measure-A-pair-code-2', 'status.json'), JSON.stringify(full))
   const cli = fileURLToPath(new URL('plugins/dark-factory/bin/dark-factory', root))
-  const printed = JSON.parse(execFileSync(cli, ['wait', '--run-dir', dir, '--job', 'measure-A-pair-code-2', '--brief', '--max-wait', '0'], { encoding: 'utf8' }).trim().split('\n').at(-1))
+  const brief = () => JSON.parse(execFileSync(cli, ['wait', '--run-dir', dir, '--job', 'measure-A-pair-code-2', '--brief', '--max-wait', '0'], { encoding: 'utf8' }).trim().split('\n').at(-1))
+  let printed = brief()
   validateResult(printed, schema)
   assert.deepEqual(printed, L.pairMeasurementView(null, full, schema))
   assert.equal(printed.replay.records[0].reused, false)
   assert.equal(printed.replay.records[1].exitCode, 0)
   assert.equal(printed.replay.changes[0].previousPath, '')
+  assert.deepEqual(printed.suite.overrides, [])
   assert.ok(JSON.stringify(full).length > JSON.stringify(printed).length)
+  // verification.json's explicit env, sorted by name, without the base environment.
+  full.verification = { command: 'node test.cjs', env: { ZED: '1', ALPHA: 'x' }, baseEnv: { HOME: '/home/someone', PATH: '/usr/bin' } }
+  writeFileSync(join(dir, 'jobs', 'measure-A-pair-code-2', 'status.json'), JSON.stringify(full))
+  printed = brief()
+  validateResult(printed, schema)
+  assert.deepEqual(printed, L.pairMeasurementView(null, full, schema))
+  assert.deepEqual(printed.suite.overrides, [{ name: 'ALPHA', value: 'x' }, { name: 'ZED', value: '1' }])
+  assert.ok(!JSON.stringify(printed).includes('/home/someone'))
+})
+
+// On the standalone runtime setup is a sandboxed model turn (a Codex seat on the Codex host), where
+// a refused socket bind fails a gate that passes outside it. The runner measures the base itself.
+const designAuthor = calls => calls.find(c => c.kind === 'author').prompt
+const RUNNER_PASSED = "The runner ran the verification command on the base revision, outside any model's sandbox, and it passed."
+
+test('standalone pair takes a passing baseline from the runner, not from setup', async () => {
+  const { result, calls, baselines, events, measurements } = await run({ setup: { baselinePasses: false, baselineNote: 'setup saw EPERM' } })
+  assert.equal(result.status, 'done')
+  assert.deepEqual(baselines, [{ run: { runId: 'pair-test', runDir: '/repo/.council/pair-test', repoRoot: '/repo', head: 'b'.repeat(40), room: '/repo/.council/pair-test/room' }, seat: 'A', label: 'base' }])
+  assert.ok(!('replay' in baselines[0]))
+  assert.deepEqual(events.slice(0, 3), ['setup', 'measure:base', 'author'])
+  assert.deepEqual(calls.map(c => c.kind), ['setup', 'author', 'review', 'author', 'review', 'retro'], 'no model turn measures the base')
+  assert.ok(designAuthor(calls).includes(RUNNER_PASSED))
+  assert.ok(!calls.some(c => c.prompt.includes('setup saw EPERM')))
+  assert.deepEqual(measurements.map(m => m.label), ['pair-code-2'])
+  assert.equal(result.final.snapshotRef, 'refs/council/pair-test/A-pair-code-2')
+  // No verification command: nothing to measure.
+  const none = await run({ setup: { verify: '', baselinePasses: false } })
+  assert.equal(none.baselines.length, 0)
+  assert.ok(!designAuthor(none.calls).includes('base revision'))
+})
+
+test('standalone pair reports a failing runner baseline to the existing baseline handling', async () => {
+  const long = n => 'x'.repeat(n)
+  const tail = Array.from({ length: 12 }, (_, i) => `PHPUnit line ${i}: some  output\twith   spaces`).join('\n') + '\nFAILURES! Tests: 3, Failures: 1'
+  const flatTail = tail.replace(/\s+/g, ' ').trim()
+  assert.ok(tail.length > 400)
+  const failing = (suite, extra = {}) => m => ({ ...m, ...extra, suite: { ...m.suite, ...suite } })
+  const cases = [
+    ['exit', failing({ passed: false, exitCode: 1, tail }),
+      `the verification command exited 1; failing tail: …${flatTail.slice(flatTail.length - (300 - 'the verification command exited 1'.length - 16) + 1)}`],
+    ['mismatch', failing({ command: long(500), tail: 'boom\nFAILURES!' }),
+      `${`the baseline ran ${long(500)}`.slice(0, 119)}…; failing tail: boom FAILURES!`],
+    ['error', m => ({ ...m, status: 'error', error: long(500), suite: undefined }),
+      `${`the baseline measurement failed: ${long(500)}`.slice(0, 299)}…`],
+    ['thrown', () => { throw new Error('helper vanished') }, 'the baseline measurement failed: helper vanished'],
+    ['not run', failing({ ran: false, passed: false, failureKind: 'infrastructure', tail: '' }), 'the verification command did not run (infrastructure)'],
+    ['timeout', failing({ passed: false, timedOut: true, exitCode: -9, tail: '' }), 'the verification command timed out'],
+  ]
+  for (const [name, baseline, note] of cases) {
+    const { result, calls, baselines } = await run({ baseline, setup: { baselinePasses: true } })
+    assert.equal(baselines.length, 1, name)
+    const prompt = designAuthor(calls)
+    const match = prompt.match(/and it failed: (.*?)\. Don't run it/)
+    assert.ok(match, name)
+    const shown = match[1]
+    assert.ok(shown.length <= 300 && !shown.includes('\n'), name)
+    assert.equal(shown, note, name)
+    if (name === 'exit') assert.ok(shown.startsWith('the verification command exited 1; failing tail: …') && shown.endsWith('FAILURES! Tests: 3, Failures: 1'))
+    if (name === 'mismatch') assert.ok(shown.indexOf('; failing tail: ') === 120 && shown[119] === '…' && shown.endsWith('; failing tail: boom FAILURES!'))
+    if (name === 'error') assert.ok(shown.length === 300 && shown.endsWith('…') && !shown.includes('failing tail'))
+    assert.equal(calls.filter(c => c.kind === 'author').length, 2, `${name}: the run continues to the author`)
+    assert.equal(result.status, 'done', name)
+  }
+  // The rule and the limit, unit by unit.
+  const S = L.newState(L.parsePairConfig({ task: 'x', host: 'codex' }))
+  S.verify = 'node test.cjs'
+  const record = suite => ({ status: 'done', suite: { ran: true, passed: true, command: 'node test.cjs', exitCode: 0, timedOut: false, tail: 'OK', ...suite } })
+  assert.equal(L.pairBaselineResult(S, record({})), true)
+  assert.deepEqual([S.baselineOk, S.baselineNote], [true, ''])
+  assert.equal(L.pairBaselineResult(S, null), false)
+  assert.equal(S.baselineNote, 'the baseline measurement returned nothing')
+  for (const [m, note] of cases.slice(0, 2).map(([, f, n]) => [f(record({})), n]).concat(
+    [[record({ passed: false, exitCode: 1, tail: '' }), 'the verification command exited 1']])) {
+    assert.equal(L.pairBaselineResult(S, m), false)
+    assert.equal(S.baselineNote, note)
+  }
+  for (const [reason, t] of [[long(600), ''], [long(600), long(600)], ['short', long(600)], ['a\n b', 'c\n\n d']]) {
+    const note = L.pairBaselineNote(reason, t)
+    assert.ok(note.length <= 300 && !note.includes('\n'), `${reason.length} ${t.length}`)
+  }
+  assert.equal(L.pairBaselineNote(long(600), '').length, 300)
+  assert.equal(L.pairBaselineNote('a\n b', 'c\n\n d'), 'a b; failing tail: c d')
+  assert.ok(L.pairBaselineNote(long(600), long(600)).endsWith('x'.repeat(163)))
+  S.verify = ''
+  assert.equal(L.pairBaselineResult(S, null), true)
+})
+
+test("native pair keeps setup's baseline and measures only the code", async () => {
+  const failed = await run({ native: true, setup: { baselinePasses: false, baselineNote: 'Gate fails at base: 2 failures.' } })
+  assert.equal(failed.calls[1].kind, 'author')
+  assert.ok(!failed.calls.some(c => c.kind === 'measure' && /--label 'base'/.test(c.prompt)))
+  assert.equal(failed.measurements.length, 1)
+  assert.equal(failed.measurements[0].label, 'pair-code-2')
+  assert.ok(failed.calls[1].prompt.includes('Setup ran the verification command on the base revision, and it failed: Gate fails at base: 2 failures.'))
+  const passed = await run({ native: true, setup: { baselinePasses: true } })
+  assert.equal(passed.calls[1].kind, 'author')
+  assert.equal(passed.measurements.length, 1)
+  assert.ok(passed.calls[1].prompt.includes('Setup ran the verification command on the base revision, and it passed.'))
+})
+
+test('only the standalone pair setup prompt hands the baseline to the runner', async () => {
+  const standalone = (await run()).calls[0].prompt
+  const S = L.newState(L.parsePairConfig({ task: 'Implement the behavior', repo: '/repo', host: 'codex' }))
+  S.pair = L.newPairState()
+  const unflagged = L.pairSetupPrompt(S)
+  const replaced = unflagged
+    .replace('Store sandbox-compatible execution settings as explicit string overrides in <runDir>/verification.json: {"env": {"VARIABLE": "value"}}.',
+      'Write <runDir>/verification.json with the explicit string overrides the command needs in any environment: {"env": {"VARIABLE": "value"}}, or {"env": {}} when it needs none.')
+    .replace('Preflight the exact command through neutral measurement below, including worker/socket/cache restrictions; shell-local exports are insufficient.',
+      "Don't run or measure the command yourself: after you return, the runner measures the baseline in a disposable checkout outside your sandbox, with these overrides. Don't add overrides, PATH wrappers or debug flags for failures you see only inside your own sandbox, such as a refused socket bind or blocked network access.")
+    .replace(/Then measure the baseline: dark-factory measure --run-dir <runDir> --seat A --label base \(if it prints status "running", poll with dark-factory wait --run-dir <runDir> --job measure-A-base\)\. Set baselinePasses to suite\.passed\. If the suite fails or doesn't run at baseline, put the reason and the failing tail in baselineNote\./,
+      "Don't measure the baseline: the runner measures it outside your sandbox after you return, and its result replaces baselinePasses and baselineNote. Set baselinePasses to false and baselineNote to \"\".")
+  assert.notEqual(replaced, unflagged)
+  assert.equal(standalone, replaced)
+  assert.doesNotMatch(standalone, /measure --run-dir/)
+  assert.match(standalone, /the runner measures it outside your sandbox after you return/)
+  assert.match(standalone, /Don't add overrides, PATH wrappers or debug flags for failures you see only inside your own sandbox, such as a refused socket bind/)
+  assert.match(standalone, /Write it to <runDir>\/verify\.sh as just the command/)
+  assert.match(standalone, /Write <runDir>\/verification\.json with the explicit string overrides/)
+  const native = (await run({ native: true })).calls[0].prompt
+  assert.match(native, /Then measure the baseline: dark-factory measure --run-dir <runDir> --seat A --label base /)
+  assert.match(native, /Store sandbox-compatible execution settings/)
+  assert.doesNotMatch(native, /runner measures/)
+})
+
+test('pair results report the verification overrides the gate ran with, without changing readiness', async () => {
+  const line = names => `Verification overrides: the gate ran with explicit environment overrides from verification.json: ${names}.`
+  for (const native of [false, true]) {
+    const { result } = await run({ native })
+    assert.deepEqual(result.final.suite.overrides, {})
+    assert.deepEqual(result.summary.final.suite.overrides, {})
+    assert.ok(!result.report.markdown.includes('Verification overrides'))
+    assert.deepEqual([result.status, result.final.readiness.state], ['done', 'ready'])
+  }
+  const codex = await run({ record: r => ({ ...r, verification: { command: 'node test.cjs', env: { PHPSTAN_FLAGS: '--debug', PATH: '/run/bin:/usr/bin' }, baseEnv: { HOME: '/home/someone' } } }) })
+  assert.deepEqual(codex.result.final.suite.overrides, { PATH: '/run/bin:/usr/bin', PHPSTAN_FLAGS: '--debug' })
+  assert.ok(!JSON.stringify(codex.result.final.suite).includes('/home/someone'))
+  assert.ok(codex.result.report.markdown.split('\n\n').includes(line('PATH, PHPSTAN_FLAGS')))
+  assert.deepEqual(codex.result.summary.final.suite.overrides, { PATH: '/run/bin:/usr/bin', PHPSTAN_FLAGS: '--debug' })
+  assert.deepEqual([codex.result.status, codex.result.final.readiness.state], ['done', 'ready'])
+  const native = await run({ native: true, measure: m => ({ ...m, suite: { ...m.suite, overrides: [{ name: 'PHPSTAN_FLAGS', value: '--debug' }] } }) })
+  assert.deepEqual(native.result.final.suite.overrides, { PHPSTAN_FLAGS: '--debug' })
+  assert.ok(native.result.report.markdown.split('\n\n').includes(line('PHPSTAN_FLAGS')))
+  assert.deepEqual([native.result.status, native.result.final.readiness.state], ['done', 'ready'])
 })
 
 test('budget exhaustion after design approval cannot report unbuilt work as ready', async () => {

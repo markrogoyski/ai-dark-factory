@@ -352,7 +352,8 @@ def input_digest(run, seat, label, path, tests, replay=None):
 PAIR_BRIEF = {
     'status': '', 'error': '', 'scratchError': '',
     'snapshot': {'ref': '', 'tree': '', 'diff': ''},
-    'suite': {'ran': False, 'passed': False, 'command': '', 'failureKind': '', 'log': ''},
+    'suite': {'ran': False, 'passed': False, 'command': '', 'failureKind': '', 'log': '',
+              'overrides': [{'name': '', 'value': ''}]},
     'replay': {
         'base': '', 'snapshot': '', 'snapshotTree': '', 'testRoots': [''],
         'mapping': [{'file': '', 'command': '', 'checkIds': [''], 'fixtures': ['']}],
@@ -380,7 +381,13 @@ def measurement_brief(state):
     """A finished measurement in the shape of PAIR_BRIEF; a running job's answer is unchanged."""
     if state.get('status') == 'running':
         return state
-    return dict(brief_pick(state, PAIR_BRIEF), status='done' if state.get('status') == 'done' else 'error')
+    brief = dict(brief_pick(state, PAIR_BRIEF), status='done' if state.get('status') == 'done' else 'error')
+    # verification.json's explicit env, as the measurement read it, listed by name: the strict
+    # output schema cannot hold a free-form object. The base environment is never included.
+    env = (state.get('verification') or {}).get('env')
+    if isinstance(env, dict):
+        brief['suite']['overrides'] = [{'name': k, 'value': v} for k, v in sorted(env.items())]
+    return brief
 
 
 def cmd_measure(a):

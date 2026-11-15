@@ -121,10 +121,11 @@ function pairChallengeRules(designed) {
   return `Return exactly one structured challenge per criterion in challenges: criterion, a substantive wrongImplementation, and rejectingCheckIds that resolve to contract checks covering that criterion: each cited check's criteria must include the challenged criterion (a check covering only C5 cannot reject a wrong implementation of C3). If no check rejects a plausible wrong implementation, return rejectingCheckIds=[] and raise an evidenced finding, ${designed ? 'assess that criterion partial/unmet, or request design revision with the reason in summary' : 'or assess that criterion partial/unmet'}. Never cite a check you believe is ineffective just to fill the array. Approval requires a rejecting check for every challenge. Describe a plausible incorrect result and its rejecting inspection for non-code criteria. Judge whether the checks actually reject that implementation; valid IDs alone are insufficient.`
 }
 
-// The design stage needs no gate run: setup measured the base revision.
+// The design stage needs no gate run: setup measured the base revision, or on the standalone
+// runtime the runner did, outside any model's sandbox.
 function pairBaseline(S) {
   if (!S.verify) return ''
-  return `Setup ran the verification command on the base revision, and it ${S.baselineOk ? 'passed' : `failed: ${S.baselineNote}`}. Don't run it, or the checks in it, during the design stage; the design says which of them the implementation must pass and how the new tests are checked.`
+  return `${S.runnerBaseline ? 'The runner ran the verification command on the base revision, outside any model\'s sandbox,' : 'Setup ran the verification command on the base revision,'} and it ${S.baselineOk ? 'passed' : `failed: ${S.baselineNote}`}. Don't run it, or the checks in it, during the design stage; the design says which of them the implementation must pass and how the new tests are checked.`
 }
 
 function hostMaterializationNote(S, label, tag, checkout) {

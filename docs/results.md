@@ -59,6 +59,10 @@ reviewed snapshot and the gate passes in your checkout. See
 
 - `report.markdown`: the run's own account (the council's report, the tier's report, the pair's
   reviews), computed from the ledger and rulings, not written by a model.
+- `final.suite` (Pair): the gate's result on the reviewed snapshot. `final.suite.overrides` is the
+  explicit `env` object from `verification.json` the gate ran with, `{}` when there are none;
+  when it is non-empty, `report.markdown` names each overridden variable. Overrides are
+  reported, not judged: they don't change `final.readiness`.
 - `forTheOrchestrator`: instructions for the launching session, such as what to show you first.
 - `retro`: suggested changes to the workflow itself; see [Process retro](process-retro.md).
 - `metrics`: turns, findings and tokens; see [Evaluating process value](evaluation.md).

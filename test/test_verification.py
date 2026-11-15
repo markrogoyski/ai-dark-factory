@@ -115,7 +115,9 @@ class Verification(TmpDirCase):
         self.assertEqual(list(brief), ['status', 'error', 'scratchError', 'snapshot', 'suite', 'replay'])
         self.assertEqual(brief['snapshot'], {k: full['snapshot'][k] for k in ('ref', 'tree', 'diff')})
         self.assertEqual(brief['suite'], {'ran': True, 'passed': True, 'command': 'python3 gate.py',
-                                          'failureKind': full['suite'].get('failureKind', ''), 'log': full['suite']['log']})
+                                          'failureKind': full['suite'].get('failureKind', ''), 'log': full['suite']['log'],
+                                          'overrides': [{'name': 'FACTORY_GATE', 'value': 'serial'}]})
+        self.assertEqual(full['verification']['env'], {'FACTORY_GATE': 'serial'})
         self.assertIn('tail', full['suite'])
         self.assertTrue(any('AssertionError' in r['tail'] for r in full['replay']['records']))
         dropped = {'cwd', 'logSha256', 'tail'}
@@ -130,6 +132,17 @@ class Verification(TmpDirCase):
         self.assertEqual(again, brief)
         self.assertEqual(self.cli('wait', '--run-dir', self.rd, '--job', 'measure-A-brief', '--brief'), brief)
         self.assertIn('tail', self.cli('wait', '--run-dir', self.rd, '--job', 'measure-A-brief')['suite'])
+        # The overrides are verification.json's explicit env as the measurement read it, sorted by
+        # name, and never the base environment.
+        for label, env, expected in (('brief-empty', {}, []),
+                                     ('brief-sorted', {'ZED': '1', 'FACTORY_GATE': 'serial'},
+                                      [{'name': 'FACTORY_GATE', 'value': 'serial'}, {'name': 'ZED', 'value': '1'}])):
+            self.config(env)
+            short = self.cli('measure', '--run-dir', self.rd, '--seat', 'A', '--label', label, '--brief', '--max-wait', '20')
+            record = json.loads(council.read(os.path.join(self.rd, 'jobs', f'measure-A-{label}', 'status.json')))
+            self.assertEqual(short['suite']['overrides'], expected, label)
+            self.assertEqual(record['verification']['env'], env, label)
+            self.assertNotIn('baseEnv', json.dumps(short), label)
         os.makedirs(os.path.join(self.rd, 'jobs', 'verify-x'))
         self.assertIn('only to measurement jobs', self.cli('wait', '--run-dir', self.rd, '--job', 'verify-x', '--brief', error=True)['error'])
 

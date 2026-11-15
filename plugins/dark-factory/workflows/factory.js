@@ -1862,9 +1862,10 @@ ${S.host !== 'codex' ? 'Make it one Bash call with dangerouslyDisableSandbox: tr
 ${S.allowDirty || (S.modeGiven && S.mode !== 'implement') ? '' : `- If ${S.modeGiven ? '' : 'the mode is implement and '}dirty is non-empty, stop and return status "dirty" with that list. The worktrees branch from HEAD, so uncommitted changes would be invisible to every seat.\n`}
 ## Step 3 — the verification command
 ${S.raw.verify ? `Use exactly: ${S.raw.verify}` : `${P.factory ? 'If the task or a document from step 1 names commands the change must pass (a "Done when" section, acceptance criteria, a checklist), the verification command runs all of them, joined with &&, even when they include static analysis or coverage: every role is measured against this command, and one that leaves a required check out makes each of them run it separately. Otherwise, find' : 'Find'}` + ' the project\'s standard command for checking a change: its test suite, from CLAUDE.md or AGENTS.md, a Makefile, composer.json, package.json, pyproject.toml and so on. Prefer the normal test run. Avoid full static-analysis sweeps and very slow suites unless the task is about them. If the project has no tests, there is no command.'}
-Write it to <runDir>/verify.sh as just the command, with no shebang line; it is run as \`bash verify.sh\` from the root of a worktree. Write an empty file if there is no command.${P.gated ? `\nStore sandbox-compatible execution settings as explicit string overrides in <runDir>/verification.json: {"env": {"VARIABLE": "value"}}. Preserve all required checks. The helper supplies private TMPDIR/TMP/TEMP directories, preferring short writable roots, for every verification execution; do not point temporary files at the long run directory. Prefer these run-owned overrides to changing project defaults. Preflight the exact command through neutral measurement below, including worker/socket/cache restrictions; shell-local exports are insufficient. Keep this configuration fixed for the run after specification review.${!P.ensemble ? ' Test replays run in parallel with each other and with the gate, each in its own checkout and TMPDIR. If the tests share a fixed port, a database or a global cache and cannot run at the same time, add "concurrency": 1 to verification.json beside env.' : ''}` : ''}
+Write it to <runDir>/verify.sh as just the command, with no shebang line; it is run as \`bash verify.sh\` from the root of a worktree. Write an empty file if there is no command.${P.gated ? `\n${S.runnerBaseline ? 'Write <runDir>/verification.json with the explicit string overrides the command needs in any environment: {"env": {"VARIABLE": "value"}}, or {"env": {}} when it needs none.' : 'Store sandbox-compatible execution settings as explicit string overrides in <runDir>/verification.json: {"env": {"VARIABLE": "value"}}.'} Preserve all required checks. The helper supplies private TMPDIR/TMP/TEMP directories, preferring short writable roots, for every verification execution; do not point temporary files at the long run directory. Prefer these run-owned overrides to changing project defaults. ${S.runnerBaseline ? 'Don\'t run or measure the command yourself: after you return, the runner measures the baseline in a disposable checkout outside your sandbox, with these overrides. Don\'t add overrides, PATH wrappers or debug flags for failures you see only inside your own sandbox, such as a refused socket bind or blocked network access.' : 'Preflight the exact command through neutral measurement below, including worker/socket/cache restrictions; shell-local exports are insufficient.'} Keep this configuration fixed for the run after specification review.${!P.ensemble ? ' Test replays run in parallel with each other and with the gate, each in its own checkout and TMPDIR. If the tests share a fixed port, a database or a global cache and cannot run at the same time, add "concurrency": 1 to verification.json beside env.' : ''}` : ''}
 ${S.modeGiven && S.mode !== 'implement'
     ? 'Set baselinePasses to false and baselineNote to "".'
+    : S.runnerBaseline ? 'Don\'t measure the baseline: the runner measures it outside your sandbox after you return, and its result replaces baselinePasses and baselineNote. Set baselinePasses to false and baselineNote to "".'
     : `${S.modeGiven ? 'Then' : 'If the mode is implement,'} measure the baseline: ${S.cli} measure --run-dir <runDir> --seat ${A} --label base${P.factory ? '' : ' --no-snapshot'} (if it prints status "running", poll with ${S.cli} wait --run-dir <runDir> --job measure-${A}-base). Set baselinePasses to suite.passed. If the suite fails or doesn't run at baseline, put the reason and the failing tail in baselineNote.${S.modeGiven ? '' : ' Otherwise set baselinePasses to false and baselineNote to "".'}`}
 
 ## Step 4 — acceptance criteria
@@ -3286,7 +3287,7 @@ function compactResult(S, result) {
     final: { readiness: f.readiness, snapshotRef: f.snapshotRef || null, snapshotTree: f.snapshotTree || null,
       post: f.post || null, diff: f.diff || null, worktree: f.worktree || null,
       suite: f.suite ? { ran: f.suite.ran, passed: f.suite.passed, command: f.suite.command || S.verify, log: f.suite.log || null,
-        ...(f.suite.failureKind ? { failureKind: f.suite.failureKind } : {}) } : null },
+        ...(f.suite.failureKind ? { failureKind: f.suite.failureKind } : {}), ...(f.suite.overrides ? { overrides: f.suite.overrides } : {}) } : null },
     findings: (result.findings || []).filter(f => f.status === 'open').map(f => ({ id: f.id, severity: f.severity, statement: f.statement })),
     questions: result.questions || [], delivery: result.delivery || null,
     artifacts: { room: result.room || S.run?.room || null, verification: result.runDir ? `${result.runDir}/verification.json` : null,
@@ -4286,7 +4287,45 @@ function pairMeasurementView(S, m, schema) {
     ? Object.fromEntries(Object.entries(s.properties).map(([k, x]) => [k, pick(v && typeof v === 'object' && !Array.isArray(v) ? v[k] : undefined, x)]))
     : s.type === 'array' ? (Array.isArray(v) ? v.map(x => pick(x, s.items)) : [])
     : v ?? (s.type === 'string' ? '' : s.type === 'boolean' ? false : 0)
-  return { ...pick(m, schema), status: m.status === 'done' ? 'done' : 'error' }
+  const view = { ...pick(m, schema), status: m.status === 'done' ? 'done' : 'error' }
+  // The full record keeps verification.json's explicit env as an object; the brief lists it sorted
+  // by name (a strict schema cannot hold a free-form object). The base environment is never shown.
+  const env = m.verification?.env
+  if (view.suite && 'overrides' in view.suite && env && typeof env === 'object' && !Array.isArray(env))
+    view.suite.overrides = Object.keys(env).sort().map(name => ({ name, value: String(env[name]) }))
+  return view
+}
+
+// The baseline note on the standalone runtime: the reason and the end of the failing output on one
+// line of at most 300 characters. A reason is capped at 120 characters when a tail follows it, so
+// the tail keeps at least its last 164 characters, where a test runner prints its summary.
+function pairBaselineNote(reason, tail) {
+  const flat = s => String(s ?? '').replace(/\s+/g, ' ').trim()
+  const head = (s, n) => s.length <= n ? s : `${s.slice(0, n - 1)}…`
+  const end = (s, n) => s.length <= n ? s : `…${s.slice(s.length - n + 1)}`
+  const r = flat(reason), t = flat(tail)
+  if (!t) return head(r, 300)
+  const h = head(r, 120)
+  return `${h}; failing tail: ${end(t, 300 - h.length - 16)}`
+}
+
+// The baseline from the runner's own measurement of the base revision (the full helper record, or
+// {status: 'error'} when the request threw). It replaces what setup reported, because setup on the
+// standalone runtime is a sandboxed model turn where a refused socket bind or network call fails a
+// gate that passes outside it.
+function pairBaselineResult(S, m) {
+  if (!S.verify) { S.baselineOk = true; S.baselineNote = ''; return true }
+  const suite = m?.suite
+  const reason = !m ? 'the baseline measurement returned nothing'
+    : m.status !== 'done' ? `the baseline measurement failed: ${m.error || m.status || 'no reason given'}`
+    : !suite?.ran ? `the verification command did not run (${suite?.failureKind || 'no reason recorded'})`
+    : String(suite.command || '').trim() !== S.verify ? `the baseline ran ${suite.command}, not the verification command`
+    : suite.timedOut ? 'the verification command timed out'
+    : !suite.passed ? `the verification command exited ${suite.exitCode ?? 'without an exit code'}`
+    : ''
+  S.baselineOk = !reason
+  S.baselineNote = reason ? pairBaselineNote(reason, suite?.tail) : ''
+  return S.baselineOk
 }
 
 // The helper's full record of the current measurement: the view above plus what each execution
@@ -4587,15 +4626,22 @@ function pairReviewClean(S) {
     S.criteria.every(c => r.criteria.filter(a => a.criterion === c.id).length === 1 && r.criteria.some(a => a.criterion === c.id && a.status === 'met' && a.note?.trim()))
 }
 
+// The explicit env overrides from verification.json the measured gate ran with, by name; {} when
+// there are none or nothing was measured. They are reported, and never change readiness.
+function pairOverrides(S, m) {
+  return Object.fromEntries((Array.isArray(m?.suite?.overrides) ? m.suite.overrides : []).map(o => [o.name, o.value]))
+}
+
 function pairResult(S, status = 'blocked') {
   const p = S.pair, m = p.stage === 'code' ? p.measurement : null
-  const ready = pairReadiness(S)
+  const ready = pairReadiness(S), overrides = pairOverrides(S, m)
   if (p.stage !== 'code' && ready.state === 'ready') {
     ready.state = 'incomplete'; ready.incomplete.push('Implementation has not been reviewed.')
   }
   const report = [`Pair: ${S.pairOptions.author.name} authors; ${S.pairOptions.reviewer.name} reviews.`,
     `Readiness: ${ready.state}. Reviews: ${p.reviews.length}/${S.pairOptions.maxReviews}.`,
     `Verification: ${!S.verify ? 'no automated gate configured; no test pass claimed' : !m?.suite?.ran ? 'not run on a final snapshot' : m.suite.passed ? 'passed on the reviewed snapshot' : 'failed on the reviewed snapshot'}.`,
+    ...(Object.keys(overrides).length ? [`Verification overrides: the gate ran with explicit environment overrides from verification.json: ${Object.keys(overrides).sort().join(', ')}.`] : []),
     `Replay: ${m?.replay?.records?.length || 0} file/command records; ${m?.replay?.exclusions?.length || 0} overlay exclusions. Base outcomes require reviewer interpretation.`,
     ...ready.infrastructure, ...ready.blocked, ...ready.incomplete,
     ...p.findings.map(f => `${f.id}: ${f.status} — ${f.statement}${f.resolution ? ` (${f.resolution})` : ''}`)].join('\n\n')
@@ -4619,7 +4665,7 @@ function pairResult(S, status = 'blocked') {
     final: { author: 'A', model: S.pairOptions.author.name, summary: p.author?.summary || '',
       worktree: S.seats[0]?.wt || null, post: p.label && S.run ? `${S.run.room}/${p.label}/A.md` : null,
       snapshotRef: m?.snapshot?.ref || null, snapshotTree: m?.snapshot?.tree || null, diff: m?.snapshot?.diff || null,
-      suite: m?.suite || null, replay: m?.replay || null, criteria: p.lastReview?.criteria || [], readiness: ready },
+      suite: m?.suite ? { ...m.suite, overrides: pairOverrides(S, m) } : null, replay: m?.replay || null, criteria: p.lastReview?.criteria || [], readiness: ready },
     delivery: { status: status === 'done' && ready.state === 'ready' ? 'pending' : 'not-ready' } }
 }
 
@@ -4746,10 +4792,11 @@ function pairChallengeRules(designed) {
   return `Return exactly one structured challenge per criterion in challenges: criterion, a substantive wrongImplementation, and rejectingCheckIds that resolve to contract checks covering that criterion: each cited check's criteria must include the challenged criterion (a check covering only C5 cannot reject a wrong implementation of C3). If no check rejects a plausible wrong implementation, return rejectingCheckIds=[] and raise an evidenced finding, ${designed ? 'assess that criterion partial/unmet, or request design revision with the reason in summary' : 'or assess that criterion partial/unmet'}. Never cite a check you believe is ineffective just to fill the array. Approval requires a rejecting check for every challenge. Describe a plausible incorrect result and its rejecting inspection for non-code criteria. Judge whether the checks actually reject that implementation; valid IDs alone are insufficient.`
 }
 
-// The design stage needs no gate run: setup measured the base revision.
+// The design stage needs no gate run: setup measured the base revision, or on the standalone
+// runtime the runner did, outside any model's sandbox.
 function pairBaseline(S) {
   if (!S.verify) return ''
-  return `Setup ran the verification command on the base revision, and it ${S.baselineOk ? 'passed' : `failed: ${S.baselineNote}`}. Don't run it, or the checks in it, during the design stage; the design says which of them the implementation must pass and how the new tests are checked.`
+  return `${S.runnerBaseline ? 'The runner ran the verification command on the base revision, outside any model\'s sandbox,' : 'Setup ran the verification command on the base revision,'} and it ${S.baselineOk ? 'passed' : `failed: ${S.baselineNote}`}. Don't run it, or the checks in it, during the design stage; the design says which of them the implementation must pass and how the new tests are checked.`
 }
 
 function hostMaterializationNote(S, label, tag, checkout) {
@@ -6130,13 +6177,18 @@ const PAIR_MEASURE_SCHEMA = strict({ type: 'object', properties: {
   scratchError: { type: 'string', description: 'Why the disposable verification checkout failed; empty when it succeeded.' },
   snapshot: { type: 'object', properties: { ref: { type: 'string' }, tree: { type: 'string' }, diff: { type: 'string' } } },
   suite: { type: 'object', properties: { ran: { type: 'boolean' }, passed: { type: 'boolean' }, command: { type: 'string' },
-    failureKind: { type: 'string' }, log: { type: 'string' } } },
+    failureKind: { type: 'string' }, log: { type: 'string' },
+    overrides: { type: 'array', description: 'The explicit env overrides from verification.json the gate ran with, sorted by name.',
+      items: { type: 'object', properties: { name: { type: 'string' }, value: { type: 'string' } } } } } },
   replay: PAIR_REPLAY_RESULT,
 } })
 
 async function pairRun() {
   // Without a design stage the run starts, and stays, at the code stage.
   if (!pairDesigned(S)) S.pair.stage = 'code'
+  // On the standalone runtime setup is a sandboxed model turn, so the runner measures the baseline
+  // itself after setup returns; the flag tells setup not to (and is set on no other flow).
+  S.runnerBaseline = !!hostRuntime
   phase('Setup')
   // Native Claude workflows need a native transport for measurements. Prefer one of the two
   // selected participants; CLI seats and all Codex-host turns use their adapters. Setup is not a
@@ -6165,8 +6217,10 @@ async function pairRun() {
   S.criteria = setup.criteria || []
   S.repositoryNotes = setup.repositoryNotes || ''
   S.verify = String(setup.verify || '').trim()
-  S.baselineOk = !S.verify || !!setup.baselinePasses
-  if (!S.baselineOk) S.baselineNote = oneLine(setup.baselineNote, 300) || 'no reason given'
+  if (!hostRuntime) {
+    S.baselineOk = !S.verify || !!setup.baselinePasses
+    if (!S.baselineOk) S.baselineNote = oneLine(setup.baselineNote, 300) || 'no reason given'
+  }
   S.refs = (setup.refs || []).filter(r => r.path?.startsWith(`${S.run.runDir}/refs/`))
   if (!S.criteria.length || new Set(S.criteria.map(c => c.id)).size !== S.criteria.length || S.criteria.some(c => !c.id || !c.text) ||
       S.refs.length !== (setup.refs || []).length || S.refs.length < S.plan.length ||
@@ -6186,6 +6240,21 @@ async function pairRun() {
     S.pair.stop = `Setup found ${supplied.length === 1 ? 'a criterion' : 'criteria'} this run cannot verify: ${supplied.map(u => u.criterion).join(', ')}.`
     S.pair.questions = supplied.map(u => `${u.criterion}${text(u.criterion) ? ` ("${oneLine(text(u.criterion), 200)}")` : ''} cannot be verified inside the run: ${oneLine(u.reason, 300) || 'no reason given'}. Rewrite it so the run can check it, or drop it?`)
     return pairResult(S, 'needs-user')
+  }
+  if (hostRuntime) {
+    // Measured by the runner process, outside any model's sandbox, with no model turn. Setup's
+    // baselinePasses and baselineNote are not used. The record stays out of S.pair.measurement, so
+    // the review tag and version remain at base until the first code measurement.
+    let base = null
+    if (S.verify) {
+      try {
+        base = await hostRuntime.measure({ run: S.run, seat: 'A', label: 'base' })
+      } catch (error) {
+        if (fatalTurnError(error)) throw error
+        base = { status: 'error', error: String(error?.message || error) }
+      }
+    }
+    pairBaselineResult(S, base)
   }
   const p = S.pair
   log(`pair: ${S.pairOptions.author.name} authors; ${S.pairOptions.reviewer.name} reviews; budget ${S.pairOptions.maxReviews} reviews${pairDesigned(S) ? '' : '; no design stage'}`)

@@ -26,7 +26,8 @@ test('a factory pair run records its facts with the factory roles and reuses the
   assert.equal(result.strategy, 'pair'); assert.ok(result.retro && result.retro.recorded)
   assert.ok(calls.some(c => c.role === 'author' && 'process' in c.schema.properties), 'pair turns can leave process notes')
   const design = calls.find(c => c.role === 'author')
-  assert.ok(design.prompt.includes('Setup ran the verification command on the base revision, and it passed'))
+  // The standalone runtime measures the base itself, after setup returns.
+  assert.ok(design.prompt.includes("The runner ran the verification command on the base revision, outside any model's sandbox, and it passed"))
   const codeReview = calls.filter(c => c.role === 'reviewer').at(-1)
   assert.ok(codeReview.prompt.includes("don't rerun the verification command"))
 })
@@ -204,6 +205,12 @@ test('native workflows reject unsupported elapsed limits without reading the wal
 test('Pair measurements propagate checkpoint mismatches and host limits remain run limits', async () => {
   const error = Object.assign(new Error('Checkpoint request changed'), { code: 'CHECKPOINT_MISMATCH' })
   await assert.rejects(() => simulate('pair', {}, { measureError: error }), e => e === error)
+  // The runner's baseline measurement and the code measurement both propagate it.
+  const codeOnly = async ({ label }) => {
+    if (label === 'base') return { status: 'done', suite: { ran: true, passed: true, command: 'check', tail: '' } }
+    throw error
+  }
+  await assert.rejects(() => simulate('pair', {}, { measure: codeOnly }), e => e === error)
   const limit = Object.assign(new Error('Run turn budget exhausted (2).'), { code: 'RUN_LIMIT' })
   const { result, calls } = await simulate('pair', {}, { error: limit })
   assert.equal(calls.length, 1)

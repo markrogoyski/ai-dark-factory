@@ -1,6 +1,9 @@
 async function pairRun() {
   // Without a design stage the run starts, and stays, at the code stage.
   if (!pairDesigned(S)) S.pair.stage = 'code'
+  // On the standalone runtime setup is a sandboxed model turn, so the runner measures the baseline
+  // itself after setup returns; the flag tells setup not to (and is set on no other flow).
+  S.runnerBaseline = !!hostRuntime
   phase('Setup')
   // Native Claude workflows need a native transport for measurements. Prefer one of the two
   // selected participants; CLI seats and all Codex-host turns use their adapters. Setup is not a
@@ -29,8 +32,10 @@ async function pairRun() {
   S.criteria = setup.criteria || []
   S.repositoryNotes = setup.repositoryNotes || ''
   S.verify = String(setup.verify || '').trim()
-  S.baselineOk = !S.verify || !!setup.baselinePasses
-  if (!S.baselineOk) S.baselineNote = oneLine(setup.baselineNote, 300) || 'no reason given'
+  if (!hostRuntime) {
+    S.baselineOk = !S.verify || !!setup.baselinePasses
+    if (!S.baselineOk) S.baselineNote = oneLine(setup.baselineNote, 300) || 'no reason given'
+  }
   S.refs = (setup.refs || []).filter(r => r.path?.startsWith(`${S.run.runDir}/refs/`))
   if (!S.criteria.length || new Set(S.criteria.map(c => c.id)).size !== S.criteria.length || S.criteria.some(c => !c.id || !c.text) ||
       S.refs.length !== (setup.refs || []).length || S.refs.length < S.plan.length ||
@@ -50,6 +55,21 @@ async function pairRun() {
     S.pair.stop = `Setup found ${supplied.length === 1 ? 'a criterion' : 'criteria'} this run cannot verify: ${supplied.map(u => u.criterion).join(', ')}.`
     S.pair.questions = supplied.map(u => `${u.criterion}${text(u.criterion) ? ` ("${oneLine(text(u.criterion), 200)}")` : ''} cannot be verified inside the run: ${oneLine(u.reason, 300) || 'no reason given'}. Rewrite it so the run can check it, or drop it?`)
     return pairResult(S, 'needs-user')
+  }
+  if (hostRuntime) {
+    // Measured by the runner process, outside any model's sandbox, with no model turn. Setup's
+    // baselinePasses and baselineNote are not used. The record stays out of S.pair.measurement, so
+    // the review tag and version remain at base until the first code measurement.
+    let base = null
+    if (S.verify) {
+      try {
+        base = await hostRuntime.measure({ run: S.run, seat: 'A', label: 'base' })
+      } catch (error) {
+        if (fatalTurnError(error)) throw error
+        base = { status: 'error', error: String(error?.message || error) }
+      }
+    }
+    pairBaselineResult(S, base)
   }
   const p = S.pair
   log(`pair: ${S.pairOptions.author.name} authors; ${S.pairOptions.reviewer.name} reviews; budget ${S.pairOptions.maxReviews} reviews${pairDesigned(S) ? '' : '; no design stage'}`)
