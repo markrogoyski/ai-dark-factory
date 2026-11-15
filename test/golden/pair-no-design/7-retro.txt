@@ -14,7 +14,7 @@ Return up to 3 things that worked and should be kept, and 3 to 5 changes, the mo
 # Save it
 1. Write /repo/.council/pair-test/retro.md in this shape:
 ```markdown
-# Council retro: pair-test
+# Pair retro: pair-test
 
 <one line: the task, the mode, and how the run ended>
 

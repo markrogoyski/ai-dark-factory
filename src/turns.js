@@ -512,7 +512,7 @@ async function runRetro(o) {
     return { worked: [], changes: [], saved: '', error: 'the retro agent failed', notes: S.processNotes,
       markdown: `### Process retro\n\nThe retro agent failed. ${plural(S.processNotes.length, 'process note')} from the run ${S.processNotes.length === 1 ? 'is' : 'are'} in retro.notes.` }
   }
-  return { worked: r.worked || [], changes: r.changes || [], saved: r.saved || '', error: r.error || '', notes: S.processNotes, markdown: retroMarkdown(r, S.pair && !S.factory ? '/pair' : '') }
+  return { worked: r.worked || [], changes: r.changes || [], saved: r.saved || '', error: r.error || '', notes: S.processNotes, markdown: retroMarkdown(r, S.pair ? (S.factory ? '/factory' : '/pair') : '') }
 }
 
 async function recordFacts(payload) {

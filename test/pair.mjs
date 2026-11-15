@@ -158,12 +158,14 @@ test('a pair run ends with a process retro holding the author and reviewer notes
       'review pair-code-2 reviewer: The measurement record path was hard to find.'], 'every author and reviewer note kept; "None." dropped')
     const authors = calls.filter(c => c.kind === 'author'), reviews = calls.filter(c => c.kind === 'review')
     assert.ok([...authors, ...reviews].every(c => c.schema.required.includes('process')), 'author and reviewer turns can leave a note')
+    assert.ok([...authors, ...reviews].every(c => c.schema.properties.process.description.startsWith('Feedback on the pair process, not on the task: ')), 'the note is about the pair process')
     assert.ok(!calls.filter(c => c.kind === 'measure').some(c => 'process' in c.schema.properties), 'the measurement transport copies its result exactly')
     const retro = calls.find(c => c.kind === 'retro')
     assert.ok(retro.prompt.startsWith('You are running a short retrospective on one run of /pair, '), retro.prompt.slice(0, 120))
     assert.ok(retro.prompt.includes('- review pair-code-2 (reviewer, Codex Astra): The measurement record path was hard to find.') ||
       retro.prompt.includes('- review pair-code-2 (reviewer, Claude Opus): The measurement record path was hard to find.'), 'the notes reach the retro payload')
     assert.ok(retro.prompt.includes('- Outcome: the pair strategy'), 'the retro sees the pair facts')
+    assert.ok(retro.prompt.includes('Your subject is the workflow\'s process') && retro.prompt.includes('\n# Pair retro: pair-test\n') && !retro.prompt.includes('Council retro'), 'the retro is about the pair, not a council')
     assert.ok(result.retro.markdown.startsWith('### Process retro\n\nThe run\'s notes on its own process, for tuning the /pair workflow.'), result.retro.markdown)
     assert.ok(result.retro.markdown.includes('Saved to `/x/retros/pair-test.md`'))
     assert.ok(result.forTheOrchestrator.endsWith(' Last, show retro.markdown as it is: notes on the workflow, not the user\'s project.'))
@@ -330,6 +332,16 @@ test('design: false and --no-design skip the design stage; anything else is refu
   for (const design of ['false', 0, null]) assert.throws(() => L.parsePairConfig({ task: 'x', design }), /design must be true or false/)
   const factory = L.factoryPairConfig({ raw: { task: 'x', strategy: 'pair', pair: { design: false } }, roles: {} })
   assert.equal(factory.pairOptions.design, true, 'factory always designs first')
+  // --no-retro is the string form of retro: false, also a Pair-only switch.
+  assert.equal(L.parsePairConfig('Implement it').retro, true)
+  for (const text of ['--no-retro Write the plan', '--no-design --no-retro Write the plan', '--author astra --no-retro --max-reviews 4 Write the plan']) {
+    const c = L.parsePairConfig(text)
+    assert.equal(c.retro, false, text)
+    assert.ok(!c.roles.retro, text)
+    assert.equal(c.task, 'Write the plan', text)
+  }
+  assert.equal(L.parsePairConfig({ task: 'x', retro: false }).retro, false)
+  assert.equal(L.parseArgs('--no-retro Write the plan').task, '--no-retro Write the plan', 'the switch is Pair-only')
   assert.match(L.executionPlan({ ...L.parsePairConfig({ task: 'x', design: false }), controls: {} }).effort, /no design stage/)
 })
 
@@ -931,4 +943,13 @@ test('runtime "cli" hands the whole native run to one transport turn with explic
   await assert.rejects(go({ task: 'x', runtime: 'native' }), /runtime must be "cli"/)
   await assert.rejects(go({ task: 'x', resume: '/r' }), /resume/)
   await assert.rejects(execute(agent, null, null, () => {}, () => {}, { task: 'x', runtime: 'cli' }, {}, null, { agent() {}, turn() {}, measure() {} }), /only in Claude Code/)
+})
+
+test('the factory\'s pair strategy describes its retro as a pair process, not a council', () => {
+  const S = { ...L.newState(L.factoryPairConfig({ raw: { task: 'Fix it', repo: '/repo' }, roles: {} })), pair: L.newPairState(), factory: { tier: 'simple' },
+    run: { runId: 'pair-test', runDir: '/repo/.council/pair-test', repoRoot: '/repo' }, cli: 'dark-factory' }
+  const prompt = L.retroPrompt(S, 'Report.', 'Payload.', 'h')
+  assert.ok(prompt.startsWith('You are running a short retrospective on one run of /factory, ') && prompt.includes('this run used the pair strategy instead'))
+  assert.ok(prompt.includes('Your subject is the workflow\'s process') && prompt.includes('The author drafts the design') && prompt.includes('\n# Pair retro: pair-test\n'))
+  assert.ok(!prompt.includes('Seats are the debating models'))
 })

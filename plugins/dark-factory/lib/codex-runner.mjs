@@ -30,6 +30,7 @@ Git, and authenticated CLIs for the selected models.
   --max-reviews N            Pair review budget across design and code (default: 8)
   --no-design                Pair: skip the design stage; the author writes the deliverable
                              directly (for a document or plan deliverable)
+  --no-retro                 Pair: skip the closing process retro
   --args-file FILE           Full workflow arguments as a JSON object
   --output FILE              Also write the final result JSON to this path
   --brief                    Print a compact result on stdout (status, readiness, findings,

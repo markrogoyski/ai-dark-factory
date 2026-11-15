@@ -3086,10 +3086,10 @@ function retroPayload(S, facts, data) {
 }
 
 function retroPrompt(S, reportMd, payload, hash) {
-  return `You are running a short retrospective on one run of ${S.factory ? `/factory, a workflow that routes a task to a tier of process (the run facts say which tier this run used and why) and runs it; its higher tiers run /council, in which several AI models solve one task independently, debate it on an evidence ledger, and converge on one result${S.pair ? '; this run used the pair strategy instead, in which one author designs and implements and one independent reviewer reviews the design and then the code until no finding is open' : ''}` : S.pair ? '/pair, a workflow in which one author designs and implements a change and one independent reviewer reviews the design and then the code until no finding is open' : '/council, a workflow in which several AI models solve one task independently, debate it on an evidence ledger, and converge on one result'}. Its author is still tuning the workflow and wants to know what in its process to change. Your subject is the ${S.pair && !S.factory ? 'workflow' : 'council'}'s process, not the task: don't judge the solution, don't redo the work, and read the code under review only to confirm a point about the process.
+  return `You are running a short retrospective on one run of ${S.factory ? `/factory, a workflow that routes a task to a tier of process (the run facts say which tier this run used and why) and runs it; its higher tiers run /council, in which several AI models solve one task independently, debate it on an evidence ledger, and converge on one result${S.pair ? '; this run used the pair strategy instead, in which one author designs and implements and one independent reviewer reviews the design and then the code until no finding is open' : ''}` : S.pair ? '/pair, a workflow in which one author designs and implements a change and one independent reviewer reviews the design and then the code until no finding is open' : '/council, a workflow in which several AI models solve one task independently, debate it on an evidence ledger, and converge on one result'}. Its author is still tuning the workflow and wants to know what in its process to change. Your subject is the ${S.pair ? 'workflow' : 'council'}'s process, not the task: don't judge the solution, don't redo the work, and read the code under review only to confirm a point about the process.
 
 # What you have
-- The process notes at the end. During the run, every agent could say in a line or two what in its turn's instructions, inputs or tools got in its way. ${S.pair && !S.factory ? 'The author drafts the design and then implements and fixes it; the reviewer reviews the design and then each measured snapshot, in a fresh context each time; relays are small agents that pass prompts to the Codex CLI or the Gemini CLI (agy); setup creates the run.' : `Seats are the debating models; checkers verify claims and run the tests; the panel adjudicates disputed claims; auditors review the final version afterwards without seeing the debate; relays are small agents that pass prompts to the Codex CLI or the Gemini CLI (agy); setup creates the run.`}
+- The process notes at the end. During the run, every agent could say in a line or two what in its turn's instructions, inputs or tools got in its way. ${S.pair ? 'The author drafts the design and then implements and fixes it; the reviewer reviews the design and then each measured snapshot, in a fresh context each time; relays are small agents that pass prompts to the Codex CLI or the Gemini CLI (agy); setup creates the run.' : `Seats are the debating models; checkers verify claims and run the tests; the panel adjudicates disputed claims; auditors review the final version afterwards without seeing the debate; relays are small agents that pass prompts to the Codex CLI or the Gemini CLI (agy); setup creates the run.`}
 - The run facts at the end, computed by the workflow, and the run's report below.
 - The run directory, ${S.run.runDir}: TASK.md; room/ holds every post, by round; jobs/ holds each Codex and Gemini turn's prompt and log. \`${S.cli} usage --run-dir ${shq(S.run.runDir)}\` prints their token use.
 - The workflow's source, if a change needs it: workflows/${S.workflowName}.js (the prompts, limits and round structure) and bin/dark-factory (the CLI the agents run), both in the dark-factory plugin's directory, the parent of the bin/ that \`command -v dark-factory\` prints. Both are long, so grep for the instruction a note is about rather than reading them whole.
@@ -3102,7 +3102,7 @@ Return up to 3 things that worked and should be kept, and 3 to 5 changes, the mo
 # Save it
 1. Write ${S.run.runDir}/retro.md in this shape:
 \`\`\`markdown
-# Council retro: ${S.run.runId}
+# ${S.pair ? 'Pair' : 'Council'} retro: ${S.run.runId}
 
 <one line: the task, the mode, and how the run ended>
 
@@ -3129,7 +3129,7 @@ ${payload}
 =====END PAYLOAD ${hash}=====`
 }
 
-// A standalone /pair run names its own workflow; the factory's runs keep the council's line.
+// A pair run names its workflow, /pair or the factory's pair strategy; the factory's other runs keep the council's line.
 function retroMarkdown(r, workflow = '') {
   const worked = (r.worked || []).filter(w => w && w.what)
   const changes = (r.changes || []).filter(c => c && c.change)
@@ -4173,8 +4173,8 @@ function newPairState() {
 }
 
 // Pair decisions are shared by both hosts. Only the reviewer can close findings.
-// A string task may also start with --no-design, among the other flags.
-const PAIR_SWITCHES = { 'no-design': ['design', false] }
+// A string task may also start with --no-design or --no-retro, among the other flags.
+const PAIR_SWITCHES = { 'no-design': ['design', false], 'no-retro': ['retro', false] }
 function parsePairArgs(args) {
   return parseArgs(args, PAIR_SWITCHES)
 }
@@ -4199,7 +4199,7 @@ function parsePairConfig(args) {
   if (!Number.isSafeInteger(maxReviews) || maxReviews < 2 || maxReviews > 100) throw new Error('pair: maxReviews must be an integer from 2 to 100.')
   if (raw.design !== undefined && typeof raw.design !== 'boolean') throw new Error('pair: design must be true or false (--no-design in a string task).')
   const design = raw.design !== false
-  // The process retro is on unless retro: false, as in the other workflows.
+  // The process retro is on unless retro: false (--no-retro in a string task), as in the other workflows.
   const config = parseConfig({ ...raw, mode: 'implement',
     simple: { implementer: author.key, reviewer: reviewer.key } }, { workflow: 'pair', tier: 'simple' })
   // Setup writes the criteria and the gate, and the run inherits their quality: Sonnet setup dropped
@@ -4624,7 +4624,7 @@ Write a concise handoff at ${S.run.room}/${label}/A.md (create the directory). I
 }
 
 function pairReviewPrompt(S, label, checkout, correction = null) {
-  const p = S.pair, design = p.stage === 'design', designed = pairDesigned(S)
+  const p = S.pair, design = p.stage === 'design', designed = pairDesigned(S), challenged = pairChallengesDue(S)
   const tag = pairReviewTag(S)
   return `You are the independent reviewer in a pair workflow. This is a fresh review context. You did not author the work. Review the current artifact yourself, using repository evidence, and verify every proposed finding resolution. Resolve existing findings under their current IDs in both design and code reviews; never refile an unresolved issue under a new ID.
 
@@ -4643,11 +4643,11 @@ ${JSON.stringify(p.approvedContract || p.testContract)}
 
 ${design ? `Independently check proposed reconciliations against the original task, reference documents, and explicit user decisions; setup notes cannot waive requirements. Check that the criteria cover the entire original request. Check the approach against the task and existing code: correctness, missing requirements, assumptions, alternatives that materially affect the outcome, scope, and planned test coverage. Where the change copies or mirrors behaviour from another function, require a side-by-side check that the two agree. Verify every proposed test root against the BASE repository configuration/layout and its cited evidence; naming a directory does not make it a test root. Reject production roots and missing concrete outcomes/boundaries. Check that every planned test and fixture is a regular file under an accepted root and each focused command is executable by the replay helper. Shared files are allowed when required by the user or plan: inspect focused selection and base loadability. Prefer separate files otherwise. Whole-suite preservation must use kind=gate with the exact designated command, never a directory in a file mapping. Gate evidence establishes final-suite success, not a changed-behavior baseline failure. Each criterion is met only if the design explains how it will be satisfied and checked.
 ${pairChallengeRules(true)} ${pairBaseline(S)}`
-    : `${designed ? 'Review the implementation and tests against the task and approved design.' : `Review the implementation and tests against the task. This run has no design stage, so no one has reviewed the test contract above: review it here as part of the artifact. Verify every test root against the BASE repository configuration/layout and its cited evidence, check that the contract covers the entire original request and every criterion, and judge for each criterion whether its checks would reject a plausible wrong implementation; file a finding for each gap. Inspection checks must name a concrete inspection; perform each one yourself.`} Inspect the whole diff at ${p.measurement.snapshot.diff}, not only the latest fixes. Look for incorrect behavior, regressions, missing requirements, and tests that would miss the defect. The neutral helper measured this exact snapshot. This summary leaves out what each execution printed: read that in the helper's full record, ${pairMeasurementRecord(S)}, where every replay record and the suite carry the tail of their output, and in the logs they name:
+    : `${designed ? 'Review the implementation and tests against the task and approved design.' : `Review the implementation and tests against the task. This run has no design stage, so no one has reviewed the test contract above: review it here as part of the artifact. Verify every test root against the BASE repository configuration/layout and its cited evidence, check that the contract covers the entire original request and every criterion, and ${challenged ? `file a finding for each gap. No review has challenged this contract yet. ${pairChallengeRules(false)}` : 'judge for each criterion whether its checks would reject a plausible wrong implementation; file a finding for each gap.'} Inspection checks must name a concrete inspection; perform each one yourself.`} Inspect the whole diff at ${p.measurement.snapshot.diff}, not only the latest fixes. Look for incorrect behavior, regressions, missing requirements, and tests that would miss the defect. The neutral helper measured this exact snapshot. This summary leaves out what each execution printed: read that in the helper's full record, ${pairMeasurementRecord(S)}, where every replay record and the suite carry the tail of their output, and in the logs they name:
 ${JSON.stringify(p.measurement)}
 Passing tests do not replace code review. Treat a failing or missing required check as unresolved.${pairInfrastructure(S).length ? ` This measurement could not run because of the environment, not the snapshot (${pairInfrastructure(S).join(' ')}). Readiness already reports that, and neither the author nor you can fix it: don't file a finding for it or reopen one about it. Assess a criterion that needs the missing results partial, with that reason in its note, and review the code on its merits.` : ''}
 Interpret the raw replay records for each check from their output in that record, reading the logs when the tail is not enough. A base fatal at file level (including a missing new API), pass, timeout, or tool error is evidence to interpret, not an automatic red/green verdict. Records cover files/commands and associated check IDs; an aborted file does not prove individual assertions ran. Preserved behavior should pass on base; changed behavior passing there needs investigation. Distinguish the intended missing behavior from infrastructure failure using actual output. If inconclusive, reflect that in criterion assessments/findings rather than approving solely because a record exists. A base record with reused=true is the same execution as an earlier measurement's, carried over because its inputs were identical (base commit, command, test and fixture bytes, timeout and settings); it is not a new run.
-Inspect every overlay exclusion and missing preserved-behavior signal. Compare actual assertions and coverage with the ${designed ? 'approved ' : ''}contract and report omissions or weakening through findings. Check that each mapped command really isolates its named file and executes its claimed checks. Attack the whole implementation for uncovered requirements, regressions, races, numeric mistakes, and defects introduced by fixes: the contract is a floor, not the review checklist. Where the change copies or mirrors behaviour from another function, run both on the same inputs beyond the listed cases, including combinations of arguments, and file any difference. ${pairChallengesDue(S) ? `No review has challenged this contract yet. ${pairChallengeRules(false)}` : 'Return challenges=[] during code review.'}
+Inspect every overlay exclusion and missing preserved-behavior signal. Compare actual assertions and coverage with the ${designed ? 'approved ' : ''}contract and report omissions or weakening through findings. Check that each mapped command really isolates its named file and executes its claimed checks. Attack the whole implementation for uncovered requirements, regressions, races, numeric mistakes, and defects introduced by fixes: the contract is a floor, not the review checklist. Where the change copies or mirrors behaviour from another function, run both on the same inputs beyond the listed cases, including combinations of arguments, and file any difference.${challenged ? '' : ' Return challenges=[] during code review.'}
 That measurement is the gate result for this snapshot: don't rerun the verification command or the checks in it. Run only targeted probes, such as one test or one analyser on the changed files. Sandboxes can block the sockets that parallel workers use: if a probe fails that way, run the tool single-process.`}
 
 # Findings and proposed responses
