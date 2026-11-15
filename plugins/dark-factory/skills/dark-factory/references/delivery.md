@@ -50,8 +50,9 @@ For a ready result on the unchanged base, the helper can apply and stage the rev
 dark-factory apply --run-dir <runDir> --result <saved-result.json>
 ```
 
-It checks the snapshot identity and resulting index tree, refuses tracked edits, untracked files
-other than those recorded at setup (run.json `deliveryBaseline`), and local-file collisions, and
+It checks the snapshot identity and resulting index tree, refuses staged changes, tracked edits
+and untracked files other than those recorded at setup (run.json `deliveryBaseline`), a reviewed
+change to a recorded path, and local-file collisions, leaves the recorded edits in place, and
 leaves committing to the caller. Copying files by hand is not delivery until `verify-delivery`
 reports `delivered`. Supply the full workflow result
 (`artifactType: "dark-factory-result"`, `artifactVersion: 1`), never the compact summary.

@@ -199,21 +199,40 @@ def cmd_apply(a):
     ref = delivery_snapshot(run, final)
     if git('rev-parse', 'HEAD', cwd=repo).strip() != run['head']:
         raise CouncilError('HEAD changed since setup; apply requires the original base')
-    if git('status', '--porcelain', '--untracked-files=no', cwd=repo).strip():
+    status = [row for row in git('status', '--porcelain', '--untracked-files=no', cwd=repo).split('\n') if row]
+    if status and 'deliveryBaseline' not in run:
         raise CouncilError('apply requires a clean tracked checkout and index; existing changes were preserved')
+    # The applied index is compared with the snapshot tree, so it must start as HEAD's: staged or
+    # unmerged changes are refused, while unstaged edits recorded at setup may stay.
+    staged = [row[3:] for row in status if row[0] != ' ']
+    if staged:
+        raise CouncilError('apply requires an index matching HEAD; staged changes were preserved: ' + ', '.join(staged))
     baseline = run.get('deliveryBaseline', {})
-    for path in set(checkout_changes(repo)) | set(baseline):
-        if checkout_file(repo, path) != baseline.get(path):
-            raise CouncilError(f'local file changed since setup and would not pass delivery verification: {path}')
-    paths = git('diff', '--name-only', '-z', run['head'], ref, cwd=repo).split('\0')[:-1]
-    # Refuse collisions with untracked/ignored local files, including a parent path.
     before = tree_files(repo, run['head'])
+    # Tracked changes outside the baseline are reported first, as the clean-checkout refusal was.
+    for path in sorted(set(checkout_changes(repo)) | set(baseline), key=lambda p: (p in baseline or p not in before, p)):
+        actual, want = checkout_file(repo, path), baseline.get(path, before.get(path))
+        if not (actual is None and want is None or actual and want and all(actual[k] == want[k] for k in ('mode', 'blob'))):
+            if path in before and path not in baseline:
+                raise CouncilError(f'tracked file changed since setup: {path}; apply requires a clean tracked checkout apart from '
+                                   'the edits recorded at setup (run.json deliveryBaseline); existing changes were preserved')
+            raise CouncilError(f'local file changed since setup and would not pass delivery verification: {path}')
+    paths = git('diff', '--no-renames', '--name-only', '-z', run['head'], ref, cwd=repo).split('\0')[:-1]
+    # Refuse collisions with untracked/ignored local files, including a parent path.
     for path in paths:
         if path not in before and os.path.lexists(os.path.join(repo, path)):
             raise CouncilError(f'local file would be overwritten: {path}')
         parent = os.path.dirname(path)
         if parent:
             safe_relative(repo, parent)
+    # A local edit kept from setup may not share a path, or a parent directory, with the reviewed
+    # change: applying would overwrite it (git apply itself says only "does not match index").
+    for path in paths:
+        for kept in sorted(baseline):
+            if path == kept or path.startswith(kept + '/') or kept.startswith(path + '/'):
+                raise CouncilError(f'the reviewed change touches {path}, which overlaps the local edit to {kept} recorded at setup '
+                                   '(run.json deliveryBaseline); nothing was applied, and that edit must be committed, '
+                                   'moved or reverted before apply')
     patch = subprocess.check_output(['git', 'diff', '--binary', '--no-ext-diff', run['head'], ref], cwd=repo, close_fds=True)
     if patch:
         for flags in (['--check', '--index'], ['--index']):

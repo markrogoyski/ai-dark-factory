@@ -352,8 +352,8 @@ function pairResult(S, status = 'blocked') {
     forTheOrchestrator: 'Read final.readiness first. Report unresolved findings or missing evidence before any success summary. ' +
       'Spot-check the reviewed snapshot and report the design and implementation review outcomes. The change stays in final.worktree. ' +
       'Readiness unverified means no review finding is open but the run could not measure the snapshot (final.readiness.infrastructure says why): run the gate on the delivered bytes before calling it done. ' +
-      'Deliver only within the user\'s authorization, preserving unrelated edits. With HEAD at the original base, no tracked changes, and only the untracked files recorded at setup (run.json deliveryBaseline), ' +
-      `dark-factory apply --run-dir ${S.run?.runDir ? shq(S.run.runDir) : '<runDir>'} --result <file> stages the reviewed snapshot and checks its tree hash; it refuses any other checkout. ` +
+      'Deliver only within the user\'s authorization, preserving unrelated edits. With HEAD at the original base, nothing staged, and no local edits other than those recorded at setup (run.json deliveryBaseline: unstaged tracked edits and untracked files, none on a path the reviewed change touches), ' +
+      `dark-factory apply --run-dir ${S.run?.runDir ? shq(S.run.runDir) : '<runDir>'} --result <file> stages the reviewed snapshot and checks its tree hash, leaving those recorded edits in place; it refuses any other checkout. ` +
       'Then run dark-factory verify-delivery with the same --run-dir and --result: files copied by hand are not delivered until it reports delivered. ' +
       'For --result, pass the workflow task\'s output file as it stands (the helper reads the result inside it), or omit --result when the run directory holds result.json. ' +
       `Once the delivery is verified, dark-factory cleanup --run-dir ${S.run?.runDir ? shq(S.run.runDir) : '<runDir>'} removes the run's worktrees and refs/council refs (add --all to remove the run directory too). ` +

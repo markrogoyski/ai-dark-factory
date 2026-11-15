@@ -589,6 +589,61 @@ class Verification(TmpDirCase):
         self.assertIn('clean tracked checkout', refused['error'])
         self.assertEqual(council.read(os.path.join(self.repo, 'new.txt')), 'local user file')
 
+    def dirty_run(self, path, text):
+        # An allowDirty run: setup records the unstaged tracked edit in run.json deliveryBaseline.
+        self.put(path, text)
+        self.run = self.cli('init', '--repo', self.repo, '--seats', 'A', '--run-id', 'dirty', '--factory')
+        self.rd, self.wt = self.run['runDir'], self.run['worktrees']['A']
+        council.write(os.path.join(self.rd, 'verify.sh'), 'python3 gate.py')
+        self.config({'FACTORY_GATE': 'serial'})
+        council.write(os.path.join(self.wt, 'value'), 'fixed\n')
+        self.assertIn(path, json.loads(council.read(os.path.join(self.rd, 'run.json')))['deliveryBaseline'])
+
+    def test_apply_keeps_an_unstaged_tracked_edit_recorded_at_setup(self):
+        self.dirty_run('unchanged', 'local edit\n')
+        report = self.report()
+        result = self.cli('apply', '--run-dir', self.rd)
+        self.assertEqual(result['status'], 'applied')
+        self.assertEqual(council.git('write-tree', cwd=self.repo).strip(), result['snapshotTree'])
+        self.assertEqual(self.git('diff', '--cached', '--name-only'), 'value\n')
+        self.assertEqual(council.read(os.path.join(self.repo, 'value')), 'fixed\n')
+        self.assertEqual(council.read(os.path.join(self.repo, 'unchanged')), 'local edit\n')
+        self.assertEqual(self.delivery(report)['status'], 'delivered')
+
+    def test_apply_refuses_a_staged_change_with_a_tracked_baseline(self):
+        self.dirty_run('unchanged', 'local edit\n')
+        self.report()
+        self.git('add', 'unchanged')
+        refused = self.cli('apply', '--run-dir', self.rd, error=True)
+        self.assertIn('index matching HEAD', refused['error'])
+        self.assertIn('unchanged', refused['error'])
+        self.assertEqual(council.read(os.path.join(self.repo, 'value')), 'broken\n')
+        self.assertEqual(self.git('diff', '--cached', '--name-only'), 'unchanged\n')
+
+    def test_apply_refuses_a_reviewed_change_to_a_baseline_path(self):
+        self.dirty_run('value', 'user edit\n')
+        self.report()
+        refused = self.cli('apply', '--run-dir', self.rd, error=True)
+        self.assertIn('overlaps the local edit to value', refused['error'])
+        self.assertEqual(council.read(os.path.join(self.repo, 'value')), 'user edit\n')
+        self.assertFalse(self.git('diff', '--cached'))
+
+    def test_apply_refuses_tracked_changes_made_after_setup(self):
+        self.dirty_run('unchanged', 'local edit\n')
+        self.report()
+        for path, change in (('tests/preserved.py', 'edit'), ('tests/preserved.py', 'delete'), ('unchanged', 'edit')):
+            original = council.read(os.path.join(self.repo, path))
+            if change == 'delete':
+                os.remove(os.path.join(self.repo, path))
+            else:
+                self.put(path, 'changed after setup\n')
+            refused = self.cli('apply', '--run-dir', self.rd, error=True)
+            self.assertIn('tracked file changed since setup: ' + path if path != 'unchanged' else
+                          'local file changed since setup and would not pass delivery verification: unchanged', refused['error'])
+            self.assertEqual(council.read(os.path.join(self.repo, 'value')), 'broken\n')
+            self.assertFalse(self.git('diff', '--cached'))
+            self.put(path, original)
+
     def test_diagnostic_delivery_runs_gate_without_promoting_incomplete_readiness(self):
         report = self.report()
         value = json.loads(council.read(report))

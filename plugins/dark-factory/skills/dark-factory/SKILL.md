@@ -118,7 +118,7 @@ artifact paths. Preserve the report's facts and scorecards; do not recompute the
 The runner leaves implementation changes in `final.worktree` and supplies the diff and
 `final.snapshotRef`; it does not apply them to the main checkout. Deliver the reviewed change
 within the user's existing authorization, checking the main tree and patch applicability first.
-Use `dark-factory apply --run-dir RUN` when the original base and tracked checkout are clean (untracked files recorded at setup in run.json `deliveryBaseline` may remain); it stages the reviewed snapshot and verifies its tree hash without committing. Supply `--result FILE` if needed. Preserve unrelated edits and rerun project checks after application. Creating a factory result
+Use `dark-factory apply --run-dir RUN` when HEAD is the original base, nothing is staged, and the only local edits are those recorded at setup in run.json `deliveryBaseline` (untracked files and, for an `allowDirty` run, unstaged tracked edits, none on a path the reviewed change touches; they stay in place); it stages the reviewed snapshot and verifies its tree hash without committing. Supply `--result FILE` if needed. Preserve unrelated edits and rerun project checks after application. Creating a factory result
 does not itself authorize publishing or deploying it.
 
 Ready Factory and Pair results report delivery as pending. After application and required local-plan updates,
