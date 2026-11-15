@@ -17,7 +17,7 @@ passes `seats`.
 | `astra`, `sol`, `luna` | gpt-6-astra, gpt-6.1-sol, gpt-6-luna | Codex CLI |
 | `gemini` | Gemini 4 Hydrogen | Antigravity CLI (`agy`) |
 | `argon` | Gemini 4 Argon (low, medium and high effort only); only when asked for | Antigravity CLI |
-| `codex:<slug>`, `gemini:<slug>` | any model the CLI offers (`agy models` lists Gemini's) | |
+| `codex:<model-id>`, `gemini:<model-id>` | any model the CLI offers (`agy models` lists Gemini's) | |
 
 Use 2–6 seats. Consensus needs votes from at least two vendors whenever the lineup has more
 than one vendor.
