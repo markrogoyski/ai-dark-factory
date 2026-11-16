@@ -120,6 +120,15 @@ rules on each proposed one, accepted or rejected with evidence; a missing, repea
 ruling gets the review's one correction. An accepted reading is settled for the rest of the run.
 A rejected one becomes an open major finding, which only the reviewer can close.
 
+The reviewer, in design or code review, can stop the run for you. When a finding or a reading
+can be settled only by the user (two requirements that can't both hold as written, or one that
+the reviewer's evidence shows is impossible as written, with no reading inside the task's words
+that settles it), it returns a question quoting each requirement involved, and can rule that
+reading `needs-user`. The run then stops with `needs-user` after that review, as it does when the
+author asks: the review counts, its findings and rulings are recorded, and `questions` holds each
+question with the requirements it quotes. A question without a quoted requirement, or a
+`needs-user` ruling no question cites, gets the review's one correction.
+
 ### Without a design stage
 
 `design: false` (`--no-design` at the start of a string task, or on the Codex runner's command

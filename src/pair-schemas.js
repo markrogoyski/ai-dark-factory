@@ -78,7 +78,12 @@ const PAIR_REVIEW_SCHEMA = strict({ type: 'object', properties: {
   } } },
   rulings: { type: 'array', description: 'Exactly one for each reading still proposed in the readings ledger; [] when none is.',
     items: { type: 'object', properties: {
-      id: { type: 'string' }, ruling: { type: 'string', enum: ['accepted', 'rejected'] }, evidence: { type: 'string' },
+      id: { type: 'string' }, ruling: { type: 'string', enum: ['accepted', 'rejected', 'needs-user'] }, evidence: { type: 'string' },
+    } } },
+  questions: { type: 'array', description: 'Only for a conflict only the user can settle; [] otherwise. A question stops the run.',
+    items: { type: 'object', properties: {
+      question: { type: 'string', description: 'The question, citing the finding or reading ID, with the options you see.' },
+      quoted: { ...PAIR_STRINGS, description: 'The exact words of each requirement involved.' },
     } } },
   criteria: { type: 'array', items: { type: 'object', properties: {
     ...CHECK_SCHEMA.properties.criteria.items.properties, criterion: PAIR_CRITERION_ID,

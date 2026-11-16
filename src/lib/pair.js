@@ -185,7 +185,7 @@ function pairCriteriaError(S, review) {
 
 // A review whose structured fields can be fixed without changing its judgement: one correction.
 function pairCorrectableError(S, review) {
-  return ((S.pair.stage === 'design' || pairChallengesDue(S)) && pairChallengeError(S, review)) || pairCriteriaError(S, review) || pairRulingsError(S, review)
+  return ((S.pair.stage === 'design' || pairChallengesDue(S)) && pairChallengeError(S, review)) || pairCriteriaError(S, review) || pairRulingsError(S, review) || pairQuestionsError(S, review)
 }
 
 // An author reads a requirement other than literally only through the readings ledger, R1, R2, …,
@@ -205,7 +205,8 @@ function pairIngestReadings(S, author) {
   return added
 }
 
-// Every reading still proposed needs exactly one ruling, with evidence, under its ID.
+// Every reading still proposed needs exactly one ruling, with evidence, under its ID. needs-user
+// is a ruling only beside a question that cites the reading.
 function pairRulingsError(S, review) {
   const ids = S.pair.readings.filter(r => r.status === 'proposed').map(r => r.id)
   const rulings = Array.isArray(review?.rulings) ? review.rulings : []
@@ -213,13 +214,36 @@ function pairRulingsError(S, review) {
   const missing = ids.filter(id => !given.includes(id))
   const unknown = given.filter(id => !ids.includes(id))
   const repeated = given.filter((id, i) => ids.includes(id) && given.indexOf(id) !== i)
-  const invalid = rulings.filter(r => ids.includes(r?.id) && (!['accepted', 'rejected'].includes(r.ruling) || !String(r.evidence || '').trim())).map(r => r.id)
-  if (!missing.length && !unknown.length && !repeated.length && !invalid.length) return null
+  const invalid = rulings.filter(r => ids.includes(r?.id) && (!['accepted', 'rejected', 'needs-user'].includes(r.ruling) || !String(r.evidence || '').trim())).map(r => r.id)
+  const unasked = rulings.filter(r => ids.includes(r?.id) && r.ruling === 'needs-user' && !pairQuestionCites(S, review, r.id)).map(r => r.id)
+  if (!missing.length && !unknown.length && !repeated.length && !invalid.length && !unasked.length) return null
   return `The review needs exactly one ruling, accepted or rejected with evidence, for each proposed reading (${ids.join(', ') || 'none is proposed, so rulings=[]'}).` +
     `${missing.length ? ` Missing: ${missing.join(', ')}.` : ''}` +
     `${unknown.length ? ` Not a proposed reading: ${unknown.map(id => JSON.stringify(oneLine(String(id), 80))).join(', ')}.` : ''}` +
     `${repeated.length ? ` Repeated: ${[...new Set(repeated)].join(', ')}.` : ''}` +
-    `${invalid.length ? ` Without a valid ruling or evidence: ${[...new Set(invalid)].join(', ')}.` : ''}`
+    `${invalid.length ? ` Without a valid ruling or evidence: ${[...new Set(invalid)].join(', ')}.` : ''}` +
+    `${unasked.length ? ` Ruled needs-user with no question citing it: ${[...new Set(unasked)].join(', ')}; ask the question, or accept or reject the reading.` : ''}`
+}
+
+// Whether one of the review's questions names a finding or reading ID, in its text or its quotes.
+function pairQuestionCites(S, review, id) {
+  const cited = new RegExp(`\\b${id}\\b`)
+  return (Array.isArray(review?.questions) ? review.questions : []).some(q => cited.test(String(q?.question || '')) ||
+    (Array.isArray(q?.quoted) && q.quoted.some(w => cited.test(String(w || '')))))
+}
+
+// A reviewer's question goes to the user as it stands, so it needs the question and the exact
+// words of every requirement involved.
+function pairQuestionsError(S, review) {
+  const questions = Array.isArray(review?.questions) ? review.questions : []
+  const bad = questions.map((q, i) => !String(q?.question || '').trim() || !Array.isArray(q?.quoted) || !q.quoted.some(w => String(w || '').trim()) ? i + 1 : 0).filter(Boolean)
+  return bad.length ? `Each question needs its text and, in quoted, the exact words of every requirement involved. ${bad.length === 1 ? 'Question' : 'Questions'} ${bad.join(', ')} ${bad.length === 1 ? 'lacks' : 'lack'} one or the other.` : null
+}
+
+// The reviewer's questions as the user reads them, with the requirements they quote.
+function pairReviewQuestions(S, review) {
+  return (Array.isArray(review?.questions) ? review.questions : []).map(q =>
+    `${String(q.question).trim()} Requirements as written: ${q.quoted.map(w => String(w || '').trim()).filter(Boolean).join('; ')}`)
 }
 
 // A challenge may cite, beside checks that cover its criterion, a check that covers only another
@@ -352,6 +376,8 @@ function pairIngestReview(S, review) {
   if (criteriaError) return criteriaError
   const rulingsError = pairRulingsError(S, review)
   if (rulingsError) return rulingsError
+  const questionsError = pairQuestionsError(S, review)
+  if (questionsError) return questionsError
   const resolutions = review.resolutions || []
   const seen = new Set()
   for (const r of resolutions) {
@@ -419,6 +445,7 @@ function pairReadiness(S) {
   if (!r || r.version !== pairVersion(S) || !r.complete) incomplete.push('The current version has no completed review.')
   for (const f of pairOpen(S).filter(f => p.stage === 'code' || f.stage === 'design')) blocked.push(`${f.id} (${f.severity}): ${f.statement}`)
   for (const r of p.readings.filter(r => r.status === 'proposed')) incomplete.push(`Reading ${r.id} has no ruling.`)
+  for (const r of p.readings.filter(r => r.status === 'needs-user')) incomplete.push(`Reading ${r.id} needs a user decision.`)
   if (!S.criteria.length) incomplete.push('No acceptance criteria were established.')
   for (const c of S.criteria) {
     const assessments = (r?.criteria || []).filter(x => x.criterion === c.id)

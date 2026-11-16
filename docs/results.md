@@ -17,7 +17,7 @@ reached your checkout). A `done` status alone says nothing about readiness.
 | `needs-plan` | the task depends on a document the run couldn't find | rerun with the document's absolute path in `plan` |
 | `needs-split` | the task is several independent pieces | run each listed piece on its own, or rerun with `noSplit: true` |
 | `needs-tier` | intake would pick a tier other than the one you pinned | rerun with `tierConfirmed: true`, or with intake's tier |
-| `needs-user` | a question only you can settle (spec review with `spec: 'ask'`, a question most seats raised, a criterion nothing in the run can verify, or a pair author's question) | answer it: `clarifications` for the council, `context` for a new pair run, `answers` for run-plan |
+| `needs-user` | a question only you can settle (spec review with `spec: 'ask'`, a question most seats raised, a criterion nothing in the run can verify, or a question from a pair author or reviewer) | answer it: `clarifications` for the council, `context` for a new pair run, `answers` for run-plan |
 | `blocked` | the run stopped without a usable result, for example a pair whose review budget ran out or that stalled, or a plan with parked tasks | read the open findings and `stopReason` |
 | `preflight` | a CLI the lineup needs can't run from this session; nothing was created. In Claude Code, setup's preflight reports this as `blocked`, with the CLI in `reason` | install or authorize it, or swap its seats ([Choosing the models](models.md)) |
 | `explained`, `prepared` | `--explain` or `--prepare`: nothing was implemented | read the plan it reports |

@@ -156,6 +156,15 @@ async function pairRun() {
       error = pairIngestReview(S, review)
     }
     if (error) { p.stop = error; return pairResult(S, review ? 'blocked' : 'failed') }
+    // A conflict only the user can settle stops the run now, as an author's needs-user does: the
+    // review still counts, and its findings and rulings are recorded.
+    const asked = pairReviewQuestions(S, review)
+    if (asked.length) {
+      p.questions = asked
+      p.stop = String(review.summary || '').trim() || 'The reviewer found a conflict only the user can settle.'
+      log(`pair: ${p.stage} review ${p.reviews.length}: ${asked.length} question(s) for the user`)
+      return pairResult(S, 'needs-user')
+    }
     const ready = pairReadiness(S)
     log(`pair: ${p.stage} review ${p.reviews.length}: ${ready.state}; ${pairOpen(S).length} open finding(s)`)
     if (ready.state === 'ready') {

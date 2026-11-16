@@ -1242,3 +1242,72 @@ test('a review that misses, repeats or invents a reading ruling gets one reviewe
     assert.ok(failed.result.final.readiness.incomplete.includes('Reading R1 has no ruling.'))
   }
 })
+
+test('a reviewer question stops the run for the user at once, with the review recorded and no further author turn', async () => {
+  const conflict = { question: 'P1: tests/config.json is fixed by C1, but the isolation rule forbids writing it. Rename the file, or relax the rule for it?',
+    quoted: ['C1: "The behavior reads tests/config.json."', 'CLAUDE.md: "Tests never write under tests/."'] }
+  for (const native of [false, true]) for (const design of [true, false]) {
+    const { result, calls } = await run({ native, args: { design }, review: (r, n) => {
+      if (n === 1) Object.assign(r, { summary: 'C1 and the isolation rule conflict; the user must choose.', findings: [finding('C1 conflicts with the test isolation rule.')], questions: [conflict] })
+      return r
+    } })
+    assert.equal(result.status, 'needs-user')
+    assert.deepEqual(calls.filter(c => ['author', 'review'].includes(c.kind)).map(c => c.kind), ['author', 'review'], 'no author turn after the question')
+    assert.equal(result.stopReason, 'C1 and the isolation rule conflict; the user must choose.')
+    assert.deepEqual(result.questions, ['P1: tests/config.json is fixed by C1, but the isolation rule forbids writing it. Rename the file, or relax the rule for it? ' +
+      'Requirements as written: C1: "The behavior reads tests/config.json."; CLAUDE.md: "Tests never write under tests/."'])
+    assert.equal(result.reviews.length, 1, 'the review counts')
+    assert.deepEqual(result.reviews[0].questions, [conflict])
+    assert.deepEqual(result.findings.map(f => [f.id, f.status]), [['P1', 'open']])
+    assert.equal(result.final.readiness.state, 'blocked')
+    assert.ok(result.final.readiness.incomplete.includes('C1 and the isolation rule conflict; the user must choose.'))
+    assert.equal(result.summary.questions.length, 1)
+  }
+  // Without a summary the stop still says why.
+  const { result } = await run({ review: r => ({ ...r, summary: ' ', questions: [conflict] }) })
+  assert.equal(result.status, 'needs-user')
+  assert.equal(result.stopReason, 'The reviewer found a conflict only the user can settle.')
+})
+
+test('a reading ruled needs-user stops the run beside the question that cites it; a question must quote its requirements', async () => {
+  const ask = { question: 'R1 reads C1 as a minimum; the plan says "exactly". Keep the list exact, or allow Node 24?', quoted: ['C1: "Runs on Node 20 and 22."'] }
+  for (const native of [false, true]) {
+    let authors = 0
+    const { result, calls } = await run({ native, author: a => ({ ...a, readings: ++authors === 1 ? [reading()] : [] }), review: r => {
+      r.rulings = [{ id: 'R1', ruling: 'needs-user', evidence: 'The plan says "exactly"; CI runs Node 24 too.' }]
+      r.questions = [ask]
+      return r
+    } })
+    assert.equal(result.status, 'needs-user')
+    assert.equal(calls.filter(c => c.kind === 'author').length, 1)
+    assert.deepEqual(result.readings.map(r => [r.id, r.status, r.finding]), [['R1', 'needs-user', '']])
+    assert.ok(result.final.readiness.incomplete.includes('Reading R1 needs a user decision.'))
+    assert.match(result.report.markdown, /\n\nR1: reading needs-user — C1 read as: /)
+  }
+  const state = { pair: { ...L.newPairState(), readings: [{ id: 'R1', status: 'proposed' }, { id: 'R10', status: 'proposed' }] } }
+  const ruling = id => ({ id, ruling: 'needs-user', evidence: 'The plan says "exactly".' })
+  assert.equal(L.pairRulingsError(state, { rulings: [ruling('R1'), ruling('R10')], questions: [{ question: 'Exact or minimum?', quoted: ['R10 C1: "Runs on Node 20 and 22."'] }] }),
+    'The review needs exactly one ruling, accepted or rejected with evidence, for each proposed reading (R1, R10). Ruled needs-user with no question citing it: R1; ask the question, or accept or reject the reading.')
+  assert.equal(L.pairRulingsError(state, { rulings: [ruling('R1'), ruling('R10')], questions: [{ question: 'R1 and R10: exact or minimum?', quoted: ['C1'] }] }), null)
+  assert.equal(L.pairQuestionsError(state, { questions: [] }), null)
+  assert.equal(L.pairQuestionsError(state, { questions: [ask, { ...ask, quoted: [' '] }, { ...ask, question: '' }] }),
+    'Each question needs its text and, in quoted, the exact words of every requirement involved. Questions 2, 3 lack one or the other.')
+  for (const native of [false, true]) {
+    const { result, calls } = await run({ native, review: (r, n) => {
+      if (n <= 2) r.questions = [{ ...ask, quoted: n === 1 ? [] : ask.quoted }]
+      return r
+    } })
+    assert.equal(result.status, 'needs-user', 'the corrected review stops the run')
+    const reviews = calls.filter(c => c.kind === 'review')
+    assert.equal(reviews.length, 2)
+    assert.match(reviews[1].prompt, /Correct the previous structured review\nEach question needs its text and, in quoted, the exact words of every requirement involved\. Question 1 lacks one or the other\./)
+    assert.equal(calls.filter(c => c.kind === 'author').length, 1)
+    let authors = 0
+    const unasked = await run({ native, author: a => ({ ...a, readings: ++authors === 1 ? [reading()] : [] }),
+      review: r => { r.rulings = [ruling('R1')]; return r } })
+    assert.equal(unasked.result.status, 'blocked')
+    assert.match(unasked.result.stopReason, /Ruled needs-user with no question citing it: R1;/)
+    assert.equal(unasked.calls.filter(c => c.kind === 'review').length, 2, 'one bounded correction before stopping')
+    assert.equal(unasked.result.readings[0].status, 'proposed')
+  }
+})
