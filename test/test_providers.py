@@ -189,7 +189,7 @@ sys.exit(int(os.environ.get('CLAUDE_TEST_EXIT', '0')))
 
     def test_timeout_stops_child(self):
         with mock.patch.dict(os.environ, {'CLAUDE_TEST_SLEEP': '10'}):
-            result = self.run_turn(timeout=0.2)
+            result = self.run_turn(timeout=2)  # time to start under load
         self.assertIn('timed out', result['error'])
         session = result['thread']
         council.uuid.UUID(session)
@@ -345,7 +345,7 @@ print(json.dumps({'type': 'turn.completed', 'usage': {'input_tokens': 7}}))
             os.chmod(fake, 0o755)
             spec = {'kind': 'codex', 'runDir': root, 'seat': 'A', 'job': 'A-r0', 'model': 'test',
                     'effort': 'high', 'sandbox': 'workspace-write', 'cwd': root,
-                    'writable': [], 'fresh': False, 'timeout': 0.2, 'schema': False}
+                    'writable': [], 'fresh': False, 'timeout': 2, 'schema': False}  # time to start under load
             jd = os.path.join(root, 'jobs', spec['job'])
             council.write(os.path.join(jd, 'prompt.md'), 'solve')
             with mock.patch.dict(os.environ, {'PATH': bin_dir + os.pathsep + os.environ.get('PATH', '')}):
