@@ -623,9 +623,12 @@ test('author questions and failures return unresolved results without inventing 
     assert.equal(result.status, status)
     assert.equal(result.questions.length, 1)
     assert.notEqual(result.final.readiness.state, 'ready')
+    assert.match(result.report.markdown, /\n\nQuestions for the user:\n\n1\. Which compatibility behavior is required\?$/)
   }
   const { result } = await run({ author: () => null })
   assert.equal(result.status, 'failed')
+  assert.doesNotMatch(result.report.markdown, /Questions for the user/)
+  assert.doesNotMatch((await run({})).result.report.markdown, /Questions for the user/)
 })
 
 test('pair prompts have reviewed golden coverage', async () => {
@@ -824,10 +827,12 @@ test('setup proposals preserve the original task for author and reviewer and con
   assert.equal(result.task, 'Implement the behavior')
   assert.ok(!('effectiveTask' in calls[0].schema.properties))
   assert.match(calls.find(c => c.kind === 'review').prompt, /setup notes cannot waive requirements/)
-  const blocked = await run({ setup: { status: 'needs-user', error: 'Two incompatible requirements.', questions: ['Which signature is required?'] } })
+  const blocked = await run({ setup: { status: 'needs-user', error: 'Two incompatible requirements.', questions: ['Which signature is required?', 'Keep\n  the old flag?'] } })
   assert.equal(blocked.result.status, 'needs-user')
-  assert.deepEqual(blocked.result.questions, ['Which signature is required?'])
+  assert.deepEqual(blocked.result.questions, ['Which signature is required?', 'Keep\n  the old flag?'])
   assert.equal(blocked.calls.filter(c => c.kind === 'author').length, 0)
+  // The report asks what the stop asks, each question on one line.
+  assert.match(blocked.result.report.markdown, /\n\nTwo incompatible requirements\.\n\n(.|\n)*\n\nQuestions for the user:\n\n1\. Which signature is required\?\n2\. Keep the old flag\?(\n|$)/)
 })
 
 test('a whole-suite preservation obligation uses exact snapshot gate evidence without a directory replay', async () => {
@@ -985,6 +990,7 @@ test('setup that finds a criterion unverifiable inside the run stops before any 
     assert.ok(result.notes.some(n => /C1 unverifiable.*Needs the deployed service/.test(n)))
     assert.equal(result.questions.length, 1)
     assert.match(result.questions[0], /^C1 .*The requested behavior works.*deployed service.*Rewrite it/)
+    assert.ok(result.report.markdown.includes(`\n\nQuestions for the user:\n\n1. ${result.questions[0]}`), result.report.markdown)
     assert.equal(calls.filter(c => c.kind === 'author').length, 0)
     assert.notEqual(result.final.readiness.state, 'ready')
   }
@@ -1262,6 +1268,8 @@ test('a reviewer question stops the run for the user at once, with the review re
     assert.equal(result.final.readiness.state, 'blocked')
     assert.ok(result.final.readiness.incomplete.includes('C1 and the isolation rule conflict; the user must choose.'))
     assert.equal(result.summary.questions.length, 1)
+    assert.ok(result.report.markdown.includes('\n\nQuestions for the user:\n\n1. P1: tests/config.json is fixed by C1, but the isolation rule forbids writing it. Rename the file, or relax the rule for it? ' +
+      'Requirements as written: C1: "The behavior reads tests/config.json."; CLAUDE.md: "Tests never write under tests/."\n\nP1: open — '), result.report.markdown)
   }
   // Without a summary the stop still says why.
   const { result } = await run({ review: r => ({ ...r, summary: ' ', questions: [conflict] }) })

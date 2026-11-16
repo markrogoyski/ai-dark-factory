@@ -248,8 +248,10 @@ Factory tier, panel, audit, and historical-evidence options (`tier`, `seats`, `s
 Results open with `summary` (status, readiness, open findings, snapshot, gate result, and the
 cleanup command for after delivery), followed by `design`, `testContract`, `replayMapping`,
 `reviews`, `findings`, `readings` (each with its ruling, also listed in `report.markdown`),
-`stopReason`, `final.replay`, and `final.readiness`. `final.suite` and
-`final.replay` are the measurement summary; the job's `status.json` keeps the output tails.
+`stopReason`, `questions` (when setup, the author or the reviewer stops the run for you, also
+listed in `report.markdown` under "Questions for the user"), `final.replay`, and
+`final.readiness`. `final.suite` and `final.replay` are the measurement summary; the job's
+`status.json` keeps the output tails.
 `final.suite.overrides` (also in `summary.final.suite`) is the explicit `env` object from the
 run's `verification.json` that the measured gate ran with, as the measurement read it, and `{}`
 when there are none; the base environment is never included. When it is non-empty,

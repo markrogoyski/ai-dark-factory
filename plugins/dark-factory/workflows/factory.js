@@ -4765,12 +4765,15 @@ function pairResult(S, status = 'blocked') {
   if (p.stage !== 'code' && ready.state === 'ready') {
     ready.state = 'incomplete'; ready.incomplete.push('Implementation has not been reviewed.')
   }
+  // A stop's questions, from setup, the author or the reviewer, are what the user is asked.
+  const questions = (p.questions || []).map(q => String(q ?? '').replace(/\s+/g, ' ').trim()).filter(Boolean)
   const report = [`Pair: ${S.pairOptions.author.name} authors; ${S.pairOptions.reviewer.name} reviews.`,
     `Readiness: ${ready.state}. Reviews: ${p.reviews.length}/${S.pairOptions.maxReviews}.`,
     `Verification: ${!S.verify ? 'no automated gate configured; no test pass claimed' : !m?.suite?.ran ? 'not run on a final snapshot' : m.suite.passed ? 'passed on the reviewed snapshot' : 'failed on the reviewed snapshot'}.`,
     ...(Object.keys(overrides).length ? [`Verification overrides: the gate ran with explicit environment overrides from verification.json: ${Object.keys(overrides).sort().join(', ')}.`] : []),
     `Replay: ${m?.replay?.records?.length || 0} file/command records; ${m?.replay?.exclusions?.length || 0} overlay exclusions. Base outcomes require reviewer interpretation.`,
     ...ready.infrastructure, ...ready.blocked, ...ready.incomplete,
+    ...(questions.length ? [`Questions for the user:\n\n${questions.map((q, i) => `${i + 1}. ${q}`).join('\n')}`] : []),
     ...p.findings.map(f => `${f.id}: ${f.status} — ${f.statement}${f.resolution ? ` (${f.resolution})` : ''}`),
     ...p.readings.map(r => `${r.id}: reading ${r.status} — ${r.requirement} read as: ${r.reading}${r.evidence ? ` (${r.evidence})` : ''}${r.finding ? `; finding ${r.finding}` : ''}`)].join('\n\n')
   return {
