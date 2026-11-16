@@ -6293,7 +6293,8 @@ async function pairRun() {
     S.repositoryNotes = `${S.repositoryNotes ? `${S.repositoryNotes}\n` : ''}Setup could not find a run-time check for ${u.criterion}, which it wrote: ${oneLine(u.reason, 300) || 'no reason given'}. Check it by inspecting the code and the plan, and say so in the ${pairDesigned(S) ? 'design' : 'handoff'}.`
   if (supplied.length) {
     const text = id => S.criteria.find(c => c.id === id)?.text
-    S.pair.stop = `Setup found ${supplied.length === 1 ? 'a criterion' : 'criteria'} this run cannot verify: ${supplied.map(u => u.criterion).join(', ')}.`
+    S.pair.stop = `Setup found ${supplied.length === 1 ? 'a criterion' : 'criteria'} this run cannot verify: ${supplied.map(u => `${u.criterion} (${oneLine(u.reason, 300) || 'no reason given'})`).join('; ')}.`
+    for (const u of supplied) S.notes.push(`Setup found ${u.criterion} unverifiable inside the run: ${oneLine(u.reason, 300) || 'no reason given'}.`)
     S.pair.questions = supplied.map(u => `${u.criterion}${text(u.criterion) ? ` ("${oneLine(text(u.criterion), 200)}")` : ''} cannot be verified inside the run: ${oneLine(u.reason, 300) || 'no reason given'}. Rewrite it so the run can check it, or drop it?`)
     return pairResult(S, 'needs-user')
   }

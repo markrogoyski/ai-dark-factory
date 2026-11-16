@@ -976,6 +976,8 @@ test('setup that finds a criterion unverifiable inside the run stops before any 
   for (const native of [false, true]) {
     const { result, calls } = await run({ native, setup: { unverifiable: [{ criterion: 'C1', origin: 'supplied', reason: 'Needs the deployed service to answer.' }] } })
     assert.equal(result.status, 'needs-user')
+    assert.match(JSON.stringify(result.final.readiness), /cannot verify: C1 \(Needs the deployed service to answer\.\)/)
+    assert.ok(result.notes.some(n => /C1 unverifiable.*Needs the deployed service/.test(n)))
     assert.equal(result.questions.length, 1)
     assert.match(result.questions[0], /^C1 .*The requested behavior works.*deployed service.*Rewrite it/)
     assert.equal(calls.filter(c => c.kind === 'author').length, 0)
