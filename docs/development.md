@@ -25,17 +25,22 @@ the Makefile; `test/test_git_environment.py` keeps the three lists equal).
 `NODE=… PYTHON=…` choose the interpreters that run the gates; scripts the tests start through
 their shebangs still use `node` and `python3` from `PATH`.
 
-The pieces of `make check`:
+The pieces of `make check`. The quick ones run first, then `unit` and `host-test` run side by
+side; `host-test` is one `node --test` run whose files run in parallel, so it lasts about as long
+as its slowest file:
 
     make syntax                  # every script, runner, helper, test, fixture and shell script parses (static parses the workflows)
     node test/sim.mjs            # the real script against stub agents, and bin/dark-factory against a stub agy and real git
     SIM_ONLY=scenarioBallot,scenarioMeasure node test/sim.mjs   # just those
     node --test test/logic.mjs test/pair.mjs test/improvements.mjs # decision logic, and Pair scenarios through both hosts
     make host-test               # Codex routing, runner, installation, checkpoints, run-plan, engine pinning and provider policy, with stub CLIs
-    python3 -B -m unittest discover -s test -p 'test_*.py'      # bin/dark-factory: pure functions, and jobs on temporary repositories
+    python3 -B -m unittest discover -q -s test -p 'test_*.py'   # bin/dark-factory: pure functions, and jobs on temporary repositories
     node test/static.mjs         # scripts parse, `meta` is a plain literal, src/lib stays pure
     node test/hash-parity.mjs    # the JS and Python prompt hashes agree
     node tools/build.mjs --check # the built workflows and policy.mjs are what src/ builds to
+
+`test/validation-overhead.mjs` times one pause and resume (about 30 s);
+`VALIDATION_SAMPLES=3 node --test test/validation-overhead.mjs` takes three samples for a median.
 
 **Prompt golden files.** `test/golden/<run>/<kind>.txt` holds the rendered prompt of each kind
 (setup, solve, debate, checker, panel, ratify, relay and so on) for fixed scenarios, and the

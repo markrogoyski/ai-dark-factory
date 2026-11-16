@@ -29,7 +29,9 @@ SHELL_SOURCES  = install.sh install-codex.sh .githooks/pre-commit
 .DEFAULT_GOAL := check
 .PHONY: check test logic host-test build build-check static parity unit syntax installed hooks unhooks clean
 
-check: syntax build-check static parity unit logic test host-test
+# The quick gates run first; then the two long ones, unit and host-test, run side by side.
+check: syntax build-check static parity logic test
+	@$(MAKE) --no-print-directory -j2 unit host-test
 	@echo "check: all passed"
 
 build:
@@ -44,11 +46,16 @@ logic:
 test:
 	$(NODE) test/sim.mjs
 
+# One node --test run, so its files run in parallel and it lasts about as long as the slowest file.
+HOST_TESTS = host-logic codex-runner codex-install checkpoint run-plan delivery-results \
+  engine-identity engine-isolation engine-closure provenance policy-bundle engine-bootstrap \
+  pinned-providers pinned-state pinned-delivery \
+  provider-policy provider-settings provider-routing live-compatibility engine-imports \
+  engine-loader-bindings engine-loader-controls engine-publication validation-overhead \
+  pin-diagnostics engine-links engine-descriptors provider-refusal launch-prepare
+
 host-test:
-	$(NODE) --test test/host-logic.mjs test/codex-runner.mjs test/codex-install.mjs test/checkpoint.mjs test/run-plan.mjs test/delivery-results.mjs
-	$(NODE) --test test/engine-identity.mjs test/engine-isolation.mjs test/engine-closure.mjs test/provenance.mjs test/policy-bundle.mjs test/engine-bootstrap.mjs test/pinned-providers.mjs test/pinned-state.mjs test/pinned-delivery.mjs
-	$(NODE) --test test/provider-policy.mjs test/provider-settings.mjs test/provider-routing.mjs test/live-compatibility.mjs test/engine-imports.mjs test/engine-loader-bindings.mjs test/engine-loader-controls.mjs test/engine-publication.mjs test/validation-overhead.mjs
-	$(NODE) --test test/pin-diagnostics.mjs test/engine-links.mjs test/engine-descriptors.mjs test/provider-refusal.mjs test/launch-prepare.mjs
+	$(NODE) --test $(HOST_TESTS:%=test/%.mjs)
 
 static:
 	$(NODE) test/static.mjs
@@ -57,7 +64,7 @@ parity:
 	$(NODE) test/hash-parity.mjs
 
 unit:
-	$(PYTHON) -B -m unittest discover -s test -p 'test_*.py'
+	$(PYTHON) -B -m unittest discover -q -s test -p 'test_*.py'
 
 # The built workflows are parsed by `static`.
 syntax:

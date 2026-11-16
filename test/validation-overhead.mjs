@@ -30,7 +30,9 @@ test('offline validation measurements retain mutation detection', async t => {
   for (const command of ['guard', 'hook']) measure(command, () => { const r = call(command); assert.equal(r.status, 0, r.stdout + r.stderr) })
   const helper = join(pin.root, 'bin/dark-factory')
   measure('helper', () => assert.equal(f.run(helper, ['hash', '--file', f.descriptor], { DARK_FACTORY_PIN: JSON.stringify(pin) }).status, 0))
-  measure('pauseAndResume', () => { const p = paused(f); assert.equal(p.resume().final?.readiness?.state, 'ready') })
+  // A pause and resume takes about 30 s; one sample keeps the gate short. VALIDATION_SAMPLES=3 for a median.
+  measure('pauseAndResume', () => { const p = paused(f); assert.equal(p.resume().final?.readiness?.state, 'ready') },
+    Number(process.env.VALIDATION_SAMPLES) || 1)
   const instrumentation = { NODE_OPTIONS: f.env.NODE_OPTIONS + ` --import=${join(root, 'test/fixtures/validation-probe.mjs')}`, VALIDATION_TRACE: trace }
   const observations = {}
   for (const operation of ['export', 'guard', 'hook', 'helper', 'resume']) {
