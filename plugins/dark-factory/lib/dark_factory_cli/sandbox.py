@@ -4,6 +4,7 @@ import json
 import os
 import re
 import shutil
+import ssl
 import subprocess
 import tempfile
 import urllib.error
@@ -99,12 +100,30 @@ def openrouter_roots(run_dir):
     return roots
 
 
+# Where a platform keeps its trusted roots: macOS, then Debian/Ubuntu/Alpine, then Fedora/RHEL.
+SYSTEM_CA_BUNDLES = ('/etc/ssl/cert.pem', '/etc/ssl/certs/ca-certificates.crt', '/etc/pki/tls/certs/ca-bundle.crt')
+
+
+def tls_context(bundles=SYSTEM_CA_BUNDLES):
+    """A verifying TLS context. python.org's macOS Python ships an OpenSSL whose default store is
+    empty until its Install Certificates script runs, so every HTTPS call fails verification; when
+    the default store holds no CA certificate, the first system bundle that exists is loaded.
+    Verification is never turned off."""
+    context = ssl.create_default_context()
+    if not context.cert_store_stats()['x509_ca']:
+        for path in bundles:
+            if os.path.isfile(path):
+                context.load_verify_locations(cafile=path)
+                break
+    return context
+
+
 def http_get(url, token=None, timeout=20):
     """The helper's only network call, made by the OpenRouter preflight: one GET. Returns (HTTP status,
     body text); raises OSError when the server can't be reached."""
     request = urllib.request.Request(url, headers={'Authorization': f'Bearer {token}'} if token else {})
     try:
-        with urllib.request.urlopen(request, timeout=timeout) as response:
+        with urllib.request.urlopen(request, timeout=timeout, context=tls_context()) as response:
             return response.status, response.read().decode('utf-8', 'replace')
     except urllib.error.HTTPError as e:
         return e.code, ''

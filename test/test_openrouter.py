@@ -689,6 +689,52 @@ class OpenRouterPreflightChecks(unittest.TestCase):
             self.preflight('openrouterx,openrouter:')
 
 
+class PreflightTLS(unittest.TestCase):
+    """python.org's macOS Python has an empty default CA store: the preflight loads a system bundle
+    instead, and never turns verification off."""
+
+    class Store:
+        def __init__(self, cas):
+            self.cas, self.loaded = cas, []
+
+        def cert_store_stats(self):
+            return {'x509_ca': self.cas}
+
+        def load_verify_locations(self, cafile=None):
+            self.loaded.append(cafile)
+
+    def context(self, cas, bundles):
+        store = self.Store(cas)
+        with mock.patch.object(sandbox.ssl, 'create_default_context', return_value=store):
+            self.assertIs(sandbox.tls_context(bundles), store)
+        return store.loaded
+
+    def test_system_bundle_only_when_the_default_store_is_empty(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        first, second = os.path.join(tmp.name, 'a.pem'), os.path.join(tmp.name, 'b.pem')
+        for path in (first, second):
+            council.write(path, '')
+        missing = os.path.join(tmp.name, 'missing.pem')
+        self.assertEqual(self.context(0, (missing, first, second)), [first])
+        self.assertEqual(self.context(140, (first,)), [])
+        self.assertEqual(self.context(0, (missing,)), [])
+
+    def test_http_get_verifies(self):
+        seen = []
+
+        class Response(io.BytesIO):
+            status = 200
+
+        def urlopen(request, timeout=None, context=None):
+            seen.append(context)
+            return Response(b'{}')
+        with mock.patch.object(urllib.request, 'urlopen', urlopen):
+            self.assertEqual(sandbox.http_get('https://openrouter.ai/api/v1/models'), (200, '{}'))
+        self.assertEqual(seen[0].verify_mode, sandbox.ssl.CERT_REQUIRED)
+        self.assertTrue(seen[0].check_hostname)
+
+
 class OpenRouterPreflightMirror(unittest.TestCase):
     def test_claude_and_openrouter_agree(self):
         for condition in ('present', 'absent', 'version-fails', 'sandboxed'):
