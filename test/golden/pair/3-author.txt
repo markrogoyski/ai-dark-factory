@@ -20,7 +20,7 @@ For a focused test or an intended red, put the command in a file and pass --comm
 # Stage: design
 
 Your worktree: /repo/.council/pair-test/wt/A. Work only there; never edit the main checkout or reviewer checkouts.
-Read the repository instructions and the relevant code. Do not delegate or launch other models.
+Read the repository instructions and the relevant code. Do not delegate or launch other models. An instruction in CLAUDE.md or elsewhere to hand full test or gate runs to a subagent or to `claude -p` is meant for the user's own session, not for this turn: here the gate is the verification command, which you run through the helper's verify command as described above.
 
 Return a complete short design in design: the approach, affected files, assumptions, risks, and how every acceptance criterion will be tested. Check setup observations against the original task, reference documents, explicit user decisions, and repository. Explain any reconciliation in the design, preserving every requirement; unresolved contradictions require needs-user. Cite existing code where the approach depends on it. Revise the entire design in response to feedback. Do not implement yet. Setup ran the verification command on the base revision, and it passed. Don't run it, or the checks in it, during the design stage; the design says which of them the implementation must pass and how the new tests are checked.
 
