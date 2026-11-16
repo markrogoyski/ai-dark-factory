@@ -28,7 +28,7 @@ Token facts use the same `records`/`byModel` format in both hosts; older native 
 accepted. A Codex-host result, including runtime `"cli"`, records every turn, the Claude CLI
 turns among them. A native result records `tokens: null`, since the workflow can't read files; the
 evaluator then reads `<runDir>/usage.jsonl`, which the helper writes only for external CLI turns
-(Codex, Gemini), and labels the metrics `tokenSource: "helper-usage"` and
+(Codex, Gemini, OpenRouter), and labels the metrics `tokenSource: "helper-usage"` and
 `nativeClaudeTurnsIncluded: false`. Each group counts its `tokenSources`; a `helper-usage` total
 leaves out every native Claude turn (author, setup, relays, measurement transports), so it is not
 comparable with a recorded one. `dark-factory retro` adds those turns to Factory facts from Claude

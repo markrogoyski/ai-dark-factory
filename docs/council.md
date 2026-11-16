@@ -49,7 +49,7 @@ and Architecture tiers reuse its setup, spec review and debate stages.
   about the request --> stop with needs-user
 ```
 
-1. **Setup.** One Opus agent first runs `dark-factory preflight` for the Codex and Gemini CLIs the
+1. **Setup.** One Opus agent first runs `dark-factory preflight` for the Codex, Gemini and OpenRouter CLIs the
    lineup and panel need, and stops the run, before anything is created, if one can't start
    from this session (with the fix, or the seat to swap). Then it creates the run directory and
    a git worktree per seat, finds the verification command, measures the baseline, and writes
@@ -206,7 +206,7 @@ each seat's reading to what the decision needs:
 - **Memory for Claude seats.** Claude seats are fresh agents each turn, so each one returns
   private notes of under about 400 words (key file:line references, what it verified, its read
   on each position). The notes are pasted into that seat's next prompt and nobody else sees
-  them. Codex and Gemini seats keep their own thread instead.
+  them. Codex, Gemini and OpenRouter seats keep their own thread instead.
 - **Length limits.** Posts should stay under about 800 words (implement), 1,500
   (investigate) or 2,000 (design). Only the post file counts: long material the task asks for,
   such as exact edits or logs, goes in separate files in the room. Checkers count the words, and
@@ -241,7 +241,7 @@ accepts:
 | `allowDirty` | false | implement mode refuses uncommitted tracked changes, since worktrees branch from HEAD |
 | `narrow` | true | after a round without consensus, positions with no support leave contention and their authors review |
 | `retro` | true | every agent may leave a process note, and a retro agent suggests workflow changes at the end; see [Process retro](process-retro.md) |
-| `timeoutMin` | 90 | deadline for a Codex or Gemini turn, in minutes: one number, or per phase `{spec, solve, debate, final, ratify, panel, ballot, audit}`. A turn that hits it is not retried |
+| `timeoutMin` | 90 | deadline for a Codex, Gemini or OpenRouter turn, in minutes: one number, or per phase `{spec, solve, debate, final, ratify, panel, ballot, audit}`. A turn that hits it is not retried |
 | `spec` | `{coverage: 'astra', intent: 'opus'}` | the spec review before any seat starts (step 2). `'ask'` stops for your answer on questions only you can settle instead of assuming; an object swaps a lens's model, sets `effort`, or `ask: true`; `false` skips it |
 | `audit` | `{correctness: 'astra', design: 'opus'}` | implement mode: the independent audit of the final version (step 10). Swap a lens's model, e.g. `{design: 'sonnet'}`, or set `effort` for both; `false` skips it |
 | `ballot` | false | experiment: when a round ends one vote short of consensus (and another round is left), every seat votes again once that round's checks are in, instead of debating a full round more |
@@ -288,7 +288,7 @@ If the council stops to ask you a question, you get the debate so far with it.
 
 Nothing touches your tree until you approve; then the final diff is applied with `git apply`.
 
-    dark-factory usage   --run-dir <runDir>   # tokens: Codex and Gemini per model, Claude agents per model and role
+    dark-factory usage   --run-dir <runDir>   # tokens: Codex, Gemini and OpenRouter per model, Claude agents per model and role
     dark-factory jobs    --run-dir <runDir>   # job status, for debugging
     dark-factory cleanup --run-dir <runDir>   # drop worktrees + refs, keep the room
     dark-factory cleanup --run-dir <runDir> --all

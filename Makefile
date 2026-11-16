@@ -41,7 +41,7 @@ build-check:
 	$(NODE) tools/build.mjs --check
 
 logic:
-	$(NODE) --test test/logic.mjs test/pair.mjs test/improvements.mjs
+	$(NODE) --test test/logic.mjs test/pair.mjs test/improvements.mjs test/openrouter-logic.mjs
 
 test:
 	$(NODE) test/sim.mjs
@@ -52,7 +52,8 @@ HOST_TESTS = host-logic codex-runner codex-install checkpoint run-plan delivery-
   pinned-providers pinned-state pinned-delivery \
   provider-policy provider-settings provider-routing live-compatibility engine-imports \
   engine-loader-bindings engine-loader-controls engine-publication validation-overhead \
-  pin-diagnostics engine-links engine-descriptors provider-refusal launch-prepare
+  pin-diagnostics engine-links engine-descriptors provider-refusal launch-prepare \
+  openrouter-host pinned-openrouter
 
 host-test:
 	$(NODE) --test $(HOST_TESTS:%=test/%.mjs)

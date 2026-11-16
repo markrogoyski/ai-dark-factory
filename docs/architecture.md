@@ -33,14 +33,14 @@ The same generated workflow file runs on both hosts; only the runtime around it 
   workflows/<workflow>.js                         workflows/<workflow>.js
      |                                               |
      +-- Claude turns: subagents                     +-- every model turn: a CLI session
-     +-- Codex and Gemini turns: a Haiku relay       |   (codex exec, claude -p, agy)
+     +-- Codex, Gemini, OpenRouter turns: a relay    |   (codex exec, claude -p, agy)
      |   agent runs `dark-factory seat-run`          +-- helper calls: run directly
      +-- other helper calls: an agent runs them      |
      |   (setup's init, checks, measurements)        |
      v                                               v
   +-------------------------------------------------------------------------------+
   | bin/dark-factory, the Python helper: worktrees, snapshots, gate and replay    |
-  | jobs, Codex and Gemini turns, apply, verify-delivery, usage, retro            |
+  | jobs, Codex, Gemini, OpenRouter turns, apply, verify-delivery, usage, retro   |
   +-------------------------------------------------------------------------------+
      |
      v
@@ -108,13 +108,16 @@ The same generated workflow file runs on both hosts; only the runtime around it 
   forbids even temp files (zsh heredocs, Rscript), so it runs in workspace-write from an empty
   scratch directory under the run: it reads everything and writes only there and to temp. Long work runs as detached jobs, polled with `dark-factory wait`, so it outlives the
   Bash tool's 10-minute limit.
-- **Codex and Gemini seats.** Each turn goes through a Haiku relay agent, since a workflow script can't
+- **Codex, Gemini and OpenRouter seats.** Each turn goes through a Haiku relay agent, since a workflow script can't
   run commands itself. The relay runs `dark-factory seat-run`, which reads the prompt from the
   relay's own transcript (Claude Code saves every agent's prompt), checks its hash, and runs
   `codex exec` or `agy -p` (or, on later turns, resumes the seat's Codex thread or agy
-  conversation). No model copies the prompt: in
+  conversation). An OpenRouter seat (`openrouter:<model-id>`) runs `claude -p` with the
+  endpoint, its key and a run-owned `CLAUDE_CONFIG_DIR` in that process's environment only; it
+  counts toward the votes needed but never as a vendor of its own (see [Choosing the
+  models](models.md#openrouter-seats)). No model copies the prompt: in
   the first live run, Haiku dropped a line of a 13 KB prompt three times. Copying it by hand is
-  only the fallback, hash-checked, with Sonnet as the second relay. Codex and Gemini seats keep
+  only the fallback, hash-checked, with Sonnet as the second relay. These seats keep
   their own memory across rounds, and after round 0 they get only the round-specific part of
   the prompt.
 - **What the relay reports.** The relay returns the CLI's outcome as fields (`status`
@@ -139,7 +142,9 @@ The same generated workflow file runs on both hosts; only the runtime around it 
     suite and cross-tests run in. Where a sandbox refuses to write `.git/worktrees`, a `snap/` or `scratch/` checkout is
     instead a standalone repository with its git dir beside it (`<name>.gitdir`), borrowing the main repository's objects.
     Seat worktrees have no such fallback, since seats commit in them: setup runs `init` outside the Bash sandbox.
-  - `jobs/` holds Codex, Gemini and measurement jobs.
-  - `usage.jsonl` records Codex and Gemini token use.
+  - `jobs/` holds Codex, Gemini, OpenRouter and measurement jobs.
+  - `usage.jsonl` records Codex, Gemini and OpenRouter token use (tokens only).
+  - `openrouter/<seat>/` holds an OpenRouter seat's Claude configuration and transcripts;
+    `cleanup` deletes it, with or without `--all`.
   - `retro.md` and `retro-data.md` hold the process retro and the notes it drew on.
 

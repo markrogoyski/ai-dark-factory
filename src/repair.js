@@ -5,7 +5,7 @@ async function boundedReview(a, W, round, tag) {
   const prompt = repairReviewPrompt(S, a, W, round, tag, checkout)
   const schema = S.tier === 'architecture' ? PLAN_REVIEW_SCHEMA : historyCheck(S) ? FACTORY_AUDIT_SCHEMA : AUDIT_SCHEMA
   if (a.vendor === 'claude' && !hostRuntime) return ask(prompt, { label: `${round} ${a.lens}: ${a.key}`, phase: 'Audit', schema, model: a.model, effort: a.effort }, 'auditor', a.name)
-  return externalTurn({ key: `${round}-${a.lens}`, threadKey: `audit-${round}-${a.lens}`, fresh: true,
+  return externalTurn({ key: `${round}-${a.lens}`, threadKey: `audit-${round}-${a.lens}`, configKey: `audit-${a.lens}`, fresh: true,
     vendor: a.vendor, model: a.model, effort: a.effort, role: 'auditor', who: a.name,
     sandbox: S.mode === 'implement' ? 'workspace-write' : 'read-only', cwd: S.mode === 'implement' ? checkout : S.run.repoRoot,
     writable: S.mode === 'implement' ? [`${S.run.room}/tests`, `${S.run.room}/${round}`, `${S.run.runDir}/jobs`, `${S.run.runDir}/logs`] : [],

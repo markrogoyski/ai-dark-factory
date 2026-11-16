@@ -218,7 +218,7 @@ Object arguments, or the Codex runner's `--args-file`:
 | `verify` | found by setup | the verification command |
 | `repo` | session cwd | run against another repository |
 | `allowDirty` | false | worktrees start at HEAD, so tracked local edits are refused unless set |
-| `timeoutMin` | 90 | deadline for a Codex or Gemini turn, in minutes |
+| `timeoutMin` | 90 | deadline for a Codex, Gemini or OpenRouter turn, in minutes |
 | `retro` | true | `false` (`--no-retro`) turns off the [process retro](process-retro.md) |
 | `runtime` | native | `"cli"` (`--runtime cli`) runs on the standalone runner; Claude Code only |
 

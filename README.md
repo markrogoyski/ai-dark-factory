@@ -12,7 +12,9 @@ It is a workflow engine for Claude Code and Codex that has independent agents ch
 
 The seats come from different vendors. The Claude entry point defaults to Claude Opus, Claude
 Sonnet, Codex Astra and Gemini Hydrogen. The Codex entry point defaults to Claude Opus, Codex Astra
-and Codex Sol seats with OpenAI reviewers, and also supports explicit Gemini seats.
+and Codex Sol seats with OpenAI reviewers, and also supports explicit Gemini seats. Either can also
+seat any model OpenRouter serves (`openrouter:<model-id>`, with `OPENROUTER_API_KEY` set); see
+[Choosing the models](docs/models.md#openrouter-seats).
 
 For example, to have a council work out a subtle bug:
 

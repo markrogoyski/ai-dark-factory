@@ -88,7 +88,7 @@ async function hostAgent(prompt, opts, role, who, extra = {}) {
         keepHostDiagnostics(opts.label, result)
         if (result.status !== 'done') S.notes.push(`${role} turn ${opts.label} failed: ${oneLine(result.error || result.status, 300)}`)
       },
-      timeoutMin: timeoutFor(role), ...(role === 'setup' ? { preflightVendors: externalVendors(S), setupRunId: setupRunId(S) } : {}), ...extra })
+      timeoutMin: timeoutFor(role), ...(role === 'setup' ? { preflightVendors: preflightTargets(S), setupRunId: setupRunId(S) } : {}), ...extra })
   } catch (e) {
     if (fatalTurnError(e)) throw e
     S.notes.push(`${role} turn ${opts.label} failed: ${oneLine(e && e.message || e, 300)}`)
@@ -120,18 +120,21 @@ async function externalTurn(o, prompt, schema, label, ph) {
     return null
   }
   if (hostRuntime) {
+    // configKey names an OpenRouter seat's configuration directory; other requests stay as they were.
+    const { configKey, ...plain } = o
+    const req = o.vendor === 'openrouter' ? o : plain
     let r
     try {
-      r = await hostRuntime.turn({ ...o, prompt: payload, schema: full, label, phase: ph,
+      r = await hostRuntime.turn({ ...req, prompt: payload, schema: full, label, phase: ph,
         run: S.run, expect: hash, timeoutMin: minutes })
       if (o.recoveryPost && r && r.status === 'error' && r.recoverySession &&
-          !['auth', 'quota', 'cancelled', 'sandboxed'].includes(r.errorClass)) {
+          !['auth', 'quota', 'cancelled', 'sandboxed', 'model', 'leak'].includes(r.errorClass)) {
         keepHostDiagnostics(label, { ...r, status: 'error' })
         S.notes.push(`${V} turn ${o.key} failed: ${oneLine(r.error || r.status, 300)}. ` +
           'Its post exists; requesting structured output once from the same session.')
         const recovery = `${recoverSeatPrompt(S, o.recoveryPost)}\n\nSet \`turn\` in your output to exactly "${tag}".\n\n<<<OUTPUT_SCHEMA\n${JSON.stringify(full)}\nOUTPUT_SCHEMA>>>\n`
         reserveTurn()
-        r = await hostRuntime.turn({ ...o, key: `${o.key}-recover`, recoveryPost: undefined,
+        r = await hostRuntime.turn({ ...req, key: `${o.key}-recover`, recoveryPost: undefined,
           resumeSession: r.recoverySession, fresh: false, sandbox: 'read-only', writable: [], effort: 'low',
           prompt: recovery, schema: full, label: `${label} (recover output)`, phase: ph,
           run: S.run, expect: promptHash(recovery), timeoutMin: Math.min(minutes || 3, 3) })
@@ -164,7 +167,9 @@ async function externalTurn(o, prompt, schema, label, ph) {
       '--model', shq(o.model), '--effort', o.effort, '--sandbox', o.sandbox, '--cwd', shq(o.cwd),
       ...o.writable.flatMap(w => ['--writable', shq(w)]),
       '--prompt-file', shq(file), '--expect', hash, ...(o.fresh ? ['--fresh'] : []), ...(minutes ? ['--timeout-min', minutes] : []),
-      ...(o.checkout ? ['--checkout', shq(o.checkout)] : [])].join(' ')
+      ...(o.checkout ? ['--checkout', shq(o.checkout)] : []),
+      // An OpenRouter seat keeps one Claude configuration directory across its turns, named here.
+      ...(o.vendor === 'openrouter' ? ['--config-key', shq(o.configKey || o.threadKey)] : [])].join(' ')
     const r = await ask(relayPrompt(S, o.vendor, file, cmd, o.key, payload, hash), {
       label: `${label} (relay${relayModel === 'haiku' ? '' : ': sonnet'})`, phase: ph,
       schema: relaySchema(full), model: relayModel, effort: 'low',
@@ -214,12 +219,12 @@ function auditTurn(a, W, round) {
   if (a.vendor === 'claude' && !hostRuntime) return ask(prompt, { label, phase: 'Audit', schema, model: a.model, effort: a.effort }, 'auditor', a.name)
   if (S.tier === 'architecture') {
     return externalTurn({
-      key: `${roundTag(round)}-${a.lens}`, threadKey: `audit-${a.lens}`, fresh: round === 'H', vendor: a.vendor, model: a.model, effort: a.effort,
+      key: `${roundTag(round)}-${a.lens}`, threadKey: `audit-${a.lens}`, configKey: `audit-${a.lens}`, fresh: round === 'H', vendor: a.vendor, model: a.model, effort: a.effort,
       role: 'auditor', who: a.name, sandbox: 'read-only', cwd: S.run.repoRoot, writable: [], timeoutKind: 'audit',
     }, prompt, schema, label, 'Audit')
   }
   return externalTurn({
-    key: `${roundTag(round)}-${a.lens}`, threadKey: `audit-${a.lens}`, fresh: round === 'H', vendor: a.vendor, model: a.model, effort: a.effort,
+    key: `${roundTag(round)}-${a.lens}`, threadKey: `audit-${a.lens}`, configKey: `audit-${a.lens}`, fresh: round === 'H', vendor: a.vendor, model: a.model, effort: a.effort,
     role: 'auditor', who: a.name, sandbox: 'workspace-write', cwd: auditCheckout(S, a, round),
     writable: [`${S.run.room}/tests`, `${S.run.room}/${roundTag(round)}`,
       ...(S.tier ? [`${S.run.runDir}/jobs`, `${S.run.runDir}/logs`] : [])], timeoutKind: 'audit',
@@ -235,7 +240,7 @@ function seatTurn(s, round, prompt, schema) {
     return ask(prompt, { label, phase: ph, schema: NOTE_SCHEMAS.get(schema) || schema, model: s.model, effort: s.effort }, 'seat', s.name)
   }
   return externalTurn({
-    key: `${s.L}-${tag}`, threadKey: s.L, fresh: false, vendor: s.vendor, model: s.model, effort: s.effort, role: 'seat', who: s.name,
+    key: `${s.L}-${tag}`, threadKey: s.L, configKey: s.L, fresh: false, vendor: s.vendor, model: s.model, effort: s.effort, role: 'seat', who: s.name,
     sandbox: 'workspace-write', cwd: s.wt, writable: [S.run.room,
       ...(S.tier ? [`${S.run.runDir}/jobs`, `${S.run.runDir}/logs`] : [])], timeoutKind: timeoutKindOf(round),
     ...(hostRuntime && typeof round === 'number' ? { recoveryPost: postPath(S, s.L, round) } : {}),
@@ -248,7 +253,7 @@ function panelRun(k, ids) {
   return parallel(S.panel.map(m => () => m.vendor === 'claude' && !hostRuntime
     ? ask(prompt, { label: `panel ${tag}: ${m.key}`, phase: phaseOf(k), schema: PANEL_SCHEMA, model: m.model, effort: m.effort }, 'panel', m.name)
     : externalTurn({
-        key: `panel-${m.key}-${tag}`, threadKey: `panel-${m.key}-${tag}`, fresh: true, vendor: m.vendor, model: m.model, effort: m.effort, role: 'panel', who: m.name,
+        key: `panel-${panelKey(S, m)}-${tag}`, threadKey: `panel-${panelKey(S, m)}-${tag}`, configKey: `panel-${panelKey(S, m)}`, fresh: true, vendor: m.vendor, model: m.model, effort: m.effort, role: 'panel', who: m.name,
         sandbox: 'read-only', cwd: S.run.repoRoot, writable: [], timeoutKind: 'panel',
       }, prompt, PANEL_SCHEMA, `panel ${tag}: ${m.key}`, phaseOf(k))))
 }
@@ -344,7 +349,7 @@ function specTurn(r) {
   const label = `spec ${r.lens}: ${r.key}`
   if (r.vendor === 'claude' && !hostRuntime) return ask(prompt, { label, phase: 'Spec', schema: SPEC_SCHEMA, model: r.model, effort: r.effort }, 'spec', r.name)
   return externalTurn({
-    key: `spec-${r.lens}`, threadKey: `spec-${r.lens}`, fresh: true, vendor: r.vendor, model: r.model, effort: r.effort, role: 'spec', who: r.name,
+    key: `spec-${r.lens}`, threadKey: `spec-${r.lens}`, configKey: `spec-${r.lens}`, fresh: true, vendor: r.vendor, model: r.model, effort: r.effort, role: 'spec', who: r.name,
     sandbox: 'read-only', cwd: S.run.repoRoot, writable: [], timeoutKind: 'spec',
   }, prompt, SPEC_SCHEMA, label, 'Spec')
 }
@@ -365,7 +370,7 @@ async function runSpecReview() {
   applySpecPanel(S, await parallel(S.panel.map(m => () => m.vendor === 'claude' && !hostRuntime
     ? ask(prompt, { label: `panel spec: ${m.key}`, phase: 'Spec', schema: SPEC_PANEL_SCHEMA, model: m.model, effort: m.effort }, 'panel', m.name)
     : externalTurn({
-        key: `panel-${m.key}-spec`, threadKey: `panel-${m.key}-spec`, fresh: true, vendor: m.vendor, model: m.model, effort: m.effort, role: 'panel', who: m.name,
+        key: `panel-${panelKey(S, m)}-spec`, threadKey: `panel-${panelKey(S, m)}-spec`, configKey: `panel-${panelKey(S, m)}`, fresh: true, vendor: m.vendor, model: m.model, effort: m.effort, role: 'panel', who: m.name,
         sandbox: 'read-only', cwd: S.run.repoRoot, writable: [], timeoutKind: 'panel',
       }, prompt, SPEC_PANEL_SCHEMA, `panel spec: ${m.key}`, 'Spec'))))
   const { todo, open } = specTodo(S)

@@ -21,7 +21,8 @@ node plugins/dark-factory/bin/dark-factory-codex --pin-engine /path/to/frozen-en
 - **What refuses.** Anything the admission policy can't account for stops the run before work
   starts, with redacted diagnostics on stderr: provider settings, plugins, hooks or MCP servers
   that could run code or widen write access; managed or unknown policy sources; Gemini seats
-  (agy pinning is unsupported); and Run-plan, which pinning does not support. Unpinned runs are
+  (agy pinning is unsupported); OpenRouter seats are pinned as the Claude CLI plus their
+  endpoint, with their own configuration directory as the only user layer; and Run-plan, which pinning does not support. Unpinned runs are
   unaffected by these checks.
 - **Reuse and relocation.** Pointing at an existing export validates and reuses it as the
   executor, even when the invoking checkout has moved on; it never promotes the candidate. A

@@ -4,6 +4,7 @@ import json
 import os
 import re
 import shutil
+import stat
 import subprocess
 import time
 
@@ -11,6 +12,7 @@ from . import common
 from .common import CouncilError, ROOM_DIRS, SELF, VERIFICATION_BASE_ENV, git, git_env, load_run, read, write_json
 from .delivery import checkout_changes, checkout_file
 from .retro import setup_started, timeline_event
+from .sandbox import openrouter_roots
 from .snapshots import clone_deps, copy_agent_docs
 
 
@@ -161,7 +163,48 @@ def cmd_cleanup(a):
                            cwd=root).split('\n') if r]
     for r in refs:
         git('update-ref', '-d', r, cwd=root, check=False)
+    # OpenRouter seats' Claude configuration directories hold their full transcripts, so they go
+    # with or without --all: the run's own, and its Codex host run's (the roles'). The host run
+    # directory itself stays.
+    configs, remaining = 0, []
+    for config_root in openrouter_roots(run['runDir']):
+        path = os.path.join(config_root, 'openrouter')
+        if os.path.isdir(path) and not os.path.islink(path):
+            if remove_owned_tree(path):
+                configs += 1
+            else:
+                remaining.append(path)
     if a.all:
         shutil.rmtree(run['runDir'], ignore_errors=True)
-    common.emit({'status': 'ok', 'worktreesRemoved': len(removed), 'refsDeleted': len(refs),
-          'kept': None if a.all else run['room']})
+    out = {'status': 'ok', 'worktreesRemoved': len(removed), 'refsDeleted': len(refs),
+           'kept': None if a.all else run['room'], **({'openrouterConfigsRemoved': configs} if configs else {})}
+    if remaining:
+        # A transcript left behind may hold what the seat saw, so the run is not reported clean.
+        common.emit({**out, 'status': 'error', 'openrouterConfigsRemaining': remaining,
+                     'error': f'could not delete {len(remaining)} OpenRouter configuration director'
+                              f'{"y" if len(remaining) == 1 else "ies"} ({", ".join(remaining)})'})
+        raise SystemExit(1)
+    common.emit(out)
+
+
+def remove_owned_tree(path):
+    """Delete a directory tree the helper owns, first giving the owner back the rwx bits that a
+    seat or the key search may have left off its directories (a directory without them can't be
+    listed or emptied). Never follows a symlink, never changes a directory another user owns.
+    True when nothing is left at path."""
+    def unlock(d):
+        try:
+            st = os.lstat(d)
+            if not stat.S_ISDIR(st.st_mode) or st.st_uid != os.geteuid():
+                return
+            if st.st_mode & 0o700 != 0o700:
+                os.chmod(d, stat.S_IMODE(st.st_mode) | 0o700)
+            with os.scandir(d) as entries:
+                subdirs = [e.path for e in entries if e.is_dir(follow_symlinks=False)]
+        except OSError:
+            return
+        for sub in subdirs:
+            unlock(sub)
+    unlock(path)
+    shutil.rmtree(path, ignore_errors=True)
+    return not os.path.lexists(path)

@@ -1237,7 +1237,10 @@ function requiredChecksRule(S) {
 function setupPrompt(S) {
   const letters = S.letters.join(',')
   const A = S.letters[0]
-  const vendors = externalVendors(S)
+  const vendors = preflightTargets(S)
+  // An OpenRouter entry names its model ID, so the list is quoted then; otherwise it is as it was.
+  const vendorList = vendors.some(v => v.startsWith('openrouter:')) ? shq(vendors.join(',')) : vendors.join(',')
+  const clis = [...new Set(vendors.map(v => VENDOR_CLI[v.split(':')[0]]))]
   // A native Pair's timeline would start at init; the workflow has no replay-safe clock, so the
   // setup agent reads the time itself and init records it.
   const startedAt = !!S.pairOptions && S.host !== 'codex'
@@ -1259,8 +1262,8 @@ ${S.modeGiven ? `Mode: ${S.mode}. Return it as \`mode\`.\n` : ''}${startedAt ? `
 Before anything else, run \`date -u +%Y-%m-%dT%H:%M:%SZ\` and keep what it prints. Step 2 passes it to init, so the run's timeline counts setup from its start.
 ` : ''}${vendors.length ? `
 ## Step 0 — can the other vendors' CLIs run?
-${S.host === 'codex' ? `The host runtime already checked the required CLIs (${vendors.join(',')}) before starting this setup turn. Use the attached preflight JSON; do not run preflight again from inside your sandbox. Copy its vendors entries into \`preflight\` (vendor, ok, error). If status is not "ok", return status "preflight" with those entries and empty values elsewhere, and do not create anything. Otherwise continue to step 1.` : `Some seats run through the ${vendors.map(v => VENDOR_CLI[v]).join(' and the ')}. Check that they can start from here before anything is created. Make one Bash call with the sandbox disabled (dangerouslyDisableSandbox: true), exactly as written:
-${S.cli} preflight --vendors ${vendors.join(',')}
+${S.host === 'codex' ? `The host runtime already checked the required CLIs (${vendors.join(',')}) before starting this setup turn. Use the attached preflight JSON; do not run preflight again from inside your sandbox. Copy its vendors entries into \`preflight\` (vendor, ok, error). If status is not "ok", return status "preflight" with those entries and empty values elsewhere, and do not create anything. Otherwise continue to step 1.` : `Some seats run through the ${clis.join(' and the ')}. Check that they can start from here before anything is created. Make one Bash call with the sandbox disabled (dangerouslyDisableSandbox: true), exactly as written:
+${S.cli} preflight --vendors ${vendorList}
 It prints JSON with a "status" and, under "vendors", an entry per vendor with "ok" and "error". Copy each entry into \`preflight\` (vendor, ok, error). If status is "ok", go on to step 1. Otherwise stop here: return status "preflight" with the entries, and empty values elsewhere. Don't try to fix it, and don't run anything else.`}
 ` : ''}
 ## Step 1 — the documents the work follows

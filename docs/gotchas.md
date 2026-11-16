@@ -19,9 +19,10 @@
 - agy's sandbox blocks shell writes anywhere under the directory agy starts in, and from inside
   the repository it blocks even reads under `.council/`. So a Gemini seat starts in an empty
   directory under `$TMPDIR/council-agy/`, and its prompt names the worktree by absolute path.
-- A Codex or Gemini turn that fails because the model is at capacity or rate-limited is retried
-  once, after 90 seconds, inside the job. A used-up quota is not retried: swap the vendor's
-  seats out with `--seats`.
+- A Codex, Gemini or OpenRouter turn that fails because the model is at capacity or rate-limited
+  is retried once, after 90 seconds, inside the job. A used-up quota is not retried: swap the
+  vendor's seats out with `--seats`. An OpenRouter seat is classed by OpenRouter's HTTP status:
+  401, 402 and an unknown model end it, 429 and 5xx are retried.
 - Projects often gitignore their `CLAUDE.md`, so a worktree checked out from HEAD wouldn't have
   it. `dark-factory init` copies an ignored `CLAUDE.md`, `CLAUDE.local.md`, `AGENTS.md` or `GEMINI.md`
   into each worktree, and snapshots leave them out of the diffs. Project-specific tool tips
@@ -46,7 +47,7 @@
 
 - **Start with the run's own record.** `final.readiness` and the report's "Problems during the
   run" section name most failures; [Reading a result](results.md) explains the statuses.
-  `dark-factory jobs --run-dir <runDir>` lists every Codex, Gemini and measurement job with its
+  `dark-factory jobs --run-dir <runDir>` lists every Codex, Gemini, OpenRouter and measurement job with its
   status, and each job's `<runDir>/jobs/<key>/` holds its prompt, `status.json`, `out.json` and stderr.
   `dark-factory usage --run-dir <runDir>` shows tokens per model and role.
 - **An agent or relay "returned nothing".** In Claude Code the cause is in the workflow's state
@@ -54,8 +55,8 @@
   Its `workflowProgress[]` entries with `state: "error"` carry the `error` text, for example
   `blocked by safety classifier`, with `blocked: true`. A blocked agent leaves no transcript,
   and a blocked relay leaves no `jobs/<key>/` directory, because the vendor CLI never ran; don't
-  read that as a Codex or Gemini failure.
-- **A Codex or Gemini seat fails at once.** Run `--prepare` (Codex host) or check the
+  read that as a Codex, Gemini or OpenRouter failure.
+- **A Codex, Gemini or OpenRouter seat fails at once.** Run `--prepare` (Codex host) or check the
   `Bash(dark-factory:*)` allow rule and the agy settings under
   [Install in Claude Code](../README.md#install-in-claude-code); setup's preflight names the
   CLI it couldn't start.

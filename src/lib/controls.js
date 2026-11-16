@@ -47,7 +47,7 @@ function executionPlan(S) {
     mode: S.mode, output: S.workflowName === 'ensemble' ? 'measured, independently reviewed candidates and advisory ranking; no automatic selection' : S.mode === 'implement' ? 'reviewed implementation in a worktree; delivery pending' : S.tier === 'architecture' ? 'reviewed design and milestones; no implementation' : S.mode,
     participants: people(S.lineup), reviewers: people(S.auditors), panel: people(S.panel), specification: people(S.specReviewers),
     roles: Object.fromEntries(Object.entries(S.roles || {}).map(([role, s]) => [role, { model: s.key, vendor: s.vendor }])),
-    requiredCLIs: externalVendors(S).map(v => v === 'gemini' ? 'agy' : v),
+    requiredCLIs: preflightTargets(S).map(v => v === 'gemini' ? 'agy' : v),
     verification: S.verify || S.raw.verify || 'discovered during setup; not yet run',
     limits: { ...S.controls, repair: S.controls.repair || (S.tier === 'simple' ? { maxPasses: 1, minor: 'block' } : null), maxReviews: S.pairOptions?.maxReviews || null, rounds: S.pairOptions ? null : S.rounds },
     effort: S.pairOptions ? `Setup, ${S.pairOptions.design === false ? 'no design stage; ' : 'design and '}code turns, up to the review budget; measurements between code revisions.`

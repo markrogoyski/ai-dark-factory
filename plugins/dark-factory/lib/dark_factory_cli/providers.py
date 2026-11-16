@@ -1,20 +1,22 @@
-"""Seat turns: launching Codex, Claude and Gemini (agy) and recording their usage (seat-run)."""
+"""Seat turns: launching Codex, Claude and Gemini (agy), and Claude against OpenRouter, and recording their usage (seat-run)."""
 
 import json
 import os
 import re
 import shlex
 import signal
+import stat
 import subprocess
 import tempfile
+import threading
 import time
 import uuid
 
-from . import common, jobs, transcripts
+from . import common, jobs, sandbox, transcripts
 from .common import CouncilError, git, load_run, normalize, oneline, prompt_hash, read, split_schema, tail, subject_environment, write, write_json
 from .jobs import job_dir, register_job_runner, settle_existing_job, start_job
 from .pinning import pin_guard, turn_pin_identity
-from .sandbox import VENDOR_EXE, claude_blocked, codex_blocked, ensure_agy_grant, gemini_blocked
+from .sandbox import ENDPOINTS, VENDOR_EXE, claude_blocked, codex_blocked, ensure_agy_grant, gemini_blocked
 from .snapshots import checkout_snapshot
 
 
@@ -34,7 +36,10 @@ class Provider:
 CODEX = Provider('codex', 'thread', 'codex.pid', codex_blocked)
 CLAUDE = Provider('claude', 'claude-session', 'claude.pid', claude_blocked)
 GEMINI = Provider('gemini', 'conversation', 'agy.pid', gemini_blocked)
-PROVIDERS = {p.kind: p for p in (CODEX, CLAUDE, GEMINI)}
+# The Claude CLI against OpenRouter's Anthropic-compatible endpoint: the Claude provider's command
+# and session handling, with an environment and a configuration directory of its own (see run_openrouter_job).
+OPENROUTER = Provider('openrouter', 'claude-session', 'claude.pid', claude_blocked)
+PROVIDERS = {p.kind: p for p in (CODEX, CLAUDE, GEMINI, OPENROUTER)}
 
 
 def saved_session(provider, spec):
@@ -43,19 +48,53 @@ def saved_session(provider, spec):
     return path, None if spec['fresh'] or not os.path.exists(path) else read(path).strip()
 
 
-def run_cli(provider, jd, cmd, cwd, stdin, stdout, stderr, env, timeout):
+def run_cli(provider, jd, cmd, cwd, stdin, stdout, stderr, env, timeout, redact=None):
     """Run one vendor CLI in its own process group, its pid in the job dir, and wait. On the
-    deadline the whole group is killed. Returns (exit code, timed out)."""
-    p = subprocess.Popen(cmd, cwd=cwd, stdin=stdin, stdout=stdout, stderr=stderr, start_new_session=True, env=env, close_fds=True)
+    deadline the whole group is killed. Returns (exit code, timed out).
+
+    With `redact` (a secret, as bytes), the CLI's stdout and stderr go through pipes, and every copy
+    of the secret is replaced before a byte reaches the binary files `stdout` and `stderr`."""
+    pipe = subprocess.PIPE if redact else None
+    p = subprocess.Popen(cmd, cwd=cwd, stdin=stdin, stdout=pipe or stdout, stderr=pipe or stderr, start_new_session=True, env=env, close_fds=True)
     write(os.path.join(jd, provider.pid_file), str(p.pid))
+    pumps = [threading.Thread(target=redacting_pump, args=(src, dst, redact), daemon=True)
+             for src, dst in ((p.stdout, stdout), (p.stderr, stderr))] if redact else []
+    for t in pumps:
+        t.start()
     try:
-        return p.wait(timeout=timeout), False
+        code, timed_out = p.wait(timeout=timeout), False
     except subprocess.TimeoutExpired:
         try:
             os.killpg(p.pid, signal.SIGKILL)
         except ProcessLookupError:
             pass
-        return p.wait(), True
+        code, timed_out = p.wait(), True
+    for t in pumps:
+        t.join(10)
+    return code, timed_out
+
+
+REDACTED = b'[OPENROUTER_API_KEY]'
+
+
+def redacting_pump(src, dst, secret):
+    """Copy a pipe to a file as it arrives, with every copy of `secret` replaced. The last
+    len(secret) - 1 bytes wait for the next chunk, so a copy split across two reads is caught too."""
+    keep, held = len(secret) - 1, b''
+    try:
+        while True:
+            chunk = os.read(src.fileno(), 65536)
+            if not chunk:
+                break
+            held = (held + chunk).replace(secret, REDACTED)
+            if len(held) > keep:
+                dst.write(held[:len(held) - keep])
+                dst.flush()
+                held = held[len(held) - keep:]
+    finally:
+        dst.write(held.replace(secret, REDACTED))
+        dst.flush()
+        src.close()
 
 
 def numeric_usage(reported, bools=True):
@@ -82,12 +121,17 @@ def make_run_roots(run_dir, roots):
 
 
 def cmd_seat_run(a):
+    # An OpenRouter seat's key and configuration directory are checked, and the directory made,
+    # before anything else: the pinned bounds below name the directory.
+    endpoint = {}
+    if a.vendor == 'openrouter':
+        endpoint = {'endpoint': ENDPOINTS['openrouter']['baseUrl'], 'claudeConfigDir': openrouter_config(a)}
     checked = pin_guard(getattr(a, 'run_dir', None))
     if checked:
         bounds = {'kind': a.vendor, 'cwd': os.path.abspath(a.cwd), 'writable': [os.path.abspath(w) for w in (a.writable or [])],
-                  'runDir': os.path.abspath(a.run_dir), 'job': a.job, 'sandbox': a.sandbox}
+                  'runDir': os.path.abspath(a.run_dir), 'job': a.job, 'sandbox': a.sandbox, **endpoint}
         bounds['gitRoots'] = seat_git_dirs(bounds)
-        if a.vendor == 'claude':
+        if a.vendor in ('claude', 'openrouter'):
             bounds['writable'] += [claude_tmp_dir(bounds)]
         elif a.vendor == 'gemini':
             bounds['writable'] += [os.path.join(tempfile.gettempdir(), 'council-agy')]
@@ -128,7 +172,7 @@ def cmd_seat_run(a):
         'hash': got, 'model': a.model, 'effort': a.effort, 'sandbox': a.sandbox,
         'cwd': os.path.abspath(a.cwd), 'writable': [os.path.abspath(w) for w in (a.writable or [])],
         'fresh': bool(a.fresh), 'timeout': a.timeout_min * 60, 'schema': schema is not None,
-        'resumeSession': getattr(a, 'resume_session', None),
+        'resumeSession': getattr(a, 'resume_session', None), **endpoint,
     }
     if checked:
         spec.update(writable=bounds['writable'], gitRoots=bounds['gitRoots'], settingsVersion=checked['settings']['settingsVersion'], settingsHash=checked['settings']['settingsHash'], settingsSources=checked['settings']['sources'], pin=checked['executor'])
@@ -160,7 +204,8 @@ def cmd_seat_run(a):
 
 
 # What makes two seat-run calls the same turn: a job is reused only when all of these match.
-TURN_IDENTITY = ('kind', 'hash', 'model', 'effort', 'sandbox', 'cwd', 'writable', 'fresh', 'schema', 'resumeSession', 'settingsHash')
+TURN_IDENTITY = ('kind', 'hash', 'model', 'effort', 'sandbox', 'cwd', 'writable', 'fresh', 'schema', 'resumeSession', 'settingsHash',
+                 'endpoint', 'claudeConfigDir')
 RERUN_WINDOW = 1800      # a failure older than this may be retried again (after a quota reset, say)
 
 
@@ -411,8 +456,10 @@ def claude_usage_total(seat_dir, session, usage):
     return total
 
 
-def run_claude_job(jd, spec):
-    """Drive Claude directly from prompt.md; its JSON envelope is never the model's result."""
+def run_claude_job(jd, spec, env=None, redact=None):
+    """Drive Claude directly from prompt.md; its JSON envelope is never the model's result.
+    `env` replaces claude_env(spec), and `redact` (bytes) is kept out of out.json and stderr.txt:
+    both only for an endpoint seat (run_openrouter_job)."""
     started = time.time()
     seat_dir = os.path.join(spec['runDir'], 'seats', spec['seat'])
     session_file, session = saved_session(CLAUDE, spec)
@@ -422,8 +469,12 @@ def run_claude_job(jd, spec):
         session = str(uuid.uuid4())
         cmd += ['--session-id', session]
     out_path, err_path = os.path.join(jd, 'out.json'), os.path.join(jd, 'stderr.txt')
-    with open(os.path.join(jd, 'prompt.md'), 'rb') as stdin, open(out_path, 'w') as so, open(err_path, 'w') as se:
-        code, timed_out = run_cli(CLAUDE, jd, cmd, cwd, stdin, so, se, claude_env(spec), spec['timeout'])
+    mode = 'wb' if redact else 'w'
+    with open(os.path.join(jd, 'prompt.md'), 'rb') as stdin, open(out_path, mode) as so, open(err_path, mode) as se:
+        if redact:
+            code, timed_out = run_cli(CLAUDE, jd, cmd, cwd, stdin, so, se, env, spec['timeout'], redact=redact)
+        else:
+            code, timed_out = run_cli(CLAUDE, jd, cmd, cwd, stdin, so, se, claude_env(spec) if env is None else env, spec['timeout'])
         if timed_out:
             write(session_file, session)
             return {'status': 'error', 'thread': session, 'error': f'claude timed out after {spec["timeout"] // 60} min'}
@@ -469,6 +520,255 @@ def run_claude_job(jd, spec):
     elif result is None or result == '':
         return failed('claude returned no result')
     return turn_done(spec, session, started, usage, result, **diagnostics)
+
+
+# ---------------------------------------------------------------- OpenRouter seats
+#
+# An OpenRouter seat is `claude -p` with ANTHROPIC_BASE_URL pointing at OpenRouter and the key in
+# ANTHROPIC_AUTH_TOKEN, for that one process. The key lives only in the helper's environment and that
+# process's: it is read at turn time, kept out of argv and every file the helper writes, unset for the
+# seat's Bash tool, and searched for after every turn (leak_scan).
+
+OPENROUTER_ENV_UNSET = 'unset ANTHROPIC_AUTH_TOKEN ANTHROPIC_API_KEY ANTHROPIC_BASE_URL OPENROUTER_API_KEY\n'
+CONFIG_KEY = re.compile(r'[A-Za-z0-9][A-Za-z0-9._-]{0,119}')
+KEY_MISSING = 'OPENROUTER_API_KEY is not set: an OpenRouter seat reads its key from the helper\'s environment'
+def overlaps(a, b):
+    a, b = os.path.realpath(a), os.path.realpath(b)
+    return a == b or a.startswith(b.rstrip(os.sep) + os.sep) or b.startswith(a.rstrip(os.sep) + os.sep)
+
+
+def openrouter_config(a):
+    """Check an OpenRouter turn before anything else runs, and make its seat's configuration directory,
+    here, outside the vendor's sandbox: <root>/openrouter/<config key>/config (CLAUDE_CONFIG_DIR, mode
+    0700) and bash-env.sh beside it (CLAUDE_ENV_FILE). The same key gives the same directory on every turn,
+    so resumes find their sessions. Returns the configuration directory."""
+    if not os.environ.get(ENDPOINTS['openrouter']['keyEnv']):
+        raise CouncilError(KEY_MISSING)
+    roots = sandbox.openrouter_roots(a.run_dir)
+    root = os.path.realpath(a.config_root) if getattr(a, 'config_root', None) else roots[0]
+    if root not in roots:
+        raise CouncilError('--config-root must be the run directory or its Codex host run directory')
+    key = getattr(a, 'config_key', None) or a.seat
+    if not CONFIG_KEY.fullmatch(key):
+        raise CouncilError(f'invalid --config-key: {key}')
+    seat_dir = os.path.join(root, 'openrouter', key)
+    spec = {'runDir': os.path.abspath(a.run_dir), 'job': a.job, 'cwd': os.path.abspath(a.cwd)}
+    writable = [os.path.abspath(w) for w in (a.writable or [])] + seat_git_dirs(spec) + [claude_tmp_dir(spec)]
+    if a.sandbox == 'workspace-write':
+        writable.append(spec['cwd'])
+    writable += [os.path.join(spec['runDir'], 'room'), os.path.join(spec['runDir'], 'wt')]
+
+    config, env_file = os.path.join(seat_dir, 'config'), os.path.join(seat_dir, 'bash-env.sh')
+
+    def refuse_overlap():
+        for w in writable:
+            for d in (seat_dir, config):
+                if overlaps(d, w):
+                    raise CouncilError(f"an OpenRouter seat's Claude configuration directory {seat_dir} overlaps a directory the seat can write ({w})")
+    # A link anywhere in <root>/openrouter/<key>/config would let makedirs, chmod and the env file
+    # follow it out of the run, past the overlap check and cleanup; only real directories are used.
+    refuse_links(seat_dir)
+    refuse_overlap()
+    os.makedirs(config, mode=0o700, exist_ok=True)
+    refuse_links(seat_dir)
+    for d in (seat_dir, config):
+        os.chmod(d, 0o700)
+    refuse_overlap()          # again, now that the directories exist and resolve
+    if not os.path.isfile(env_file) or read(env_file) != OPENROUTER_ENV_UNSET:
+        write(env_file, OPENROUTER_ENV_UNSET)
+    return config
+
+
+def refuse_links(seat_dir):
+    """Refuse a seat configuration directory reached through a symbolic link: <root>/openrouter, the
+    seat's directory, its config directory and bash-env.sh must each be the real path itself."""
+    for path in (os.path.dirname(seat_dir), seat_dir, os.path.join(seat_dir, 'config'), os.path.join(seat_dir, 'bash-env.sh')):
+        if os.path.islink(path) or (os.path.lexists(path) and os.path.realpath(path) != path):
+            raise CouncilError(f"an OpenRouter seat's Claude configuration path {path} is a symbolic link or is reached through one")
+
+
+def endpoint_env(spec, key):
+    """The environment of one endpoint seat's Claude process: claude_env without the helper's key
+    variable, plus the endpoint, the key as a bearer token, the model for every Claude alias (so no
+    background call reaches a Claude model), and the seat's own configuration directory."""
+    endpoint, model, config = ENDPOINTS[spec['kind']], spec['model'], spec['claudeConfigDir']
+    env = claude_env(spec)
+    env.pop(endpoint['keyEnv'], None)
+    env.update({'ANTHROPIC_BASE_URL': endpoint['baseUrl'], 'ANTHROPIC_AUTH_TOKEN': key, 'ANTHROPIC_API_KEY': '',
+                'ANTHROPIC_DEFAULT_OPUS_MODEL': model, 'ANTHROPIC_DEFAULT_SONNET_MODEL': model,
+                'ANTHROPIC_DEFAULT_HAIKU_MODEL': model, 'CLAUDE_CODE_SUBAGENT_MODEL': model,
+                'CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC': '1', 'CLAUDE_CONFIG_DIR': config,
+                'CLAUDE_ENV_FILE': os.path.join(os.path.dirname(config), 'bash-env.sh')})
+    return env
+
+
+def scrub(value, key):
+    """`value` with every copy of the key replaced, in every string it holds."""
+    if not key:
+        return value
+    if isinstance(value, str):
+        return value.replace(key, REDACTED.decode())
+    if isinstance(value, dict):
+        return {scrub(k, key): scrub(v, key) for k, v in value.items()}
+    if isinstance(value, list):
+        return [scrub(v, key) for v in value]
+    return value
+
+
+def scrub_openrouter(result):
+    """jobs.run_job_spec applies this to an OpenRouter job's status before writing it, on every path."""
+    return scrub(result, os.environ.get(ENDPOINTS['openrouter']['keyEnv'], ''))
+
+
+def leak_scan(jd, spec, secret, since):
+    """Search what an OpenRouter turn could have written for the key, and redact every copy in place:
+    the seat's whole configuration directory (Claude's own transcripts), the job directory, and the
+    files changed during the turn in the seat's writable roots, its cwd and its cache. Git's object
+    store is skipped: it is compressed, and the Bash unset is what keeps the key out of a commit.
+
+    A file or directory this process owns but cannot read or write (a transcript left read-only, a
+    directory without search permission) is opened up for the scan and given its mode back afterwards.
+    Returns (the files that held the key, the paths that could not be read, redacted or restored): a
+    turn with any of the latter cannot be shown to be clean."""
+    hits, unresolved = set(), []
+
+    def miss(path):
+        if path not in unresolved:
+            unresolved.append(path)
+
+    def opened(path, st, bits):
+        """Give the owner `bits` on `path` if it lacks them and this process owns it; True if changed."""
+        mode = stat.S_IMODE(os.lstat(path).st_mode)
+        if mode & bits == bits or st.st_uid != os.geteuid():
+            return False
+        os.chmod(path, mode | bits)
+        return True
+
+    def restore(path, st, changed):
+        if changed:
+            try:
+                os.chmod(path, stat.S_IMODE(st.st_mode))
+            except OSError:
+                miss(path)
+
+    def check(path, st):
+        changed = False
+        try:
+            changed = opened(path, st, stat.S_IRUSR)
+            with open(path, 'rb') as f:
+                data = f.read()
+            if secret in data:
+                hits.add(os.path.realpath(path))
+                changed = opened(path, st, stat.S_IWUSR) or changed
+                with open(path, 'wb') as f:
+                    f.write(data.replace(secret, REDACTED))
+        except OSError:
+            miss(path)
+        finally:
+            restore(path, st, changed)
+
+    def walk(root, changed_only):
+        try:
+            st = os.lstat(root)
+        except FileNotFoundError:
+            return
+        except OSError:
+            return miss(root)
+        if not stat.S_ISDIR(st.st_mode):      # a link, or not a directory: nothing of the turn's
+            return
+        changed = False
+        try:
+            changed = opened(root, st, stat.S_IRUSR | stat.S_IXUSR)
+            with os.scandir(root) as it:
+                entries = list(it)
+            for e in entries:
+                path = e.path
+                try:
+                    est = os.lstat(path)
+                except FileNotFoundError:
+                    continue
+                if stat.S_ISDIR(est.st_mode):
+                    if e.name != '.git':
+                        walk(path, changed_only)
+                elif stat.S_ISREG(est.st_mode) and not (changed_only and est.st_mtime < since):
+                    check(path, est)
+        except OSError:
+            miss(root)
+        finally:
+            restore(root, st, changed)
+
+    walk(spec['claudeConfigDir'], False)
+    walk(jd, False)
+    roots = list(spec.get('writable') or []) + [claude_tmp_dir(spec)]
+    if spec['sandbox'] == 'workspace-write':
+        roots.append(spec['cwd'])
+    for root in dict.fromkeys(roots):
+        walk(root, True)
+    return hits, unresolved
+
+
+# OpenRouter's HTTP status, from the envelope Claude prints on an API error, decides the class:
+# out of credits, a refused key and an unknown model end the seat; capacity errors are retried once.
+def endpoint_error_class(status, kind):
+    if status == 429 or 500 <= status <= 599:
+        return 'transient'
+    if status == 401:
+        return 'auth'
+    if status == 402:
+        return 'quota'
+    if status == 400 and kind == 'invalid_request_error':
+        return 'model'
+    return 'vendor'
+
+
+def run_openrouter_job(jd, spec):
+    """One OpenRouter turn: the Claude provider with the endpoint environment, the key kept out of
+    out.json and stderr.txt, the failure classified on the envelope's api_error_status, and the leak
+    scan after it on every path. Claude Code's total_cost_usd is never read: usage is tokens only."""
+    endpoint = ENDPOINTS[spec['kind']]
+    key = os.environ.get(endpoint['keyEnv'], '')
+    if not key:
+        return {'status': 'error', 'error': KEY_MISSING, 'errorClass': 'auth'}
+    # The configuration directory was checked when the turn was started; check it again before the
+    # CLI (and the scan) use it.
+    refuse_links(os.path.dirname(spec['claudeConfigDir']))
+    secret, since = key.encode(), time.time() - 2
+    result, hits, unresolved, failure = None, set(), [], None
+    try:
+        result = run_claude_job(jd, spec, env=endpoint_env(spec, key), redact=secret)
+        if result.get('status') == 'error':
+            try:
+                out = json.loads(read(os.path.join(jd, 'out.json')))
+            except (ValueError, OSError):
+                out = None
+            status = out.get('api_error_status') if isinstance(out, dict) else None
+            if isinstance(status, int) and not isinstance(status, bool):
+                kind = out.get('api_error_type') if isinstance(out.get('api_error_type'), str) else ''
+                text = out.get('result') if isinstance(out.get('result'), str) else ''
+                result = {**result, 'errorClass': endpoint_error_class(status, kind),
+                          'error': f'{endpoint["name"]} answered {status} ({kind}): {oneline(text, 1500)}'}
+    except Exception as e:      # an interrupt still propagates, after the scan
+        failure = e
+    finally:
+        try:
+            hits, unresolved = leak_scan(jd, spec, secret, since)
+        except Exception as e:      # a scan that did not finish proves nothing
+            unresolved = [f'the scan stopped: {type(e).__name__}']
+    # A leak, or a scan that could not finish, decides the turn's outcome even when the runner also
+    # failed; neither is retried.
+    thread = (result or {}).get('thread')
+    if unresolved:
+        shown = ', '.join(unresolved[:3]) + (', ...' if len(unresolved) > 3 else '')
+        redacted = len(hits - {os.path.realpath(p) for p in unresolved})
+        also = f'; {redacted} other file(s) held the key and were redacted' if redacted else ''
+        result = {'status': 'error', 'errorClass': 'leak', 'thread': thread,
+                  'error': f'the {endpoint["name"]} key scan could not read or redact {len(unresolved)} path(s) the turn could have written ({shown}){also}; the turn\'s result was discarded'}
+    elif hits:
+        result = {'status': 'error', 'errorClass': 'leak', 'thread': thread,
+                  'error': f'the {endpoint["name"]} key appeared in {len(hits)} file(s) the turn wrote; they were redacted and the turn\'s result was discarded'}
+    elif failure is not None:
+        raise failure
+    return scrub(result, key)
 
 
 def run_gemini_job(jd, spec):
@@ -574,3 +874,5 @@ DENIED_NUDGE = ('Your last request ({denied}) needed a permission that nobody ca
 register_job_runner('codex', lambda jd, spec: run_codex_job(jd, spec), CODEX.session_file)
 register_job_runner('gemini', lambda jd, spec: run_gemini_job(jd, spec), GEMINI.session_file)
 register_job_runner('claude', lambda jd, spec: run_claude_job(jd, spec), CLAUDE.session_file)
+register_job_runner('openrouter', lambda jd, spec: run_openrouter_job(jd, spec), OPENROUTER.session_file)
+jobs.register_job_scrubber('openrouter', scrub_openrouter)

@@ -37,7 +37,7 @@ async function ensembleRun() {
   const prompt = `${taskBlock(S, 99)}\nCompare these independent candidates and reviews. Your ranking is advisory: do not apply or merge code. Missing reviews and failed verification remain gaps. Prefer evidenced correctness, then simplicity; state disagreements and a concrete merge plan. Never describe a blocked candidate as ready.\n${JSON.stringify(candidates)}`
   const advisor = !alive.length ? null : a.vendor === 'claude' && !hostRuntime
     ? await ask(prompt, { label: 'compare', phase: 'Compare', schema: ENSEMBLE_COMPARE_SCHEMA, model: a.model, effort: a.effort }, 'compare', a.name)
-    : await externalTurn({ key: 'compare', threadKey: 'compare', fresh: true, vendor: a.vendor, model: a.model, effort: a.effort, role: 'compare', who: a.name,
+    : await externalTurn({ key: 'compare', threadKey: 'compare', configKey: 'compare', fresh: true, vendor: a.vendor, model: a.model, effort: a.effort, role: 'compare', who: a.name,
       sandbox: 'read-only', cwd: S.run.repoRoot, writable: [], timeoutKind: 'audit' }, prompt, ENSEMBLE_COMPARE_SCHEMA, 'compare', 'Compare')
   // A selected implementation candidate is saved whole as the delivery result, so it carries the
   // full-result marker that `apply` requires; the advisory result around it does not.
@@ -52,7 +52,7 @@ function ensembleReview(s, a, solution, i) {
   const key = `ensemble-${s.L}-${a.lens}`, checkout = `${S.run.runDir}/snap/${key}`
   const prompt = ensembleReviewPrompt(S, s, a, solution, checkout)
   if (a.vendor === 'claude' && !hostRuntime) return ask(prompt, { label: key, phase: 'Review', schema: ENSEMBLE_REVIEW_SCHEMA, model: a.model, effort: a.effort }, 'reviewer', a.name)
-  return externalTurn({ key, threadKey: key, fresh: true, vendor: a.vendor, model: a.model, effort: a.effort, role: 'reviewer', who: a.name,
+  return externalTurn({ key, threadKey: key, configKey: `ensemble-review-${a.lens}`, fresh: true, vendor: a.vendor, model: a.model, effort: a.effort, role: 'reviewer', who: a.name,
     sandbox: S.mode === 'implement' ? 'workspace-write' : 'read-only', cwd: S.mode === 'implement' ? checkout : S.run.repoRoot,
     writable: [], ...(S.mode === 'implement' ? { checkout: `${s.L}-r0` } : {}), timeoutKind: 'audit' }, prompt, ENSEMBLE_REVIEW_SCHEMA, key, 'Review')
 }

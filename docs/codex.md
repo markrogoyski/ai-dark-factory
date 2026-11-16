@@ -9,7 +9,8 @@ not need Claude relay agents. All four factory tiers, Pair, Council, Ensemble an
 
 You need Node, Python 3, Git, and authenticated `codex` and `claude` CLIs: the default Codex
 profile has a Claude Opus seat. Pass `--seats astra,sol` for an OpenAI-only run. Gemini seats
-additionally need the authenticated `agy` CLI. Each CLI keeps its normal permission controls.
+additionally need the authenticated `agy` CLI, and OpenRouter seats (`openrouter:<model-id>`)
+`claude` and `OPENROUTER_API_KEY`. Each CLI keeps its normal permission controls.
 A completed Claude turn with valid output can proceed after a denied tool call; the report and host
 events retain the denial and link to its raw details in the job's `out.json`. Denied checks do not
 count as passing evidence: required verification and independent review still determine readiness.

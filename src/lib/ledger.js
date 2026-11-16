@@ -347,7 +347,7 @@ function identicalGroups(S, k) {
 // verified blocker or major stands against it; the scorecard order breaks ties.
 function consensus(S, k, book = S.votes) {
   const K = consensusAt(S)
-  const vendorsOk = voters => !crossVendor(S) || new Set(voters.map(L => seat(S, L).vendor)).size >= 2
+  const vendorsOk = voters => !crossVendor(S) || ruleVendors(voters.map(L => seat(S, L))).size >= 2
   const counts = tally(S, k, book)
   for (const [W, voters] of Object.entries(counts)) {
     if (voters.length >= K && vendorsOk(voters)) return { W, voters, via: 'votes' }

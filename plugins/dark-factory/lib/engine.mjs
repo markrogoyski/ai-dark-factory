@@ -489,14 +489,19 @@ async function inspectBounds(executor, spec, env) {
   const pin = executor
   const { readHostSource, providerDefaults, providerFacts } = await import('./engine-observations.mjs')
   const { pinnedOperationIssues, providerConfiguration } = await import('./policy.mjs')
-  const vendor = spec.kind || spec.vendor, home = env.HOME || '', repo = spec.repoRoot || spec.cwd
-  const configHome = env.CODEX_HOME || join(home, '.codex'), claudeHome = env.CLAUDE_CONFIG_DIR || join(home, '.claude')
+  // An OpenRouter seat is the Claude CLI with an endpoint and a run-owned configuration directory:
+  // observed as Claude, with that directory (never ~/.claude, $CLAUDE_CONFIG_DIR or ~/.claude.json) as
+  // its only user layer, none before the directory exists (route admission), and the endpoint pinned.
+  const endpointSeat = (spec.kind || spec.vendor) === 'openrouter'
+  const vendor = endpointSeat ? 'claude' : spec.kind || spec.vendor, home = env.HOME || '', repo = spec.repoRoot || spec.cwd
+  const configHome = env.CODEX_HOME || join(home, '.codex')
+  const claudeHome = endpointSeat ? spec.claudeConfigDir || null : env.CLAUDE_CONFIG_DIR || join(home, '.claude')
   const catalog = vendor === 'codex' ? ['/etc/codex/config.toml', '/etc/codex/managed_config.toml', '/Library/Preferences/com.openai.codex.plist', join(configHome, 'config.toml')]
-    : vendor === 'claude' ? [join(claudeHome, 'settings.json'),
+    : vendor === 'claude' ? [...(claudeHome ? [join(claudeHome, 'settings.json')] : []),
       ...ancestors(spec.cwd).reverse().flatMap(p => [join(p, '.claude/settings.json'), join(p, '.claude/settings.local.json')]),
       '/etc/claude-code/managed-settings.json', '/etc/claude-code/managed-settings.d', '/Library/Application Support/ClaudeCode/managed-settings.json', '/Library/Application Support/ClaudeCode/managed-settings.d', '/Library/Managed Preferences/com.anthropic.claudecode.plist']
     : [join(home, '.gemini/antigravity-cli/settings.json')]
-  const scope = path => path.startsWith(configHome + '/') || path.startsWith(claudeHome + '/') || path === join(home, '.gemini/antigravity-cli/settings.json') ? 'user'
+  const scope = path => path.startsWith(configHome + '/') || (claudeHome && path.startsWith(claudeHome + '/')) || path === join(home, '.gemini/antigravity-cli/settings.json') ? 'user'
     : path.startsWith('/etc/') || path.startsWith('/Library/') ? path.endsWith('/config.toml') ? 'system' : 'managed' : 'project'
   const label = path => ['config.toml', 'settings.json', 'settings.local.json', 'managed-settings.json', 'managed-settings.d'].find(name => path.endsWith('/' + name)) || 'component'
   const watching = providerConfiguration({}, { vendor, stage: 'watching', roles: spec.roles || [spec.role || 'seat'], facts: { immutable: true, deliveryKnown: true }, layers: catalog.map(path => ({ source: path, scope: scope(path), name: label(path), data: {} })) }).diagnostic
@@ -559,13 +564,16 @@ async function inspectBounds(executor, spec, env) {
       const data = parsed(path)
       if (data) mcpSources.push({ source: path, servers: data.mcpServers || data })
     }
-    const statePath = join(home, '.claude.json'), state = parsed(statePath)
+    // Claude keeps its state file in CLAUDE_CONFIG_DIR when one is set, as an endpoint seat's is.
+    const statePath = endpointSeat ? claudeHome && join(claudeHome, '.claude.json') : join(home, '.claude.json'), state = statePath ? parsed(statePath) : null
     if (state) {
       if (state.mcpServers !== undefined) mcpSources.push({ source: statePath, servers: state.mcpServers })
       for (const [path, project] of Object.entries(state.projects || {})) {
         if (!isAbsolute(path) || (!within(physical(path), physical(spec.cwd)) && !within(physical(path), physical(repo)))) continue
         if (!project || typeof project !== 'object') { unknown.push('claude: unsupported project capability source'); continue }
         if (project.mcpServers !== undefined) mcpSources.push({ source: `${statePath}:projects:${path}`, servers: project.mcpServers })
+        // A fresh endpoint-seat directory may record an empty tool list for the worktree: it grants nothing.
+        if (endpointSeat && Array.isArray(project.allowedTools) && !project.allowedTools.length) continue
         if (project.allowedTools !== undefined) layers.push({ source: `${statePath}:projects:${path}`, scope: 'project', base: path, data: { permissions: { allow: project.allowedTools } } })
       }
       if (state.apiKeyHelper !== undefined) layers.push({ source: statePath, scope: 'user', base: repo, data: { apiKeyHelper: state.apiKeyHelper } })
@@ -573,7 +581,7 @@ async function inspectBounds(executor, spec, env) {
     const enabled = Object.assign(Object.create(null), ...layers.map(l => l.data.enabledPlugins || {}))
     const active = Object.keys(enabled).filter(key => enabled[key] === true)
     if (active.length) {
-      const registryPath = join(claudeHome, 'plugins/installed_plugins.json'), registry = parsed(registryPath)
+      const registryPath = claudeHome && join(claudeHome, 'plugins/installed_plugins.json'), registry = registryPath ? parsed(registryPath) : null
       for (const name of active) {
         const candidates = registry?.version === 2 ? registry.plugins?.[name] : null
         const installations = Array.isArray(candidates) ? candidates.filter(x => x?.scope === 'user' || (['project', 'local'].includes(x?.scope) && x.projectPath && physical(x.projectPath) === physical(repo))) : []
@@ -621,7 +629,7 @@ async function inspectBounds(executor, spec, env) {
       }
     }
   }
-  const config = providerConfiguration({}, { vendor, roles: spec.roles || [spec.role || 'seat'], facts, layers, plugins, capabilitySources, mcpSources, trust: trust.filter(([path]) => within(path, physical(spec.cwd))), shellBounded: vendor === 'claude' && facts.hooks, statusLineOverride: true, permissionMode: spec.sandbox === 'read-only' ? 'plan' : 'acceptEdits',
+  const config = providerConfiguration({}, { vendor, ...(endpointSeat ? { endpoint: spec.endpoint || 'https://openrouter.ai/api' } : {}), roles: spec.roles || [spec.role || 'seat'], facts, layers, plugins, capabilitySources, mcpSources, trust: trust.filter(([path]) => within(path, physical(spec.cwd))), shellBounded: vendor === 'claude' && facts.hooks, statusLineOverride: true, permissionMode: spec.sandbox === 'read-only' ? 'plan' : 'acceptEdits',
     tools: spec.sandbox === 'read-only' ? ['Read', 'Glob', 'Grep'] : ['Bash', 'Read', 'Glob', 'Grep', 'Edit', 'Write'] })
   unknown.push(...config.unknown)
   for (const grant of config.grants) {
@@ -665,7 +673,7 @@ export async function validateAdmissions(hostRunDir, pin) {
     for (const job of jobs) {
       let spec
       try { spec = JSON.parse(readFileSync(join(run, 'jobs', job, 'spec.json'), 'utf8')) } catch (e) { if (e.code === 'ENOENT' || e.code === 'ENOTDIR') continue; throw e }
-      if (spec.pin && ['codex', 'claude', 'gemini'].includes(spec.kind)) await inspectSeat(pin, spec)
+      if (spec.pin && ['codex', 'claude', 'gemini', 'openrouter'].includes(spec.kind)) await inspectSeat(pin, spec)
     }
   }
 }

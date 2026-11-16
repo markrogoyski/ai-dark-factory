@@ -209,7 +209,7 @@ function pairAuthorTurn(label, correction = '') {
   if (a.vendor === 'claude' && !hostRuntime) return ask(prompt, {
     label, phase: ph, schema: PAIR_AUTHOR_SCHEMA, model: a.model, effort: a.effort,
   }, 'author', a.name)
-  return externalTurn({ key: label, threadKey: 'pair-author', fresh: false, vendor: a.vendor,
+  return externalTurn({ key: label, threadKey: 'pair-author', configKey: 'pair-author', fresh: false, vendor: a.vendor,
     model: a.model, effort: a.effort, role: 'author', who: a.name, sandbox: 'workspace-write', cwd: a.wt,
     writable: [S.run.room, `${S.run.runDir}/jobs`, `${S.run.runDir}/logs`], timeoutKind: 'solve',
   }, prompt, PAIR_AUTHOR_SCHEMA, label, ph)
@@ -223,7 +223,7 @@ function pairReviewTurn(label, correction = null) {
   if (a.vendor === 'claude' && !hostRuntime) return ask(prompt, {
     label: `review ${label}`, phase: ph, schema: PAIR_REVIEW_SCHEMA, model: a.model, effort: a.effort,
   }, 'reviewer', a.name)
-  return externalTurn({ key: `review-${label}`, threadKey: `review-${label}`, fresh: true,
+  return externalTurn({ key: `review-${label}`, threadKey: `review-${label}`, configKey: 'pair-reviewer', fresh: true,
     vendor: a.vendor, model: a.model, effort: a.effort, role: 'reviewer', who: a.name,
     sandbox: 'workspace-write', cwd: checkout, writable: [`${S.run.room}/review-${label}`, `${S.run.runDir}/jobs`, `${S.run.runDir}/logs`],
     timeoutKind: 'audit', checkout: `A-${pairReviewTag(S)}`,

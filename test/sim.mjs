@@ -76,6 +76,7 @@ const GOLDEN_RUNS = new Map([
   ['factory-feature', null],
   ['factory-feature-hard', ['build', 'auditfix']],
   ['factory-architecture', null],
+  ['openrouter', ['setup', 'solve']],
 ])
 const UPDATE_GOLDEN = !!process.env.UPDATE_GOLDEN
 
@@ -94,7 +95,7 @@ function checkGoldens(name, calls) {
     if (!seen.has(key)) seen.set(key, c.prompt)           // for a relay turn, the payload for the other model
     // The relay's own instructions, once per vendor: they differ only by the CLI's name.
     const wrapper = `relay-wrapper.${c.role.key}`
-    if (name === 'consensus' && /\(relay/.test(c.label) && c.role.kind === 'solve' && !seen.has(wrapper)) seen.set(wrapper, c.raw)
+    if ((name === 'consensus' || name === 'openrouter') && /\(relay/.test(c.label) && c.role.kind === 'solve' && !seen.has(wrapper)) seen.set(wrapper, c.raw)
   }
   const problems = []
   if (UPDATE_GOLDEN) {
@@ -1274,6 +1275,67 @@ async function scenarioPreflight() {
   return 'a CLI that fails preflight stops the run before anything is created, naming the fix and the seat to swap'
 }
 
+// ---------------------------------------------------------------- OpenRouter seats
+
+// An OpenRouter seat is an external seat (relay, then seat-run --vendor openrouter) whose vote counts
+// toward K but never supplies a vendor: opus, sonnet, openrouter is single-vendor for the rule, and
+// opus, astra, openrouter still needs a Claude and a Codex vote.
+async function scenarioOpenRouter() {
+  const OR = 'openrouter:deepseek/deepseek-v4-pro'
+  // Seats are lettered blind, so votes are given by model: {voter: the model it votes for}.
+  const letters = {}
+  const quick = (runId, ships) => async (role, prompt) => {
+    switch (role.kind) {
+      case 'setup': return SETUP(runId)
+      case 'solve': letters[role.key] = role.L; return solve(role.L)
+      case 'check': return check(prompt)
+      case 'debate': return debate(role.L, letters[ships[role.key]])
+      case 'synth': return synth()
+      case 'ratify': return ratify(true)
+      case 'panel': return { rulings: [] }
+      default: throw new Error(`unexpected role ${role.kind}`)
+    }
+  }
+  const a = await run('openrouter', quick('test-openrouter', { opus: 'opus', sonnet: 'sonnet', openrouter: 'sonnet' }), { task: 'Fix the flaky retry', seats: ['opus', 'sonnet', OR], rounds: 1 })
+  const relays = a.calls.filter(c => /\(relay/.test(c.label))
+  const orTurns = relays.filter(c => c.raw.includes('--vendor openrouter'))
+  assert.ok(orTurns.length >= 2, 'the OpenRouter seat solved and debated through the relay')
+  for (const c of orTurns) {
+    assert.ok(c.raw.includes("--model 'deepseek/deepseek-v4-pro'") && c.raw.includes(`--config-key '${letters.openrouter}'`) && !c.raw.includes('--config-root'), c.raw.split('\n').find(l => l.includes('seat-run')))
+    assert.ok(c.raw.includes('the Claude CLI on OpenRouter'))
+  }
+  assert.ok(!a.calls.some(c => c.role.key === 'openrouter' && !/\(relay/.test(c.label)), 'no native agent turn for the OpenRouter seat')
+  assert.ok(!relays.filter(c => !c.raw.includes('--vendor openrouter')).some(c => c.raw.includes('--config-key')), 'other relays are as they were')
+  const setup = a.calls.find(c => c.role.kind === 'setup').prompt
+  assert.ok(setup.includes("preflight --vendors 'openrouter:deepseek/deepseek-v4-pro,codex'"), setup.split('\n').find(l => l.includes('preflight')))
+  assert.ok(setup.includes('Some seats run through the Claude CLI on OpenRouter and the Codex CLI.'))
+  const solvePrompt = a.calls.find(c => c.role.kind === 'solve').prompt
+  assert.ok(!solvePrompt.includes(', with votes from'), 'a single-vendor lineup for the rule')
+  assert.equal(a.result.status, 'converged', JSON.stringify(a.result.outcome))
+  assert.equal(a.result.final.author, letters.sonnet, 'Sonnet and the OpenRouter seat carry it')
+  const retroPrompt = RETRO_PROMPTS.at(-1)
+  assert.ok(retroPrompt.includes(' OpenRouter turns: ') && retroPrompt.includes('- OpenRouter turn times: median'), 'the report counts OpenRouter turns and times')
+  assert.ok(!/\$\d/.test(retroPrompt), 'no dollar figure')
+
+  const split = await run('openrouter-astra-split', quick('test-openrouter-b', { opus: 'opus', astra: 'astra', openrouter: 'opus' }), { task: 'Fix the flaky retry', seats: ['opus', 'astra', OR], rounds: 1 })
+  assert.ok(split.calls.find(c => c.role.kind === 'solve').prompt.includes('with votes from both vendors'))
+  assert.notEqual(split.result.outcome.kind, 'consensus', 'Claude and OpenRouter votes are not two vendors')
+  const agree = await run('openrouter-astra-agree', quick('test-openrouter-c', { opus: 'opus', astra: 'opus', openrouter: 'openrouter' }), { task: 'Fix the flaky retry', seats: ['opus', 'astra', OR], rounds: 1 })
+  assert.equal(agree.result.status, 'converged')
+  assert.ok(agree.result.report.markdown.includes('from both vendors'), 'Claude and Codex votes carry it')
+
+  const blocked = await run('openrouter-preflight', async role => {
+    if (role.kind === 'setup') return { ...SETUP('test-openrouter-preflight'), status: 'preflight', runDir: '', preflight: [
+      { vendor: 'codex', ok: true, error: '' },
+      { vendor: OR, ok: false, error: 'OpenRouter has no model deepseek/deepseek-v4-pro (GET https://openrouter.ai/api/v1/models)' }] }
+    throw new Error(`unexpected role ${role.kind}`)
+  }, { task: 'Fix the flaky retry', seats: ['opus', 'sonnet', OR] })
+  assert.equal(blocked.result.status, 'blocked')
+  assert.equal(blocked.calls.length, 1, 'only setup ran')
+  assert.ok(blocked.result.forTheOrchestrator.includes(`the seat(s) ${OR}`), blocked.result.forTheOrchestrator)
+  return 'an OpenRouter seat relays through seat-run, counts toward K without supplying a vendor, is reported, and a failed preflight names it'
+}
+
 // ---------------------------------------------------------------- readiness
 
 async function scenarioReadiness() {
@@ -2347,7 +2409,7 @@ function scenarioHeadlessPrompts() {
 }
 
 const ONLY = process.env.SIM_ONLY ? process.env.SIM_ONLY.split(',') : null    // SIM_ONLY=scenarioAgy,scenarioBallot
-for (const [name, fn] of Object.entries({ scenarioConsensus, scenarioDeadlock, scenarioEscalation, scenarioFailures, scenarioDirty, scenarioFocus, scenarioSandbox, scenarioPlan, scenarioPlanMissing, scenarioRefs, scenarioTranscript, scenarioRetroOff, scenarioRetroSave, scenarioLineup, scenarioAgy, scenarioLateEscalation, scenarioModeAndGuidance, scenarioInitDocs, scenarioRelayErrors, scenarioPreflight, scenarioReadiness, scenarioApproval, scenarioBallot, scenarioSeatRunErrors, scenarioMeasure, scenarioPreflightCli, scenarioBlind, scenarioAudit, scenarioSpec,
+for (const [name, fn] of Object.entries({ scenarioConsensus, scenarioDeadlock, scenarioEscalation, scenarioFailures, scenarioDirty, scenarioFocus, scenarioSandbox, scenarioPlan, scenarioPlanMissing, scenarioRefs, scenarioTranscript, scenarioRetroOff, scenarioRetroSave, scenarioLineup, scenarioAgy, scenarioLateEscalation, scenarioModeAndGuidance, scenarioInitDocs, scenarioRelayErrors, scenarioPreflight, scenarioOpenRouter, scenarioReadiness, scenarioApproval, scenarioBallot, scenarioSeatRunErrors, scenarioMeasure, scenarioPreflightCli, scenarioBlind, scenarioAudit, scenarioSpec,
   scenarioFactorySimple, scenarioFactoryFindings, scenarioFactoryEscalate, scenarioFactoryHandUp, scenarioFactoryTier, scenarioFactoryRoute, scenarioFactorySplit,
   scenarioFactoryFeature, scenarioFactoryFeatureHard, scenarioFactoryArchitecture, scenarioFactoryFeatureToArchitecture, scenarioFactsSave, scenarioHeadlessPrompts })) {
   if (ONLY && !ONLY.includes(name)) continue

@@ -166,13 +166,16 @@ function providerConfiguration(S, observations) {
   }
   if (!facts.immutable && !(vendor === 'claude' && facts.hooks)) unknown.push('provider cannot bound settings reload')
   security.trust = observations.trust || []
+  // An endpoint seat (OpenRouter) is the Claude CLI talking to another base URL: that URL is part of what is pinned.
+  if (observations.endpoint) security.endpoint = observations.endpoint
   return { unknown, grants, security, diagnostic: providerDiagnostic(S, observations, unknown) }
 }
 
 // The set is configuration-derived, never selected by task prose or catalog membership.
 function reachableProviders(S, request) {
   const raw = { ...(request.args || {}), host: 'codex' }, workflowName = request.workflow || 'factory', routes = []
-  const add = (seat, role, reason) => { if (seat) routes.push({ vendor: seat.vendor, role, reason }) }
+  // An OpenRouter route names its model, which the preflight checks; the others are as they were.
+  const add = (seat, role, reason) => { if (seat) routes.push({ vendor: seat.vendor, role, reason, ...(seat.vendor === 'openrouter' ? { model: seat.model } : {}) }) }
   const configRoutes = (config, reason, factoryContext = false) => {
     config.lineup.forEach(s => add(s, 'author', reason))
     if (!raw.mode || config.mode === 'implement' || config.tier === 'architecture' || config.pairOptions || config.ensemble) config.auditors.forEach(s => add(s, 'review', reason))
@@ -215,7 +218,7 @@ function reachableProviders(S, request) {
       if (strategy === 'pair' && factory.tier === 'architecture') throw new Error('Pair strategy requires an implementation below Architecture.')
     }
   } else throw new Error('Unsupported pinned workflow')
-  return routes.filter((r, i) => routes.findIndex(x => x.vendor === r.vendor && x.role === r.role && x.reason === r.reason) === i)
+  return routes.filter((r, i) => routes.findIndex(x => x.vendor === r.vendor && x.role === r.role && x.reason === r.reason && x.model === r.model) === i)
 }
 
 // What a single run needs before its first model turn: the vendors its reachable routes use,
@@ -223,7 +226,10 @@ function reachableProviders(S, request) {
 function launchRequirements(S, request) {
   if (request.workflow === 'run-plan') throw new Error('Preparation does not support run-plan; prepare its tasks individually')
   const routes = reachableProviders(S, request), raw = request.args || {}, vendors = {}
-  for (const route of routes) (vendors[route.vendor] ||= []).includes(route.role) || vendors[route.vendor].push(route.role)
+  for (const route of routes) {
+    const entry = preflightEntry(route)
+    ;(vendors[entry] ||= []).includes(route.role) || vendors[entry].push(route.role)
+  }
   const plan = Array.isArray(raw.plan) ? raw.plan : raw.plan ? [raw.plan] : []
   return { workflow: request.workflow || 'factory', vendors, routes,
     references: plan.map(p => String(p).trim()).filter(p => p.startsWith('/')),

@@ -2,9 +2,12 @@
 
 import json
 import os
+import re
 import shutil
 import subprocess
 import tempfile
+import urllib.error
+import urllib.request
 
 from . import common
 from .common import CouncilError, oneline, read, write
@@ -38,7 +41,8 @@ def claude_blocked():
 
 
 def vendor_blocked(vendor):
-    return {'codex': codex_blocked, 'gemini': gemini_blocked, 'claude': claude_blocked}[vendor]()
+    # An OpenRouter seat is the Claude CLI, so it is stuck exactly when Claude is.
+    return {'codex': codex_blocked, 'gemini': gemini_blocked, 'claude': claude_blocked, 'openrouter': claude_blocked}[vendor]()
 
 
 def agy_home():
@@ -69,7 +73,74 @@ def ensure_agy_grant(grant_dir):
     os.replace(tmp, path)
 
 
-VENDOR_EXE = {'codex': 'codex', 'gemini': 'agy', 'claude': 'claude'}
+VENDOR_EXE = {'codex': 'codex', 'gemini': 'agy', 'claude': 'claude', 'openrouter': 'claude'}
+
+# Anthropic-compatible endpoints the Claude CLI can run a seat against: the base URL and the helper
+# environment variable that holds the key. Another endpoint is another entry here.
+ENDPOINTS = {'openrouter': {'name': 'OpenRouter', 'baseUrl': 'https://openrouter.ai/api', 'keyEnv': 'OPENROUTER_API_KEY'}}
+
+
+# A Codex-host run directory: <host run id>-<tier or workflow>, beside the host run's own directory.
+HOST_RUN = re.compile(r'(host-[A-Za-z0-9_]+)-[A-Za-z0-9._-]+')
+
+
+def openrouter_roots(run_dir):
+    """The directories whose openrouter/ may hold this run's seat configuration: the run directory and,
+    for a run the Codex host started, the host run's directory (its roles' configuration). seat-run
+    accepts no other --config-root, and cleanup empties exactly these."""
+    real = os.path.realpath(run_dir)
+    roots = [real]
+    m = HOST_RUN.fullmatch(os.path.basename(real))
+    if m:
+        host = os.path.join(os.path.dirname(real), m.group(1))
+        meta = os.path.join(host, 'host.json')
+        if os.path.isfile(meta) and not os.path.islink(meta):
+            roots.append(os.path.realpath(host))
+    return roots
+
+
+def http_get(url, token=None, timeout=20):
+    """The helper's only network call, made by the OpenRouter preflight: one GET. Returns (HTTP status,
+    body text); raises OSError when the server can't be reached."""
+    request = urllib.request.Request(url, headers={'Authorization': f'Bearer {token}'} if token else {})
+    try:
+        with urllib.request.urlopen(request, timeout=timeout) as response:
+            return response.status, response.read().decode('utf-8', 'replace')
+    except urllib.error.HTTPError as e:
+        return e.code, ''
+
+
+def endpoint_checks(endpoint, models):
+    """An endpoint's own checks, once for every entry that names it: the key is set, the endpoint accepts
+    it (GET /v1/key answers 200), and it lists every model asked for (GET /v1/models). Returns the error
+    for the key and one per model (None when it passes). The key is never in any of them."""
+    key = os.environ.get(endpoint['keyEnv'], '')
+    name, var = endpoint['name'], endpoint['keyEnv']
+    if not key:
+        return f'{var} is not set', {}
+    url = endpoint['baseUrl'] + '/v1/key'
+    try:
+        status, _ = http_get(url, key)
+    except (OSError, ValueError) as e:
+        reason = getattr(e, 'reason', None) or e
+        return f'{name} could not be reached (GET {url}: {str(reason).replace(key, "[" + var + "]")})', {}
+    if status != 200:
+        return f'{name} did not accept {var} (GET {url} answered {status})', {}
+    if not models:
+        return None, {}
+    url = endpoint['baseUrl'] + '/v1/models'
+    try:
+        status, body = http_get(url)
+    except (OSError, ValueError) as e:
+        reason = getattr(e, 'reason', None) or e
+        return None, {m: f'{name} could not be reached (GET {url}: {str(reason).replace(key, "[" + var + "]")})' for m in models}
+    try:
+        listed = {m.get('id') for m in json.loads(body).get('data', []) if isinstance(m, dict)} if status == 200 else None
+    except (ValueError, AttributeError):
+        listed = None
+    if listed is None:
+        return None, {m: f'{name} did not list its models (GET {url} answered {status})' for m in models}
+    return None, {m: None if m in listed else f'{name} has no model {m} (GET {url})' for m in models}
 
 
 def cmd_preflight(a):
@@ -77,24 +148,31 @@ def cmd_preflight(a):
     PATH, answers --version, and isn't stuck inside Claude Code's sandbox (the same probe seat-run
     makes). Gemini also needs agy's proceed-in-sandbox mode. Costs no model turn."""
     vendors = [v for v in (a.vendors or '').split(',') if v]
-    unknown = [v for v in vendors if v not in VENDOR_EXE]
+    # An endpoint entry is the endpoint's name, optionally with a model ID: openrouter:deepseek/deepseek-v4-pro.
+    base = {v: v.split(':', 1)[0] if v.split(':', 1)[0] in ENDPOINTS and (':' not in v or v.split(':', 1)[1]) else v for v in vendors}
+    unknown = [v for v in vendors if base[v] not in VENDOR_EXE]
     if unknown:
         raise CouncilError(f'unknown vendor(s): {", ".join(unknown)}')
+    endpoints = {}       # endpoint -> (key error, {model: error}), checked once for all its entries
     checks = {}
     for v in vendors:
-        exe = VENDOR_EXE[v]
+        exe = VENDOR_EXE[base[v]]
         c = {'ok': False, 'exe': exe}
         checks[v] = c
         if not shutil.which(exe):
             c['error'] = f'{exe} is not on PATH'
             continue
         try:
-            blocked = vendor_blocked(v)
+            blocked = vendor_blocked(base[v])
         except CouncilError as e:
             c['error'] = str(e)
             continue
         if blocked:
             c.update(sandboxed=True, error=blocked)
+            continue
+        endpoint = ENDPOINTS.get(base[v])
+        if endpoint and not os.environ.get(endpoint['keyEnv']):
+            c['error'] = f'{endpoint["keyEnv"]} is not set'
             continue
         if v == 'gemini':
             path = os.path.join(agy_home(), 'settings.json')
@@ -113,6 +191,15 @@ def cmd_preflight(a):
         if r.returncode != 0:
             c['error'] = f'{exe} --version exited {r.returncode}: {oneline(r.stderr or r.stdout, 200)}'
             continue
+        if endpoint:
+            if base[v] not in endpoints:
+                models = [x.split(':', 1)[1] for x in vendors if base[x] == base[v] and ':' in x]
+                endpoints[base[v]] = endpoint_checks(endpoint, list(dict.fromkeys(models)))
+            key_error, model_errors = endpoints[base[v]]
+            error = key_error or (model_errors.get(v.split(':', 1)[1]) if ':' in v else None)
+            if error:
+                c.update(version=oneline(r.stdout, 80), error=error)
+                continue
         c.update(ok=True, version=oneline(r.stdout, 80))
     bad = {v: c for v, c in checks.items() if not c['ok']}
     status = 'ok' if not bad else 'sandboxed' if all(c.get('sandboxed') for c in bad.values()) else 'error'

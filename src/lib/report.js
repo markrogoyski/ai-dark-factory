@@ -398,7 +398,7 @@ function pairOutcomeFacts(S) {
 
 function retroFacts(S, o) {
   const claude = S.turnLog.filter(t => t.vendor === 'claude')
-  const others = ['codex', 'gemini'].map(v => [v, S.turnLog.filter(t => t.vendor === v)]).filter(([, ts]) => ts.length)
+  const others = ['codex', 'gemini', 'openrouter'].map(v => [v, S.turnLog.filter(t => t.vendor === v)]).filter(([, ts]) => ts.length)
   const failed = S.turnLog.filter(t => !t.ok).map(t => t.turn)
   const panelRuled = S.ledger.filter(c => String(c.ruledBy || '').startsWith('panel')).length
   return [
@@ -447,12 +447,17 @@ function voteHistory(S) {
   }).join('; ')
 }
 
+// OpenRouter turns get a line of their own, so a slow endpoint doesn't hide in the CLI median.
 function externalTimes(S) {
-  if (!S.vendorTimes.length) return ''
-  const xs = S.vendorTimes.map(t => t.seconds).sort((a, b) => a - b)
-  const median = xs[Math.floor(xs.length / 2)]
-  const slow = S.vendorTimes.slice().sort((a, b) => b.seconds - a.seconds).slice(0, 3)
-  return `- Codex and Gemini turn times: median ${Math.round(median)}s; slowest ${slow.map(t => `${t.turn} ${Math.round(t.seconds)}s`).join(', ')}.`
+  const line = (who, times) => {
+    if (!times.length) return ''
+    const xs = times.map(t => t.seconds).sort((a, b) => a - b)
+    const median = xs[Math.floor(xs.length / 2)]
+    const slow = times.slice().sort((a, b) => b.seconds - a.seconds).slice(0, 3)
+    return `- ${who} turn times: median ${Math.round(median)}s; slowest ${slow.map(t => `${t.turn} ${Math.round(t.seconds)}s`).join(', ')}.`
+  }
+  return [line('Codex and Gemini', S.vendorTimes.filter(t => t.vendor !== 'openrouter')),
+    line('OpenRouter', S.vendorTimes.filter(t => t.vendor === 'openrouter'))].filter(Boolean).join('\n')
 }
 
 // `council retro` saves this byte for byte, reading it from the retro agent's own saved prompt as
@@ -577,10 +582,12 @@ function failure(S, status, reason, extra) {
 function preflightStop(S, bad) {
   const lines = bad.map(p => `${p.vendor}: ${oneLine(p.error, 300) || 'failed'}`)
   const used = bad.map(p => p.vendor)
-  const seats = S.lineup.filter(s => used.includes(s.vendor)).map(s => s.key)
-  const panel = S.panel.filter(m => used.includes(m.vendor)).map(m => m.key)
+  // An OpenRouter entry names its model (openrouter:<id>), so it matches the seats with that model.
+  const uses = s => used.includes(s.vendor) || used.includes(preflightEntry(s))
+  const seats = S.lineup.filter(uses).map(s => s.key)
+  const panel = S.panel.filter(uses).map(m => m.key)
   // The factory's auditors are named too: the Architecture tier's risk reviewer is Gemini by default.
-  const lenses = tierProfile(S).factory ? S.auditors.filter(a => used.includes(a.vendor)).map(a => a.lens) : []
+  const lenses = tierProfile(S).factory ? S.auditors.filter(uses).map(a => a.lens) : []
   return {
     status: 'blocked', reason: `a vendor CLI can't run from this session (${lines.join('; ')})`, mode: S.mode, task: S.task, runDir: null,
     preflight: bad, notes: S.notes,

@@ -21,6 +21,8 @@ JOB_RUNNERS = {}
 JOB_SESSION_FILES = {}
 # The --brief form of a job's result, by job-key prefix.
 JOB_BRIEFS = {}
+# What a job kind's status must never hold (an endpoint seat's key), removed on every path to status.json.
+JOB_SCRUBBERS = {}
 
 
 def register_job_runner(kind, run, session_file=None):
@@ -30,6 +32,10 @@ def register_job_runner(kind, run, session_file=None):
     JOB_RUNNERS[kind] = run
     if session_file:
         JOB_SESSION_FILES[kind] = session_file
+
+
+def register_job_scrubber(kind, scrub):
+    JOB_SCRUBBERS[kind] = scrub
 
 
 def register_job_brief(prefix, brief):
@@ -177,8 +183,14 @@ def error_class(err):
     return 'vendor'
 
 
+def classify(result):
+    """A runner that knows the failure's class from a structured field (an endpoint's HTTP status) sets
+    errorClass itself; any other failure is classed from its text."""
+    return result.get('errorClass') or error_class(result.get('error'))
+
+
 def transient(result):
-    return result.get('status') == 'error' and error_class(result.get('error')) == 'transient'
+    return result.get('status') == 'error' and classify(result) == 'transient'
 
 
 def cmd_job(jd):
@@ -212,7 +224,7 @@ def run_job_spec(jd, spec):
                 result = run(jd, spec)
                 result['retried'] = oneline(first)[:300]
             if result.get('status') == 'error':
-                result['errorClass'] = error_class(result.get('error'))
+                result['errorClass'] = classify(result)
         elif spec['kind'] in JOB_RUNNERS:
             result = JOB_RUNNERS[spec['kind']](jd, spec)
         else:
@@ -226,4 +238,5 @@ def run_job_spec(jd, spec):
         result = {'status': 'error', 'error': f'{type(e).__name__}: {e}', **({'code': 'ENGINE_DRIFT', 'errorClass': 'engine'} if 'ENGINE_DRIFT:' in str(e) else {})}
         if spec['kind'] == 'delivery':
             write_json(os.path.join(spec['runDir'], 'delivery.json'), result)
-    write_json(os.path.join(jd, 'status.json'), result)
+    scrub = JOB_SCRUBBERS.get(spec.get('kind'))
+    write_json(os.path.join(jd, 'status.json'), scrub(result) if scrub else result)

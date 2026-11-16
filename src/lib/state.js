@@ -93,9 +93,31 @@ function carriedState(S) {
 }
 
 // Vendors whose CLIs this run depends on: the seats', the panel's, the spec reviewers' and the auditors'.
+function externalSeats(S) {
+  return [...S.lineup, ...S.panel, ...S.specReviewers, ...S.auditors, ...(S.ensemble ? [S.ensemble.compare] : []),
+    ...(S.host === 'codex' ? Object.values(S.roles).map(s => hostSeat(S.host, s)) : [])].filter(external)
+}
+
 function externalVendors(S) {
-  return [...new Set([...S.lineup, ...S.panel, ...S.specReviewers, ...S.auditors, ...(S.ensemble ? [S.ensemble.compare] : []),
-    ...(S.host === 'codex' ? Object.values(S.roles).map(s => hostSeat(S.host, s)) : [])].filter(external).map(s => s.vendor))]
+  return [...new Set(externalSeats(S).map(s => s.vendor))]
+}
+
+// What the preflight checks: externalVendors, except that an OpenRouter seat is checked per model
+// (openrouter:<id>), since each ID must exist. Without one it is exactly externalVendors.
+function preflightTargets(S) {
+  return [...new Set(externalSeats(S).map(preflightEntry))]
+}
+
+// The vendors the cross-vendor rules count. An OpenRouter seat runs some other provider's model
+// through the Claude CLI, so it never supplies a vendor of its own; its vote still counts toward K.
+function ruleVendors(seats) {
+  return new Set(seats.map(s => s.vendor).filter(v => v !== 'openrouter'))
+}
+
+// A panel member's job and thread key. An OpenRouter member's key holds its model ID, which may
+// hold / and :, so it is named by its place in the panel and a slug of the ID instead.
+function panelKey(S, m) {
+  return m.vendor === 'openrouter' ? `or${S.panel.indexOf(m) + 1}-${orSlug(m.model)}` : m.key
 }
 
 // The runner owns a unique prefix. A separate suffix per tier keeps even immediate escalations
@@ -157,11 +179,11 @@ function escalateAt(S) {
 }
 
 function crossVendor(S) {
-  return new Set(active(S).map(s => s.vendor)).size > 1
+  return ruleVendors(active(S)).size > 1
 }
 
 function crossVendorText(S) {
-  return new Set(active(S).map(s => s.vendor)).size > 2 ? 'at least two vendors' : 'both vendors'
+  return ruleVendors(active(S)).size > 2 ? 'at least two vendors' : 'both vendors'
 }
 
 // Round tags: 0..3 are rounds; 'F' the final version; 'G' the fix pass; 'ratify' the reviews;

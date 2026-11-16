@@ -193,6 +193,8 @@ export function createRuntime({ repo, hostRunDir, concurrency = 3, timeoutMin = 
   if (admission && !pin) throw drift('Pinned admission requires a validated executor')
   if (pin) guardEngine(pin)
   const vendors = admission ? [...new Set(admission.map(route => route.vendor))] : null
+  // What the setup preflight checks: the admitted vendors, except that an OpenRouter route names its model.
+  const pinnedTargets = admission ? [...new Set(admission.map(route => route.vendor === 'openrouter' ? `openrouter:${route.model}` : route.vendor))] : null
   const limit = createLimiter(concurrency)
   const activeJobs = new Set()
   const ownedRuns = new Set([hostRunDir])
@@ -238,6 +240,12 @@ export function createRuntime({ repo, hostRunDir, concurrency = 3, timeoutMin = 
       if (request.fresh) args.push('--fresh')
       if (request.resumeSession) args.push('--resume-session', request.resumeSession)
       if (request.checkout) args.push('--checkout', request.checkout)
+      // An OpenRouter seat keeps one Claude configuration directory across its turns: under the run
+      // directory, or under the host run directory for a role (configRoot).
+      if (request.vendor === 'openrouter') {
+        args.push('--config-key', jobKey(request.configKey || request.threadKey || key))
+        if (request.configRoot) args.push('--config-root', request.configRoot)
+      }
       const options = { cwd: repo, env: { ...childEnv, COUNCIL_RETRO_DIR: join(runDir, 'retros') }, signal }
       emit({ type: 'turn.started', label: request.label, role: request.role, vendor: request.vendor, model: request.model, job: key, runDir })
       activeJobs.add(jobDir)
@@ -295,13 +303,20 @@ export function createRuntime({ repo, hostRunDir, concurrency = 3, timeoutMin = 
       if (!/^[\w.-]+$/.test(request.setupRunId) || request.setupRunId === '.' || request.setupRunId === '..') throw new Error('Invalid setup run ID')
       ownedRuns.add(join(repo, '.council', request.setupRunId))
     }
+    // An OpenRouter role's Claude configuration lives in the host run directory, which no role can
+    // write. Its setup therefore starts in its scratch directory and writes only its own run directory
+    // (created here, so the sandbox grants it) and the git data, not the whole repository.
+    const endpoint = request.vendor === 'openrouter'
+    if (endpoint && setup && !request.setupRunId) throw new Error('An OpenRouter setup turn needs a host-assigned run ID')
+    const setupRun = endpoint && setup ? join(repo, '.council', request.setupRunId) : null
+    if (setupRun) mkdirSync(setupRun, { recursive: true })
     // Specification amendments (which pass measures: true) remeasure the baseline, including temporary Git indexes and
     // snapshot refs, through the same helper path as a checker.
     const measures = request.role === 'checker' || request.measures === true
     const writes = setup || measures || ['retro', 'record'].includes(request.role)
-    const writable = setup ? gitDirs : measures ? [runDir, ...gitDirs] : writes ? [runDir] : []
+    const writable = setupRun ? [setupRun, ...gitDirs] : setup ? gitDirs : measures ? [runDir, ...gitDirs] : writes ? [runDir] : []
     let preflight = ''
-    const preflightVendors = vendors || request.preflightVendors
+    const preflightVendors = pinnedTargets || request.preflightVendors
     if (setup && preflightVendors?.length) {
       const checked = await execute(['preflight', '--vendors', preflightVendors.join(',')], { cwd: repo, env: childEnv, signal })
       emit({ type: 'preflight', ...checked })
@@ -318,7 +333,8 @@ export function createRuntime({ repo, hostRunDir, concurrency = 3, timeoutMin = 
       required: [...(request.schema.required || []), 'turn'] }
     const payload = `${prompt}\n\nSet \`turn\` in your output to exactly "${tag}".\n\n<<<OUTPUT_SCHEMA\n${JSON.stringify(schema)}\nOUTPUT_SCHEMA>>>\n`
     const result = await turn({ ...request, key, threadKey: key, fresh: true,
-      cwd: setup ? repo : scratch, writable, sandbox: writes ? 'workspace-write' : 'read-only', prompt: payload, schema })
+      ...(endpoint ? { configKey: `role-${request.role}`, configRoot: hostRunDir } : {}),
+      cwd: setup && !setupRun ? repo : scratch, writable, sandbox: writes ? 'workspace-write' : 'read-only', prompt: payload, schema })
     // The shared engine receives provider diagnostics separately from the model's schema.
     request.onResult?.(result)
     if (result.status !== 'done') return null

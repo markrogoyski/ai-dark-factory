@@ -18,11 +18,15 @@ split decisions, and tier disagreements still take precedence. Explanation of an
 Council, or Ensemble performs no model turns. It does not run setup, preflight, or verification,
 and does not claim readiness. Architecture explicitly says it returns a plan without building.
 
-`--prepare` is the offline counterpart: no model turn, no run directory, no account change.
-It lists each vendor reachable from the request with the roles it could fill, checks that its
-CLI answers `--version` (the same sandbox and Gemini-settings probe setup makes), and checks
-that absolute `plan` documents exist. Tracked changes absent from HEAD are a warning, because
-setup decides them for the run's mode. Authentication is reported as unknown. Every new single
+`--prepare` is the checking counterpart: no model turn, no run directory, no account change.
+It lists each vendor reachable from the request with the roles it could fill (an OpenRouter
+seat as `openrouter:<model-id>`), checks that its CLI answers `--version` (the same sandbox and
+Gemini-settings probe setup makes), and checks that absolute `plan` documents exist. It is
+offline unless the request names an OpenRouter seat: then it also checks the key and the model
+ID, which sends two authenticated GET requests to OpenRouter (`/v1/key` and `/v1/models`), but
+still no model turn. Tracked changes absent from HEAD are a warning, because
+setup decides them for the run's mode. Authentication is reported as unknown, except that
+OpenRouter's answer to the key check is reported. Every new single
 run makes the same check first and stops with status `preflight` before intake when anything
 blocks, so a missing CLI costs no intake turn. Resume and Run-plan are not prepared. The same
 controls are available as object arguments in Claude Code.

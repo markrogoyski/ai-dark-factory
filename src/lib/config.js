@@ -45,8 +45,10 @@ const CATALOG = {
 
 const DEFAULT_SEATS = ['opus', 'sonnet', 'astra', 'gemini']
 const CODEX_SEATS = ['opus', 'astra', 'sol']
-const VENDOR_NAME = { claude: 'Claude', codex: 'Codex', gemini: 'Gemini' }
-const VENDOR_CLI = { claude: 'Claude CLI', codex: 'Codex CLI', gemini: 'Antigravity CLI (agy)' }
+const VENDOR_NAME = { claude: 'Claude', codex: 'Codex', gemini: 'Gemini', openrouter: 'OpenRouter' }
+const VENDOR_CLI = { claude: 'Claude CLI', codex: 'Codex CLI', gemini: 'Antigravity CLI (agy)', openrouter: 'Claude CLI on OpenRouter' }
+// An OpenRouter model ID as OpenRouter writes it (deepseek/deepseek-v4-pro, x-ai/grok:free, ~a/b), case kept.
+const OPENROUTER_ID = /^(?=.*[A-Za-z0-9])[A-Za-z0-9._~:@+\/-]{1,128}$/
 
 // Codex and Gemini seats run outside Claude Code, through a relay, and keep their own thread.
 const external = s => s.external === true || s.vendor !== 'claude'
@@ -80,13 +82,19 @@ const CLAUDE_EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max']
 const CODEX_EFFORTS = [...CLAUDE_EFFORTS, 'ultra']
 
 function parseSeat(spec, effortSpec) {
-  const key = String(spec).trim().toLowerCase()
+  const text = String(spec).trim(), key = text.toLowerCase()
   let s
   if (CATALOG[key]) s = { key, ...CATALOG[key] }
   else if (key.startsWith('codex:') && key.length > 6) s = { key, vendor: 'codex', model: key.slice(6), name: `Codex ${key.slice(6)}` }
   else if (key.startsWith('gemini:') && key.length > 7) s = { key, vendor: 'gemini', model: key.slice(7), name: `Gemini ${key.slice(7)}`, slug: true }
-  else throw new Error(`council: unknown seat '${spec}'. Known: ${Object.keys(CATALOG).join(', ')}, codex:<model-id> or gemini:<model-id>.`)
-  const e = effortSpec && typeof effortSpec === 'object' ? effortSpec[key] : effortSpec
+  // The Claude CLI against OpenRouter's Anthropic-compatible endpoint. The ID keeps its case, and the
+  // key re-parses to the same seat; it never names a path (see orSlug).
+  else if (key.startsWith('openrouter:') && OPENROUTER_ID.test(text.slice(11))) {
+    const id = text.slice(11)
+    s = { key: `openrouter:${id}`, vendor: 'openrouter', model: id, name: `OpenRouter ${id}` }
+  }
+  else throw new Error(`council: unknown seat '${spec}'. Known: ${Object.keys(CATALOG).join(', ')}, codex:<model-id>, gemini:<model-id> or openrouter:<model-id>.`)
+  const e = effortSpec && typeof effortSpec === 'object' ? effortSpec[s.key] : effortSpec
   s.effort = e ? String(e).toLowerCase() : 'high'
   const valid = s.vendor === 'codex' ? CODEX_EFFORTS : CLAUDE_EFFORTS
   if (!valid.includes(s.effort)) throw new Error(`council: effort '${s.effort}' is not valid for ${s.name}. Valid: ${valid.join(', ')}.`)
@@ -101,6 +109,17 @@ function parseSeat(spec, effortSpec) {
   delete s.efforts; delete s.slug
   return s
 }
+
+// A path- and ref-safe stand-in for an OpenRouter model ID: lowercase letters, digits and single
+// hyphens, at most 32 characters, so a panel member's job key with every runtime suffix (-recover,
+// -resumeN) stays within 63. Two IDs may slug alike, so callers add an index of their own.
+function orSlug(model) {
+  const slug = String(model).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 32).replace(/-+$/, '')
+  return slug || 'model'
+}
+
+// What a preflight checks for a seat: its vendor's CLI, and for OpenRouter also that model's ID.
+const preflightEntry = s => s.vendor === 'openrouter' ? `openrouter:${s.model}` : s.vendor
 
 const seatList = v => (Array.isArray(v) ? v : typeof v === 'string' ? v.split(',') : []).map(x => String(x).trim()).filter(Boolean)
 

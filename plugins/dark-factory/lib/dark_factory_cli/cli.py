@@ -73,7 +73,7 @@ def main():
 
     p = sub.add_parser('seat-run')
     p.add_argument('--run-dir', required=True)
-    p.add_argument('--vendor', default='codex', choices=['codex', 'gemini', 'claude'])
+    p.add_argument('--vendor', default='codex', choices=['codex', 'gemini', 'claude', 'openrouter'])
     p.add_argument('--seat', required=True, help='thread key; the vendor session is resumed per key')
     p.add_argument('--job', required=True)
     p.add_argument('--model', required=True)
@@ -91,6 +91,8 @@ def main():
     p.add_argument('--timeout-min', type=int, default=90)
     p.add_argument('--max-wait', type=int, default=DEFAULT_MAX_WAIT)
     p.add_argument('--checkout', help='SEAT-LABEL: create --cwd as a checkout of that snapshot first, if it does not exist')
+    p.add_argument('--config-key', help='openrouter: the seat whose Claude configuration directory this turn uses (default --seat)')
+    p.add_argument('--config-root', help='openrouter: where that directory lives: the run directory (default) or its Codex host run directory')
 
     p = sub.add_parser('wait')
     p.add_argument('--run-dir', required=True)
@@ -151,7 +153,7 @@ def main():
     p.add_argument('--run-dir', required=True)
 
     p = sub.add_parser('preflight')
-    p.add_argument('--vendors', required=True, help='comma-separated: codex, gemini, claude')
+    p.add_argument('--vendors', required=True, help='comma-separated: codex, gemini, claude, openrouter[:<model-id>]')
 
     p = sub.add_parser('cleanup')
     p.add_argument('--run-dir', required=True)

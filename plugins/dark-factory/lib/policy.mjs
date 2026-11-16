@@ -122,8 +122,10 @@ const CATALOG = {
 
 const DEFAULT_SEATS = ['opus', 'sonnet', 'astra', 'gemini']
 const CODEX_SEATS = ['opus', 'astra', 'sol']
-const VENDOR_NAME = { claude: 'Claude', codex: 'Codex', gemini: 'Gemini' }
-const VENDOR_CLI = { claude: 'Claude CLI', codex: 'Codex CLI', gemini: 'Antigravity CLI (agy)' }
+const VENDOR_NAME = { claude: 'Claude', codex: 'Codex', gemini: 'Gemini', openrouter: 'OpenRouter' }
+const VENDOR_CLI = { claude: 'Claude CLI', codex: 'Codex CLI', gemini: 'Antigravity CLI (agy)', openrouter: 'Claude CLI on OpenRouter' }
+// An OpenRouter model ID as OpenRouter writes it (deepseek/deepseek-v4-pro, x-ai/grok:free, ~a/b), case kept.
+const OPENROUTER_ID = /^(?=.*[A-Za-z0-9])[A-Za-z0-9._~:@+\/-]{1,128}$/
 
 // Codex and Gemini seats run outside Claude Code, through a relay, and keep their own thread.
 const external = s => s.external === true || s.vendor !== 'claude'
@@ -157,13 +159,19 @@ const CLAUDE_EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max']
 const CODEX_EFFORTS = [...CLAUDE_EFFORTS, 'ultra']
 
 function parseSeat(spec, effortSpec) {
-  const key = String(spec).trim().toLowerCase()
+  const text = String(spec).trim(), key = text.toLowerCase()
   let s
   if (CATALOG[key]) s = { key, ...CATALOG[key] }
   else if (key.startsWith('codex:') && key.length > 6) s = { key, vendor: 'codex', model: key.slice(6), name: `Codex ${key.slice(6)}` }
   else if (key.startsWith('gemini:') && key.length > 7) s = { key, vendor: 'gemini', model: key.slice(7), name: `Gemini ${key.slice(7)}`, slug: true }
-  else throw new Error(`council: unknown seat '${spec}'. Known: ${Object.keys(CATALOG).join(', ')}, codex:<model-id> or gemini:<model-id>.`)
-  const e = effortSpec && typeof effortSpec === 'object' ? effortSpec[key] : effortSpec
+  // The Claude CLI against OpenRouter's Anthropic-compatible endpoint. The ID keeps its case, and the
+  // key re-parses to the same seat; it never names a path (see orSlug).
+  else if (key.startsWith('openrouter:') && OPENROUTER_ID.test(text.slice(11))) {
+    const id = text.slice(11)
+    s = { key: `openrouter:${id}`, vendor: 'openrouter', model: id, name: `OpenRouter ${id}` }
+  }
+  else throw new Error(`council: unknown seat '${spec}'. Known: ${Object.keys(CATALOG).join(', ')}, codex:<model-id>, gemini:<model-id> or openrouter:<model-id>.`)
+  const e = effortSpec && typeof effortSpec === 'object' ? effortSpec[s.key] : effortSpec
   s.effort = e ? String(e).toLowerCase() : 'high'
   const valid = s.vendor === 'codex' ? CODEX_EFFORTS : CLAUDE_EFFORTS
   if (!valid.includes(s.effort)) throw new Error(`council: effort '${s.effort}' is not valid for ${s.name}. Valid: ${valid.join(', ')}.`)
@@ -178,6 +186,17 @@ function parseSeat(spec, effortSpec) {
   delete s.efforts; delete s.slug
   return s
 }
+
+// A path- and ref-safe stand-in for an OpenRouter model ID: lowercase letters, digits and single
+// hyphens, at most 32 characters, so a panel member's job key with every runtime suffix (-recover,
+// -resumeN) stays within 63. Two IDs may slug alike, so callers add an index of their own.
+function orSlug(model) {
+  const slug = String(model).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 32).replace(/-+$/, '')
+  return slug || 'model'
+}
+
+// What a preflight checks for a seat: its vendor's CLI, and for OpenRouter also that model's ID.
+const preflightEntry = s => s.vendor === 'openrouter' ? `openrouter:${s.model}` : s.vendor
 
 const seatList = v => (Array.isArray(v) ? v : typeof v === 'string' ? v.split(',') : []).map(x => String(x).trim()).filter(Boolean)
 
@@ -376,9 +395,31 @@ function carriedState(S) {
 }
 
 // Vendors whose CLIs this run depends on: the seats', the panel's, the spec reviewers' and the auditors'.
+function externalSeats(S) {
+  return [...S.lineup, ...S.panel, ...S.specReviewers, ...S.auditors, ...(S.ensemble ? [S.ensemble.compare] : []),
+    ...(S.host === 'codex' ? Object.values(S.roles).map(s => hostSeat(S.host, s)) : [])].filter(external)
+}
+
 function externalVendors(S) {
-  return [...new Set([...S.lineup, ...S.panel, ...S.specReviewers, ...S.auditors, ...(S.ensemble ? [S.ensemble.compare] : []),
-    ...(S.host === 'codex' ? Object.values(S.roles).map(s => hostSeat(S.host, s)) : [])].filter(external).map(s => s.vendor))]
+  return [...new Set(externalSeats(S).map(s => s.vendor))]
+}
+
+// What the preflight checks: externalVendors, except that an OpenRouter seat is checked per model
+// (openrouter:<id>), since each ID must exist. Without one it is exactly externalVendors.
+function preflightTargets(S) {
+  return [...new Set(externalSeats(S).map(preflightEntry))]
+}
+
+// The vendors the cross-vendor rules count. An OpenRouter seat runs some other provider's model
+// through the Claude CLI, so it never supplies a vendor of its own; its vote still counts toward K.
+function ruleVendors(seats) {
+  return new Set(seats.map(s => s.vendor).filter(v => v !== 'openrouter'))
+}
+
+// A panel member's job and thread key. An OpenRouter member's key holds its model ID, which may
+// hold / and :, so it is named by its place in the panel and a slug of the ID instead.
+function panelKey(S, m) {
+  return m.vendor === 'openrouter' ? `or${S.panel.indexOf(m) + 1}-${orSlug(m.model)}` : m.key
 }
 
 // The runner owns a unique prefix. A separate suffix per tier keeps even immediate escalations
@@ -440,11 +481,11 @@ function escalateAt(S) {
 }
 
 function crossVendor(S) {
-  return new Set(active(S).map(s => s.vendor)).size > 1
+  return ruleVendors(active(S)).size > 1
 }
 
 function crossVendorText(S) {
-  return new Set(active(S).map(s => s.vendor)).size > 2 ? 'at least two vendors' : 'both vendors'
+  return ruleVendors(active(S)).size > 2 ? 'at least two vendors' : 'both vendors'
 }
 
 // Round tags: 0..3 are rounds; 'F' the final version; 'G' the fix pass; 'ratify' the reviews;
@@ -1773,7 +1814,10 @@ function requiredChecksRule(S) {
 function setupPrompt(S) {
   const letters = S.letters.join(',')
   const A = S.letters[0]
-  const vendors = externalVendors(S)
+  const vendors = preflightTargets(S)
+  // An OpenRouter entry names its model ID, so the list is quoted then; otherwise it is as it was.
+  const vendorList = vendors.some(v => v.startsWith('openrouter:')) ? shq(vendors.join(',')) : vendors.join(',')
+  const clis = [...new Set(vendors.map(v => VENDOR_CLI[v.split(':')[0]]))]
   // A native Pair's timeline would start at init; the workflow has no replay-safe clock, so the
   // setup agent reads the time itself and init records it.
   const startedAt = !!S.pairOptions && S.host !== 'codex'
@@ -1795,8 +1839,8 @@ ${S.modeGiven ? `Mode: ${S.mode}. Return it as \`mode\`.\n` : ''}${startedAt ? `
 Before anything else, run \`date -u +%Y-%m-%dT%H:%M:%SZ\` and keep what it prints. Step 2 passes it to init, so the run's timeline counts setup from its start.
 ` : ''}${vendors.length ? `
 ## Step 0 — can the other vendors' CLIs run?
-${S.host === 'codex' ? `The host runtime already checked the required CLIs (${vendors.join(',')}) before starting this setup turn. Use the attached preflight JSON; do not run preflight again from inside your sandbox. Copy its vendors entries into \`preflight\` (vendor, ok, error). If status is not "ok", return status "preflight" with those entries and empty values elsewhere, and do not create anything. Otherwise continue to step 1.` : `Some seats run through the ${vendors.map(v => VENDOR_CLI[v]).join(' and the ')}. Check that they can start from here before anything is created. Make one Bash call with the sandbox disabled (dangerouslyDisableSandbox: true), exactly as written:
-${S.cli} preflight --vendors ${vendors.join(',')}
+${S.host === 'codex' ? `The host runtime already checked the required CLIs (${vendors.join(',')}) before starting this setup turn. Use the attached preflight JSON; do not run preflight again from inside your sandbox. Copy its vendors entries into \`preflight\` (vendor, ok, error). If status is not "ok", return status "preflight" with those entries and empty values elsewhere, and do not create anything. Otherwise continue to step 1.` : `Some seats run through the ${clis.join(' and the ')}. Check that they can start from here before anything is created. Make one Bash call with the sandbox disabled (dangerouslyDisableSandbox: true), exactly as written:
+${S.cli} preflight --vendors ${vendorList}
 It prints JSON with a "status" and, under "vendors", an entry per vendor with "ok" and "error". Copy each entry into \`preflight\` (vendor, ok, error). If status is "ok", go on to step 1. Otherwise stop here: return status "preflight" with the entries, and empty values elsewhere. Don't try to fix it, and don't run anything else.`}
 ` : ''}
 ## Step 1 — the documents the work follows
@@ -2260,7 +2304,7 @@ function identicalGroups(S, k) {
 // verified blocker or major stands against it; the scorecard order breaks ties.
 function consensus(S, k, book = S.votes) {
   const K = consensusAt(S)
-  const vendorsOk = voters => !crossVendor(S) || new Set(voters.map(L => seat(S, L).vendor)).size >= 2
+  const vendorsOk = voters => !crossVendor(S) || ruleVendors(voters.map(L => seat(S, L))).size >= 2
   const counts = tally(S, k, book)
   for (const [W, voters] of Object.entries(counts)) {
     if (voters.length >= K && vendorsOk(voters)) return { W, voters, via: 'votes' }
@@ -3018,7 +3062,7 @@ function pairOutcomeFacts(S) {
 
 function retroFacts(S, o) {
   const claude = S.turnLog.filter(t => t.vendor === 'claude')
-  const others = ['codex', 'gemini'].map(v => [v, S.turnLog.filter(t => t.vendor === v)]).filter(([, ts]) => ts.length)
+  const others = ['codex', 'gemini', 'openrouter'].map(v => [v, S.turnLog.filter(t => t.vendor === v)]).filter(([, ts]) => ts.length)
   const failed = S.turnLog.filter(t => !t.ok).map(t => t.turn)
   const panelRuled = S.ledger.filter(c => String(c.ruledBy || '').startsWith('panel')).length
   return [
@@ -3067,12 +3111,17 @@ function voteHistory(S) {
   }).join('; ')
 }
 
+// OpenRouter turns get a line of their own, so a slow endpoint doesn't hide in the CLI median.
 function externalTimes(S) {
-  if (!S.vendorTimes.length) return ''
-  const xs = S.vendorTimes.map(t => t.seconds).sort((a, b) => a - b)
-  const median = xs[Math.floor(xs.length / 2)]
-  const slow = S.vendorTimes.slice().sort((a, b) => b.seconds - a.seconds).slice(0, 3)
-  return `- Codex and Gemini turn times: median ${Math.round(median)}s; slowest ${slow.map(t => `${t.turn} ${Math.round(t.seconds)}s`).join(', ')}.`
+  const line = (who, times) => {
+    if (!times.length) return ''
+    const xs = times.map(t => t.seconds).sort((a, b) => a - b)
+    const median = xs[Math.floor(xs.length / 2)]
+    const slow = times.slice().sort((a, b) => b.seconds - a.seconds).slice(0, 3)
+    return `- ${who} turn times: median ${Math.round(median)}s; slowest ${slow.map(t => `${t.turn} ${Math.round(t.seconds)}s`).join(', ')}.`
+  }
+  return [line('Codex and Gemini', S.vendorTimes.filter(t => t.vendor !== 'openrouter')),
+    line('OpenRouter', S.vendorTimes.filter(t => t.vendor === 'openrouter'))].filter(Boolean).join('\n')
 }
 
 // `council retro` saves this byte for byte, reading it from the retro agent's own saved prompt as
@@ -3197,10 +3246,12 @@ function failure(S, status, reason, extra) {
 function preflightStop(S, bad) {
   const lines = bad.map(p => `${p.vendor}: ${oneLine(p.error, 300) || 'failed'}`)
   const used = bad.map(p => p.vendor)
-  const seats = S.lineup.filter(s => used.includes(s.vendor)).map(s => s.key)
-  const panel = S.panel.filter(m => used.includes(m.vendor)).map(m => m.key)
+  // An OpenRouter entry names its model (openrouter:<id>), so it matches the seats with that model.
+  const uses = s => used.includes(s.vendor) || used.includes(preflightEntry(s))
+  const seats = S.lineup.filter(uses).map(s => s.key)
+  const panel = S.panel.filter(uses).map(m => m.key)
   // The factory's auditors are named too: the Architecture tier's risk reviewer is Gemini by default.
-  const lenses = tierProfile(S).factory ? S.auditors.filter(a => used.includes(a.vendor)).map(a => a.lens) : []
+  const lenses = tierProfile(S).factory ? S.auditors.filter(uses).map(a => a.lens) : []
   return {
     status: 'blocked', reason: `a vendor CLI can't run from this session (${lines.join('; ')})`, mode: S.mode, task: S.task, runDir: null,
     preflight: bad, notes: S.notes,
@@ -3977,7 +4028,7 @@ function executionPlan(S) {
     mode: S.mode, output: S.workflowName === 'ensemble' ? 'measured, independently reviewed candidates and advisory ranking; no automatic selection' : S.mode === 'implement' ? 'reviewed implementation in a worktree; delivery pending' : S.tier === 'architecture' ? 'reviewed design and milestones; no implementation' : S.mode,
     participants: people(S.lineup), reviewers: people(S.auditors), panel: people(S.panel), specification: people(S.specReviewers),
     roles: Object.fromEntries(Object.entries(S.roles || {}).map(([role, s]) => [role, { model: s.key, vendor: s.vendor }])),
-    requiredCLIs: externalVendors(S).map(v => v === 'gemini' ? 'agy' : v),
+    requiredCLIs: preflightTargets(S).map(v => v === 'gemini' ? 'agy' : v),
     verification: S.verify || S.raw.verify || 'discovered during setup; not yet run',
     limits: { ...S.controls, repair: S.controls.repair || (S.tier === 'simple' ? { maxPasses: 1, minor: 'block' } : null), maxReviews: S.pairOptions?.maxReviews || null, rounds: S.pairOptions ? null : S.rounds },
     effort: S.pairOptions ? `Setup, ${S.pairOptions.design === false ? 'no design stage; ' : 'design and '}code turns, up to the review budget; measurements between code revisions.`
@@ -4936,13 +4987,16 @@ function providerConfiguration(S, observations) {
   }
   if (!facts.immutable && !(vendor === 'claude' && facts.hooks)) unknown.push('provider cannot bound settings reload')
   security.trust = observations.trust || []
+  // An endpoint seat (OpenRouter) is the Claude CLI talking to another base URL: that URL is part of what is pinned.
+  if (observations.endpoint) security.endpoint = observations.endpoint
   return { unknown, grants, security, diagnostic: providerDiagnostic(S, observations, unknown) }
 }
 
 // The set is configuration-derived, never selected by task prose or catalog membership.
 function reachableProviders(S, request) {
   const raw = { ...(request.args || {}), host: 'codex' }, workflowName = request.workflow || 'factory', routes = []
-  const add = (seat, role, reason) => { if (seat) routes.push({ vendor: seat.vendor, role, reason }) }
+  // An OpenRouter route names its model, which the preflight checks; the others are as they were.
+  const add = (seat, role, reason) => { if (seat) routes.push({ vendor: seat.vendor, role, reason, ...(seat.vendor === 'openrouter' ? { model: seat.model } : {}) }) }
   const configRoutes = (config, reason, factoryContext = false) => {
     config.lineup.forEach(s => add(s, 'author', reason))
     if (!raw.mode || config.mode === 'implement' || config.tier === 'architecture' || config.pairOptions || config.ensemble) config.auditors.forEach(s => add(s, 'review', reason))
@@ -4985,7 +5039,7 @@ function reachableProviders(S, request) {
       if (strategy === 'pair' && factory.tier === 'architecture') throw new Error('Pair strategy requires an implementation below Architecture.')
     }
   } else throw new Error('Unsupported pinned workflow')
-  return routes.filter((r, i) => routes.findIndex(x => x.vendor === r.vendor && x.role === r.role && x.reason === r.reason) === i)
+  return routes.filter((r, i) => routes.findIndex(x => x.vendor === r.vendor && x.role === r.role && x.reason === r.reason && x.model === r.model) === i)
 }
 
 // What a single run needs before its first model turn: the vendors its reachable routes use,
@@ -4993,7 +5047,10 @@ function reachableProviders(S, request) {
 function launchRequirements(S, request) {
   if (request.workflow === 'run-plan') throw new Error('Preparation does not support run-plan; prepare its tasks individually')
   const routes = reachableProviders(S, request), raw = request.args || {}, vendors = {}
-  for (const route of routes) (vendors[route.vendor] ||= []).includes(route.role) || vendors[route.vendor].push(route.role)
+  for (const route of routes) {
+    const entry = preflightEntry(route)
+    ;(vendors[entry] ||= []).includes(route.role) || vendors[entry].push(route.role)
+  }
   const plan = Array.isArray(raw.plan) ? raw.plan : raw.plan ? [raw.plan] : []
   return { workflow: request.workflow || 'factory', vendors, routes,
     references: plan.map(p => String(p).trim()).filter(p => p.startsWith('/')),
