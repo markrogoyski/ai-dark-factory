@@ -4720,7 +4720,7 @@ ${pairMeasurementRecord(S) ? `The measurement leaves out what each execution pri
 ${p.author?.notes || '(first author turn)'}
 
 For each open finding, return its ID with the change made or an evidence-backed disagreement in addressed. You cannot close a finding yourself. If a finding needs a user decision, return needs-user now with its existing ID and question; do not spend another author turn restating the conflict. Do not weaken tests, criteria, or the verification configuration to obtain a pass. If the task requires a user decision, return status needs-user and specific questions; if execution is blocked, return blocked with the reason in summary. Otherwise return done.
-Save each script or command file whose output supports a claim (a probe, a coverage or equivalence check) under ${S.run.room}/${label}/probes/, not in /tmp or $TMPDIR, which are cleared after the run, and cite it by that path.
+Save each script or command file whose output supports a claim (a probe, a coverage or equivalence check) under ${S.run.room}/${label}/probes/, not in /tmp or $TMPDIR, which are cleared after the run, and cite it by that path. Start each probe file's name with \`probe-\` so it cannot shadow a standard-library or project module, and run Python probes with \`python3 -I\`.
 Write a concise handoff at ${S.run.room}/${label}/A.md (create the directory). Include the ${design ? 'full design' : 'change summary and actual checks'}, responses to findings, and important remaining work. Return private notes sufficient for a fresh author context to continue. Keep implementation and design artifacts inside this run until delivery.`
 }
 
@@ -4754,7 +4754,7 @@ ${pairMeasurementRecord(S) ? `The measurement leaves out what each execution pri
 ${p.author?.notes || '(first author turn)'}
 
 For each open finding, return its ID with the change made or an evidence-backed disagreement in addressed. You cannot close a finding yourself. If a finding needs a user decision, return needs-user now with its existing ID and question; do not spend another author turn restating the conflict. Do not weaken tests, criteria, or the verification configuration to obtain a pass. If the task requires a user decision, return status needs-user and specific questions; if execution is blocked, return blocked with the reason in summary. Otherwise return done.
-Save each script or command file whose output supports a claim (a probe, a coverage or equivalence check) under ${S.run.room}/${label}/probes/, not in /tmp or $TMPDIR, which are cleared after the run, and cite it by that path.
+Save each script or command file whose output supports a claim (a probe, a coverage or equivalence check) under ${S.run.room}/${label}/probes/, not in /tmp or $TMPDIR, which are cleared after the run, and cite it by that path. Start each probe file's name with \`probe-\` so it cannot shadow a standard-library or project module, and run Python probes with \`python3 -I\`.
 Write a concise handoff at ${S.run.room}/${label}/A.md (create the directory). Include the change summary and actual checks, responses to findings, and important remaining work. Return private notes sufficient for a fresh author context to continue. Keep implementation artifacts inside this run until delivery.`
 }
 
@@ -4771,7 +4771,7 @@ ${correction ? `\n# Correct the previous structured review\n${correction.error}\
 
 Repository checkout to inspect: ${checkout}
 ${hostMaterializationNote(S, label, tag, checkout)}
-This checkout is separate from the author's worktree. Do not edit the author's worktree, main checkout, design, criteria, or verification configuration. You may run probes in your own checkout; assess the original snapshot, record the probe commands and results, and restore any tracked files you change. Save each probe script or command file under ${S.run.room}/review-${label}/probes/, not in /tmp or $TMPDIR, which are cleared after the run, and cite it by that path in your evidence. Never treat a passing probe on modified code as evidence about the reviewed snapshot. Do not delegate or launch models. Do not read the author's private notes or session history.${S.auditors[0]?.vendor === 'gemini' ? `\n${GEMINI_REVIEWER}` : ''}
+This checkout is separate from the author's worktree. Do not edit the author's worktree, main checkout, design, criteria, or verification configuration. You may run probes in your own checkout; assess the original snapshot, record the probe commands and results, and restore any tracked files you change. Save each probe script or command file under ${S.run.room}/review-${label}/probes/, not in /tmp or $TMPDIR, which are cleared after the run, and cite it by that path in your evidence. Start each probe file's name with \`probe-\` so it cannot shadow a standard-library or project module, and run Python probes with \`python3 -I\`. Never treat a passing probe on modified code as evidence about the reviewed snapshot. Do not delegate or launch models. Do not read the author's private notes or session history.${S.auditors[0]?.vendor === 'gemini' ? `\n${GEMINI_REVIEWER}` : ''}
 
 ${designed ? `# Design\n${p.design}\n\n` : ''}# Test contract
 ${JSON.stringify(p.approvedContract || p.testContract)}
