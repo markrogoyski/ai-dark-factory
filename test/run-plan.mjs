@@ -557,3 +557,26 @@ test('budget extensions require a reason, retain spent reservations, and do not 
   assert.equal(result.limitChanges[0].reason, 'Allow reviewed work to finish.')
   assert.equal((await f.invoke()).final.readiness.state, 'ready')
 })
+
+test('live checks pending on committed Pair tasks reach the plan report; they change neither commit nor park', async t => {
+  const f = fixture(t)
+  const check = { criterion: 'C1', check: 'Run `node cli.js fetch` against the real API.', reason: 'The tests stub the HTTP call.', source: 'setup' }
+  const runTask = async (S, item, args) => {
+    const result = await f.runTask(S, item, args)
+    if (item.id === 'one') result.final.readiness = { ...result.final.readiness, liveChecks: [check] }
+    return result
+  }
+  const result = await f.invoke({ runTask })
+  assert.equal(result.status, 'done', JSON.stringify(result))
+  assert.equal(result.final.readiness.state, 'ready')
+  assert.equal(f.git('rev-list', '--count', 'HEAD'), '3')
+  assert.deepEqual(result.liveChecks, [{ task: 'one', ...check }])
+  assert.deepEqual(result.final.readiness.liveChecks, [{ task: 'one', ...check }])
+  assert.equal('liveChecks' in result.tasks.two, false)
+  const lib = new Function(readFileSync(join(root, 'src/lib/run-plan.js'), 'utf8') + '\nreturn {runPlanLiveChecks,runPlanReport}')()
+  const S = { plan: policy.runPlanDefinition(plan([task('one'), task('two')])), tasks: { one: { status: 'parked' }, two: { status: 'done' }, acceptance: { status: 'pending' } }, turns: 0, elapsedMs: 0 }
+  for (const id of ['one', 'two']) lib.runPlanLiveChecks(S, { id }, { final: { readiness: { state: 'ready', liveChecks: [check] } } })
+  assert.deepEqual(lib.runPlanReport(S).liveChecks, [{ task: 'two', ...check }], 'a parked task\'s checks are not pending')
+  lib.runPlanLiveChecks(S, { id: 'two' }, { final: { readiness: { state: 'ready', liveChecks: [] } } })
+  assert.deepEqual([lib.runPlanReport(S).liveChecks, 'liveChecks' in S.tasks.two], [[], false], 'a later attempt without live checks clears them')
+})

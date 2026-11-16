@@ -43,6 +43,8 @@ async function pairRun() {
     S.pair.stop = 'Setup omitted criteria, reference snapshots, or the requested verification command.'
     return pairResult(S)
   }
+  // Checked in the run against a stand-in, and by the user against the real thing before delivery.
+  pairIngestLiveChecks(S, setup.liveChecks, 'setup')
   // A supplied criterion no evidence inside the run can meet would block readiness after all the
   // work, so the user rewrites or drops it before any author turn. Setup owns the criteria it
   // wrote: one it still lists goes to the author and reviewer to check by inspection, not to the user.
@@ -105,6 +107,7 @@ async function pairRun() {
     if (!author) { p.stop = 'The author turn failed.'; return pairResult(S, 'failed') }
     p.author = author
     pairIngestReadings(S, author)
+    pairIngestLiveChecks(S, author.liveChecks, label)
     if (author.status !== 'done') {
       p.stop = author.summary || 'The author could not continue.'
       p.questions = author.questions || []

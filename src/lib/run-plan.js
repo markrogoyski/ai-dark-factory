@@ -101,6 +101,16 @@ function runPlanOutcome(S, task, result) {
   return ['failed', 'error', 'preflight'].includes(result?.status) && S.tasks[task.id].attempts < S.plan.limits.maxAttempts ? 'pending' : 'parked'
 }
 
+// A ready Pair task can rest on a stand-in for something outside its run (a network service,
+// credentials): its result lists the live checks the user runs against the real thing. The task
+// keeps its latest attempt's list, and the plan's report gathers those of committed tasks. They
+// change neither commit nor park.
+function runPlanLiveChecks(S, task, result) {
+  const checks = result?.final?.readiness?.liveChecks
+  if (Array.isArray(checks) && checks.length) S.tasks[task.id].liveChecks = checks
+  else delete S.tasks[task.id].liveChecks
+}
+
 function runPlanAnswer(S, answers) {
   if (!answers || typeof answers !== 'object' || Array.isArray(answers)) throw new Error('run-plan: answers must be an object keyed by task ID')
   for (const [id, raw] of Object.entries(answers)) {
@@ -133,9 +143,11 @@ function runPlanExtendLimits(S, extension) {
 
 function runPlanReport(S) {
   const ready = S.tasks.acceptance.status === 'done' && S.plan.tasks.every(t => S.tasks[t.id].status === 'done')
+  const liveChecks = S.plan.tasks.filter(t => S.tasks[t.id].status === 'done').flatMap(t => (S.tasks[t.id].liveChecks || []).map(c => ({ task: t.id, ...c })))
   return { status: ready ? 'done' : 'blocked', workflow: 'run-plan', planId: S.plan.id, head: S.head,
     stopReason: ready ? null : S.turns >= S.plan.limits.maxTurns ? 'Run-plan turn budget exhausted.' : S.elapsedMs >= S.plan.limits.maxRunMin * 60000 ? 'Run-plan time budget exhausted.' : 'No eligible tasks; inspect parked work and dependencies.',
-    final: { readiness: { state: ready ? 'ready' : 'incomplete', blocked: [], incomplete: ready ? [] : ['Required run-plan work remains; inspect tasks, parked questions, and budgets.'] } },
+    final: { readiness: { state: ready ? 'ready' : 'incomplete', blocked: [], incomplete: ready ? [] : ['Required run-plan work remains; inspect tasks, parked questions, and budgets.'], liveChecks } },
+    liveChecks,
     tasks: S.tasks, decisions: S.decisions, limitChanges: S.limitChanges || [], parked: Object.entries(S.tasks).filter(([,t]) => t.status === 'parked').map(([id,t]) => ({ id, question: t.question, result: t.result })),
     budget: { turns: S.turns, elapsedMs: S.elapsedMs, remainingTurns: Math.max(0, S.plan.limits.maxTurns - S.turns), remainingMs: Math.max(0, S.plan.limits.maxRunMin * 60000 - S.elapsedMs), limits: S.plan.limits } }
 }

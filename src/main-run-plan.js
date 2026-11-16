@@ -9,6 +9,7 @@ async function runPlanWorkflow(input, runtime) {
     await runtime.reserve(S, task)
     const result = await runtime.execute(S, task, runPlanBrief(S, task))
     const outcome = runPlanOutcome(S, task, result)
+    runPlanLiveChecks(S, task, result)
     if (outcome === 'ready' && task.id !== 'acceptance') await runtime.deliver(S, task, result)
     else await runtime.finish(S, task, result, outcome === 'ready' ? 'done' : outcome)
   }

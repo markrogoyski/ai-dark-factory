@@ -34,7 +34,9 @@ Don't copy the process notes or run facts into it; the next command attaches the
 
 Pair: Claude Opus authors; Codex Astra reviews.
 
-Readiness: ready. Reviews: 3/8.
+Readiness: ready; live checks pending: C1. Reviews: 3/8.
+
+Live check for C1: Run `node cli.js fetch` against the real API and confirm it prints the status. (The tests stub the HTTP call, so TLS verification against the machine's certificate store never runs.)
 
 Verification: passed on the reviewed snapshot.
 

@@ -1,5 +1,11 @@
 const PAIR_STRINGS = { type: 'array', items: { type: 'string' } }
 const PAIR_CRITERION_ID = { type: 'string', description: 'The bare criterion ID, such as C1, never its text.' }
+// A criterion the run checks only against a stand-in, and how the user checks it against the real thing.
+const PAIR_LIVE_CHECK = { type: 'object', properties: {
+  criterion: PAIR_CRITERION_ID,
+  check: { type: 'string', description: 'The command or action that checks the criterion against the real thing.' },
+  reason: { type: 'string', description: 'Why the stand-in cannot show how the real thing behaves.' },
+} }
 const PAIR_SETUP_SCHEMA = strict({ type: 'object', properties: {
   ...SETUP_SCHEMA.properties,
   status: { type: 'string', enum: ['ok', 'dirty', 'needs-plan', 'needs-user', 'preflight', 'error'] },
@@ -9,6 +15,8 @@ const PAIR_SETUP_SCHEMA = strict({ type: 'object', properties: {
   unverifiable: { type: 'array', description: 'Criteria (supplied or written) that evidence available inside this run cannot fully meet; [] when every criterion can be checked.',
     items: { type: 'object', properties: { criterion: { type: 'string' }, reason: { type: 'string' },
       origin: { type: 'string', enum: ['supplied', 'written'], description: 'supplied: given in the task, criteria or a reference document, in substance; written: drafted by setup.' } } } },
+  liveChecks: { type: 'array', description: 'Criteria the run can check only against a stand-in for something outside it that can behave differently (a network service, credentials, a certificate store, an external CLI\'s login); [] when there are none.',
+    items: PAIR_LIVE_CHECK },
 } })
 const PAIR_CONTRACT = { type: 'object', properties: {
   testRoots: { type: 'array', items: { type: 'object', properties: {
@@ -61,6 +69,8 @@ const PAIR_AUTHOR_SCHEMA = strict({ type: 'object', properties: {
       literal: { type: 'string', description: 'What the requirement literally says.' },
       reading: { type: 'string', description: 'How the work reads it.' }, reason: { type: 'string' },
     } } },
+  liveChecks: { type: 'array', description: 'New entries only: criteria this turn\'s design or implementation makes rest on something outside the run that it checks only against a stand-in; [] otherwise.',
+    items: PAIR_LIVE_CHECK },
   questions: { type: 'array', items: { type: 'string' } },
 } })
 

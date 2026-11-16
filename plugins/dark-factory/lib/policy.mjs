@@ -4221,7 +4221,7 @@ Candidate's report (verify it yourself): ${JSON.stringify(solution)}`
 
 function newPairState() {
   return { stage: 'design', design: '', approvedDesign: '', testContract: null, approvedContract: null,
-    replayMapping: [], findings: [], readings: [], reviews: [], author: null, measurement: null, label: null, lastReview: null, signatures: [], stop: '', questions: [] }
+    replayMapping: [], findings: [], readings: [], liveChecks: [], reviews: [], author: null, measurement: null, label: null, lastReview: null, signatures: [], stop: '', questions: [] }
 }
 
 // Pair decisions are shared by both hosts. Only the reviewer can close findings.
@@ -4422,6 +4422,25 @@ function pairIngestReadings(S, author) {
     p.readings.push({ id, stage: p.stage, turn: p.label, requirement: text(r.requirement), literal: text(r.literal), reading: text(r.reading), reason: text(r.reason),
       status: 'proposed', evidence: '', finding: '', history: [] })
     added.push(id)
+  }
+  return added
+}
+
+// The criteria the run checks only against a stand-in for something outside it (a network service,
+// credentials, a certificate store), with how the user checks each against the real thing: setup's
+// list, then each author turn's new entries, in order. An entry already listed, word for word, is
+// not added again. They never change readiness state; the result lists them for the user to run
+// before delivery. Returns the entries added.
+function pairIngestLiveChecks(S, list, source) {
+  const p = S.pair, text = v => String(v ?? '').trim(), same = v => text(v).replace(/\s+/g, ' ')
+  p.liveChecks ||= []
+  const added = []
+  for (const c of Array.isArray(list) ? list : []) {
+    if (!text(c?.criterion) || !text(c?.check)) continue
+    if (p.liveChecks.some(old => ['criterion', 'check', 'reason'].every(k => same(old[k]) === same(c[k])))) continue
+    const entry = { criterion: text(c.criterion), check: text(c.check), reason: text(c.reason), source }
+    p.liveChecks.push(entry)
+    added.push(entry)
   }
   return added
 }
@@ -4687,7 +4706,9 @@ function pairReadiness(S) {
   }
   if (r?.requiresDesignRevision) blocked.push('The reviewer requires a revised design.')
   // unverified: nothing the review found is open, but the run could not measure the snapshot.
-  return { state: blocked.length ? 'blocked' : infrastructure.length ? 'unverified' : incomplete.length ? 'incomplete' : 'ready', blocked, incomplete, infrastructure }
+  // liveChecks: what the user runs against the real thing before delivery; it never sets the state.
+  return { state: blocked.length ? 'blocked' : infrastructure.length ? 'unverified' : incomplete.length ? 'incomplete' : 'ready', blocked, incomplete, infrastructure,
+    liveChecks: (p.liveChecks || []).map(c => ({ ...c })) }
 }
 
 function pairStalled(S) {
@@ -4723,8 +4744,10 @@ function pairResult(S, status = 'blocked') {
   }
   // A stop's questions, from setup, the author or the reviewer, are what the user is asked.
   const questions = (p.questions || []).map(q => String(q ?? '').replace(/\s+/g, ' ').trim()).filter(Boolean)
+  const live = ready.liveChecks, pending = [...new Set(live.map(c => c.criterion))]
   const report = [`Pair: ${S.pairOptions.author.name} authors; ${S.pairOptions.reviewer.name} reviews.`,
-    `Readiness: ${ready.state}. Reviews: ${p.reviews.length}/${S.pairOptions.maxReviews}.`,
+    `Readiness: ${ready.state}${pending.length ? `; live checks pending: ${pending.join(', ')}` : ''}. Reviews: ${p.reviews.length}/${S.pairOptions.maxReviews}.`,
+    ...live.map(c => `Live check for ${c.criterion}: ${c.check}${c.reason ? ` (${c.reason})` : ''}`),
     `Verification: ${!S.verify ? 'no automated gate configured; no test pass claimed' : !m?.suite?.ran ? 'not run on a final snapshot' : m.suite.passed ? 'passed on the reviewed snapshot' : 'failed on the reviewed snapshot'}.`,
     ...(Object.keys(overrides).length ? [`Verification overrides: the gate ran with explicit environment overrides from verification.json: ${Object.keys(overrides).sort().join(', ')}.`] : []),
     `Replay: ${m?.replay?.records?.length || 0} file/command records; ${m?.replay?.exclusions?.length || 0} overlay exclusions. Base outcomes require reviewer interpretation.`,
@@ -4735,6 +4758,7 @@ function pairResult(S, status = 'blocked') {
   return {
     forTheOrchestrator: 'Read final.readiness first. Report unresolved findings or missing evidence before any success summary. ' +
       (p.readings.some(r => r.status === 'accepted') ? 'Report the accepted readings (readings with status accepted): requirements the reviewer agreed the work may read other than literally. ' : '') +
+      (live.length ? 'Before delivery, run each live check (final.readiness.liveChecks) against the real service or resource it names and report its outcome: a ready run with live checks pending is not done until they pass. ' : '') +
       'Spot-check the reviewed snapshot and report the design and implementation review outcomes. The change stays in final.worktree. ' +
       'Readiness unverified means no review finding is open but the run could not measure the snapshot (final.readiness.infrastructure says why): run the gate on the delivered bytes before calling it done. ' +
       'Deliver only within the user\'s authorization, preserving unrelated edits. With HEAD at the original base, nothing staged, and no local edits other than those recorded at setup (run.json deliveryBaseline: unstaged tracked edits and untracked files, none on a path the reviewed change touches), ' +
@@ -4748,7 +4772,7 @@ function pairResult(S, status = 'blocked') {
     room: S.run?.room || null, refs: S.refs, stage: p.stage, stopReason: p.stop,
     design: p.design, testContract: p.approvedContract || p.testContract, replayMapping: p.replayMapping,
     author: S.pairOptions.author.name, reviewer: S.pairOptions.reviewer.name,
-    reviews: p.reviews, findings: p.findings, readings: p.readings, questions: p.questions, notes: S.notes,
+    reviews: p.reviews, findings: p.findings, readings: p.readings, liveChecks: live, questions: p.questions, notes: S.notes,
     report: { markdown: report },
     final: { author: 'A', model: S.pairOptions.author.name, summary: p.author?.summary || '',
       worktree: S.seats[0]?.wt || null, post: p.label && S.run ? `${S.run.room}/${p.label}/A.md` : null,
@@ -4758,7 +4782,7 @@ function pairResult(S, status = 'blocked') {
 }
 
 function pairSetupPrompt(S) {
-  return setupPrompt(S) + '\n\nPair also requires head: copy the full original commit from the helper init output (head), or run.json. Do not use a later author commit or snapshot. This identity will be checked against every baseline replay.\nKeep the original task unchanged, including in TASK.md. Return repositoryNotes with observations from HEAD, configuration/tool paths, and proposed interpretations of outdated wording. These are proposals for the author and reviewer to check, not replacement requirements. Explicit user decisions and required plan filenames override the default separate-test-file preference. If substantive requirements conflict, return status needs-user with precise questions immediately. Leave questions=[] when none remain.\nYou own the criteria you write: word each one so evidence inside this run can check it, by a test, the gate, or inspection of the code. A limitation that the task or a reference document explicitly accepts is not a gap: write the criterion to match what it accepts, cite where it says so, and leave it out of unverifiable. List in unverifiable only the criteria that you have established cannot be fully met with evidence available inside this run, with origin supplied when the task, criteria or a reference document states the criterion in substance, and written when you drafted it and no checkable wording keeps its intent: anything that needs downstream, post-delivery, production or live-service evidence, or a capability the author and reviewer lack. Give the criterion ID and the reason. If a tool or capability a criterion needs might be missing, check it with one command first (for example `php -m | grep -i pcov` for a coverage driver, or run the target itself), and list the criterion only when that check shows it is missing, citing the command and its output in the reason. Doubt alone ("may not be runnable") is not a reason: record it in repositoryNotes. The verification gate and the test replays run in the helper\'s measurement, outside your sandbox: a check that fails only inside your own sandbox (a refused port bind, socket or network call, or a denied tool) does not make a criterion unverifiable. Record that in repositoryNotes instead. Return unverifiable=[] when every criterion can be checked here.'
+  return setupPrompt(S) + '\n\nPair also requires head: copy the full original commit from the helper init output (head), or run.json. Do not use a later author commit or snapshot. This identity will be checked against every baseline replay.\nKeep the original task unchanged, including in TASK.md. Return repositoryNotes with observations from HEAD, configuration/tool paths, and proposed interpretations of outdated wording. These are proposals for the author and reviewer to check, not replacement requirements. Explicit user decisions and required plan filenames override the default separate-test-file preference. If substantive requirements conflict, return status needs-user with precise questions immediately. Leave questions=[] when none remain.\nYou own the criteria you write: word each one so evidence inside this run can check it, by a test, the gate, or inspection of the code. A limitation that the task or a reference document explicitly accepts is not a gap: write the criterion to match what it accepts, cite where it says so, and leave it out of unverifiable. List in unverifiable only the criteria that you have established cannot be fully met with evidence available inside this run, with origin supplied when the task, criteria or a reference document states the criterion in substance, and written when you drafted it and no checkable wording keeps its intent: anything that needs downstream, post-delivery, production or live-service evidence, or a capability the author and reviewer lack. Give the criterion ID and the reason. If a tool or capability a criterion needs might be missing, check it with one command first (for example `php -m | grep -i pcov` for a coverage driver, or run the target itself), and list the criterion only when that check shows it is missing, citing the command and its output in the reason. Doubt alone ("may not be runnable") is not a reason: record it in repositoryNotes. The verification gate and the test replays run in the helper\'s measurement, outside your sandbox: a check that fails only inside your own sandbox (a refused port bind, socket or network call, or a denied tool) does not make a criterion unverifiable. Record that in repositoryNotes instead. Return unverifiable=[] when every criterion can be checked here.\nList in liveChecks each criterion that the run can check only against a stand-in for something outside it, where the real thing can behave differently: a network service, credentials, the machine\'s certificate store or another platform-specific resource, an external CLI\'s login. Give the criterion ID, the command or action that checks it against the real thing, and why the stand-in can\'t show it. Don\'t list such a criterion in unverifiable: the run still checks it with the stand-in, and the user runs the live check before delivery. Return liveChecks=[] when there are none.'
 }
 
 // The contract and mapping rules, shared by the design stage and by a run without one.
@@ -4769,6 +4793,10 @@ const PAIR_REPLAY_NOTE = 'The helper replays added/modified test files and fixtu
 // A reading the author settles alone, in a handoff or a note, was never ruled on: every author turn
 // lists its readings, and the next review accepts or rejects each one by ID.
 const PAIR_READING_RULES = 'List in readings every place this turn\'s work reads a requirement, criterion or approved contract check other than literally: an exact list treated as a minimum, an ambiguity or open threshold you settled, two requirements you reconciled, or a contract setup you cannot build as written and check another way. Give the requirement (its criterion ID, or its words in quotes), what it literally says, your reading, and the reason. List only readings not already in the readings ledger; return readings=[] when the work follows everything literally. A reading only in your notes or the handoff is not reviewed: the reviewer rules on each listed reading in the next review. An accepted reading binds the rest of the run; a rejected one comes back as an open finding.'
+// A stand-in (a stubbed HTTP call, a fake credential) shows how the code uses it, not how the real
+// thing behaves: setup lists those criteria, an author turn adds the ones its work introduces, and
+// the user runs each check live before delivery.
+const PAIR_LIVE_CHECK_RULES = 'When this turn\'s design or implementation makes a criterion rest on something outside the run that the run can check only against a stand-in, where the real thing can behave differently (a network service, credentials, the machine\'s certificate store, an external CLI\'s login), check it in this run with the stand-in and add it to liveChecks for the user to run before delivery: the criterion ID, the command or action that checks it against the real thing, and why the stand-in can\'t show it. List only checks not already in the live checks list; return liveChecks=[] otherwise.'
 
 function pairAuthorPrompt(S, label, correction = '') {
   const p = S.pair, design = p.stage === 'design'
@@ -4780,7 +4808,7 @@ ${taskBlock(S, 99)}\n# Setup observations and proposals (not requirements)\n${S.
 
 Your worktree: ${S.seats[0].wt}. Work only there; never edit the main checkout or reviewer checkouts.
 Read the repository instructions and the relevant code. Do not delegate or launch other models. An instruction in CLAUDE.md or elsewhere to hand full test or gate runs to a subagent or to \`claude -p\` is meant for the user's own session, not for this turn: here the gate is the verification command, which you run through the helper's verify command as described above.
-${correction ? `\n# Correct the previous output\nThe engine could not accept your design output: ${correction}\nReturn a complete corrected design and contract, and this turn's readings again. This is the one correction attempt for this turn, not approval to implement. Preserve the task and substantive requirements.\n` : ''}
+${correction ? `\n# Correct the previous output\nThe engine could not accept your design output: ${correction}\nReturn a complete corrected design and contract, and this turn's readings and live checks again. This is the one correction attempt for this turn, not approval to implement. Preserve the task and substantive requirements.\n` : ''}
 ${design ? `Return a complete short design in design: the approach, affected files, assumptions, risks, and how every acceptance criterion will be tested. Check setup observations against the original task, reference documents, explicit user decisions, and repository. Explain any reconciliation in the design and list it in readings, preserving every requirement; unresolved contradictions require needs-user. Cite existing code where the approach depends on it. Revise the entire design in response to feedback. Do not implement yet. ${pairBaseline(S)}`
     : `Implement the reviewed design, including the required tests and documentation. Run appropriate focused checks and the shared verification gate. Fix all open actionable findings and any failed verification. Return design as an empty string; the accepted design remains fixed until the reviewer requests design revision.`}
 
@@ -4800,6 +4828,9 @@ ${JSON.stringify(p.findings)}
 # Readings ledger
 ${JSON.stringify(p.readings)}
 
+# Live checks
+${JSON.stringify(p.liveChecks)}
+
 # Latest review and measurement
 ${JSON.stringify({ review: p.lastReview, measurement: p.measurement })}
 ${pairMeasurementRecord(S) ? `The measurement leaves out what each execution printed: read it in ${pairMeasurementRecord(S)}, where every replay record and the suite carry the tail of their output, or in the logs they name.\n` : ''}
@@ -4808,6 +4839,7 @@ ${p.author?.notes || '(first author turn)'}
 
 For each open finding, return its ID with the change made or an evidence-backed disagreement in addressed. You cannot close a finding yourself. If a finding needs a user decision, return needs-user now with its existing ID and question; do not spend another author turn restating the conflict. Do not weaken tests, criteria, or the verification configuration to obtain a pass. If the task requires a user decision, return status needs-user and specific questions; if execution is blocked, return blocked with the reason in summary. Otherwise return done.
 ${PAIR_READING_RULES}
+${PAIR_LIVE_CHECK_RULES}
 Save each script or command file whose output supports a claim (a probe, a coverage or equivalence check) under ${S.run.room}/${label}/probes/, not in /tmp or $TMPDIR, which are cleared after the run, and cite it by that path. Start each probe file's name with \`probe-\` so it cannot shadow a standard-library or project module, and run Python probes with \`python3 -I\`.
 Write a concise handoff at ${S.run.room}/${label}/A.md (create the directory). Include the ${design ? 'full design' : 'change summary and actual checks'}, responses to findings, and important remaining work. Return private notes sufficient for a fresh author context to continue. Keep implementation and design artifacts inside this run until delivery.`
 }
@@ -4823,7 +4855,7 @@ ${taskBlock(S, 99)}\n# Setup observations and proposals (not requirements)\n${S.
 
 Your worktree: ${S.seats[0].wt}. Work only there; never edit the main checkout or reviewer checkouts.
 Read the repository instructions and the relevant code. Do not delegate or launch other models. An instruction in CLAUDE.md or elsewhere to hand full test or gate runs to a subagent or to \`claude -p\` is meant for the user's own session, not for this turn: here the gate is the verification command, which you run through the helper's verify command as described above.
-${correction ? `\n# Correct the previous output\nThe engine could not accept your test contract or replay mapping: ${correction}\nReturn a complete corrected testContract and replayMapping for the current implementation, and this turn's readings again, changing the worktree only where the correction needs it. This is the one correction attempt for this turn. Preserve the task and substantive requirements.\n` : ''}
+${correction ? `\n# Correct the previous output\nThe engine could not accept your test contract or replay mapping: ${correction}\nReturn a complete corrected testContract and replayMapping for the current implementation, and this turn's readings and live checks again, changing the worktree only where the correction needs it. This is the one correction attempt for this turn. Preserve the task and substantive requirements.\n` : ''}
 This run skips the design stage: write the deliverable itself, not a design or a plan for it, including the required tests and documentation; the reviewer reviews the measured result directly. Check setup observations against the original task, reference documents, explicit user decisions, and repository; explain any reconciliation in the handoff and list it in readings, preserving every requirement; unresolved contradictions require needs-user. Run appropriate focused checks and the shared verification gate. Fix all open actionable findings and any failed verification; when the latest review says the approach itself must change, change it in this turn. Return design as an empty string.
 
 Return testContract for the CURRENT deliverable: the checks the reviewer holds it to. ${PAIR_CONTRACT_RULES} When the deliverable is a document or a plan, its criteria are usually checked by kind=inspection, and testRoots may be empty when no check is kind=test. The contract is yours to keep current: return it whole every turn, extended or corrected where findings call for it, never weakened to obtain a pass. ${PAIR_LAYOUT_RULES} If isolation cannot work, report the limitation in the handoff instead of claiming a preserved baseline pass.
@@ -4838,6 +4870,9 @@ ${JSON.stringify(p.findings)}
 # Readings ledger
 ${JSON.stringify(p.readings)}
 
+# Live checks
+${JSON.stringify(p.liveChecks)}
+
 # Latest review and measurement
 ${JSON.stringify({ review: p.lastReview, measurement: p.measurement })}
 ${pairMeasurementRecord(S) ? `The measurement leaves out what each execution printed: read it in ${pairMeasurementRecord(S)}, where every replay record and the suite carry the tail of their output, or in the logs they name.\n` : ''}
@@ -4846,6 +4881,7 @@ ${p.author?.notes || '(first author turn)'}
 
 For each open finding, return its ID with the change made or an evidence-backed disagreement in addressed. You cannot close a finding yourself. If a finding needs a user decision, return needs-user now with its existing ID and question; do not spend another author turn restating the conflict. Do not weaken tests, criteria, or the verification configuration to obtain a pass. If the task requires a user decision, return status needs-user and specific questions; if execution is blocked, return blocked with the reason in summary. Otherwise return done.
 ${PAIR_READING_RULES}
+${PAIR_LIVE_CHECK_RULES}
 Save each script or command file whose output supports a claim (a probe, a coverage or equivalence check) under ${S.run.room}/${label}/probes/, not in /tmp or $TMPDIR, which are cleared after the run, and cite it by that path. Start each probe file's name with \`probe-\` so it cannot shadow a standard-library or project module, and run Python probes with \`python3 -I\`.
 Write a concise handoff at ${S.run.room}/${label}/A.md (create the directory). Include the change summary and actual checks, responses to findings, and important remaining work. Return private notes sufficient for a fresh author context to continue. Keep implementation artifacts inside this run until delivery.`
 }
@@ -4882,11 +4918,18 @@ ${JSON.stringify({ findings: p.findings, addressed: p.author.addressed })}
 
 # Readings ledger
 ${JSON.stringify(p.readings)}
-
+${pairLiveChecksNote(S)}
 Use resolutions to update existing IDs: open if still actionable, fixed only after inspecting the correction, refuted only with evidence that the finding was mistaken. Give concrete evidence for every resolution. Reopen an old ID when its defect recurs. Missing resolutions leave findings open.${designed ? ' In design review, leave code findings open until the implementation is fixed; check that the revised design explains their correction.' : ''} Add only genuinely new defects in findings; the engine assigns their IDs. Actionable minor findings count too. Put optional preferences and unrelated improvements in suggestions; do not manufacture findings to fill a quota.
 In rulings, rule on every reading the ledger lists as proposed, exactly one ruling each, with evidence. Accept a reading only when it keeps the requirement's intent and the original task, reference documents or explicit user decisions support it; setup observations alone cannot. Reject it when the requirement can and must be met as written, citing what shows that; the engine files each rejected reading as a major finding. Rule needs-user only on a reading that one of your questions cites. Accepted readings are settled: hold the work to them and do not reopen them. Return rulings=[] when no reading is proposed.
 Return a question in questions when a finding, new or existing, or a reading can be settled only by the user: two requirements that cannot both hold as written, or a requirement that a fact your evidence shows makes impossible as written, with no reading inside the task's words that settles it. Put the exact words of each requirement involved in quoted; in question, cite the finding or reading ID and give the options you see; say in summary what the user must decide. Keep any finding it concerns open as usual. A question stops the run and goes to the user at once, so ask it in the first review that can show the conflict, not after another round. Ordinary defects, missing evidence, unclear code and preferences are findings, never questions. Otherwise return questions=[].
 Return an evidenced met/partial/unmet assessment for every acceptance criterion, exactly one each, with criterion set to its bare ID (C1, not the criterion's text); challenges name their criterion the same way. ${designed ? 'In code review, set requiresDesignRevision=true only if the implementation needs a materially different design; explain it in a finding. The engine will return the author to design review. In design review, keep that field false and express needed revisions as findings.' : 'This run has no design stage to return to: keep requiresDesignRevision false, and when the approach itself must change, say so in a finding; the author reworks it in the next implementation turn.'} Return complete=false if you cannot finish the review; an empty findings list is not approval in that case.`
+}
+
+// The reviewer reads the live checks and leaves them alone: they are for the user to run, against
+// the real thing, before delivery.
+function pairLiveChecksNote(S) {
+  const live = S.pair.liveChecks || []
+  return live.length ? `\n# Live checks\n${JSON.stringify(live)}\nThese criteria are checked in this run only against a stand-in for something outside it, and the user runs each live check against the real thing before delivery. Assess them on the evidence inside this run, the stand-in included. Don't run the live checks (you have no network), and don't file the missing live result as a finding.\n` : ''
 }
 
 // The structured challenge a design review returns, and a code review without a design stage

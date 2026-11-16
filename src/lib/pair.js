@@ -1,6 +1,6 @@
 function newPairState() {
   return { stage: 'design', design: '', approvedDesign: '', testContract: null, approvedContract: null,
-    replayMapping: [], findings: [], readings: [], reviews: [], author: null, measurement: null, label: null, lastReview: null, signatures: [], stop: '', questions: [] }
+    replayMapping: [], findings: [], readings: [], liveChecks: [], reviews: [], author: null, measurement: null, label: null, lastReview: null, signatures: [], stop: '', questions: [] }
 }
 
 // Pair decisions are shared by both hosts. Only the reviewer can close findings.
@@ -201,6 +201,25 @@ function pairIngestReadings(S, author) {
     p.readings.push({ id, stage: p.stage, turn: p.label, requirement: text(r.requirement), literal: text(r.literal), reading: text(r.reading), reason: text(r.reason),
       status: 'proposed', evidence: '', finding: '', history: [] })
     added.push(id)
+  }
+  return added
+}
+
+// The criteria the run checks only against a stand-in for something outside it (a network service,
+// credentials, a certificate store), with how the user checks each against the real thing: setup's
+// list, then each author turn's new entries, in order. An entry already listed, word for word, is
+// not added again. They never change readiness state; the result lists them for the user to run
+// before delivery. Returns the entries added.
+function pairIngestLiveChecks(S, list, source) {
+  const p = S.pair, text = v => String(v ?? '').trim(), same = v => text(v).replace(/\s+/g, ' ')
+  p.liveChecks ||= []
+  const added = []
+  for (const c of Array.isArray(list) ? list : []) {
+    if (!text(c?.criterion) || !text(c?.check)) continue
+    if (p.liveChecks.some(old => ['criterion', 'check', 'reason'].every(k => same(old[k]) === same(c[k])))) continue
+    const entry = { criterion: text(c.criterion), check: text(c.check), reason: text(c.reason), source }
+    p.liveChecks.push(entry)
+    added.push(entry)
   }
   return added
 }
@@ -466,7 +485,9 @@ function pairReadiness(S) {
   }
   if (r?.requiresDesignRevision) blocked.push('The reviewer requires a revised design.')
   // unverified: nothing the review found is open, but the run could not measure the snapshot.
-  return { state: blocked.length ? 'blocked' : infrastructure.length ? 'unverified' : incomplete.length ? 'incomplete' : 'ready', blocked, incomplete, infrastructure }
+  // liveChecks: what the user runs against the real thing before delivery; it never sets the state.
+  return { state: blocked.length ? 'blocked' : infrastructure.length ? 'unverified' : incomplete.length ? 'incomplete' : 'ready', blocked, incomplete, infrastructure,
+    liveChecks: (p.liveChecks || []).map(c => ({ ...c })) }
 }
 
 function pairStalled(S) {
@@ -502,8 +523,10 @@ function pairResult(S, status = 'blocked') {
   }
   // A stop's questions, from setup, the author or the reviewer, are what the user is asked.
   const questions = (p.questions || []).map(q => String(q ?? '').replace(/\s+/g, ' ').trim()).filter(Boolean)
+  const live = ready.liveChecks, pending = [...new Set(live.map(c => c.criterion))]
   const report = [`Pair: ${S.pairOptions.author.name} authors; ${S.pairOptions.reviewer.name} reviews.`,
-    `Readiness: ${ready.state}. Reviews: ${p.reviews.length}/${S.pairOptions.maxReviews}.`,
+    `Readiness: ${ready.state}${pending.length ? `; live checks pending: ${pending.join(', ')}` : ''}. Reviews: ${p.reviews.length}/${S.pairOptions.maxReviews}.`,
+    ...live.map(c => `Live check for ${c.criterion}: ${c.check}${c.reason ? ` (${c.reason})` : ''}`),
     `Verification: ${!S.verify ? 'no automated gate configured; no test pass claimed' : !m?.suite?.ran ? 'not run on a final snapshot' : m.suite.passed ? 'passed on the reviewed snapshot' : 'failed on the reviewed snapshot'}.`,
     ...(Object.keys(overrides).length ? [`Verification overrides: the gate ran with explicit environment overrides from verification.json: ${Object.keys(overrides).sort().join(', ')}.`] : []),
     `Replay: ${m?.replay?.records?.length || 0} file/command records; ${m?.replay?.exclusions?.length || 0} overlay exclusions. Base outcomes require reviewer interpretation.`,
@@ -514,6 +537,7 @@ function pairResult(S, status = 'blocked') {
   return {
     forTheOrchestrator: 'Read final.readiness first. Report unresolved findings or missing evidence before any success summary. ' +
       (p.readings.some(r => r.status === 'accepted') ? 'Report the accepted readings (readings with status accepted): requirements the reviewer agreed the work may read other than literally. ' : '') +
+      (live.length ? 'Before delivery, run each live check (final.readiness.liveChecks) against the real service or resource it names and report its outcome: a ready run with live checks pending is not done until they pass. ' : '') +
       'Spot-check the reviewed snapshot and report the design and implementation review outcomes. The change stays in final.worktree. ' +
       'Readiness unverified means no review finding is open but the run could not measure the snapshot (final.readiness.infrastructure says why): run the gate on the delivered bytes before calling it done. ' +
       'Deliver only within the user\'s authorization, preserving unrelated edits. With HEAD at the original base, nothing staged, and no local edits other than those recorded at setup (run.json deliveryBaseline: unstaged tracked edits and untracked files, none on a path the reviewed change touches), ' +
@@ -527,7 +551,7 @@ function pairResult(S, status = 'blocked') {
     room: S.run?.room || null, refs: S.refs, stage: p.stage, stopReason: p.stop,
     design: p.design, testContract: p.approvedContract || p.testContract, replayMapping: p.replayMapping,
     author: S.pairOptions.author.name, reviewer: S.pairOptions.reviewer.name,
-    reviews: p.reviews, findings: p.findings, readings: p.readings, questions: p.questions, notes: S.notes,
+    reviews: p.reviews, findings: p.findings, readings: p.readings, liveChecks: live, questions: p.questions, notes: S.notes,
     report: { markdown: report },
     final: { author: 'A', model: S.pairOptions.author.name, summary: p.author?.summary || '',
       worktree: S.seats[0]?.wt || null, post: p.label && S.run ? `${S.run.room}/${p.label}/A.md` : null,

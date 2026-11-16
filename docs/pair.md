@@ -129,6 +129,22 @@ author asks: the review counts, its findings and rulings are recorded, and `ques
 question with the requirements it quotes. A question without a quoted requirement, or a
 `needs-user` ruling no question cites, gets the review's one correction.
 
+### Live checks
+
+Some criteria the run can check only against a stand-in for something outside it, where the real
+thing can behave differently: a network service, credentials, the machine's certificate store or
+another platform-specific resource, an external CLI's login. In one run an HTTP preflight passed
+review and the gate with its call stubbed, and failed on its first live call because python.org's
+Python has an empty CA store. Setup lists such criteria in `liveChecks`, each with the command or
+action that checks it against the real thing and why the stand-in can't show it, and an author
+turn adds any its design or implementation introduces; repeated entries are dropped. They are not
+unverifiable: the run still checks them with the stand-in. The reviewer sees the list and assesses
+those criteria on the evidence inside the run, without running the live checks. Readiness keeps
+its state, so a run can be `ready` with live checks pending: `final.readiness.liveChecks` lists
+them, the report's readiness line reads "Readiness: ready; live checks pending: C3, C5." followed
+by each check, and `forTheOrchestrator` says to run each one against the real thing before
+delivery. Such a run isn't done until they pass.
+
 ### Without a design stage
 
 `design: false` (`--no-design` at the start of a string task, or on the Codex runner's command
@@ -249,8 +265,9 @@ Results open with `summary` (status, readiness, open findings, snapshot, gate re
 cleanup command for after delivery), followed by `design`, `testContract`, `replayMapping`,
 `reviews`, `findings`, `readings` (each with its ruling, also listed in `report.markdown`),
 `stopReason`, `questions` (when setup, the author or the reviewer stops the run for you, also
-listed in `report.markdown` under "Questions for the user"), `final.replay`, and
-`final.readiness`. `final.suite` and `final.replay` are the measurement summary; the job's
+listed in `report.markdown` under "Questions for the user"), `liveChecks` (the
+[live checks](#live-checks) still to run, also in `final.readiness.liveChecks`), `final.replay`,
+and `final.readiness`. `final.suite` and `final.replay` are the measurement summary; the job's
 `status.json` keeps the output tails.
 `final.suite.overrides` (also in `summary.final.suite`) is the explicit `env` object from the
 run's `verification.json` that the measured gate ran with, as the measurement read it, and `{}`

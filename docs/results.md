@@ -42,6 +42,12 @@ Code, not a model, sets readiness from the checks, and it never changes which re
 `final.readiness.blocked` and `final.readiness.incomplete` list the reasons. Ensemble reports a
 readiness for each candidate instead.
 
+A Pair run, and a Run-plan that committed Pair tasks, can be `ready` with live checks pending:
+`final.readiness.liveChecks` lists the criteria the run could check only against a stand-in for
+something outside it, such as a network service or credentials, each with the command or action
+that checks it against the real thing. Run them before delivery; the run isn't done until they
+pass. See [Pair](pair.md#live-checks).
+
 ## `delivery`: has it reached your checkout
 
 | `delivery.status` | meaning |

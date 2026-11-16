@@ -41,6 +41,8 @@ const measurement = (label, tree = 'a'.repeat(40)) => ({ status: 'done', error: 
 }, suite: { ran: true, passed: true, command: 'node test.cjs', failureKind: '', log: `/repo/.council/pair-test/logs/suite-A-${label}.log` }, replay: replay(tree) })
 const finding = statement => ({ severity: 'minor', statement, evidence: 'src/example.js:12 lacks the required case.' })
 const reading = (over = {}) => ({ requirement: 'C1', literal: 'Runs on Node 20 and 22.', reading: 'Runs on at least Node 20 and 22.', reason: 'CI also tests Node 24.', ...over })
+const liveCheck = (over = {}) => ({ criterion: 'C1', check: 'Run `node cli.js fetch` against the real API and confirm it prints the status.',
+  reason: 'The tests stub the HTTP call, so TLS verification against the machine\'s certificate store never runs.', ...over })
 
 // The runner's own measurement of the base revision (the full helper record).
 const baseRecord = () => helperRecord({ status: 'done', error: '', snapshot: {
@@ -633,7 +635,7 @@ test('author questions and failures return unresolved results without inventing 
 
 test('pair prompts have reviewed golden coverage', async () => {
   let authors = 0
-  const { calls } = await run({ native: true, author: a => ({ ...a, readings: ++authors === 1 ? [reading()] : [] }), review: (r, n) => {
+  const { calls } = await run({ native: true, setup: { liveChecks: [liveCheck()] }, author: a => ({ ...a, readings: ++authors === 1 ? [reading()] : [] }), review: (r, n) => {
     if (n === 1) {
       r.findings = [finding('Cover the boundary case.')]
       r.rulings = [{ id: 'R1', ruling: 'accepted', evidence: 'The task names no other environment; the minimum keeps its intent.' }]
@@ -1318,4 +1320,58 @@ test('a reading ruled needs-user stops the run beside the question that cites it
     assert.equal(unasked.calls.filter(c => c.kind === 'review').length, 2, 'one bounded correction before stopping')
     assert.equal(unasked.result.readings[0].status, 'proposed')
   }
+})
+
+// An OpenRouter preflight passed review and the gate with its HTTP call stubbed, was reported ready,
+// and failed on its first live call: python.org's Python has an empty CA store.
+test('live checks from setup and the author reach the result and report; readiness stays ready', async () => {
+  const tls = liveCheck(), login = liveCheck({ criterion: 'C2', check: 'Run `gh auth status` and then `node cli.js publish --dry-run`.', reason: 'The tests replace the gh CLI with a stub.' })
+  const criteria = [{ id: 'C1', text: 'The requested behavior works.' }, { id: 'C2', text: 'Publishing uses the gh login.' }]
+  const assess = r => ({ ...r, criteria: criteria.map(c => ({ criterion: c.id, status: 'met', note: 'Checked against the stub.' })),
+    challenges: r.challenges.length ? criteria.map(c => ({ criterion: c.id, wrongImplementation: 'Skip it.', rejectingCheckIds: ['T1'] })) : [] })
+  const covering = a => { for (const c of a.testContract.checks) c.criteria = ['C1', 'C2']; return a }
+  for (const native of [false, true]) {
+    let authors = 0
+    const { result, calls } = await run({ native, setup: { criteria, liveChecks: [tls, { criterion: ' ', check: 'Nothing.', reason: '' }] },
+      author: a => covering({ ...a, liveChecks: ++authors === 1 ? [{ ...tls, check: ` ${tls.check.replace(/ /g, '  ')} ` }, login] : [login] }), review: assess })
+    assert.equal(result.status, 'done')
+    assert.equal(result.final.readiness.state, 'ready')
+    assert.equal(result.delivery.status, 'pending')
+    const expected = [{ ...tls, source: 'setup' }, { ...login, source: 'pair-design-1' }]
+    assert.deepEqual(result.liveChecks, expected, 'setup first, then the author\'s new entry; repeats and blank entries are dropped')
+    assert.deepEqual(result.final.readiness.liveChecks, expected)
+    assert.deepEqual(result.summary.final.readiness.liveChecks, expected)
+    assert.ok(result.report.markdown.includes('\n\nReadiness: ready; live checks pending: C1, C2. Reviews: 2/8.\n\n' +
+      `Live check for C1: ${tls.check} (${tls.reason})\n\nLive check for C2: ${login.check} (${login.reason})\n\nVerification: `), result.report.markdown)
+    assert.match(result.forTheOrchestrator, /Before delivery, run each live check \(final\.readiness\.liveChecks\) against the real service or resource it names and report its outcome: a ready run with live checks pending is not done until they pass\./)
+    // The author always sees the list; the reviewer reads it, once there is one, and leaves it alone.
+    const ledger = prompt => JSON.parse(prompt.match(/\n# Live checks\n(.*)\n/)[1])
+    const [design, code] = calls.filter(c => c.kind === 'author').map(c => c.prompt)
+    assert.deepEqual(ledger(design), [expected[0]])
+    assert.deepEqual(ledger(code), expected)
+    for (const review of calls.filter(c => c.kind === 'review').map(c => c.prompt)) {
+      assert.deepEqual(ledger(review), expected)
+      assert.match(review, /Don't run the live checks \(you have no network\), and don't file the missing live result as a finding\./)
+    }
+  }
+  const plain = await run({})
+  assert.deepEqual([plain.result.liveChecks, plain.result.final.readiness.liveChecks], [[], []])
+  assert.match(plain.result.report.markdown, /\n\nReadiness: ready\. Reviews: 2\/8\.\n\nVerification: /)
+  assert.doesNotMatch(plain.result.forTheOrchestrator, /live check/)
+  assert.match(plain.calls.find(c => c.kind === 'author').prompt, /\n# Live checks\n\[\]\n/)
+  assert.ok(plain.calls.filter(c => c.kind === 'review').every(c => !c.prompt.includes('# Live checks')))
+  // A run that stops still lists them, under its own readiness.
+  const stopped = await run({ setup: { liveChecks: [tls] }, author: a => ({ ...a, status: 'needs-user', questions: ['Which API?'] }) })
+  assert.equal(stopped.result.status, 'needs-user')
+  assert.equal(stopped.result.final.readiness.state, 'incomplete')
+  assert.ok(stopped.result.report.markdown.includes(`\n\nReadiness: incomplete; live checks pending: C1. Reviews: 0/8.\n\nLive check for C1: ${tls.check} (${tls.reason})\n\n`))
+  assert.match(stopped.result.forTheOrchestrator, /run each live check/)
+  // The setup and author prompts ask for them; neither reaches the council's setup.
+  const setup = L.pairSetupPrompt(L.newState(L.parsePairConfig('Fix it')))
+  assert.match(setup, /List in liveChecks each criterion that the run can check only against a stand-in for something outside it, where the real thing can behave differently/)
+  assert.match(setup, /Don't list such a criterion in unverifiable: the run still checks it with the stand-in/)
+  assert.doesNotMatch(L.setupPrompt(L.newState(L.parseConfig({ task: 'Fix it' }))), /liveChecks|stand-in/)
+  const S = { pair: L.newPairState() }
+  assert.deepEqual(L.pairIngestLiveChecks(S, [tls, { ...tls, reason: 'Another reason.' }, { criterion: 'C1', check: ' ' }, null], 'setup').map(c => c.reason), [tls.reason, 'Another reason.'])
+  assert.deepEqual(L.pairIngestLiveChecks(S, undefined, 'pair-design-1'), [])
 })

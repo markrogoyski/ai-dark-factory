@@ -104,6 +104,10 @@ requirements must become questions. Factory specification review uses `ask`. `ne
 `needs-split`, `needs-user`, unresolved readiness, and exhausted attempts park the task with
 its result. Its dependents wait while independent tasks continue. Transport failures retry only
 within the attempt and run-plan limits. If no task is eligible, the result remains incomplete.
+A committed Pair task can leave [live checks](pair.md#live-checks) pending: criteria its run
+checked only against a stand-in. The plan's result lists those of committed tasks, each with its
+task ID, in `liveChecks` and `final.readiness.liveChecks`. They change no commit, park or
+readiness state; run them before relying on the plan.
 
 Repeat the same invocation to resume; run-plan resume does not use `--resume`. To answer parked
 tasks, use `--args-file` with:
