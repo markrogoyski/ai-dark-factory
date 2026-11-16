@@ -1,6 +1,6 @@
 function newPairState() {
   return { stage: 'design', design: '', approvedDesign: '', testContract: null, approvedContract: null,
-    replayMapping: [], findings: [], reviews: [], author: null, measurement: null, label: null, lastReview: null, signatures: [], stop: '', questions: [] }
+    replayMapping: [], findings: [], readings: [], reviews: [], author: null, measurement: null, label: null, lastReview: null, signatures: [], stop: '', questions: [] }
 }
 
 // Pair decisions are shared by both hosts. Only the reviewer can close findings.
@@ -185,7 +185,41 @@ function pairCriteriaError(S, review) {
 
 // A review whose structured fields can be fixed without changing its judgement: one correction.
 function pairCorrectableError(S, review) {
-  return ((S.pair.stage === 'design' || pairChallengesDue(S)) && pairChallengeError(S, review)) || pairCriteriaError(S, review)
+  return ((S.pair.stage === 'design' || pairChallengesDue(S)) && pairChallengeError(S, review)) || pairCriteriaError(S, review) || pairRulingsError(S, review)
+}
+
+// An author reads a requirement other than literally only through the readings ledger, R1, R2, …,
+// which the next review rules on by ID. A reading already in the ledger, word for word, is not
+// added again. Returns the IDs added.
+function pairIngestReadings(S, author) {
+  const p = S.pair, text = v => String(v ?? '').trim(), same = v => text(v).replace(/\s+/g, ' ')
+  const added = []
+  for (const r of Array.isArray(author?.readings) ? author.readings : []) {
+    if (!text(r?.requirement) || !text(r?.reading)) continue
+    if (p.readings.some(old => same(old.requirement) === same(r.requirement) && same(old.reading) === same(r.reading))) continue
+    const id = `R${p.readings.length + 1}`
+    p.readings.push({ id, stage: p.stage, turn: p.label, requirement: text(r.requirement), literal: text(r.literal), reading: text(r.reading), reason: text(r.reason),
+      status: 'proposed', evidence: '', finding: '', history: [] })
+    added.push(id)
+  }
+  return added
+}
+
+// Every reading still proposed needs exactly one ruling, with evidence, under its ID.
+function pairRulingsError(S, review) {
+  const ids = S.pair.readings.filter(r => r.status === 'proposed').map(r => r.id)
+  const rulings = Array.isArray(review?.rulings) ? review.rulings : []
+  const given = rulings.map(r => r?.id)
+  const missing = ids.filter(id => !given.includes(id))
+  const unknown = given.filter(id => !ids.includes(id))
+  const repeated = given.filter((id, i) => ids.includes(id) && given.indexOf(id) !== i)
+  const invalid = rulings.filter(r => ids.includes(r?.id) && (!['accepted', 'rejected'].includes(r.ruling) || !String(r.evidence || '').trim())).map(r => r.id)
+  if (!missing.length && !unknown.length && !repeated.length && !invalid.length) return null
+  return `The review needs exactly one ruling, accepted or rejected with evidence, for each proposed reading (${ids.join(', ') || 'none is proposed, so rulings=[]'}).` +
+    `${missing.length ? ` Missing: ${missing.join(', ')}.` : ''}` +
+    `${unknown.length ? ` Not a proposed reading: ${unknown.map(id => JSON.stringify(oneLine(String(id), 80))).join(', ')}.` : ''}` +
+    `${repeated.length ? ` Repeated: ${[...new Set(repeated)].join(', ')}.` : ''}` +
+    `${invalid.length ? ` Without a valid ruling or evidence: ${[...new Set(invalid)].join(', ')}.` : ''}`
 }
 
 // A challenge may cite, beside checks that cover its criterion, a check that covers only another
@@ -316,6 +350,8 @@ function pairIngestReview(S, review) {
   }
   const criteriaError = pairCriteriaError(S, review)
   if (criteriaError) return criteriaError
+  const rulingsError = pairRulingsError(S, review)
+  if (rulingsError) return rulingsError
   const resolutions = review.resolutions || []
   const seen = new Set()
   for (const r of resolutions) {
@@ -345,6 +381,18 @@ function pairIngestReview(S, review) {
     if (same) { same.history.push({ review: p.reviews.length + 1, status: 'open', evidence: f.evidence }); continue }
     p.findings.push({ ...f, id: `P${p.findings.length + 1}`, stage: p.stage, status: 'open', resolution: '', history: [] })
   }
+  // A rejected reading comes back to the author as an ordinary open finding, which only the
+  // reviewer can close.
+  for (const ruling of review.rulings || []) {
+    const r = p.readings.find(r => r.id === ruling.id)
+    r.status = ruling.ruling
+    r.evidence = ruling.evidence
+    r.history.push({ review: p.reviews.length + 1, status: ruling.ruling, evidence: ruling.evidence })
+    if (ruling.ruling !== 'rejected') continue
+    r.finding = `P${p.findings.length + 1}`
+    p.findings.push({ severity: 'major', statement: `Reading ${r.id} was rejected: meet ${r.requirement} as written, not as "${oneLine(r.reading, 300).replace(/\.$/, '')}". ${oneLine(ruling.evidence, 600)}`,
+      evidence: ruling.evidence, id: r.finding, stage: p.stage, status: 'open', resolution: '', history: [], reading: r.id })
+  }
   if (challenged) p.challengedContract = promptHash(JSON.stringify(p.approvedContract))
   // The process note is for the retro (S.processNotes), not for the author's next turn.
   const { process: note, ...kept } = review
@@ -370,6 +418,7 @@ function pairReadiness(S) {
   if (p.stop) incomplete.push(p.stop)
   if (!r || r.version !== pairVersion(S) || !r.complete) incomplete.push('The current version has no completed review.')
   for (const f of pairOpen(S).filter(f => p.stage === 'code' || f.stage === 'design')) blocked.push(`${f.id} (${f.severity}): ${f.statement}`)
+  for (const r of p.readings.filter(r => r.status === 'proposed')) incomplete.push(`Reading ${r.id} has no ruling.`)
   if (!S.criteria.length) incomplete.push('No acceptance criteria were established.')
   for (const c of S.criteria) {
     const assessments = (r?.criteria || []).filter(x => x.criterion === c.id)
@@ -430,9 +479,11 @@ function pairResult(S, status = 'blocked') {
     ...(Object.keys(overrides).length ? [`Verification overrides: the gate ran with explicit environment overrides from verification.json: ${Object.keys(overrides).sort().join(', ')}.`] : []),
     `Replay: ${m?.replay?.records?.length || 0} file/command records; ${m?.replay?.exclusions?.length || 0} overlay exclusions. Base outcomes require reviewer interpretation.`,
     ...ready.infrastructure, ...ready.blocked, ...ready.incomplete,
-    ...p.findings.map(f => `${f.id}: ${f.status} — ${f.statement}${f.resolution ? ` (${f.resolution})` : ''}`)].join('\n\n')
+    ...p.findings.map(f => `${f.id}: ${f.status} — ${f.statement}${f.resolution ? ` (${f.resolution})` : ''}`),
+    ...p.readings.map(r => `${r.id}: reading ${r.status} — ${r.requirement} read as: ${r.reading}${r.evidence ? ` (${r.evidence})` : ''}${r.finding ? `; finding ${r.finding}` : ''}`)].join('\n\n')
   return {
     forTheOrchestrator: 'Read final.readiness first. Report unresolved findings or missing evidence before any success summary. ' +
+      (p.readings.some(r => r.status === 'accepted') ? 'Report the accepted readings (readings with status accepted): requirements the reviewer agreed the work may read other than literally. ' : '') +
       'Spot-check the reviewed snapshot and report the design and implementation review outcomes. The change stays in final.worktree. ' +
       'Readiness unverified means no review finding is open but the run could not measure the snapshot (final.readiness.infrastructure says why): run the gate on the delivered bytes before calling it done. ' +
       'Deliver only within the user\'s authorization, preserving unrelated edits. With HEAD at the original base, nothing staged, and no local edits other than those recorded at setup (run.json deliveryBaseline: unstaged tracked edits and untracked files, none on a path the reviewed change touches), ' +
@@ -446,7 +497,7 @@ function pairResult(S, status = 'blocked') {
     room: S.run?.room || null, refs: S.refs, stage: p.stage, stopReason: p.stop,
     design: p.design, testContract: p.approvedContract || p.testContract, replayMapping: p.replayMapping,
     author: S.pairOptions.author.name, reviewer: S.pairOptions.reviewer.name,
-    reviews: p.reviews, findings: p.findings, questions: p.questions, notes: S.notes,
+    reviews: p.reviews, findings: p.findings, readings: p.readings, questions: p.questions, notes: S.notes,
     report: { markdown: report },
     final: { author: 'A', model: S.pairOptions.author.name, summary: p.author?.summary || '',
       worktree: S.seats[0]?.wt || null, post: p.label && S.run ? `${S.run.room}/${p.label}/A.md` : null,

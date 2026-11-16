@@ -55,6 +55,12 @@ const PAIR_AUTHOR_SCHEMA = strict({ type: 'object', properties: {
   addressed: { type: 'array', items: { type: 'object', properties: {
     id: { type: 'string' }, response: { type: 'string' }, evidence: { type: 'string' },
   } } },
+  readings: { type: 'array', description: 'New readings only: each place this turn\'s work reads a requirement, criterion or approved contract check other than literally; [] when it follows everything literally.',
+    items: { type: 'object', properties: {
+      requirement: { type: 'string', description: 'A criterion ID, or the requirement\'s own words in quotes.' },
+      literal: { type: 'string', description: 'What the requirement literally says.' },
+      reading: { type: 'string', description: 'How the work reads it.' }, reason: { type: 'string' },
+    } } },
   questions: { type: 'array', items: { type: 'string' } },
 } })
 
@@ -70,6 +76,10 @@ const PAIR_REVIEW_SCHEMA = strict({ type: 'object', properties: {
   resolutions: { type: 'array', items: { type: 'object', properties: {
     id: { type: 'string' }, status: { type: 'string', enum: ['open', 'fixed', 'refuted'] }, evidence: { type: 'string' },
   } } },
+  rulings: { type: 'array', description: 'Exactly one for each reading still proposed in the readings ledger; [] when none is.',
+    items: { type: 'object', properties: {
+      id: { type: 'string' }, ruling: { type: 'string', enum: ['accepted', 'rejected'] }, evidence: { type: 'string' },
+    } } },
   criteria: { type: 'array', items: { type: 'object', properties: {
     ...CHECK_SCHEMA.properties.criteria.items.properties, criterion: PAIR_CRITERION_ID,
   } } },

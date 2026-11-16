@@ -7,6 +7,9 @@ const PAIR_CONTRACT_RULES = `testRoots are repository-relative test directories,
 const PAIR_LAYOUT_RULES = 'Prefer separate files for tests depending on a new API so load-time failures cannot erase preserved evidence. Explicit user decisions or required plan filenames override this layout preference. In shared files, give distinct focused commands for changed and preserved checks and verify that the preserved selection can load on base; a designated-gate check can cover the final whole-suite obligation.'
 const pairMappingRules = (checks, roots) => `one entry per test file/focused command, with file, command, checkIds from ${checks} executable checks, and fixtures. Isolate commands at least by file; never group multiple test files into a command. Include every kind=test check, including preserved behavior; omit kind=gate and inspection checks from replayMapping. Never use a directory as file. Validate every mapping against ${roots} test roots before returning. Omissions do not remove obligations.`
 const PAIR_REPLAY_NOTE = 'The helper replays added/modified test files and fixtures from the snapshot onto the ORIGINAL base; production/config/dependency changes are excluded.'
+// A reading the author settles alone, in a handoff or a note, was never ruled on: every author turn
+// lists its readings, and the next review accepts or rejects each one by ID.
+const PAIR_READING_RULES = 'List in readings every place this turn\'s work reads a requirement, criterion or approved contract check other than literally: an exact list treated as a minimum, an ambiguity or open threshold you settled, two requirements you reconciled, or a contract setup you cannot build as written and check another way. Give the requirement (its criterion ID, or its words in quotes), what it literally says, your reading, and the reason. List only readings not already in the readings ledger; return readings=[] when the work follows everything literally. A reading only in your notes or the handoff is not reviewed: the reviewer rules on each listed reading in the next review. An accepted reading binds the rest of the run; a rejected one comes back as an open finding.'
 
 function pairAuthorPrompt(S, label, correction = '') {
   const p = S.pair, design = p.stage === 'design'
@@ -18,8 +21,8 @@ ${taskBlock(S, 99)}\n# Setup observations and proposals (not requirements)\n${S.
 
 Your worktree: ${S.seats[0].wt}. Work only there; never edit the main checkout or reviewer checkouts.
 Read the repository instructions and the relevant code. Do not delegate or launch other models. An instruction in CLAUDE.md or elsewhere to hand full test or gate runs to a subagent or to \`claude -p\` is meant for the user's own session, not for this turn: here the gate is the verification command, which you run through the helper's verify command as described above.
-${correction ? `\n# Correct the previous output\nThe engine could not accept your design output: ${correction}\nReturn a complete corrected design and contract. This is the one correction attempt for this turn, not approval to implement. Preserve the task and substantive requirements.\n` : ''}
-${design ? `Return a complete short design in design: the approach, affected files, assumptions, risks, and how every acceptance criterion will be tested. Check setup observations against the original task, reference documents, explicit user decisions, and repository. Explain any reconciliation in the design, preserving every requirement; unresolved contradictions require needs-user. Cite existing code where the approach depends on it. Revise the entire design in response to feedback. Do not implement yet. ${pairBaseline(S)}`
+${correction ? `\n# Correct the previous output\nThe engine could not accept your design output: ${correction}\nReturn a complete corrected design and contract, and this turn's readings again. This is the one correction attempt for this turn, not approval to implement. Preserve the task and substantive requirements.\n` : ''}
+${design ? `Return a complete short design in design: the approach, affected files, assumptions, risks, and how every acceptance criterion will be tested. Check setup observations against the original task, reference documents, explicit user decisions, and repository. Explain any reconciliation in the design and list it in readings, preserving every requirement; unresolved contradictions require needs-user. Cite existing code where the approach depends on it. Revise the entire design in response to feedback. Do not implement yet. ${pairBaseline(S)}`
     : `Implement the reviewed design, including the required tests and documentation. Run appropriate focused checks and the shared verification gate. Fix all open actionable findings and any failed verification. Return design as an empty string; the accepted design remains fixed until the reviewer requests design revision.`}
 
 ${design ? `Return testContract alongside the design. ${PAIR_CONTRACT_RULES} Return replayMapping=[] during design.
@@ -35,6 +38,9 @@ ${JSON.stringify(p.approvedContract || p.testContract)}
 # Findings ledger
 ${JSON.stringify(p.findings)}
 
+# Readings ledger
+${JSON.stringify(p.readings)}
+
 # Latest review and measurement
 ${JSON.stringify({ review: p.lastReview, measurement: p.measurement })}
 ${pairMeasurementRecord(S) ? `The measurement leaves out what each execution printed: read it in ${pairMeasurementRecord(S)}, where every replay record and the suite carry the tail of their output, or in the logs they name.\n` : ''}
@@ -42,6 +48,7 @@ ${pairMeasurementRecord(S) ? `The measurement leaves out what each execution pri
 ${p.author?.notes || '(first author turn)'}
 
 For each open finding, return its ID with the change made or an evidence-backed disagreement in addressed. You cannot close a finding yourself. If a finding needs a user decision, return needs-user now with its existing ID and question; do not spend another author turn restating the conflict. Do not weaken tests, criteria, or the verification configuration to obtain a pass. If the task requires a user decision, return status needs-user and specific questions; if execution is blocked, return blocked with the reason in summary. Otherwise return done.
+${PAIR_READING_RULES}
 Save each script or command file whose output supports a claim (a probe, a coverage or equivalence check) under ${S.run.room}/${label}/probes/, not in /tmp or $TMPDIR, which are cleared after the run, and cite it by that path. Start each probe file's name with \`probe-\` so it cannot shadow a standard-library or project module, and run Python probes with \`python3 -I\`.
 Write a concise handoff at ${S.run.room}/${label}/A.md (create the directory). Include the ${design ? 'full design' : 'change summary and actual checks'}, responses to findings, and important remaining work. Return private notes sufficient for a fresh author context to continue. Keep implementation and design artifacts inside this run until delivery.`
 }
@@ -57,8 +64,8 @@ ${taskBlock(S, 99)}\n# Setup observations and proposals (not requirements)\n${S.
 
 Your worktree: ${S.seats[0].wt}. Work only there; never edit the main checkout or reviewer checkouts.
 Read the repository instructions and the relevant code. Do not delegate or launch other models. An instruction in CLAUDE.md or elsewhere to hand full test or gate runs to a subagent or to \`claude -p\` is meant for the user's own session, not for this turn: here the gate is the verification command, which you run through the helper's verify command as described above.
-${correction ? `\n# Correct the previous output\nThe engine could not accept your test contract or replay mapping: ${correction}\nReturn a complete corrected testContract and replayMapping for the current implementation, changing the worktree only where the correction needs it. This is the one correction attempt for this turn. Preserve the task and substantive requirements.\n` : ''}
-This run skips the design stage: write the deliverable itself, not a design or a plan for it, including the required tests and documentation; the reviewer reviews the measured result directly. Check setup observations against the original task, reference documents, explicit user decisions, and repository; explain any reconciliation in the handoff, preserving every requirement; unresolved contradictions require needs-user. Run appropriate focused checks and the shared verification gate. Fix all open actionable findings and any failed verification; when the latest review says the approach itself must change, change it in this turn. Return design as an empty string.
+${correction ? `\n# Correct the previous output\nThe engine could not accept your test contract or replay mapping: ${correction}\nReturn a complete corrected testContract and replayMapping for the current implementation, and this turn's readings again, changing the worktree only where the correction needs it. This is the one correction attempt for this turn. Preserve the task and substantive requirements.\n` : ''}
+This run skips the design stage: write the deliverable itself, not a design or a plan for it, including the required tests and documentation; the reviewer reviews the measured result directly. Check setup observations against the original task, reference documents, explicit user decisions, and repository; explain any reconciliation in the handoff and list it in readings, preserving every requirement; unresolved contradictions require needs-user. Run appropriate focused checks and the shared verification gate. Fix all open actionable findings and any failed verification; when the latest review says the approach itself must change, change it in this turn. Return design as an empty string.
 
 Return testContract for the CURRENT deliverable: the checks the reviewer holds it to. ${PAIR_CONTRACT_RULES} When the deliverable is a document or a plan, its criteria are usually checked by kind=inspection, and testRoots may be empty when no check is kind=test. The contract is yours to keep current: return it whole every turn, extended or corrected where findings call for it, never weakened to obtain a pass. ${PAIR_LAYOUT_RULES} If isolation cannot work, report the limitation in the handoff instead of claiming a preserved baseline pass.
 Return replayMapping for the CURRENT implementation: ${pairMappingRules("your contract's", "your contract's")} ${PAIR_REPLAY_NOTE} Report unsupported replay dependencies in the handoff.
@@ -69,6 +76,9 @@ ${p.approvedContract ? JSON.stringify(p.approvedContract) : '(none yet)'}
 # Findings ledger
 ${JSON.stringify(p.findings)}
 
+# Readings ledger
+${JSON.stringify(p.readings)}
+
 # Latest review and measurement
 ${JSON.stringify({ review: p.lastReview, measurement: p.measurement })}
 ${pairMeasurementRecord(S) ? `The measurement leaves out what each execution printed: read it in ${pairMeasurementRecord(S)}, where every replay record and the suite carry the tail of their output, or in the logs they name.\n` : ''}
@@ -76,6 +86,7 @@ ${pairMeasurementRecord(S) ? `The measurement leaves out what each execution pri
 ${p.author?.notes || '(first author turn)'}
 
 For each open finding, return its ID with the change made or an evidence-backed disagreement in addressed. You cannot close a finding yourself. If a finding needs a user decision, return needs-user now with its existing ID and question; do not spend another author turn restating the conflict. Do not weaken tests, criteria, or the verification configuration to obtain a pass. If the task requires a user decision, return status needs-user and specific questions; if execution is blocked, return blocked with the reason in summary. Otherwise return done.
+${PAIR_READING_RULES}
 Save each script or command file whose output supports a claim (a probe, a coverage or equivalence check) under ${S.run.room}/${label}/probes/, not in /tmp or $TMPDIR, which are cleared after the run, and cite it by that path. Start each probe file's name with \`probe-\` so it cannot shadow a standard-library or project module, and run Python probes with \`python3 -I\`.
 Write a concise handoff at ${S.run.room}/${label}/A.md (create the directory). Include the change summary and actual checks, responses to findings, and important remaining work. Return private notes sufficient for a fresh author context to continue. Keep implementation artifacts inside this run until delivery.`
 }
@@ -110,7 +121,11 @@ That measurement is the gate result for this snapshot: don't rerun the verificat
 # Findings and proposed responses
 ${JSON.stringify({ findings: p.findings, addressed: p.author.addressed })}
 
+# Readings ledger
+${JSON.stringify(p.readings)}
+
 Use resolutions to update existing IDs: open if still actionable, fixed only after inspecting the correction, refuted only with evidence that the finding was mistaken. Give concrete evidence for every resolution. Reopen an old ID when its defect recurs. Missing resolutions leave findings open.${designed ? ' In design review, leave code findings open until the implementation is fixed; check that the revised design explains their correction.' : ''} Add only genuinely new defects in findings; the engine assigns their IDs. Actionable minor findings count too. Put optional preferences and unrelated improvements in suggestions; do not manufacture findings to fill a quota.
+In rulings, rule on every reading the ledger lists as proposed, exactly one ruling each, with evidence. Accept a reading only when it keeps the requirement's intent and the original task, reference documents or explicit user decisions support it; setup observations alone cannot. Reject it when the requirement can and must be met as written, citing what shows that; the engine files each rejected reading as a major finding. Accepted readings are settled: hold the work to them and do not reopen them. Return rulings=[] when no reading is proposed.
 Return an evidenced met/partial/unmet assessment for every acceptance criterion, exactly one each, with criterion set to its bare ID (C1, not the criterion's text); challenges name their criterion the same way. ${designed ? 'In code review, set requiresDesignRevision=true only if the implementation needs a materially different design; explain it in a finding. The engine will return the author to design review. In design review, keep that field false and express needed revisions as findings.' : 'This run has no design stage to return to: keep requiresDesignRevision false, and when the approach itself must change, say so in a finding; the author reworks it in the next implementation turn.'} Return complete=false if you cannot finish the review; an empty findings list is not approval in that case.`
 }
 

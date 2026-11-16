@@ -42,6 +42,8 @@ Replay: 4 file/command records; 0 overlay exclusions. Base outcomes require revi
 
 P1: fixed — Cover the boundary case. (The boundary appears in the design.)
 
+R1: reading accepted — C1 read as: Runs on at least Node 20 and 22. (The task names no other environment; the minimum keeps its intent.)
+
 # Process notes and run facts
 
 =====BEGIN PAYLOAD 891-9642600d=====

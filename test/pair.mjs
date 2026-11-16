@@ -40,6 +40,7 @@ const measurement = (label, tree = 'a'.repeat(40)) => ({ status: 'done', error: 
   ref: `refs/council/pair-test/A-${label}`, tree, diff: `/repo/.council/pair-test/room/${label}/A.diff`,
 }, suite: { ran: true, passed: true, command: 'node test.cjs', failureKind: '', log: `/repo/.council/pair-test/logs/suite-A-${label}.log` }, replay: replay(tree) })
 const finding = statement => ({ severity: 'minor', statement, evidence: 'src/example.js:12 lacks the required case.' })
+const reading = (over = {}) => ({ requirement: 'C1', literal: 'Runs on Node 20 and 22.', reading: 'Runs on at least Node 20 and 22.', reason: 'CI also tests Node 24.', ...over })
 
 // The runner's own measurement of the base revision (the full helper record).
 const baseRecord = () => helperRecord({ status: 'done', error: '', snapshot: {
@@ -628,8 +629,12 @@ test('author questions and failures return unresolved results without inventing 
 })
 
 test('pair prompts have reviewed golden coverage', async () => {
-  const { calls } = await run({ native: true, review: (r, n) => {
-    if (n === 1) r.findings = [finding('Cover the boundary case.')]
+  let authors = 0
+  const { calls } = await run({ native: true, author: a => ({ ...a, readings: ++authors === 1 ? [reading()] : [] }), review: (r, n) => {
+    if (n === 1) {
+      r.findings = [finding('Cover the boundary case.')]
+      r.rulings = [{ id: 'R1', ruling: 'accepted', evidence: 'The task names no other environment; the minimum keeps its intent.' }]
+    }
     if (n === 2) r.resolutions = [{ id: 'P1', status: 'fixed', evidence: 'The boundary appears in the design.' }]
     return r
   } })
@@ -1169,4 +1174,71 @@ test('a Gemini reviewer is told that git fails in its sandbox; other reviewers a
   const reviewPrompts = r => r.calls.filter(c => c.kind === 'review').map(c => c.prompt)
   for (const prompt of reviewPrompts(gemini)) assert.match(prompt, /Git commands fail in your sandbox/)
   for (const prompt of reviewPrompts(astra)) assert.doesNotMatch(prompt, /Git commands fail in your sandbox/)
+})
+
+test('a rejected reading becomes an open major finding; an accepted one is settled and carried into later prompts', async () => {
+  for (const native of [false, true]) {
+    let authors = 0
+    const order = reading({ requirement: '"in the listed order"', literal: 'Print the names in the listed order.', reading: 'Print the names in any order.', reason: 'Callers sort them.' })
+    const { result, calls } = await run({ native,
+      author: a => ({ ...a, readings: ++authors === 1 ? [reading(), order] : authors === 2 ? [reading({ reading: ' Runs on at least  Node 20 and 22.' })] : [] }),
+      review: (r, n) => {
+        if (n === 1) r.rulings = [{ id: 'R1', ruling: 'accepted', evidence: 'The task names no upper bound; CI already runs Node 24.' },
+          { id: 'R2', ruling: 'rejected', evidence: 'The CLI help documents the order; tests/order.cjs can check it.' }]
+        if (n === 2) r.resolutions = [{ id: 'P1', status: 'fixed', evidence: 'The design now keeps the listed order.' }]
+        return r
+      } })
+    assert.equal(result.status, 'done')
+    assert.deepEqual(result.reviews.map(r => r.stage), ['design', 'design', 'code'])
+    assert.deepEqual(result.readings.map(r => [r.id, r.status, r.stage, r.finding]), [['R1', 'accepted', 'design', ''], ['R2', 'rejected', 'design', 'P1']],
+      'a reading repeated word for word is not proposed again')
+    assert.deepEqual(result.readings[0].history, [{ review: 1, status: 'accepted', evidence: 'The task names no upper bound; CI already runs Node 24.' }])
+    const [f] = result.findings
+    assert.deepEqual([f.id, f.severity, f.stage, f.reading, f.status], ['P1', 'major', 'design', 'R2', 'fixed'])
+    assert.equal(f.statement, 'Reading R2 was rejected: meet "in the listed order" as written, not as "Print the names in any order". The CLI help documents the order; tests/order.cjs can check it.')
+    const authorPrompts = calls.filter(c => c.kind === 'author').map(c => c.prompt), reviewPrompts = calls.filter(c => c.kind === 'review').map(c => c.prompt)
+    const ledger = prompt => JSON.parse(prompt.match(/\n# Readings ledger\n(.*)\n/)[1])
+    assert.deepEqual(ledger(reviewPrompts[0]).map(r => r.status), ['proposed', 'proposed'])
+    for (const prompt of [...authorPrompts.slice(1), ...reviewPrompts.slice(1)]) assert.deepEqual(ledger(prompt).map(r => [r.id, r.status]), [['R1', 'accepted'], ['R2', 'rejected']])
+    assert.match(authorPrompts[1], /"id":"P1","stage":"design","status":"open"/)
+    assert.match(result.report.markdown, /\n\nR1: reading accepted — C1 read as: Runs on at least Node 20 and 22\. \(The task names no upper bound; CI already runs Node 24\.\)\n\nR2: reading rejected — "in the listed order" read as: Print the names in any order\. \(.*\); finding P1/)
+    assert.match(result.forTheOrchestrator, /Report the accepted readings/)
+  }
+  const plain = await run({})
+  assert.deepEqual(plain.result.readings, [])
+  assert.doesNotMatch(plain.result.forTheOrchestrator, /accepted readings/)
+})
+
+test('a review that misses, repeats or invents a reading ruling gets one reviewer correction', async () => {
+  const state = { pair: { ...L.newPairState(), readings: [{ id: 'R1', status: 'proposed' }, { id: 'R2', status: 'accepted' }] } }
+  const ok = { id: 'R1', ruling: 'accepted', evidence: 'The plan lists it as a minimum.' }
+  assert.equal(L.pairRulingsError(state, { rulings: [ok] }), null)
+  assert.equal(L.pairRulingsError(state, { rulings: [] }), 'The review needs exactly one ruling, accepted or rejected with evidence, for each proposed reading (R1). Missing: R1.')
+  assert.equal(L.pairRulingsError(state, { rulings: [{ ...ok, evidence: ' ' }, ok, { ...ok, id: 'R2' }, { ...ok, id: 'R9' }] }),
+    'The review needs exactly one ruling, accepted or rejected with evidence, for each proposed reading (R1). Not a proposed reading: "R2", "R9". Repeated: R1. Without a valid ruling or evidence: R1.')
+  assert.equal(L.pairRulingsError({ pair: L.newPairState() }, { rulings: [ok] }),
+    'The review needs exactly one ruling, accepted or rejected with evidence, for each proposed reading (none is proposed, so rulings=[]). Not a proposed reading: "R1".')
+  // Blank entries are not readings.
+  const S = { pair: { ...L.newPairState(), label: 'pair-design-1' } }
+  assert.deepEqual(L.pairIngestReadings(S, { readings: [reading(), reading({ requirement: ' ' }), reading({ reading: '' })] }), ['R1'])
+  assert.deepEqual(S.pair.readings[0], { id: 'R1', stage: 'design', turn: 'pair-design-1', requirement: 'C1', literal: 'Runs on Node 20 and 22.',
+    reading: 'Runs on at least Node 20 and 22.', reason: 'CI also tests Node 24.', status: 'proposed', evidence: '', finding: '', history: [] })
+  for (const native of [false, true]) {
+    let authors = 0
+    const author = a => ({ ...a, readings: ++authors === 1 ? [reading()] : [] })
+    const { result, calls } = await run({ native, author, review: (r, n) => { if (n === 2) r.rulings = [ok]; return r } })
+    assert.equal(result.status, 'done')
+    const reviews = calls.filter(c => c.kind === 'review')
+    assert.equal(reviews.length, 3)
+    assert.match(reviews[1].prompt, /Correct the previous structured review\nThe review needs exactly one ruling, accepted or rejected with evidence, for each proposed reading \(R1\)\. Missing: R1\./)
+    assert.match(result.notes.join(' '), /Missing: R1\. Requested one reviewer correction/)
+    assert.equal(result.readings[0].status, 'accepted')
+    authors = 0
+    const failed = await run({ native, author, review: r => { r.rulings = [ok, { ...ok, id: 'R7' }]; return r } })
+    assert.equal(failed.result.status, 'blocked')
+    assert.match(failed.result.stopReason, /Not a proposed reading: "R7"\./)
+    assert.equal(failed.calls.filter(c => c.kind === 'review').length, 2, 'one bounded correction before stopping')
+    assert.equal(failed.result.readings[0].status, 'proposed', 'an invalid review rules on nothing')
+    assert.ok(failed.result.final.readiness.incomplete.includes('Reading R1 has no ruling.'))
+  }
 })

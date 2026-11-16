@@ -104,6 +104,7 @@ async function pairRun() {
     }
     if (!author) { p.stop = 'The author turn failed.'; return pairResult(S, 'failed') }
     p.author = author
+    pairIngestReadings(S, author)
     if (author.status !== 'done') {
       p.stop = author.summary || 'The author could not continue.'
       p.questions = author.questions || []

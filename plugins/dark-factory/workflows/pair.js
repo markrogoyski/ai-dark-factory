@@ -4238,7 +4238,7 @@ Candidate's report (verify it yourself): ${JSON.stringify(solution)}`
 
 function newPairState() {
   return { stage: 'design', design: '', approvedDesign: '', testContract: null, approvedContract: null,
-    replayMapping: [], findings: [], reviews: [], author: null, measurement: null, label: null, lastReview: null, signatures: [], stop: '', questions: [] }
+    replayMapping: [], findings: [], readings: [], reviews: [], author: null, measurement: null, label: null, lastReview: null, signatures: [], stop: '', questions: [] }
 }
 
 // Pair decisions are shared by both hosts. Only the reviewer can close findings.
@@ -4423,7 +4423,41 @@ function pairCriteriaError(S, review) {
 
 // A review whose structured fields can be fixed without changing its judgement: one correction.
 function pairCorrectableError(S, review) {
-  return ((S.pair.stage === 'design' || pairChallengesDue(S)) && pairChallengeError(S, review)) || pairCriteriaError(S, review)
+  return ((S.pair.stage === 'design' || pairChallengesDue(S)) && pairChallengeError(S, review)) || pairCriteriaError(S, review) || pairRulingsError(S, review)
+}
+
+// An author reads a requirement other than literally only through the readings ledger, R1, R2, …,
+// which the next review rules on by ID. A reading already in the ledger, word for word, is not
+// added again. Returns the IDs added.
+function pairIngestReadings(S, author) {
+  const p = S.pair, text = v => String(v ?? '').trim(), same = v => text(v).replace(/\s+/g, ' ')
+  const added = []
+  for (const r of Array.isArray(author?.readings) ? author.readings : []) {
+    if (!text(r?.requirement) || !text(r?.reading)) continue
+    if (p.readings.some(old => same(old.requirement) === same(r.requirement) && same(old.reading) === same(r.reading))) continue
+    const id = `R${p.readings.length + 1}`
+    p.readings.push({ id, stage: p.stage, turn: p.label, requirement: text(r.requirement), literal: text(r.literal), reading: text(r.reading), reason: text(r.reason),
+      status: 'proposed', evidence: '', finding: '', history: [] })
+    added.push(id)
+  }
+  return added
+}
+
+// Every reading still proposed needs exactly one ruling, with evidence, under its ID.
+function pairRulingsError(S, review) {
+  const ids = S.pair.readings.filter(r => r.status === 'proposed').map(r => r.id)
+  const rulings = Array.isArray(review?.rulings) ? review.rulings : []
+  const given = rulings.map(r => r?.id)
+  const missing = ids.filter(id => !given.includes(id))
+  const unknown = given.filter(id => !ids.includes(id))
+  const repeated = given.filter((id, i) => ids.includes(id) && given.indexOf(id) !== i)
+  const invalid = rulings.filter(r => ids.includes(r?.id) && (!['accepted', 'rejected'].includes(r.ruling) || !String(r.evidence || '').trim())).map(r => r.id)
+  if (!missing.length && !unknown.length && !repeated.length && !invalid.length) return null
+  return `The review needs exactly one ruling, accepted or rejected with evidence, for each proposed reading (${ids.join(', ') || 'none is proposed, so rulings=[]'}).` +
+    `${missing.length ? ` Missing: ${missing.join(', ')}.` : ''}` +
+    `${unknown.length ? ` Not a proposed reading: ${unknown.map(id => JSON.stringify(oneLine(String(id), 80))).join(', ')}.` : ''}` +
+    `${repeated.length ? ` Repeated: ${[...new Set(repeated)].join(', ')}.` : ''}` +
+    `${invalid.length ? ` Without a valid ruling or evidence: ${[...new Set(invalid)].join(', ')}.` : ''}`
 }
 
 // A challenge may cite, beside checks that cover its criterion, a check that covers only another
@@ -4554,6 +4588,8 @@ function pairIngestReview(S, review) {
   }
   const criteriaError = pairCriteriaError(S, review)
   if (criteriaError) return criteriaError
+  const rulingsError = pairRulingsError(S, review)
+  if (rulingsError) return rulingsError
   const resolutions = review.resolutions || []
   const seen = new Set()
   for (const r of resolutions) {
@@ -4583,6 +4619,18 @@ function pairIngestReview(S, review) {
     if (same) { same.history.push({ review: p.reviews.length + 1, status: 'open', evidence: f.evidence }); continue }
     p.findings.push({ ...f, id: `P${p.findings.length + 1}`, stage: p.stage, status: 'open', resolution: '', history: [] })
   }
+  // A rejected reading comes back to the author as an ordinary open finding, which only the
+  // reviewer can close.
+  for (const ruling of review.rulings || []) {
+    const r = p.readings.find(r => r.id === ruling.id)
+    r.status = ruling.ruling
+    r.evidence = ruling.evidence
+    r.history.push({ review: p.reviews.length + 1, status: ruling.ruling, evidence: ruling.evidence })
+    if (ruling.ruling !== 'rejected') continue
+    r.finding = `P${p.findings.length + 1}`
+    p.findings.push({ severity: 'major', statement: `Reading ${r.id} was rejected: meet ${r.requirement} as written, not as "${oneLine(r.reading, 300).replace(/\.$/, '')}". ${oneLine(ruling.evidence, 600)}`,
+      evidence: ruling.evidence, id: r.finding, stage: p.stage, status: 'open', resolution: '', history: [], reading: r.id })
+  }
   if (challenged) p.challengedContract = promptHash(JSON.stringify(p.approvedContract))
   // The process note is for the retro (S.processNotes), not for the author's next turn.
   const { process: note, ...kept } = review
@@ -4608,6 +4656,7 @@ function pairReadiness(S) {
   if (p.stop) incomplete.push(p.stop)
   if (!r || r.version !== pairVersion(S) || !r.complete) incomplete.push('The current version has no completed review.')
   for (const f of pairOpen(S).filter(f => p.stage === 'code' || f.stage === 'design')) blocked.push(`${f.id} (${f.severity}): ${f.statement}`)
+  for (const r of p.readings.filter(r => r.status === 'proposed')) incomplete.push(`Reading ${r.id} has no ruling.`)
   if (!S.criteria.length) incomplete.push('No acceptance criteria were established.')
   for (const c of S.criteria) {
     const assessments = (r?.criteria || []).filter(x => x.criterion === c.id)
@@ -4668,9 +4717,11 @@ function pairResult(S, status = 'blocked') {
     ...(Object.keys(overrides).length ? [`Verification overrides: the gate ran with explicit environment overrides from verification.json: ${Object.keys(overrides).sort().join(', ')}.`] : []),
     `Replay: ${m?.replay?.records?.length || 0} file/command records; ${m?.replay?.exclusions?.length || 0} overlay exclusions. Base outcomes require reviewer interpretation.`,
     ...ready.infrastructure, ...ready.blocked, ...ready.incomplete,
-    ...p.findings.map(f => `${f.id}: ${f.status} — ${f.statement}${f.resolution ? ` (${f.resolution})` : ''}`)].join('\n\n')
+    ...p.findings.map(f => `${f.id}: ${f.status} — ${f.statement}${f.resolution ? ` (${f.resolution})` : ''}`),
+    ...p.readings.map(r => `${r.id}: reading ${r.status} — ${r.requirement} read as: ${r.reading}${r.evidence ? ` (${r.evidence})` : ''}${r.finding ? `; finding ${r.finding}` : ''}`)].join('\n\n')
   return {
     forTheOrchestrator: 'Read final.readiness first. Report unresolved findings or missing evidence before any success summary. ' +
+      (p.readings.some(r => r.status === 'accepted') ? 'Report the accepted readings (readings with status accepted): requirements the reviewer agreed the work may read other than literally. ' : '') +
       'Spot-check the reviewed snapshot and report the design and implementation review outcomes. The change stays in final.worktree. ' +
       'Readiness unverified means no review finding is open but the run could not measure the snapshot (final.readiness.infrastructure says why): run the gate on the delivered bytes before calling it done. ' +
       'Deliver only within the user\'s authorization, preserving unrelated edits. With HEAD at the original base, nothing staged, and no local edits other than those recorded at setup (run.json deliveryBaseline: unstaged tracked edits and untracked files, none on a path the reviewed change touches), ' +
@@ -4684,7 +4735,7 @@ function pairResult(S, status = 'blocked') {
     room: S.run?.room || null, refs: S.refs, stage: p.stage, stopReason: p.stop,
     design: p.design, testContract: p.approvedContract || p.testContract, replayMapping: p.replayMapping,
     author: S.pairOptions.author.name, reviewer: S.pairOptions.reviewer.name,
-    reviews: p.reviews, findings: p.findings, questions: p.questions, notes: S.notes,
+    reviews: p.reviews, findings: p.findings, readings: p.readings, questions: p.questions, notes: S.notes,
     report: { markdown: report },
     final: { author: 'A', model: S.pairOptions.author.name, summary: p.author?.summary || '',
       worktree: S.seats[0]?.wt || null, post: p.label && S.run ? `${S.run.room}/${p.label}/A.md` : null,
@@ -4702,6 +4753,9 @@ const PAIR_CONTRACT_RULES = `testRoots are repository-relative test directories,
 const PAIR_LAYOUT_RULES = 'Prefer separate files for tests depending on a new API so load-time failures cannot erase preserved evidence. Explicit user decisions or required plan filenames override this layout preference. In shared files, give distinct focused commands for changed and preserved checks and verify that the preserved selection can load on base; a designated-gate check can cover the final whole-suite obligation.'
 const pairMappingRules = (checks, roots) => `one entry per test file/focused command, with file, command, checkIds from ${checks} executable checks, and fixtures. Isolate commands at least by file; never group multiple test files into a command. Include every kind=test check, including preserved behavior; omit kind=gate and inspection checks from replayMapping. Never use a directory as file. Validate every mapping against ${roots} test roots before returning. Omissions do not remove obligations.`
 const PAIR_REPLAY_NOTE = 'The helper replays added/modified test files and fixtures from the snapshot onto the ORIGINAL base; production/config/dependency changes are excluded.'
+// A reading the author settles alone, in a handoff or a note, was never ruled on: every author turn
+// lists its readings, and the next review accepts or rejects each one by ID.
+const PAIR_READING_RULES = 'List in readings every place this turn\'s work reads a requirement, criterion or approved contract check other than literally: an exact list treated as a minimum, an ambiguity or open threshold you settled, two requirements you reconciled, or a contract setup you cannot build as written and check another way. Give the requirement (its criterion ID, or its words in quotes), what it literally says, your reading, and the reason. List only readings not already in the readings ledger; return readings=[] when the work follows everything literally. A reading only in your notes or the handoff is not reviewed: the reviewer rules on each listed reading in the next review. An accepted reading binds the rest of the run; a rejected one comes back as an open finding.'
 
 function pairAuthorPrompt(S, label, correction = '') {
   const p = S.pair, design = p.stage === 'design'
@@ -4713,8 +4767,8 @@ ${taskBlock(S, 99)}\n# Setup observations and proposals (not requirements)\n${S.
 
 Your worktree: ${S.seats[0].wt}. Work only there; never edit the main checkout or reviewer checkouts.
 Read the repository instructions and the relevant code. Do not delegate or launch other models. An instruction in CLAUDE.md or elsewhere to hand full test or gate runs to a subagent or to \`claude -p\` is meant for the user's own session, not for this turn: here the gate is the verification command, which you run through the helper's verify command as described above.
-${correction ? `\n# Correct the previous output\nThe engine could not accept your design output: ${correction}\nReturn a complete corrected design and contract. This is the one correction attempt for this turn, not approval to implement. Preserve the task and substantive requirements.\n` : ''}
-${design ? `Return a complete short design in design: the approach, affected files, assumptions, risks, and how every acceptance criterion will be tested. Check setup observations against the original task, reference documents, explicit user decisions, and repository. Explain any reconciliation in the design, preserving every requirement; unresolved contradictions require needs-user. Cite existing code where the approach depends on it. Revise the entire design in response to feedback. Do not implement yet. ${pairBaseline(S)}`
+${correction ? `\n# Correct the previous output\nThe engine could not accept your design output: ${correction}\nReturn a complete corrected design and contract, and this turn's readings again. This is the one correction attempt for this turn, not approval to implement. Preserve the task and substantive requirements.\n` : ''}
+${design ? `Return a complete short design in design: the approach, affected files, assumptions, risks, and how every acceptance criterion will be tested. Check setup observations against the original task, reference documents, explicit user decisions, and repository. Explain any reconciliation in the design and list it in readings, preserving every requirement; unresolved contradictions require needs-user. Cite existing code where the approach depends on it. Revise the entire design in response to feedback. Do not implement yet. ${pairBaseline(S)}`
     : `Implement the reviewed design, including the required tests and documentation. Run appropriate focused checks and the shared verification gate. Fix all open actionable findings and any failed verification. Return design as an empty string; the accepted design remains fixed until the reviewer requests design revision.`}
 
 ${design ? `Return testContract alongside the design. ${PAIR_CONTRACT_RULES} Return replayMapping=[] during design.
@@ -4730,6 +4784,9 @@ ${JSON.stringify(p.approvedContract || p.testContract)}
 # Findings ledger
 ${JSON.stringify(p.findings)}
 
+# Readings ledger
+${JSON.stringify(p.readings)}
+
 # Latest review and measurement
 ${JSON.stringify({ review: p.lastReview, measurement: p.measurement })}
 ${pairMeasurementRecord(S) ? `The measurement leaves out what each execution printed: read it in ${pairMeasurementRecord(S)}, where every replay record and the suite carry the tail of their output, or in the logs they name.\n` : ''}
@@ -4737,6 +4794,7 @@ ${pairMeasurementRecord(S) ? `The measurement leaves out what each execution pri
 ${p.author?.notes || '(first author turn)'}
 
 For each open finding, return its ID with the change made or an evidence-backed disagreement in addressed. You cannot close a finding yourself. If a finding needs a user decision, return needs-user now with its existing ID and question; do not spend another author turn restating the conflict. Do not weaken tests, criteria, or the verification configuration to obtain a pass. If the task requires a user decision, return status needs-user and specific questions; if execution is blocked, return blocked with the reason in summary. Otherwise return done.
+${PAIR_READING_RULES}
 Save each script or command file whose output supports a claim (a probe, a coverage or equivalence check) under ${S.run.room}/${label}/probes/, not in /tmp or $TMPDIR, which are cleared after the run, and cite it by that path. Start each probe file's name with \`probe-\` so it cannot shadow a standard-library or project module, and run Python probes with \`python3 -I\`.
 Write a concise handoff at ${S.run.room}/${label}/A.md (create the directory). Include the ${design ? 'full design' : 'change summary and actual checks'}, responses to findings, and important remaining work. Return private notes sufficient for a fresh author context to continue. Keep implementation and design artifacts inside this run until delivery.`
 }
@@ -4752,8 +4810,8 @@ ${taskBlock(S, 99)}\n# Setup observations and proposals (not requirements)\n${S.
 
 Your worktree: ${S.seats[0].wt}. Work only there; never edit the main checkout or reviewer checkouts.
 Read the repository instructions and the relevant code. Do not delegate or launch other models. An instruction in CLAUDE.md or elsewhere to hand full test or gate runs to a subagent or to \`claude -p\` is meant for the user's own session, not for this turn: here the gate is the verification command, which you run through the helper's verify command as described above.
-${correction ? `\n# Correct the previous output\nThe engine could not accept your test contract or replay mapping: ${correction}\nReturn a complete corrected testContract and replayMapping for the current implementation, changing the worktree only where the correction needs it. This is the one correction attempt for this turn. Preserve the task and substantive requirements.\n` : ''}
-This run skips the design stage: write the deliverable itself, not a design or a plan for it, including the required tests and documentation; the reviewer reviews the measured result directly. Check setup observations against the original task, reference documents, explicit user decisions, and repository; explain any reconciliation in the handoff, preserving every requirement; unresolved contradictions require needs-user. Run appropriate focused checks and the shared verification gate. Fix all open actionable findings and any failed verification; when the latest review says the approach itself must change, change it in this turn. Return design as an empty string.
+${correction ? `\n# Correct the previous output\nThe engine could not accept your test contract or replay mapping: ${correction}\nReturn a complete corrected testContract and replayMapping for the current implementation, and this turn's readings again, changing the worktree only where the correction needs it. This is the one correction attempt for this turn. Preserve the task and substantive requirements.\n` : ''}
+This run skips the design stage: write the deliverable itself, not a design or a plan for it, including the required tests and documentation; the reviewer reviews the measured result directly. Check setup observations against the original task, reference documents, explicit user decisions, and repository; explain any reconciliation in the handoff and list it in readings, preserving every requirement; unresolved contradictions require needs-user. Run appropriate focused checks and the shared verification gate. Fix all open actionable findings and any failed verification; when the latest review says the approach itself must change, change it in this turn. Return design as an empty string.
 
 Return testContract for the CURRENT deliverable: the checks the reviewer holds it to. ${PAIR_CONTRACT_RULES} When the deliverable is a document or a plan, its criteria are usually checked by kind=inspection, and testRoots may be empty when no check is kind=test. The contract is yours to keep current: return it whole every turn, extended or corrected where findings call for it, never weakened to obtain a pass. ${PAIR_LAYOUT_RULES} If isolation cannot work, report the limitation in the handoff instead of claiming a preserved baseline pass.
 Return replayMapping for the CURRENT implementation: ${pairMappingRules("your contract's", "your contract's")} ${PAIR_REPLAY_NOTE} Report unsupported replay dependencies in the handoff.
@@ -4764,6 +4822,9 @@ ${p.approvedContract ? JSON.stringify(p.approvedContract) : '(none yet)'}
 # Findings ledger
 ${JSON.stringify(p.findings)}
 
+# Readings ledger
+${JSON.stringify(p.readings)}
+
 # Latest review and measurement
 ${JSON.stringify({ review: p.lastReview, measurement: p.measurement })}
 ${pairMeasurementRecord(S) ? `The measurement leaves out what each execution printed: read it in ${pairMeasurementRecord(S)}, where every replay record and the suite carry the tail of their output, or in the logs they name.\n` : ''}
@@ -4771,6 +4832,7 @@ ${pairMeasurementRecord(S) ? `The measurement leaves out what each execution pri
 ${p.author?.notes || '(first author turn)'}
 
 For each open finding, return its ID with the change made or an evidence-backed disagreement in addressed. You cannot close a finding yourself. If a finding needs a user decision, return needs-user now with its existing ID and question; do not spend another author turn restating the conflict. Do not weaken tests, criteria, or the verification configuration to obtain a pass. If the task requires a user decision, return status needs-user and specific questions; if execution is blocked, return blocked with the reason in summary. Otherwise return done.
+${PAIR_READING_RULES}
 Save each script or command file whose output supports a claim (a probe, a coverage or equivalence check) under ${S.run.room}/${label}/probes/, not in /tmp or $TMPDIR, which are cleared after the run, and cite it by that path. Start each probe file's name with \`probe-\` so it cannot shadow a standard-library or project module, and run Python probes with \`python3 -I\`.
 Write a concise handoff at ${S.run.room}/${label}/A.md (create the directory). Include the change summary and actual checks, responses to findings, and important remaining work. Return private notes sufficient for a fresh author context to continue. Keep implementation artifacts inside this run until delivery.`
 }
@@ -4805,7 +4867,11 @@ That measurement is the gate result for this snapshot: don't rerun the verificat
 # Findings and proposed responses
 ${JSON.stringify({ findings: p.findings, addressed: p.author.addressed })}
 
+# Readings ledger
+${JSON.stringify(p.readings)}
+
 Use resolutions to update existing IDs: open if still actionable, fixed only after inspecting the correction, refuted only with evidence that the finding was mistaken. Give concrete evidence for every resolution. Reopen an old ID when its defect recurs. Missing resolutions leave findings open.${designed ? ' In design review, leave code findings open until the implementation is fixed; check that the revised design explains their correction.' : ''} Add only genuinely new defects in findings; the engine assigns their IDs. Actionable minor findings count too. Put optional preferences and unrelated improvements in suggestions; do not manufacture findings to fill a quota.
+In rulings, rule on every reading the ledger lists as proposed, exactly one ruling each, with evidence. Accept a reading only when it keeps the requirement's intent and the original task, reference documents or explicit user decisions support it; setup observations alone cannot. Reject it when the requirement can and must be met as written, citing what shows that; the engine files each rejected reading as a major finding. Accepted readings are settled: hold the work to them and do not reopen them. Return rulings=[] when no reading is proposed.
 Return an evidenced met/partial/unmet assessment for every acceptance criterion, exactly one each, with criterion set to its bare ID (C1, not the criterion's text); challenges name their criterion the same way. ${designed ? 'In code review, set requiresDesignRevision=true only if the implementation needs a materially different design; explain it in a finding. The engine will return the author to design review. In design review, keep that field false and express needed revisions as findings.' : 'This run has no design stage to return to: keep requiresDesignRevision false, and when the approach itself must change, say so in a finding; the author reworks it in the next implementation turn.'} Return complete=false if you cannot finish the review; an empty findings list is not approval in that case.`
 }
 
@@ -5258,6 +5324,12 @@ const PAIR_AUTHOR_SCHEMA = strict({ type: 'object', properties: {
   addressed: { type: 'array', items: { type: 'object', properties: {
     id: { type: 'string' }, response: { type: 'string' }, evidence: { type: 'string' },
   } } },
+  readings: { type: 'array', description: 'New readings only: each place this turn\'s work reads a requirement, criterion or approved contract check other than literally; [] when it follows everything literally.',
+    items: { type: 'object', properties: {
+      requirement: { type: 'string', description: 'A criterion ID, or the requirement\'s own words in quotes.' },
+      literal: { type: 'string', description: 'What the requirement literally says.' },
+      reading: { type: 'string', description: 'How the work reads it.' }, reason: { type: 'string' },
+    } } },
   questions: { type: 'array', items: { type: 'string' } },
 } })
 
@@ -5273,6 +5345,10 @@ const PAIR_REVIEW_SCHEMA = strict({ type: 'object', properties: {
   resolutions: { type: 'array', items: { type: 'object', properties: {
     id: { type: 'string' }, status: { type: 'string', enum: ['open', 'fixed', 'refuted'] }, evidence: { type: 'string' },
   } } },
+  rulings: { type: 'array', description: 'Exactly one for each reading still proposed in the readings ledger; [] when none is.',
+    items: { type: 'object', properties: {
+      id: { type: 'string' }, ruling: { type: 'string', enum: ['accepted', 'rejected'] }, evidence: { type: 'string' },
+    } } },
   criteria: { type: 'array', items: { type: 'object', properties: {
     ...CHECK_SCHEMA.properties.criteria.items.properties, criterion: PAIR_CRITERION_ID,
   } } },
@@ -5934,6 +6010,7 @@ async function pairRun() {
     }
     if (!author) { p.stop = 'The author turn failed.'; return pairResult(S, 'failed') }
     p.author = author
+    pairIngestReadings(S, author)
     if (author.status !== 'done') {
       p.stop = author.summary || 'The author could not continue.'
       p.questions = author.questions || []

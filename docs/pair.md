@@ -111,6 +111,15 @@ only Codex models.
 5. The author fixes findings and failed checks, then verification and review repeat. A material
    approach problem can send the task back through design review before implementation continues.
 
+Every author turn, in either stage and with or without a design stage, lists in `readings` each
+place its work reads a requirement, criterion or approved contract check other than literally:
+an exact list read as a minimum, an open threshold it settled, two requirements it reconciled, a
+contract setup it checks another way. A reading left only in a handoff or a note is not reviewed.
+The engine numbers readings R1, R2, … in a ledger both participants see, and the next review
+rules on each proposed one, accepted or rejected with evidence; a missing, repeated or unknown
+ruling gets the review's one correction. An accepted reading is settled for the rest of the run.
+A rejected one becomes an open major finding, which only the reviewer can close.
+
 ### Without a design stage
 
 `design: false` (`--no-design` at the start of a string task, or on the Codex runner's command
@@ -229,7 +238,8 @@ Factory tier, panel, audit, and historical-evidence options (`tier`, `seats`, `s
 
 Results open with `summary` (status, readiness, open findings, snapshot, gate result, and the
 cleanup command for after delivery), followed by `design`, `testContract`, `replayMapping`,
-`reviews`, `findings`, `stopReason`, `final.replay`, and `final.readiness`. `final.suite` and
+`reviews`, `findings`, `readings` (each with its ruling, also listed in `report.markdown`),
+`stopReason`, `final.replay`, and `final.readiness`. `final.suite` and
 `final.replay` are the measurement summary; the job's `status.json` keeps the output tails.
 `final.suite.overrides` (also in `summary.final.suite`) is the explicit `env` object from the
 run's `verification.json` that the measured gate ran with, as the measurement read it, and `{}`
