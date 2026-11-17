@@ -21,6 +21,12 @@ function refsBlock(S) {
 }
 
 function taskBlock(S, round) {
+  return taskCore(S) + clarificationsFor(S, round)
+}
+
+// The task, its documents and criteria without the council's clarifications, which Pair renders
+// as explicit user decisions instead (pairDecisionsBlock).
+function taskCore(S) {
   let t = `# Task\n\n${S.task}\n`
   t += refsBlock(S)
   if (S.context) t += `\n# Context from the user\n\n${S.context}\n`
@@ -28,7 +34,7 @@ function taskBlock(S, round) {
   t += `\n# Acceptance criteria (fixed before any work began)\n\n${S.criteria.map(c => `- ${c.id}: ${c.text}`).join('\n') || '- (none recorded)'}\n`
   if (S.verify) t += `\n# Verification command\n\n\`${S.verify}\`, run from the root of a worktree (saved as ${S.run.runDir}/verify.sh).\n`
   if (tierProfile(S).gated && S.verify) t += verificationBlock(S)
-  return t + assumptionsBlock(S) + clarificationsFor(S, round)
+  return t + assumptionsBlock(S)
 }
 
 function verificationBlock(S) {

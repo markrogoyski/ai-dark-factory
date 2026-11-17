@@ -393,7 +393,9 @@ function pairOutcomeFacts(S) {
   return `- Outcome: the pair strategy, ${o.author.name} authoring and ${o.reviewer.name} reviewing; ` +
     `${p.reviews.length} of at most ${o.maxReviews} reviews (design ${byStage('design')}, code ${byStage('code')}), ended at the ${p.stage} stage` +
     `${p.stop ? ` (${oneLine(p.stop, 200)})` : ''}. Findings: ${p.findings.length ? countsOf(p.findings, f => `${f.stage} ${f.severity} ${f.status}`) : 'none'}. ` +
-    `Verification command: ${S.verify ? `\`${oneLine(S.verify, 200)}\`` : 'none'}.`
+    `Verification command: ${S.verify ? `\`${oneLine(S.verify, 200)}\`` : 'none'}.` +
+    (p.asked?.length ? ` Questions for the user: ${p.asked.map(q => `${q.id} (about ${q.about}, asked in ${q.label})`).join(', ')}; ` +
+      `answered: ${p.decisions.map(d => d.id).join(', ') || 'none'}.` : '')
 }
 
 function retroFacts(S, o) {

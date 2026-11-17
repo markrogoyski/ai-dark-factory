@@ -7,13 +7,15 @@ import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { fileURLToPath } from 'node:url'
 import { loadLib } from './lib.mjs'
-import { validateResult } from '../plugins/dark-factory/lib/codex-runner.mjs'
+import { validateResult, briefResult } from '../plugins/dark-factory/lib/codex-runner.mjs'
 import { contract, mapping, challenges, replay, helperRecord } from './fixtures/pair-contract.mjs'
 
 const L = loadLib()
 const root = new URL('../', import.meta.url)
 const source = readFileSync(new URL('plugins/dark-factory/workflows/pair.js', root), 'utf8').replace(/^export const meta\s*=/m, 'const meta =')
 const execute = new (Object.getPrototypeOf(async function () {}).constructor)('agent', 'parallel', 'pipeline', 'phase', 'log', 'args', 'budget', 'workflow', 'factoryRuntime', source)
+const factorySource = readFileSync(new URL('plugins/dark-factory/workflows/factory.js', root), 'utf8').replace(/^export const meta\s*=/m, 'const meta =')
+const executeFactory = new (Object.getPrototypeOf(async function () {}).constructor)('agent', 'parallel', 'pipeline', 'phase', 'log', 'args', 'budget', 'workflow', 'factoryRuntime', factorySource)
 
 // A copied value cut to the schema, each missing field taking its type's empty value, as a native
 // transport copying the helper's brief returns it.
@@ -54,12 +56,17 @@ async function run(options = {}) {
   let reviewNumber = 0
   async function respond(prompt, schema, meta) {
     let value = defaults(schema)
+    // A native stop's record turn is 'stop'; the check before a continuation is 'resume'.
     const kind = 'runDir' in schema.properties ? 'setup' : 'design' in schema.properties ? 'author'
-      : 'version' in schema.properties ? 'review' : 'snapshot' in schema.properties ? 'measure' : 'worked' in schema.properties ? 'retro' : 'unknown'
+      : 'version' in schema.properties ? 'review' : 'snapshot' in schema.properties ? 'measure' : 'worked' in schema.properties ? 'retro'
+      : 'reason' in schema.properties && 'status' in schema.properties ? (String(meta.label).startsWith('stop ') ? 'stop' : 'resume')
+      : 'strategy' in schema.properties && 'tier' in schema.properties ? 'intake' : 'saved' in schema.properties ? 'record' : 'unknown'
     const call = { ...meta, kind, prompt, schema }
     calls.push(call)
     events.push(kind)
-    if (kind === 'setup') Object.assign(value, setup(), options.setup)
+    if (kind === 'setup') Object.assign(value, setup(), typeof options.setup === 'function' ? options.setup(call) : options.setup)
+    else if (kind === 'intake') Object.assign(value, { status: 'ok', tier: 'simple', mode: 'implement', strategy: 'pair', reasons: 'A scoped change.' })
+    else if (kind === 'record') Object.assign(value, { saved: '/x/retros/facts.json' })
     else if (kind === 'author') {
       Object.assign(value, { status: 'done', summary: 'Implemented the behavior.', design: 'Implement the behavior and cover it with tests.', notes: 'Continue with the boundary case.' })
       Object.assign(value, { testContract: contract(), replayMapping: mapping() })
@@ -74,6 +81,9 @@ async function run(options = {}) {
       const label = prompt.match(/--label '([^']+)'/)[1]
       const replay = JSON.parse(prompt.match(/--replay-json '([^']+)'/)[1])
       value = fit(await measure({ label, replay }), schema)
+    } else if (kind === 'stop' || kind === 'resume') {
+      Object.assign(value, { status: 'ok', reason: '' })
+      if (options.resume) value = await options.resume(value, call)
     } else if (kind === 'retro') {
       Object.assign(value, { worked: [{ what: 'Fresh reviews', evidence: 'review pair-code-2' }], saved: '/x/retros/pair-test.md' })
       if (options.retro) value = await options.retro(value, call)
@@ -110,7 +120,7 @@ async function run(options = {}) {
       return options.record ? options.record(full) : full
     },
   }
-  const result = await execute(agent, () => { throw new Error('Pair must not launch a panel') }, null,
+  const result = await (options.factory ? executeFactory : execute)(agent, () => { throw new Error('Pair must not launch a panel') }, null,
     title => phases.push(title), () => {}, { task: 'Implement the behavior', repo: '/repo', ...(options.native ? {} : { host: 'codex' }), ...options.args }, {}, null, runtime)
   return { result, calls, measurements, phases, baselines, events }
 }
@@ -625,7 +635,7 @@ test('author questions and failures return unresolved results without inventing 
     assert.equal(result.status, status)
     assert.equal(result.questions.length, 1)
     assert.notEqual(result.final.readiness.state, 'ready')
-    assert.match(result.report.markdown, /\n\nQuestions for the user:\n\n1\. Which compatibility behavior is required\?$/)
+    assert.match(result.report.markdown, /\n\nQuestions for the user \(answer each under its ID\):\n\n- Q1 \(about none\): Which compatibility behavior is required\?$/)
   }
   const { result } = await run({ author: () => null })
   assert.equal(result.status, 'failed')
@@ -831,10 +841,11 @@ test('setup proposals preserve the original task for author and reviewer and con
   assert.match(calls.find(c => c.kind === 'review').prompt, /setup notes cannot waive requirements/)
   const blocked = await run({ setup: { status: 'needs-user', error: 'Two incompatible requirements.', questions: ['Which signature is required?', 'Keep\n  the old flag?'] } })
   assert.equal(blocked.result.status, 'needs-user')
-  assert.deepEqual(blocked.result.questions, ['Which signature is required?', 'Keep\n  the old flag?'])
+  assert.deepEqual(blocked.result.questions, [{ id: 'Q1', about: 'none', kind: 'setup', question: 'Which signature is required?' },
+    { id: 'Q2', about: 'none', kind: 'setup', question: 'Keep the old flag?' }])
   assert.equal(blocked.calls.filter(c => c.kind === 'author').length, 0)
   // The report asks what the stop asks, each question on one line.
-  assert.match(blocked.result.report.markdown, /\n\nTwo incompatible requirements\.\n\n(.|\n)*\n\nQuestions for the user:\n\n1\. Which signature is required\?\n2\. Keep the old flag\?(\n|$)/)
+  assert.match(blocked.result.report.markdown, /\n\nTwo incompatible requirements\.\n\n(.|\n)*\n\nQuestions for the user \(answer each under its ID\):\n\n- Q1 \(about none\): Which signature is required\?\n- Q2 \(about none\): Keep the old flag\?(\n|$)/)
 })
 
 test('a whole-suite preservation obligation uses exact snapshot gate evidence without a directory replay', async () => {
@@ -991,8 +1002,9 @@ test('setup that finds a criterion unverifiable inside the run stops before any 
     assert.match(JSON.stringify(result.final.readiness), /cannot verify: C1 \(Needs the deployed service to answer\.\)/)
     assert.ok(result.notes.some(n => /C1 unverifiable.*Needs the deployed service/.test(n)))
     assert.equal(result.questions.length, 1)
-    assert.match(result.questions[0], /^C1 .*The requested behavior works.*deployed service.*Rewrite it/)
-    assert.ok(result.report.markdown.includes(`\n\nQuestions for the user:\n\n1. ${result.questions[0]}`), result.report.markdown)
+    assert.deepEqual([result.questions[0].id, result.questions[0].about, result.questions[0].kind], ['Q1', 'C1', 'criterion'])
+    assert.match(result.questions[0].question, /^C1 .*The requested behavior works.*deployed service.*Rewrite it/)
+    assert.ok(result.report.markdown.includes(`\n\nQuestions for the user (answer each under its ID):\n\n- Q1 (about C1): ${result.questions[0].question}`), result.report.markdown)
     assert.equal(calls.filter(c => c.kind === 'author').length, 0)
     assert.notEqual(result.final.readiness.state, 'ready')
   }
@@ -1262,15 +1274,15 @@ test('a reviewer question stops the run for the user at once, with the review re
     assert.equal(result.status, 'needs-user')
     assert.deepEqual(calls.filter(c => ['author', 'review'].includes(c.kind)).map(c => c.kind), ['author', 'review'], 'no author turn after the question')
     assert.equal(result.stopReason, 'C1 and the isolation rule conflict; the user must choose.')
-    assert.deepEqual(result.questions, ['P1: tests/config.json is fixed by C1, but the isolation rule forbids writing it. Rename the file, or relax the rule for it? ' +
-      'Requirements as written: C1: "The behavior reads tests/config.json."; CLAUDE.md: "Tests never write under tests/."'])
+    assert.deepEqual(result.questions, [{ id: 'Q1', about: 'P1', kind: 'reviewer', question: 'P1: tests/config.json is fixed by C1, but the isolation rule forbids writing it. Rename the file, or relax the rule for it? ' +
+      'Requirements as written: C1: "The behavior reads tests/config.json."; CLAUDE.md: "Tests never write under tests/."' }])
     assert.equal(result.reviews.length, 1, 'the review counts')
     assert.deepEqual(result.reviews[0].questions, [conflict])
     assert.deepEqual(result.findings.map(f => [f.id, f.status]), [['P1', 'open']])
     assert.equal(result.final.readiness.state, 'blocked')
     assert.ok(result.final.readiness.incomplete.includes('C1 and the isolation rule conflict; the user must choose.'))
     assert.equal(result.summary.questions.length, 1)
-    assert.ok(result.report.markdown.includes('\n\nQuestions for the user:\n\n1. P1: tests/config.json is fixed by C1, but the isolation rule forbids writing it. Rename the file, or relax the rule for it? ' +
+    assert.ok(result.report.markdown.includes('\n\nQuestions for the user (answer each under its ID):\n\n- Q1 (about P1): P1: tests/config.json is fixed by C1, but the isolation rule forbids writing it. Rename the file, or relax the rule for it? ' +
       'Requirements as written: C1: "The behavior reads tests/config.json."; CLAUDE.md: "Tests never write under tests/."\n\nP1: open — '), result.report.markdown)
   }
   // Without a summary the stop still says why.
@@ -1374,4 +1386,345 @@ test('live checks from setup and the author reach the result and report; readine
   const S = { pair: L.newPairState() }
   assert.deepEqual(L.pairIngestLiveChecks(S, [tls, { ...tls, reason: 'Another reason.' }, { criterion: 'C1', check: ' ' }, null], 'setup').map(c => c.reason), [tls.reason, 'Another reason.'])
   assert.deepEqual(L.pairIngestLiveChecks(S, undefined, 'pair-design-1'), [])
+})
+
+// ---------------------------------------------------------------- resuming a needs-user stop
+// A stop asks questions with IDs; the same args plus clarifications keyed by those IDs continue the
+// run from the stop: every call before it is the same, so a native replay serves them from cache.
+
+// The calls a stop's result was built from: everything before its retro (or factory record).
+const beforeRetro = calls => calls.filter(c => !['retro', 'record'].includes(c.kind))
+const sameCalls = (a, b, n) => assert.deepEqual(b.calls.slice(0, n).map(c => [c.label, c.prompt]), a.calls.slice(0, n).map(c => [c.label, c.prompt]))
+const resumeWords = /--resume|resumeFromRunId|resume:|can resume/i
+const versionOf = prompt => prompt.match(/^Version: (.+)$/m)[1]
+const askAt = (label, questions = ['Keep the flag?']) => (a, call) => call.label === label ? { ...a, status: 'needs-user', summary: 'The author needs a choice.', questions } : a
+// The first author turn proposes readings; review 1 rules them needs-user beside a question citing
+// them all, and review 2 rules on them again once the answer reopened them.
+function readingRun({ ids = ['R1'], question = `${ids.join(' and ')} read C1 as a minimum; keep the list exact, or allow Node 24?`, asking = 1 } = {}) {
+  let authors = 0
+  return {
+    author: a => ({ ...a, readings: ++authors === 1 ? ids.map((_, i) => i ? reading({ reading: `Reading ${i + 1} of the list.` }) : reading()) : [] }),
+    review: (r, n) => n === asking ? { ...r, rulings: ids.map(id => ({ id, ruling: 'needs-user', evidence: 'The plan says "exactly"; CI runs Node 24 too.' })),
+      questions: [{ question, quoted: ['C1: "Runs on Node 20 and 22."'] }] }
+      : n === asking + 1 ? { ...r, rulings: ids.map(id => ({ id, ruling: 'accepted', evidence: 'The user chose the minimum.' })) } : r,
+  }
+}
+
+test('resume: questions carry run-wide IDs, what each is about, and the stop kind', async () => {
+  for (const native of [false, true]) {
+    let { result } = await run({ native, setup: { status: 'needs-user', error: 'Conflict.', questions: ['Which signature?', 'Keep the flag?'] } })
+    assert.deepEqual(result.questions, [{ id: 'Q1', about: 'none', kind: 'setup', question: 'Which signature?' },
+      { id: 'Q2', about: 'none', kind: 'setup', question: 'Keep the flag?' }])
+    assert.ok(result.report.markdown.includes('\n\nQuestions for the user (answer each under its ID):\n\n- Q1 (about none): Which signature?\n- Q2 (about none): Keep the flag?'), result.report.markdown)
+    ;({ result } = await run({ native, setup: { unverifiable: [{ criterion: 'C1', origin: 'supplied', reason: 'Needs the live service.' }] } }))
+    assert.deepEqual(result.questions.map(q => [q.id, q.about, q.kind]), [['Q1', 'C1', 'criterion']])
+    assert.ok(result.report.markdown.includes('\n- Q1 (about C1): C1 ("The requested behavior works.") cannot be verified inside the run'), result.report.markdown)
+    ;({ result } = await run({ native, author: askAt('pair-design-2', ['P1: keep the flag?']), review: (r, n) => n === 1 ? { ...r, findings: [finding('Cover the flag.')] } : r }))
+    assert.deepEqual(result.questions, [{ id: 'Q1', about: 'P1', kind: 'author', question: 'P1: keep the flag?' }])
+    ;({ result } = await run({ native, ...readingRun() }))
+    assert.deepEqual(result.questions.map(q => [q.id, q.about, q.kind]), [['Q1', 'R1', 'reviewer']])
+    assert.match(result.report.markdown, /\n- Q1 \(about R1\): R1 read C1 as a minimum; keep the list exact, or allow Node 24\? Requirements as written: C1: "Runs on Node 20 and 22\."/)
+    // An ID that names nothing in the run is not what the question is about.
+    ;({ result } = await run({ native, author: askAt('pair-design-1', ['P9: is C7 still needed?']) }))
+    assert.equal(result.questions[0].about, 'none')
+    // A second stop continues the numbering.
+    const second = await run({ native, args: { clarifications: [{ id: 'Q1', answer: 'Keep it.' }] }, author: askAt('pair-design-1'),
+      review: (r, n) => n === 1 ? { ...r, questions: [{ question: 'Is the flag documented?', quoted: ['C1: "The requested behavior works."'] }] } : r })
+    assert.equal(second.result.status, 'needs-user')
+    assert.deepEqual(second.result.questions.map(q => [q.id, q.kind]), [['Q2', 'reviewer']])
+    assert.deepEqual(second.result.decisions.map(d => d.id), ['Q1'])
+    assert.ok(second.result.report.markdown.includes('\n\nUser decisions:\n\n- Q1 (about none; asked in pair-design-1): Keep the flag? Answer: Keep it.'), second.result.report.markdown)
+    // A stop with no question cannot continue.
+    ;({ result } = await run({ native, author: askAt('pair-design-1', []) }))
+    assert.equal(result.status, 'needs-user')
+    assert.deepEqual(result.questions, [])
+    assert.ok(!('resumable' in result))
+  }
+})
+
+test('resume: continuation replays every call before the stop and continues from it with the decisions', async () => {
+  // Setup conflict on the Codex host: a second setup in a run of its own.
+  const conflict = call => call.label === 'setup' ? { status: 'needs-user', error: 'Conflict.', questions: ['Which signature?'] } : {}
+  let plain = await run({ args: { hostRunId: 'host-x' }, setup: conflict })
+  let answered = await run({ args: { hostRunId: 'host-x', clarifications: [{ id: 'Q1', answer: 'The new one.' }] }, setup: conflict })
+  sameCalls(plain, answered, beforeRetro(plain.calls).length)
+  assert.equal(plain.result.status, 'needs-user')
+  assert.deepEqual(answered.calls.slice(0, 2).map(c => c.label), ['setup', 'setup-answered'])
+  assert.match(answered.calls[0].prompt, /--run-id 'host-x-pair'/)
+  assert.match(answered.calls[1].prompt, /--run-id 'host-x-pair-answered'/)
+  assert.match(answered.calls[1].prompt, /\n\n# Explicit user decisions\n\nThe user answered this question during the run\. [^\n]*\n- Q1 \(about none; asked in setup\): Which signature\? Answer: The new one\.\n$/)
+  assert.equal(answered.result.status, 'done')
+  assert.deepEqual(answered.result.decisions, [{ id: 'Q1', about: 'none', kind: 'setup', question: 'Which signature?', answer: 'The new one.', label: 'setup' }])
+
+  for (const native of [false, true]) {
+    // An unverifiable criterion: rewritten and dropped, the IDs kept.
+    const two = { criteria: [{ id: 'C1', text: 'The requested behavior works.' }, { id: 'C2', text: 'It reports to the live service.' }],
+      unverifiable: [{ criterion: 'C1', origin: 'supplied', reason: 'Needs the live service.' }, { criterion: 'C2', origin: 'supplied', reason: 'Needs the service too.' }] }
+    plain = await run({ native, setup: two })
+    answered = await run({ native, setup: two, args: { clarifications: [{ id: 'Q1', answer: 'Rewrite it.', criterion: 'The behavior works in the unit tests.' }, { id: 'Q2', answer: 'Drop it.', drop: true }] } })
+    sameCalls(plain, answered, beforeRetro(plain.calls).length)
+    const first = answered.calls.find(c => c.kind === 'author')
+    assert.match(first.prompt, /\n- C1: The behavior works in the unit tests\.\n/)
+    assert.doesNotMatch(first.prompt, /\n- C2: /)
+    assert.match(first.prompt, /\n- Q1 \(about C1; asked in setup\): C1 \("The requested behavior works\."\) cannot be verified [^\n]* Answer: Rewrite it\. C1 now reads: The behavior works in the unit tests\.\n- Q2 \(about C2; asked in setup\): [^\n]* Answer: Drop it\. C2 was dropped\.\n/)
+    assert.equal(answered.result.status, 'done')
+    assert.deepEqual(answered.result.decisions.map(d => [d.id, d.criterion, d.drop]), [['Q1', 'The behavior works in the unit tests.', undefined], ['Q2', undefined, true]])
+    const none = await run({ native, setup: { unverifiable: [{ criterion: 'C1', origin: 'supplied', reason: 'Needs the live service.' }] }, args: { clarifications: [{ id: 'Q1', answer: 'Drop it.', drop: true }] } })
+    assert.equal(none.result.status, 'blocked')
+    assert.equal(none.result.stopReason, 'The user dropped every acceptance criterion, so the run has nothing to check.')
+    assert.equal(none.calls.filter(c => c.kind === 'author').length, 0)
+
+    // An author stop, at the design and at the code stage: a fresh author turn reads the decisions.
+    for (const label of ['pair-design-1', 'pair-code-2']) {
+      plain = await run({ native, author: askAt(label) })
+      answered = await run({ native, author: askAt(label), args: { clarifications: [{ id: 'Q1', answer: 'Yes, keep it.' }] } })
+      const n = beforeRetro(plain.calls).length
+      sameCalls(plain, answered, n)
+      const next = answered.calls[n + (native ? 1 : 0)]
+      assert.equal(next.label, `${label}-answered`)
+      assert.ok(next.prompt.includes(`\n\n# Explicit user decisions\n\nThe user answered this question during the run. The answer overrides setup observations and readings for the rest of the run. The reviewer resolves any finding a decision settles under its existing ID.\n- Q1 (about none; asked in ${label}): Keep the flag? Answer: Yes, keep it.\n\n# Setup observations`), next.prompt)
+      const hash = L.promptHash(JSON.stringify(answered.result.decisions))
+      const reviews = answered.calls.filter(c => c.kind === 'review')
+      assert.ok(reviews.slice(label === 'pair-design-1' ? 0 : 1).every(c => versionOf(c.prompt).endsWith(`:u${hash}`) && c.prompt.includes('# Explicit user decisions')))
+      if (label === 'pair-code-2') assert.ok(!versionOf(reviews[0].prompt).includes(':u'))
+      assert.equal(answered.result.status, 'done')
+      assert.deepEqual(answered.result.decisions, [{ id: 'Q1', about: 'none', kind: 'author', question: 'Keep the flag?', answer: 'Yes, keep it.', label }])
+      assert.ok(plain.calls.every(c => !c.prompt.includes('# Explicit user decisions')), 'no block without decisions')
+    }
+
+    // A reviewer question citing two readings: both go back to proposed, and the next review must
+    // rule on both. The asking review still counts.
+    plain = await run({ native, ...readingRun({ ids: ['R1', 'R2'] }) })
+    answered = await run({ native, ...readingRun({ ids: ['R1', 'R2'] }), args: { clarifications: [{ id: 'Q1', answer: 'Allow Node 24.' }] } })
+    const n = beforeRetro(plain.calls).length
+    sameCalls(plain, answered, n)
+    assert.deepEqual(plain.result.readings.map(r => r.status), ['needs-user', 'needs-user'])
+    assert.equal(answered.calls[n + (native ? 1 : 0)].label, 'pair-design-2')
+    const review2 = answered.calls.filter(c => c.kind === 'review')[1]
+    assert.deepEqual(JSON.parse(review2.prompt.match(/# Readings ledger\n(.*)\n/)[1]).map(r => [r.id, r.status]), [['R1', 'proposed'], ['R2', 'proposed']])
+    assert.deepEqual(answered.result.readings.map(r => [r.id, r.status, r.history.map(h => h.status).join()]), [['R1', 'accepted', 'needs-user,proposed,accepted'], ['R2', 'accepted', 'needs-user,proposed,accepted']])
+    assert.deepEqual(answered.result.readings[0].history[1], { decision: 'Q1', status: 'proposed', evidence: 'The user answered Q1; the next review rules on the reading again.' })
+    assert.equal(answered.result.status, 'done')
+    assert.deepEqual(answered.result.reviews.map(r => r.label), ['pair-design-1', 'pair-design-2', 'pair-code-3'], 'the review budget carries on')
+    assert.equal(answered.result.decisions[0].label, 'review pair-design-1')
+    // A question in the review that spent the budget: answered, the run ends on the budget.
+    const late = (r, n) => n === 2 ? { ...r, questions: [{ question: 'Keep the flag?', quoted: ['C1: "The requested behavior works."'] }] } : r
+    plain = await run({ native, args: { maxReviews: 2 }, review: late })
+    assert.equal(plain.result.status, 'needs-user')
+    answered = await run({ native, args: { maxReviews: 2, clarifications: [{ id: 'Q1', answer: 'Yes.' }] }, review: late })
+    assert.equal(answered.result.status, 'blocked')
+    assert.equal(answered.result.stopReason, 'Review budget exhausted (2); work remains unresolved.')
+    assert.equal(answered.calls.filter(c => c.kind === 'author').length, 2)
+  }
+})
+
+test('resume: golden prompts of a native run continued past a reviewer question', async () => {
+  const { calls, result } = await run({ native: true, setup: { liveChecks: [liveCheck()] }, ...readingRun(), args: { clarifications: [{ id: 'Q1', answer: 'Allow Node 24 as well.' }] } })
+  assert.equal(result.status, 'done')
+  assert.deepEqual(calls.map(c => c.kind), ['setup', 'author', 'review', 'stop', 'resume', 'author', 'review', 'author', 'measure', 'review', 'retro'])
+  const dir = new URL('test/golden/pair-resume/', root)
+  if (process.env.UPDATE_GOLDEN) mkdirSync(dir, { recursive: true })
+  for (const [i, call] of calls.entries()) {
+    const file = new URL(`${i}-${call.kind}.txt`, dir)
+    const value = call.prompt.replace(/\n*$/, '\n')
+    if (process.env.UPDATE_GOLDEN) writeFileSync(file, value)
+    else assert.equal(value, readFileSync(file, 'utf8'), `Prompt changed: ${fileURLToPath(file)}`)
+  }
+})
+
+test('resume: facts and metrics count the questions asked and the answers taken, for Pair only', async () => {
+  const outcome = r => r.calls.find(c => c.kind === 'retro').prompt.split('\n').find(l => l.startsWith('- Outcome: '))
+  const stopped = await run({ native: true, ...readingRun() })
+  assert.ok(outcome(stopped).endsWith(' Questions for the user: Q1 (about R1, asked in review pair-design-1); answered: none.'), outcome(stopped))
+  assert.deepEqual(stopped.result.metrics.userDecisions, { asked: 1, answered: 0, unused: 0 })
+  const answered = await run({ native: true, ...readingRun(), args: { clarifications: [{ id: 'Q1', answer: 'Allow Node 24.' }] } })
+  assert.ok(outcome(answered).endsWith(' Questions for the user: Q1 (about R1, asked in review pair-design-1); answered: Q1.'), outcome(answered))
+  assert.deepEqual(answered.result.metrics.userDecisions, { asked: 1, answered: 1, unused: 0 })
+  const none = await run({ native: true })
+  assert.ok(!none.calls.find(c => c.kind === 'retro').prompt.includes('Questions for the user'))
+  assert.deepEqual(none.result.metrics.userDecisions, { asked: 0, answered: 0, unused: 0 })
+  // A council run's metrics are as they were (its retro prompts are in the sim's goldens).
+  const council = L.newState(L.parseConfig({ task: 'Fix it' }))
+  assert.ok(!('userDecisions' in L.evaluationFacts(council, {}, 0, 0)))
+  assert.ok('userDecisions' in L.evaluationFacts({ ...council, pair: L.newPairState() }, {}, 0, 0))
+})
+
+test('resume: answers that do not settle the stop stop it again, naming them, with no further turn', async () => {
+  const both = askAt('pair-design-1', ['Keep the flag?', 'Rename the option?'])
+  const settle = ' Answer every question at this stop under its ID, and only questions this run asked.'
+  const cases = [
+    [[{ id: 'Q1', answer: 'Yes.' }], 'Missing: Q2.'],
+    [[{ id: 'q1', answer: 'Yes.' }, { id: 'Q2', answer: 'No.' }], 'Missing: Q1. Unknown: "q1".'],
+    [[{ id: 'Q1', answer: 'Yes.' }, { id: 'Q1', answer: 'No.' }, { id: 'Q2', answer: 'No.' }], 'Unknown: Q1 (repeated).'],
+    [[{ id: 'Q1', answer: ' ' }, { id: 'Q2', answer: 'No.' }], 'Missing: Q1. Invalid: Q1 (no answer).'],
+    [[{ answer: 'Yes.' }, { id: 'Q1', answer: 'Yes.' }, { id: 'Q2', answer: 'No.' }], 'Unknown: (no id).'],
+    [[{ id: 'Q1', answer: 'Yes.', drop: true }, { id: 'Q2', answer: 'No.' }], 'Missing: Q1. Invalid: Q1 (criterion and drop answer only a question about a criterion).'],
+  ]
+  for (const native of [false, true]) {
+    const plain = await run({ native, author: both })
+    const n = beforeRetro(plain.calls).length
+    for (const [clarifications, parts] of cases) {
+      const { result, calls } = await run({ native, author: both, args: { clarifications } })
+      assert.equal(result.status, 'needs-user')
+      assert.equal(result.stopReason, `The answers do not settle this stop (Q1, Q2). ${parts}${settle}`)
+      assert.equal(calls.length, n, 'no check, author, review, retro or record turn')
+      sameCalls(plain, { calls }, n)
+      assert.equal(result.resumable, true)
+      assert.deepEqual(result.decisions, [])
+    }
+    // A criterion answer that gives both a new text and drop.
+    const unverifiable = { unverifiable: [{ criterion: 'C1', origin: 'supplied', reason: 'Needs the live service.' }] }
+    const { result } = await run({ native, setup: unverifiable, args: { clarifications: [{ id: 'Q1', answer: 'Both.', criterion: 'New text.', drop: true }] } })
+    assert.equal(result.stopReason, `The answers do not settle this stop (Q1). Missing: Q1. Invalid: Q1 (both criterion and drop).${settle}`)
+    // A field given as null is checked, not taken as absent.
+    for (const [extra, why] of [[{ criterion: null }, 'criterion is not text'], [{ drop: null }, 'drop is not true or false'], [{ criterion: 'New text.', drop: null }, 'both criterion and drop']]) {
+      const nulls = await run({ native, setup: unverifiable, args: { clarifications: [{ id: 'Q1', answer: 'Yes.', ...extra }] } })
+      assert.equal(nulls.result.stopReason, `The answers do not settle this stop (Q1). Missing: Q1. Invalid: Q1 (${why}).${settle}`, JSON.stringify(extra))
+      assert.deepEqual(nulls.result.decisions, [])
+    }
+  }
+  // Natively a later-shaped ID is held for a stop the run may reach; never asked, it is unused.
+  const held = await run({ native: true, author: askAt('pair-design-1'), args: { clarifications: [{ id: 'Q1', answer: 'Yes.' }, { id: 'Q5', answer: 'Later.' }] } })
+  assert.equal(held.result.status, 'done')
+  assert.deepEqual(held.result.unusedAnswers, ['Q5'])
+  assert.ok(held.result.report.markdown.includes('\n\nUnused answers: Q5.'))
+  assert.deepEqual(held.result.metrics.userDecisions, { asked: 1, answered: 1, unused: 1 })
+
+  // The runner's check takes the run's questions from its history, never from saved answers.
+  const prior = { status: 'needs-user', resumable: true, questions: [{ id: 'Q2', about: 'none', kind: 'reviewer', question: 'Rename it?' }],
+    decisions: [{ id: 'Q1', about: 'none', kind: 'author', question: 'Keep it?', answer: 'Yes.', label: 'pair-design-1' }] }
+  const q = id => ({ id, answer: `Answer ${id}.` })
+  let check = L.pairResumeAnswerCheck(prior, [q('Q1'), q('Q2')])
+  assert.deepEqual([check.answered.map(a => a.id), check.missing, check.unknown, check.invalid, check.settled, check.message], [['Q2'], [], [], [], true, ''])
+  check = L.pairResumeAnswerCheck(prior, [q('Q9'), q('Q1'), q('Q2')])
+  assert.deepEqual(check.unknown, ['Q9'])
+  assert.equal(check.message, `The answers do not settle this stop (Q2). Unknown: Q9.${settle}`)
+  check = L.pairResumeAnswerCheck(prior, [q('Q1')])
+  assert.deepEqual(check.missing, ['Q2'])
+  // Side by side with the engine's check on the same stop: the same lists and messages, except that
+  // an ID numbered above every question asked is held by the engine and unknown to the runner.
+  const current = prior.questions
+  for (const answers of [[q('Q1'), q('Q2')], [q('Q2')], [q('q2')], [q('Q2'), q('Q2')], [{ id: 'Q2', answer: '' }], [q('Q2'), q('Q0')], [q('Q3'), q('Q2')], [{ ...q('Q2'), criterion: null }], [{ ...q('Q2'), drop: null }]]) {
+    const engine = L.pairAnswerCheck(answers, ['Q1', 'Q2'], current, true), runner = L.pairResumeAnswerCheck(prior, answers)
+    const later = answers.some(a => a.id === 'Q3')
+    assert.deepEqual(runner.missing, engine.missing)
+    assert.deepEqual(runner.invalid, engine.invalid)
+    assert.deepEqual(runner.unknown, later ? [...engine.unknown, ...engine.held] : engine.unknown)
+    assert.deepEqual(engine.held, later ? ['Q3'] : [])
+    if (!later && !runner.settled) assert.equal(runner.message, L.pairAnswerMessage(engine, current))
+  }
+})
+
+test('resume: guidance appears only on a needs-user stop that can continue, with the steps for its host', async () => {
+  const quiet = (result, why) => {
+    assert.ok(!('resumable' in result), why)
+    assert.ok(!('resumeSteps' in result), why)
+    for (const text of [result.forTheOrchestrator, result.error, result.stopReason, result.report?.markdown]) assert.doesNotMatch(String(text ?? ''), resumeWords, why)
+  }
+  // A budget that runs out after the stop overrides it, and with it the resume.
+  quiet((await run({ native: true, author: askAt('pair-design-1'), args: { maxTurns: 3 } })).result, 'native budget')
+  const budget = await run({ author: askAt('pair-design-1'), args: { maxTurns: 2 } })
+  assert.equal(budget.result.status, 'blocked')
+  quiet(budget.result, 'codex budget')
+  const ended = async (options, status, reason) => {
+    const { result } = await run(options)
+    assert.equal(result.status, status, reason)
+    assert.match(result.stopReason, reason)
+    quiet(result, String(reason))
+  }
+  await ended({ author: a => ({ ...a, testContract: { testRoots: [], checks: [] } }) }, 'blocked', /A concrete test contract is required/)
+  await ended({ sameTree: true, review: r => ({ ...r, findings: [finding('The same gap.')] }) }, 'blocked', /Review stalled/)
+  await ended({ author: () => null }, 'failed', /The author turn failed/)
+  await ended({ measure: m => ({ ...m, scratchError: 'checkout failed', suite: { ...m.suite, ran: false, passed: false, failureKind: 'infrastructure' } }) }, 'blocked', /Verification infrastructure failed/)
+  await ended({ setup: { dirty: [' M source.js'] } }, 'blocked', /Tracked working-tree changes/)
+  const done = await run({})
+  assert.equal(done.result.status, 'done')
+  quiet(done.result, 'done')
+  // A failed transport of runtime "cli" names no resume either.
+  for (const relay of [null, { result: '', error: '' }]) {
+    const failed = await execute(async () => relay, null, null, () => {}, () => {}, { task: 'Implement the behavior', runtime: 'cli' }, {}, null, undefined)
+    assert.equal(failed.error, 'Pair transport returned no result.')
+    quiet(failed, 'transport')
+  }
+  // A council result is left as it is.
+  const council = { status: 'blocked', forTheOrchestrator: 'Read it.', summary: { status: 'blocked' } }
+  assert.deepEqual(L.withdrawResume(structuredClone(council)), council)
+
+  const steps = result => {
+    assert.equal(result.resumable, true)
+    assert.ok(result.forTheOrchestrator.includes(result.resumeSteps))
+    assert.match(result.resumeSteps, /Show questions\[\] to the user, each under its ID/)
+    assert.match(result.resumeSteps, /Don't run dark-factory cleanup on the stopped run/)
+    assert.match(result.resumeSteps, /start a new run with the same task and the user's answers in context, passing the last handoff \(\S+\/A\.md\) in plan\.$/)
+    return result.resumeSteps
+  }
+  const native = steps((await run({ native: true, author: askAt('pair-design-1') })).result)
+  assert.match(native, /in this same Claude Code session only, call Workflow\(\{name: "pair", resumeFromRunId: /)
+  const factory = await run({ native: true, factory: true, author: askAt('pair-design-1') })
+  assert.equal(factory.result.workflow, 'factory')
+  assert.match(steps(factory.result), /To continue this \/factory run, in this same Claude Code session only, call Workflow\(\{name: "factory", resumeFromRunId: /)
+  const codex = await run({ args: { hostRunId: 'host-x' }, author: askAt('pair-design-1') })
+  assert.match(steps(codex.result), /To continue this run, write a JSON file holding \{"clarifications": \[[^\]]*\]\} and run dark-factory-codex --resume \/repo\/\.council\/host-x --args-file <that file>\./)
+  // A /factory run on the Codex host says it is one.
+  const codexFactory = await run({ factory: true, args: { hostRunId: 'host-x' }, author: askAt('pair-design-1') })
+  assert.equal(codexFactory.result.workflow, 'factory')
+  assert.match(steps(codexFactory.result), /To continue this \/factory run, write a JSON file holding \{"clarifications": \[[^\]]*\]\} and run dark-factory-codex --resume \/repo\/\.council\/host-x --args-file <that file>\./)
+  // Through runtime "cli" the runner's steps become a /pair call with resume.
+  const relayed = { ...codex.result, hostRunDir: '/repo/.council/host-x' }
+  const cli = await execute(async () => ({ result: JSON.stringify(relayed), error: '' }), null, null, () => {}, () => {}, { task: 'Implement the behavior', runtime: 'cli' }, {}, null, undefined)
+  assert.match(steps(cli), /call \/pair again with the same args plus runtime: "cli", resume: "\/repo\/\.council\/host-x" and clarifications: /)
+  assert.doesNotMatch(cli.forTheOrchestrator, /dark-factory-codex --resume/)
+  // The transport relays the runner's --brief result, which keeps the last handoff for the fallback.
+  const brief = await execute(async () => ({ result: JSON.stringify(briefResult(relayed)), error: '' }), null, null, () => {}, () => {}, { task: 'Implement the behavior', runtime: 'cli' }, {}, null, undefined)
+  assert.ok(relayed.final.post)
+  assert.ok(steps(brief).endsWith(`passing the last handoff (${relayed.final.post}) in plan.`))
+  assert.equal(brief.resumeSteps, cli.resumeSteps)
+})
+
+test('resume: check placement records each native stop and checks it just before the run continues', async () => {
+  const labels = r => r.calls.map(c => c.label)
+  const native = { native: true, author: askAt('pair-design-1') }
+  let r = await run(native)
+  assert.deepEqual(labels(r), ['setup', 'pair-design-1', 'stop Q1', 'retro'])
+  assert.match(r.calls[2].prompt, /\ndark-factory resume-check --run-dir '\/repo\/\.council\/pair-test' --stop Q1 --snapshot 'base' --record\n/)
+  const answered = await run({ ...native, args: { clarifications: [{ id: 'Q1', answer: 'Yes.' }] } })
+  assert.deepEqual(labels(answered).slice(0, 5), ['setup', 'pair-design-1', 'stop Q1', 'resume-check Q1', 'pair-design-1-answered'])
+  const hash = L.pairAnswersHash({}, [{ id: 'Q1', answer: 'Yes.' }])
+  assert.match(answered.calls[3].prompt, new RegExp(`\\ndark-factory resume-check --run-dir '/repo/\\.council/pair-test' --stop Q1 --snapshot 'base' --answers '${hash}'\\n`))
+  assert.equal(answered.calls.filter(c => ['stop', 'resume'].includes(c.kind)).length, 2)
+  // A stop after a code measurement names that snapshot.
+  const late = (r, n) => n === 2 ? { ...r, questions: [{ question: 'Keep the flag?', quoted: ['C1: "The requested behavior works."'] }] } : r
+  r = await run({ native: true, review: late })
+  assert.match(r.calls.find(c => c.kind === 'stop').prompt, /--stop Q1 --snapshot 'pair-code-2' --record/)
+  // Two stops: the first stop's check replays where and as it was; the second's is the first new call.
+  const twice = { native: true, author: askAt('pair-design-1'), review: (v, n) => n === 1 ? { ...v, questions: [{ question: 'Is the flag documented?', quoted: ['C1: "The requested behavior works."'] }] } : v }
+  const one = await run({ ...twice, args: { clarifications: [{ id: 'Q1', answer: 'Yes.' }] } })
+  const two = await run({ ...twice, args: { clarifications: [{ id: 'Q1', answer: 'Yes.' }, { id: 'Q2', answer: 'It is.' }] } })
+  assert.equal(one.result.status, 'needs-user')
+  const n = beforeRetro(one.calls).length
+  sameCalls(one, two, n)
+  assert.deepEqual(labels(one).slice(0, n), ['setup', 'pair-design-1', 'stop Q1', 'resume-check Q1', 'pair-design-1-answered', 'review pair-design-1-answered (relay)', 'stop Q2'])
+  assert.equal(two.calls[n].label, 'resume-check Q2')
+  assert.equal(two.result.status, 'done')
+  // No record or check: a setup conflict, the Codex host, and an incomplete answer.
+  const conflict = call => call.label === 'setup' ? { status: 'needs-user', error: 'Conflict.', questions: ['Which signature?'] } : {}
+  r = await run({ native: true, setup: conflict, args: { clarifications: [{ id: 'Q1', answer: 'The new one.' }] } })
+  assert.deepEqual(labels(r).slice(0, 3), ['setup', 'setup-answered', 'pair-design-1'])
+  r = await run({ author: askAt('pair-design-1'), args: { clarifications: [{ id: 'Q1', answer: 'Yes.' }] } })
+  assert.ok(!r.calls.some(c => ['stop', 'resume'].includes(c.kind)))
+  assert.equal(r.calls[2].label, 'pair-design-1-answered')
+  r = await run({ ...native, args: { clarifications: [{ id: 'Q7', answer: 'x' }, { id: 'q1', answer: 'Yes.' }] } })
+  assert.deepEqual(labels(r), ['setup', 'pair-design-1', 'stop Q1'])
+  // A refused check blocks the run, and a stop that could not be recorded cannot continue.
+  r = await run({ ...native, args: { clarifications: [{ id: 'Q1', answer: 'Yes.' }] }, resume: (v, call) => call.kind === 'resume' ? { status: 'refused', reason: 'wt/A changed since stop Q1: sum.cjs' } : v })
+  assert.equal(r.result.status, 'blocked')
+  assert.equal(r.result.stopReason, 'The run cannot continue past Q1: wt/A changed since stop Q1: sum.cjs')
+  assert.ok(!r.calls.some(c => c.label === 'pair-design-1-answered'))
+  assert.ok(!('resumable' in r.result))
+  assert.match(r.result.forTheOrchestrator, /This stop cannot continue in place: show questions\[\] to the user, then start a new run/)
+  r = await run({ ...native, resume: (v, call) => call.kind === 'stop' ? { status: 'refused', reason: 'snapshot ref refs/council/pair-test/A-base is missing' } : v })
+  assert.equal(r.result.status, 'needs-user')
+  assert.ok(!('resumable' in r.result))
+  assert.match(r.result.forTheOrchestrator, /This stop cannot continue in place/)
+  assert.doesNotMatch(r.result.forTheOrchestrator, resumeWords)
 })

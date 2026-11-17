@@ -22,6 +22,9 @@ workflow's agents call it. Every subcommand prints one JSON object on its last l
                         (saves <run>/retro.md, plus the run's process notes read from the retro
                         agent's saved transcript, where they outlive the run)
     dark-factory hash        --file F
+    dark-factory resume-check --run-dir D --stop Qn --snapshot LABEL (--record | --answers HASH)
+                        (a native Pair stop: --record keeps wt/A and the snapshot ref at the stop; a
+                        check refuses a continuation when HEAD, the checkout, wt/A or the ref moved)
 
 Long-running work (Codex and Gemini turns, test runs) executes as a detached job so it survives the 10-minute
 Bash tool timeout: the command waits up to --max-wait seconds, then returns {"status": "running"}
@@ -39,6 +42,7 @@ from .jobs import cmd_job, cmd_jobs, cmd_wait
 from .measure import cmd_measure
 from .pinning import pin_guard
 from .providers import cmd_seat_run
+from .resume import cmd_resume_check
 from .retro import RETRO_DIR, TIMELINE_COMMANDS, cmd_retro, timeline_event
 from .sandbox import cmd_preflight
 from .setup import cmd_cleanup, cmd_init
@@ -172,6 +176,14 @@ def main():
     p = sub.add_parser('hash')
     p.add_argument('--file', required=True)
 
+    p = sub.add_parser('resume-check', help='record a native Pair stop, or check that a continuation finds it unchanged')
+    p.add_argument('--run-dir', required=True)
+    p.add_argument('--stop', required=True, help='the first question ID of the stop, such as Q1')
+    p.add_argument('--snapshot', required=True, help="the label of the run's last snapshot: base before the first code measurement")
+    mode = p.add_mutually_exclusive_group(required=True)
+    mode.add_argument('--record', action='store_true', help='record the stop; an existing record is kept')
+    mode.add_argument('--answers', help="the hash of the stop's answers; continuing with other answers is refused")
+
     a = ap.parse_args()
     if getattr(a, 'run_dir', None):
         a.run_dir = os.path.abspath(os.path.expanduser(a.run_dir))
@@ -179,7 +191,8 @@ def main():
                 'verify': cmd_verify, 'verify-delivery': cmd_verify_delivery, 'evidence': cmd_evidence,
                 'apply': cmd_apply,
                 'materialize': cmd_materialize, 'usage': cmd_usage, 'jobs': cmd_jobs,
-                'cleanup': cmd_cleanup, 'retro': cmd_retro, 'hash': cmd_hash, 'preflight': cmd_preflight}
+                'cleanup': cmd_cleanup, 'retro': cmd_retro, 'hash': cmd_hash, 'preflight': cmd_preflight,
+                'resume-check': cmd_resume_check}
     try:
         pin_guard(getattr(a, 'run_dir', None), repo=getattr(a, 'repo', None))
         if a.cmd in TIMELINE_COMMANDS and a.cmd != 'init' and getattr(a, 'run_dir', None) and os.path.isdir(a.run_dir):

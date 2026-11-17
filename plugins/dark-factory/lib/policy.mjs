@@ -75,6 +75,21 @@ const listText = xs => xs.length > 2 ? `${xs.slice(0, -1).join(', ')} and ${xs[x
 const countsOf = (xs, f) => Object.entries(xs.reduce((m, x) => { const k = f(x); m[k] = (m[k] || 0) + 1; return m }, {}))
   .map(([k, n]) => `${k} ${n}`).join(', ')
 
+// A Pair needs-user stop that can continue carries resumable and its resumeSteps, also inside
+// forTheOrchestrator. A later override of the status (a turn or time budget) withdraws all three,
+// so a result that cannot continue carries no resume guidance. Other results never carry the key.
+function withdrawResume(result) {
+  if (!result || typeof result !== 'object' || !('resumable' in result) || result.status === 'needs-user') return result
+  const steps = typeof result.resumeSteps === 'string' ? result.resumeSteps : ''
+  for (const target of [result, result.summary]) {
+    if (!target || typeof target !== 'object') continue
+    if (steps && typeof target.forTheOrchestrator === 'string') target.forTheOrchestrator = target.forTheOrchestrator.split(` ${steps}`).join('').split(steps).join('')
+    delete target.resumable
+    delete target.resumeSteps
+  }
+  return result
+}
+
 // Run configuration: what the caller's args say, and the seat catalog. Pure: no runtime globals.
 
 // A string task may start with `--seats a,b,c,d` (as /council passes its text through as a string),
@@ -427,7 +442,9 @@ function panelKey(S, m) {
 function setupRunId(S) {
   if (S.host !== 'codex' || S.raw.hostRunId === undefined || S.raw.hostRunId === null) return null
   const prefix = S.raw.hostRunId
-  const id = `${prefix}-${S.tier || S.workflowName}`
+  // A Pair setup run again after the user answered its conflict makes a run of its own.
+  const attempt = S.pair?.setupAttempt || 0
+  const id = `${prefix}-${S.tier || S.workflowName}${attempt ? `-answered${attempt > 1 ? `-${attempt}` : ''}` : ''}`
   if (typeof prefix !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(prefix) || !/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(id)) {
     throw new Error('factory: hostRunId must contain only letters, digits, dots, underscores and hyphens, starting with a letter or digit.')
   }
@@ -598,6 +615,12 @@ function refsBlock(S) {
 }
 
 function taskBlock(S, round) {
+  return taskCore(S) + clarificationsFor(S, round)
+}
+
+// The task, its documents and criteria without the council's clarifications, which Pair renders
+// as explicit user decisions instead (pairDecisionsBlock).
+function taskCore(S) {
   let t = `# Task\n\n${S.task}\n`
   t += refsBlock(S)
   if (S.context) t += `\n# Context from the user\n\n${S.context}\n`
@@ -605,7 +628,7 @@ function taskBlock(S, round) {
   t += `\n# Acceptance criteria (fixed before any work began)\n\n${S.criteria.map(c => `- ${c.id}: ${c.text}`).join('\n') || '- (none recorded)'}\n`
   if (S.verify) t += `\n# Verification command\n\n\`${S.verify}\`, run from the root of a worktree (saved as ${S.run.runDir}/verify.sh).\n`
   if (tierProfile(S).gated && S.verify) t += verificationBlock(S)
-  return t + assumptionsBlock(S) + clarificationsFor(S, round)
+  return t + assumptionsBlock(S)
 }
 
 function verificationBlock(S) {
@@ -3057,7 +3080,9 @@ function pairOutcomeFacts(S) {
   return `- Outcome: the pair strategy, ${o.author.name} authoring and ${o.reviewer.name} reviewing; ` +
     `${p.reviews.length} of at most ${o.maxReviews} reviews (design ${byStage('design')}, code ${byStage('code')}), ended at the ${p.stage} stage` +
     `${p.stop ? ` (${oneLine(p.stop, 200)})` : ''}. Findings: ${p.findings.length ? countsOf(p.findings, f => `${f.stage} ${f.severity} ${f.status}`) : 'none'}. ` +
-    `Verification command: ${S.verify ? `\`${oneLine(S.verify, 200)}\`` : 'none'}.`
+    `Verification command: ${S.verify ? `\`${oneLine(S.verify, 200)}\`` : 'none'}.` +
+    (p.asked?.length ? ` Questions for the user: ${p.asked.map(q => `${q.id} (about ${q.about}, asked in ${q.label})`).join(', ')}; ` +
+      `answered: ${p.decisions.map(d => d.id).join(', ') || 'none'}.` : '')
 }
 
 function retroFacts(S, o) {
@@ -4144,7 +4169,9 @@ function evaluationFacts(S, result, elapsedMs, turns) {
     readiness: result.final?.readiness?.state || null, delivery: result.delivery?.status || 'not-recorded',
     escalated: !!S.factory?.escalation, requestedImplementation: S.factory?.intake?.mode === 'implement' || S.mode === 'implement',
     deliveredImplementation: false, tokens: null, cost: null,
-    limits: { maxTurns: S.controls.maxTurns, maxRunMin: S.controls.maxRunMin } }
+    limits: { maxTurns: S.controls.maxTurns, maxRunMin: S.controls.maxRunMin },
+    // Pair only: the questions its stops asked, the answers it took, and answers no stop took.
+    ...(S.pair ? { userDecisions: { asked: S.pair.asked?.length || 0, answered: S.pair.decisions?.length || 0, unused: (result.unusedAnswers || []).length } } : {}) }
 }
 
 // Independent candidates share the snapshot and host machinery, but ranking stays advisory.
@@ -4221,7 +4248,10 @@ Candidate's report (verify it yourself): ${JSON.stringify(solution)}`
 
 function newPairState() {
   return { stage: 'design', design: '', approvedDesign: '', testContract: null, approvedContract: null,
-    replayMapping: [], findings: [], readings: [], liveChecks: [], reviews: [], author: null, measurement: null, label: null, lastReview: null, signatures: [], stop: '', questions: [] }
+    replayMapping: [], findings: [], readings: [], liveChecks: [], reviews: [], author: null, measurement: null, label: null, lastReview: null, signatures: [], stop: '', questions: [],
+    // Every question the run asked (Q1, Q2, … across all its stops), the user's answers it took,
+    // and how this stop can continue. See pairAsk and pairTakeAnswers.
+    asked: [], decisions: [], resumable: false, skipRetro: false, fallback: false, setupAttempt: 0 }
 }
 
 // Pair decisions are shared by both hosts. Only the reviewer can close findings.
@@ -4270,14 +4300,17 @@ function parsePairConfig(args) {
   return { ...config, raw, tier: 'pair', simple: null, panel: [], specReviewers: [],
     roles: { ...(retro ? { retro } : {}), setup }, lineup: [hostSeat(config.host, author)],
     auditors: [{ ...hostSeat(config.host, reviewer), lens: 'review', id: 'PR' }],
-    pairOptions: { author, reviewer, maxReviews, design } }
+    pairOptions: { author, reviewer, maxReviews, design, answers: pairAnswersOf(raw.clarifications) } }
 }
 
 // Without a design stage the contract is the author's to revise with the code, so it is part of
 // the reviewed version: a contract change on the same tree is a new version, not a stall.
+// With the user's decisions in the prompts, the version carries them too, so a review from before
+// an answer never counts for the version after it.
 function pairVersion(S) {
-  return S.pair.stage === 'design' ? `design:${promptHash(JSON.stringify([S.pair.design, S.pair.testContract]))}:${S.pair.measurement?.snapshot?.tree || 'base'}`
-    : `code:${S.pair.measurement?.snapshot?.tree || 'unmeasured'}${pairDesigned(S) ? '' : `:${promptHash(JSON.stringify(S.pair.approvedContract))}`}`
+  const decided = S.pair.decisions?.length ? `:u${promptHash(JSON.stringify(S.pair.decisions))}` : ''
+  return (S.pair.stage === 'design' ? `design:${promptHash(JSON.stringify([S.pair.design, S.pair.testContract]))}:${S.pair.measurement?.snapshot?.tree || 'base'}`
+    : `code:${S.pair.measurement?.snapshot?.tree || 'unmeasured'}${pairDesigned(S) ? '' : `:${promptHash(JSON.stringify(S.pair.approvedContract))}`}`) + decided
 }
 
 function pairReviewTag(S) {
@@ -4484,6 +4517,154 @@ function pairQuestionsError(S, review) {
 function pairReviewQuestions(S, review) {
   return (Array.isArray(review?.questions) ? review.questions : []).map(q =>
     `${String(q.question).trim()} Requirements as written: ${q.quoted.map(w => String(w || '').trim()).filter(Boolean).join('; ')}`)
+}
+
+// Questions for the user, and the answers a continued run takes. A stop's questions get IDs that
+// are unique across the run, Q1, Q2, …, a later stop continuing the numbering; about names the
+// finding, criterion or reading a question is about, or none. Returns the stop's questions.
+function pairAsk(S, kind, items, label) {
+  const p = S.pair
+  const exists = id => p.findings.some(f => f.id === id) || (S.criteria || []).some(c => c.id === id) || p.readings.some(r => r.id === id)
+  p.questions = []
+  for (const item of Array.isArray(items) ? items : []) {
+    const given = item && typeof item === 'object'
+    const question = String((given ? item.question : item) ?? '').replace(/\s+/g, ' ').trim()
+    if (!question) continue
+    const about = given && item.about ? String(item.about) : kind === 'setup' ? 'none'
+      : (question.match(/\b[PCR]\d+\b/g) || []).find(exists) || 'none'
+    const q = { id: `Q${p.asked.length + 1}`, about, kind, question }
+    p.asked.push({ ...q, label })
+    p.questions.push(q)
+  }
+  return p.questions
+}
+
+// The clarification entries as given: a criterion answer keeps criterion and drop, which the
+// council's parser leaves out. An entry that is not an object is kept as one with no id.
+function pairAnswersOf(list) {
+  return (Array.isArray(list) ? list : []).map(c => c && typeof c === 'object' && !Array.isArray(c)
+    ? { id: c.id, answer: c.answer, ...(c.criterion !== undefined ? { criterion: c.criterion } : {}), ...(c.drop !== undefined ? { drop: c.drop } : {}) }
+    : { id: undefined, answer: undefined })
+}
+
+const pairAnswerName = id => typeof id === 'string' && /^Q[1-9][0-9]*$/.test(id) ? id
+  : id === undefined || id === null || id === '' ? '(no id)' : JSON.stringify(oneLine(String(id), 80))
+
+function pairAnswerProblem(a, q) {
+  // A field given as null is given: it is checked, not taken as absent.
+  const has = key => a[key] !== undefined
+  if (typeof a.answer !== 'string' || !a.answer.trim()) return 'no answer'
+  if ((has('criterion') || has('drop')) && q.kind !== 'criterion') return 'criterion and drop answer only a question about a criterion'
+  if (has('criterion') && has('drop')) return 'both criterion and drop'
+  if (has('criterion') && (typeof a.criterion !== 'string' || !a.criterion.trim())) return 'criterion is not text'
+  if (has('drop') && typeof a.drop !== 'boolean') return 'drop is not true or false'
+  return ''
+}
+
+// Sorts the answers against the run's questions: knownIds are every question the run has asked,
+// current the stop's. Answers to earlier stops are skipped. unknown: a malformed or repeated ID, or
+// one the run never asked; with hold, an ID numbered above every known one is held for a later
+// stop instead (a native run can't tell a replayed stop from a live one). invalid: an answer to a
+// current question the run cannot apply. missing: a current question without a valid answer.
+function pairAnswerCheck(answers, knownIds, current, hold) {
+  const known = new Set(knownIds), top = Math.max(0, ...knownIds.map(id => Number(String(id).slice(1)) || 0))
+  const seen = new Set(), answered = [], unknown = [], invalid = [], held = []
+  for (const a of Array.isArray(answers) ? answers : []) {
+    const id = a && typeof a === 'object' ? a.id : undefined
+    if (typeof id !== 'string' || !/^Q[1-9][0-9]*$/.test(id)) { unknown.push(pairAnswerName(id)); continue }
+    if (seen.has(id)) { unknown.push(`${id} (repeated)`); continue }
+    seen.add(id)
+    if (!known.has(id)) { (hold && Number(id.slice(1)) > top ? held : unknown).push(id); continue }
+    const q = current.find(x => x.id === id)
+    if (!q) continue
+    const why = pairAnswerProblem(a, q)
+    if (why) { invalid.push(`${id} (${why})`); continue }
+    answered.push({ id, answer: a.answer.trim(), ...(typeof a.criterion === 'string' ? { criterion: a.criterion.trim() } : {}), ...(a.drop === true ? { drop: true } : {}) })
+  }
+  return { answered, missing: current.map(q => q.id).filter(id => !answered.some(a => a.id === id)), unknown, invalid, held }
+}
+
+function pairAnswerMessage(check, current) {
+  const part = (name, xs) => xs.length ? ` ${name}: ${xs.join(', ')}.` : ''
+  return `The answers do not settle this stop (${current.map(q => q.id).join(', ')}).${part('Missing', check.missing)}${part('Unknown', check.unknown)}${part('Invalid', check.invalid)} ` +
+    'Answer every question at this stop under its ID, and only questions this run asked.'
+}
+
+// The standalone runner's check of a resume's answers against the stopped run's result. The run's
+// history says which questions exist: those earlier stops took (decisions) and the stop being
+// resumed (questions), never the clarifications saved with it. Nothing is held: the runner knows
+// the stop.
+function pairResumeAnswerCheck(prior, clarifications) {
+  const current = (Array.isArray(prior?.questions) ? prior.questions : []).filter(q => q && typeof q.id === 'string')
+  const known = [...(Array.isArray(prior?.decisions) ? prior.decisions : []).map(d => d?.id), ...current.map(q => q.id)].filter(id => typeof id === 'string')
+  const check = pairAnswerCheck(pairAnswersOf(clarifications), known, current, false)
+  const settled = !check.missing.length && !check.unknown.length && !check.invalid.length
+  return { ...check, settled, message: settled ? '' : pairAnswerMessage(check, current) }
+}
+
+// The engine's check at a stop. answered: every question at it has a valid answer; incomplete: an
+// unknown or invalid ID, or some of the questions answered; unanswered: nothing for this stop.
+function pairTakeAnswers(S) {
+  const p = S.pair
+  const check = pairAnswerCheck(S.pairOptions.answers || [], p.asked.map(q => q.id), p.questions, true)
+  const state = check.unknown.length || check.invalid.length || (check.answered.length && check.missing.length) ? 'incomplete'
+    : check.answered.length ? 'answered' : 'unanswered'
+  return { ...check, state }
+}
+
+// The identity of a stop's answers, which the native resume check records: continuing one stop
+// twice with different answers is refused.
+function pairAnswersHash(S, answered) {
+  return promptHash(JSON.stringify(answered.map(a => [a.id, a.answer, a.criterion ?? null, a.drop ?? null])))
+}
+
+// The answers become decisions: in every later prompt, the result and the review version. A
+// criterion answer rewrites or drops that criterion (IDs are never renumbered). A reading ruled
+// needs-user that an answered question cites goes back to proposed, for the next review to rule on.
+function pairApplyDecisions(S, answered) {
+  const p = S.pair
+  for (const a of answered) {
+    const q = p.asked.find(x => x.id === a.id)
+    p.decisions.push({ id: q.id, about: q.about, kind: q.kind, question: q.question, answer: a.answer, label: q.label,
+      ...(a.criterion !== undefined ? { criterion: a.criterion } : {}), ...(a.drop ? { drop: true } : {}) })
+    if (q.kind === 'criterion' && a.criterion !== undefined) S.criteria = S.criteria.map(c => c.id === q.about ? { ...c, text: a.criterion } : c)
+    if (q.kind === 'criterion' && a.drop) S.criteria = S.criteria.filter(c => c.id !== q.about)
+    const cited = new Set(q.question.match(/\bR\d+\b/g) || [])
+    for (const r of p.readings.filter(r => r.status === 'needs-user' && cited.has(r.id))) {
+      r.status = 'proposed'
+      r.history.push({ decision: q.id, status: 'proposed', evidence: `The user answered ${q.id}; the next review rules on the reading again.` })
+    }
+  }
+  p.questions = []
+  p.stop = ''
+}
+
+// Answers no stop took: held for a stop the run never reached, or unknown.
+function pairUnusedAnswers(S) {
+  const p = S.pair, taken = new Set([...p.decisions.map(d => d.id), ...p.questions.map(q => q.id)])
+  return [...new Set((S.pairOptions.answers || []).map(a => pairAnswerName(a?.id)).filter(id => !taken.has(id)))]
+}
+
+function pairNewRun(S, post = S.pair.label && S.run ? `${S.run.room}/${S.pair.label}/A.md` : null) {
+  return `start a new run with the same task and the user's answers in context${post ? `, passing the last handoff (${post}) in plan` : ''}`
+}
+
+// How to continue a resumable needs-user stop, by host: native (the same Claude Code session only),
+// codex (the standalone runner's checkpoint) or cli (runtime: "cli" from Claude Code, which reads
+// the questions and the last handoff from the runner's result).
+function pairResumeSteps(S, via, hostRunDir, questions = S.pair.questions, post = undefined) {
+  const name = S.factory ? 'factory' : 'pair', slash = `/${name}`
+  const ids = questions.map(q => q.id).join(', ')
+  const entries = '[<any earlier clarifications, unchanged>, {id, answer}, …]'
+  const how = via === 'native'
+    ? `To continue this ${slash} run, in this same Claude Code session only, call Workflow({name: "${name}", resumeFromRunId: <this run's id>, args: <the same args as before, as an object (if you passed a plain string, use {task: <that string>}), plus clarifications: ${entries}>}). The turns before this stop replay from the session's cache; another session has no such cache.`
+    : via === 'codex'
+      ? `To continue this ${S.factory ? `${slash} ` : ''}run, write a JSON file holding {"clarifications": ${entries}} and run dark-factory-codex --resume ${hostRunDir} --args-file <that file>. The runner checks every answer before any turn and replays the turns before this stop from its checkpoint.`
+      : `To continue this run, call ${slash} again with the same args plus runtime: "cli", resume: "${hostRunDir}" and clarifications: ${entries}. The runner checks every answer before any turn and replays the turns before this stop from its checkpoint.`
+  return `This run stopped for the user's answers. Show questions[] to the user, each under its ID with what it is about, and ask for an answer to every one (${ids}). ` +
+    'An answer is {id, answer}; one to a question of kind criterion may also give criterion (the criterion\'s new text) or drop: true (to remove it). ' +
+    `${how} Don't run dark-factory cleanup on the stopped run, and don't change its worktree or the checkout: continuing needs them as they are. ` +
+    `If the run cannot continue (a refused check${via === 'native' ? ', or a new session' : ''}), ${pairNewRun(S, post)}.`
 }
 
 // A challenge may cite, beside checks that cover its criterion, a check that covers only another
@@ -4742,8 +4923,12 @@ function pairResult(S, status = 'blocked') {
   if (p.stage !== 'code' && ready.state === 'ready') {
     ready.state = 'incomplete'; ready.incomplete.push('Implementation has not been reviewed.')
   }
-  // A stop's questions, from setup, the author or the reviewer, are what the user is asked.
-  const questions = (p.questions || []).map(q => String(q ?? '').replace(/\s+/g, ' ').trim()).filter(Boolean)
+  // A stop's questions, from setup, the author or the reviewer, are what the user is asked. Only a
+  // needs-user stop that can continue carries resume steps; every other result carries none.
+  const questions = p.questions || [], unused = pairUnusedAnswers(S)
+  const resumable = status === 'needs-user' && p.resumable && questions.length > 0
+  const hostRunDir = S.host === 'codex' && S.raw.repo && S.raw.hostRunId ? `${S.raw.repo}/.council/${S.raw.hostRunId}` : '<hostRunDir>'
+  const resumeSteps = resumable ? pairResumeSteps(S, S.host === 'codex' ? 'codex' : 'native', hostRunDir) : ''
   const live = ready.liveChecks, pending = [...new Set(live.map(c => c.criterion))]
   const report = [`Pair: ${S.pairOptions.author.name} authors; ${S.pairOptions.reviewer.name} reviews.`,
     `Readiness: ${ready.state}${pending.length ? `; live checks pending: ${pending.join(', ')}` : ''}. Reviews: ${p.reviews.length}/${S.pairOptions.maxReviews}.`,
@@ -4752,7 +4937,10 @@ function pairResult(S, status = 'blocked') {
     ...(Object.keys(overrides).length ? [`Verification overrides: the gate ran with explicit environment overrides from verification.json: ${Object.keys(overrides).sort().join(', ')}.`] : []),
     `Replay: ${m?.replay?.records?.length || 0} file/command records; ${m?.replay?.exclusions?.length || 0} overlay exclusions. Base outcomes require reviewer interpretation.`,
     ...ready.infrastructure, ...ready.blocked, ...ready.incomplete,
-    ...(questions.length ? [`Questions for the user:\n\n${questions.map((q, i) => `${i + 1}. ${q}`).join('\n')}`] : []),
+    ...(questions.length ? [`Questions for the user (answer each under its ID):\n\n${questions.map(q => `- ${q.id} (about ${q.about}): ${q.question}`).join('\n')}`] : []),
+    ...(p.decisions.length ? [`User decisions:\n\n${p.decisions.map(d => `- ${d.id} (about ${d.about}; asked in ${d.label}): ${d.question} Answer: ${d.answer}` +
+      `${typeof d.criterion === 'string' ? ` ${d.about} now reads: ${d.criterion}` : d.drop ? ` ${d.about} was dropped.` : ''}`).join('\n')}`] : []),
+    ...(unused.length ? [`Unused answers: ${unused.join(', ')}.`] : []),
     ...p.findings.map(f => `${f.id}: ${f.status} — ${f.statement}${f.resolution ? ` (${f.resolution})` : ''}`),
     ...p.readings.map(r => `${r.id}: reading ${r.status} — ${r.requirement} read as: ${r.reading}${r.evidence ? ` (${r.evidence})` : ''}${r.finding ? `; finding ${r.finding}` : ''}`)].join('\n\n')
   return {
@@ -4766,13 +4954,15 @@ function pairResult(S, status = 'blocked') {
       'Then run dark-factory verify-delivery with the same --run-dir and --result: files copied by hand are not delivered until it reports delivered. ' +
       'For --result, pass the workflow task\'s output file as it stands (the helper reads the result inside it), or omit --result when the run directory holds result.json. ' +
       `Once the delivery is verified, dark-factory cleanup --run-dir ${S.run?.runDir ? shq(S.run.runDir) : '<runDir>'} removes the run's worktrees and refs/council refs (add --all to remove the run directory too). ` +
-      'Do not start a council automatically. The Codex host can resume a validated checkpoint with --resume hostRunDir; changed inputs or evidence require a new run.',
+      'Do not start a council automatically.' +
+      (resumeSteps ? ` ${resumeSteps}` : p.fallback ? ` This stop cannot continue in place: show questions[] to the user, then ${pairNewRun(S)}.` : ''),
     status, workflow: 'pair', mode: 'implement', task: S.task, runDir: S.run?.runDir || null,
     repositoryNotes: S.repositoryNotes || '',
     room: S.run?.room || null, refs: S.refs, stage: p.stage, stopReason: p.stop,
     design: p.design, testContract: p.approvedContract || p.testContract, replayMapping: p.replayMapping,
     author: S.pairOptions.author.name, reviewer: S.pairOptions.reviewer.name,
-    reviews: p.reviews, findings: p.findings, readings: p.readings, liveChecks: live, questions: p.questions, notes: S.notes,
+    reviews: p.reviews, findings: p.findings, readings: p.readings, liveChecks: live, questions, decisions: p.decisions, unusedAnswers: unused,
+    ...(resumable ? { resumable: true, resumeSteps } : {}), notes: S.notes,
     report: { markdown: report },
     final: { author: 'A', model: S.pairOptions.author.name, summary: p.author?.summary || '',
       worktree: S.seats[0]?.wt || null, post: p.label && S.run ? `${S.run.room}/${p.label}/A.md` : null,
@@ -4782,7 +4972,19 @@ function pairResult(S, status = 'blocked') {
 }
 
 function pairSetupPrompt(S) {
-  return setupPrompt(S) + '\n\nPair also requires head: copy the full original commit from the helper init output (head), or run.json. Do not use a later author commit or snapshot. This identity will be checked against every baseline replay.\nKeep the original task unchanged, including in TASK.md. Return repositoryNotes with observations from HEAD, configuration/tool paths, and proposed interpretations of outdated wording. These are proposals for the author and reviewer to check, not replacement requirements. Explicit user decisions and required plan filenames override the default separate-test-file preference. If substantive requirements conflict, return status needs-user with precise questions immediately. Leave questions=[] when none remain.\nYou own the criteria you write: word each one so evidence inside this run can check it, by a test, the gate, or inspection of the code. A limitation that the task or a reference document explicitly accepts is not a gap: write the criterion to match what it accepts, cite where it says so, and leave it out of unverifiable. List in unverifiable only the criteria that you have established cannot be fully met with evidence available inside this run, with origin supplied when the task, criteria or a reference document states the criterion in substance, and written when you drafted it and no checkable wording keeps its intent: anything that needs downstream, post-delivery, production or live-service evidence, or a capability the author and reviewer lack. Give the criterion ID and the reason. If a tool or capability a criterion needs might be missing, check it with one command first (for example `php -m | grep -i pcov` for a coverage driver, or run the target itself), and list the criterion only when that check shows it is missing, citing the command and its output in the reason. Doubt alone ("may not be runnable") is not a reason: record it in repositoryNotes. The verification gate and the test replays run in the helper\'s measurement, outside your sandbox: a check that fails only inside your own sandbox (a refused port bind, socket or network call, or a denied tool) does not make a criterion unverifiable. Record that in repositoryNotes instead. Return unverifiable=[] when every criterion can be checked here.\nList in liveChecks each criterion that the run can check only against a stand-in for something outside it, where the real thing can behave differently: a network service, credentials, the machine\'s certificate store or another platform-specific resource, an external CLI\'s login. Give the criterion ID, the command or action that checks it against the real thing, and why the stand-in can\'t show it. Don\'t list such a criterion in unverifiable: the run still checks it with the stand-in, and the user runs the live check before delivery. Return liveChecks=[] when there are none.'
+  return setupPrompt(S) + '\n\nPair also requires head: copy the full original commit from the helper init output (head), or run.json. Do not use a later author commit or snapshot. This identity will be checked against every baseline replay.\nKeep the original task unchanged, including in TASK.md. Return repositoryNotes with observations from HEAD, configuration/tool paths, and proposed interpretations of outdated wording. These are proposals for the author and reviewer to check, not replacement requirements. Explicit user decisions and required plan filenames override the default separate-test-file preference. If substantive requirements conflict, return status needs-user with precise questions immediately. Leave questions=[] when none remain.\nYou own the criteria you write: word each one so evidence inside this run can check it, by a test, the gate, or inspection of the code. A limitation that the task or a reference document explicitly accepts is not a gap: write the criterion to match what it accepts, cite where it says so, and leave it out of unverifiable. List in unverifiable only the criteria that you have established cannot be fully met with evidence available inside this run, with origin supplied when the task, criteria or a reference document states the criterion in substance, and written when you drafted it and no checkable wording keeps its intent: anything that needs downstream, post-delivery, production or live-service evidence, or a capability the author and reviewer lack. Give the criterion ID and the reason. If a tool or capability a criterion needs might be missing, check it with one command first (for example `php -m | grep -i pcov` for a coverage driver, or run the target itself), and list the criterion only when that check shows it is missing, citing the command and its output in the reason. Doubt alone ("may not be runnable") is not a reason: record it in repositoryNotes. The verification gate and the test replays run in the helper\'s measurement, outside your sandbox: a check that fails only inside your own sandbox (a refused port bind, socket or network call, or a denied tool) does not make a criterion unverifiable. Record that in repositoryNotes instead. Return unverifiable=[] when every criterion can be checked here.\nList in liveChecks each criterion that the run can check only against a stand-in for something outside it, where the real thing can behave differently: a network service, credentials, the machine\'s certificate store or another platform-specific resource, an external CLI\'s login. Give the criterion ID, the command or action that checks it against the real thing, and why the stand-in can\'t show it. Don\'t list such a criterion in unverifiable: the run still checks it with the stand-in, and the user runs the live check before delivery. Return liveChecks=[] when there are none.' + (pairDecisionsBlock(S) && `\n${pairDecisionsBlock(S)}`)
+}
+
+// The user's answers to the run's questions, from a stop this run continued past. Empty without
+// any, so every prompt before the first answered stop has the same bytes with and without answers.
+function pairDecisionsBlock(S) {
+  const decisions = S.pair?.decisions || []
+  if (!decisions.length) return ''
+  return `\n# Explicit user decisions\n\nThe user answered ${decisions.length === 1 ? 'this question' : 'these questions'} during the run. ` +
+    `${decisions.length === 1 ? 'The answer overrides' : 'The answers override'} setup observations and readings for the rest of the run. ` +
+    `The reviewer resolves any finding a decision settles under its existing ID.\n` +
+    decisions.map(d => `- ${d.id} (about ${d.about}; asked in ${d.label}): ${d.question} Answer: ${d.answer}` +
+      `${typeof d.criterion === 'string' ? ` ${d.about} now reads: ${d.criterion}` : d.drop === true ? ` ${d.about} was dropped.` : ''}`).join('\n') + '\n'
 }
 
 // The contract and mapping rules, shared by the design stage and by a run without one.
@@ -4803,7 +5005,7 @@ function pairAuthorPrompt(S, label, correction = '') {
   if (!pairDesigned(S)) return pairDirectAuthorPrompt(S, label, correction)
   return `You are the sole author in a pair workflow. Own the task through completion; an independent reviewer checks each stage.
 
-${taskBlock(S, 99)}\n# Setup observations and proposals (not requirements)\n${S.repositoryNotes || '(none)'}
+${taskCore(S)}${pairDecisionsBlock(S)}\n# Setup observations and proposals (not requirements)\n${S.repositoryNotes || '(none)'}
 # Stage: ${design ? 'design' : 'implementation'}
 
 Your worktree: ${S.seats[0].wt}. Work only there; never edit the main checkout or reviewer checkouts.
@@ -4850,7 +5052,7 @@ function pairDirectAuthorPrompt(S, label, correction = '') {
   const p = S.pair
   return `You are the sole author in a pair workflow. Own the task through completion; an independent reviewer checks each version.
 
-${taskBlock(S, 99)}\n# Setup observations and proposals (not requirements)\n${S.repositoryNotes || '(none)'}
+${taskCore(S)}${pairDecisionsBlock(S)}\n# Setup observations and proposals (not requirements)\n${S.repositoryNotes || '(none)'}
 # Stage: implementation (this run has no design stage)
 
 Your worktree: ${S.seats[0].wt}. Work only there; never edit the main checkout or reviewer checkouts.
@@ -4891,7 +5093,7 @@ function pairReviewPrompt(S, label, checkout, correction = null) {
   const tag = pairReviewTag(S)
   return `You are the independent reviewer in a pair workflow. This is a fresh review context. You did not author the work. Review the current artifact yourself, using repository evidence, and verify every proposed finding resolution. Resolve existing findings under their current IDs in both design and code reviews; never refile an unresolved issue under a new ID.
 
-${taskBlock(S, 99)}\n# Setup observations and proposals (not requirements)\n${S.repositoryNotes || '(none)'}
+${taskCore(S)}${pairDecisionsBlock(S)}\n# Setup observations and proposals (not requirements)\n${S.repositoryNotes || '(none)'}
 # Review stage: ${p.stage}
 Version: ${pairVersion(S)}
 Return that exact version. Return complete=true only after examining the entire current artifact and every acceptance criterion, including regressions introduced by fixes.
@@ -4957,6 +5159,25 @@ function pairMeasurePrompt(S, label) {
 ${S.cli} measure --run-dir ${shq(S.run.runDir)} --seat A --label ${shq(label)} --replay-json ${shq(JSON.stringify(pairReplayRequest(S)))} --brief --max-wait 5
 If status is running, poll ${S.cli} wait --run-dir ${shq(S.run.runDir)} --job ${shq(`measure-A-${label}`)} --brief --max-wait 5 until it finishes. Poll an active shell session before launching another command. Do not use sleep polling.
 The finished result is one line of JSON in exactly the shape you return. Return it as printed: the same keys and values, including the whole replay object and every record, with nothing added, dropped, reformatted or summarized. Never interpret base failures. If the command fails without printing that result, return status error with the actual message in error and empty snapshot, suite and replay values. Do not substitute results from the live worktree or remove required checks.`
+}
+
+// A native stop's record of the state a resume must find: wt/A's HEAD and files, and the snapshot
+// ref the run last measured ('base' before the first code measurement). It never overwrites an
+// earlier record, so at a resume the replayed turn leaves the original record in place.
+function pairStopRecordPrompt(S, stop, tag) {
+  return pairResumeCommandPrompt(S, `${S.cli} resume-check --run-dir ${shq(S.run.runDir)} --stop ${stop} --snapshot ${shq(tag)} --record`)
+}
+
+// Just before a native run continues past an answered stop: refuses when HEAD, the checkout, wt/A
+// or the snapshot ref moved since the stop, or when this stop was continued with other answers.
+function pairResumeCheckPrompt(S, stop, tag, answers) {
+  return pairResumeCommandPrompt(S, `${S.cli} resume-check --run-dir ${shq(S.run.runDir)} --stop ${stop} --snapshot ${shq(tag)} --answers ${shq(answers)}`)
+}
+
+function pairResumeCommandPrompt(S, cmd) {
+  return `You are transporting a deterministic check for the pair workflow. Do not review, change, or judge anything. Make one Bash call, exactly as written:
+${cmd}
+It prints one line of JSON with status and reason. Return status and reason exactly as printed. If the command fails without printing that JSON, return status error with the actual message in reason.`
 }
 
 // Effective capabilities only; adapters supply parsed sources and physical path observations.
@@ -5225,4 +5446,4 @@ function providerDiagnostic(S, observations, unknown) {
     invalidation: 'Persistent approvals changing watched capabilities invalidate this run; one-time approvals without source changes do not.',
     reasons: unknown.length ? ['unknown-capabilities'] : [] }
 }
-export { engineIdentityIssues, launchReport, launchRequirements, pinnedOperationIssues, promptHash, provenanceFacts, providerConfiguration, reachableProviders }
+export { engineIdentityIssues, launchReport, launchRequirements, pairAnswerMessage, pairResumeAnswerCheck, pinnedOperationIssues, promptHash, provenanceFacts, providerConfiguration, reachableProviders, withdrawResume }

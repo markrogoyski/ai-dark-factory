@@ -190,23 +190,21 @@ def cmd_verify_delivery(a):
     common.emit(jobs.wait_job(jd, key, a.max_wait))
 
 
-def cmd_apply(a):
-    run = load_run(a.run_dir)
-    report = load_result(run, a.result)
-    if report.get('artifactType') != 'dark-factory-result' or report.get('artifactVersion') != 1:
-        raise CouncilError('apply requires a full dark-factory-result v1; summary.json is informational only')
-    final, repo = report.get('final', {}), run['repoRoot']
-    ref = delivery_snapshot(run, final)
+def checkout_matches_setup(run, action):
+    """Refuse, changing nothing, unless the main checkout is as setup left it: HEAD at the original
+    base, an index matching HEAD, and no local edits other than those recorded at setup (run.json
+    deliveryBaseline). apply and resume-check share it; ACTION names the caller in each message."""
+    repo = run['repoRoot']
     if git('rev-parse', 'HEAD', cwd=repo).strip() != run['head']:
-        raise CouncilError('HEAD changed since setup; apply requires the original base')
+        raise CouncilError(f'HEAD changed since setup; {action} requires the original base')
     status = [row for row in git('status', '--porcelain', '--untracked-files=no', cwd=repo).split('\n') if row]
     if status and 'deliveryBaseline' not in run:
-        raise CouncilError('apply requires a clean tracked checkout and index; existing changes were preserved')
+        raise CouncilError(f'{action} requires a clean tracked checkout and index; existing changes were preserved')
     # The applied index is compared with the snapshot tree, so it must start as HEAD's: staged or
     # unmerged changes are refused, while unstaged edits recorded at setup may stay.
     staged = [row[3:] for row in status if row[0] != ' ']
     if staged:
-        raise CouncilError('apply requires an index matching HEAD; staged changes were preserved: ' + ', '.join(staged))
+        raise CouncilError(f'{action} requires an index matching HEAD; staged changes were preserved: ' + ', '.join(staged))
     baseline = run.get('deliveryBaseline', {})
     before = tree_files(repo, run['head'])
     # Tracked changes outside the baseline are reported first, as the clean-checkout refusal was.
@@ -214,9 +212,21 @@ def cmd_apply(a):
         actual, want = checkout_file(repo, path), baseline.get(path, before.get(path))
         if not (actual is None and want is None or actual and want and all(actual[k] == want[k] for k in ('mode', 'blob'))):
             if path in before and path not in baseline:
-                raise CouncilError(f'tracked file changed since setup: {path}; apply requires a clean tracked checkout apart from '
+                raise CouncilError(f'tracked file changed since setup: {path}; {action} requires a clean tracked checkout apart from '
                                    'the edits recorded at setup (run.json deliveryBaseline); existing changes were preserved')
             raise CouncilError(f'local file changed since setup and would not pass delivery verification: {path}')
+
+
+def cmd_apply(a):
+    run = load_run(a.run_dir)
+    report = load_result(run, a.result)
+    if report.get('artifactType') != 'dark-factory-result' or report.get('artifactVersion') != 1:
+        raise CouncilError('apply requires a full dark-factory-result v1; summary.json is informational only')
+    final, repo = report.get('final', {}), run['repoRoot']
+    ref = delivery_snapshot(run, final)
+    checkout_matches_setup(run, 'apply')
+    baseline = run.get('deliveryBaseline', {})
+    before = tree_files(repo, run['head'])
     paths = git('diff', '--no-renames', '--name-only', '-z', run['head'], ref, cwd=repo).split('\0')[:-1]
     # Refuse collisions with untracked/ignored local files, including a parent path.
     for path in paths:

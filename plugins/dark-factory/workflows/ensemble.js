@@ -86,6 +86,21 @@ const listText = xs => xs.length > 2 ? `${xs.slice(0, -1).join(', ')} and ${xs[x
 const countsOf = (xs, f) => Object.entries(xs.reduce((m, x) => { const k = f(x); m[k] = (m[k] || 0) + 1; return m }, {}))
   .map(([k, n]) => `${k} ${n}`).join(', ')
 
+// A Pair needs-user stop that can continue carries resumable and its resumeSteps, also inside
+// forTheOrchestrator. A later override of the status (a turn or time budget) withdraws all three,
+// so a result that cannot continue carries no resume guidance. Other results never carry the key.
+function withdrawResume(result) {
+  if (!result || typeof result !== 'object' || !('resumable' in result) || result.status === 'needs-user') return result
+  const steps = typeof result.resumeSteps === 'string' ? result.resumeSteps : ''
+  for (const target of [result, result.summary]) {
+    if (!target || typeof target !== 'object') continue
+    if (steps && typeof target.forTheOrchestrator === 'string') target.forTheOrchestrator = target.forTheOrchestrator.split(` ${steps}`).join('').split(steps).join('')
+    delete target.resumable
+    delete target.resumeSteps
+  }
+  return result
+}
+
 // Run configuration: what the caller's args say, and the seat catalog. Pure: no runtime globals.
 
 // A string task may start with `--seats a,b,c,d` (as /council passes its text through as a string),
@@ -438,7 +453,9 @@ function panelKey(S, m) {
 function setupRunId(S) {
   if (S.host !== 'codex' || S.raw.hostRunId === undefined || S.raw.hostRunId === null) return null
   const prefix = S.raw.hostRunId
-  const id = `${prefix}-${S.tier || S.workflowName}`
+  // A Pair setup run again after the user answered its conflict makes a run of its own.
+  const attempt = S.pair?.setupAttempt || 0
+  const id = `${prefix}-${S.tier || S.workflowName}${attempt ? `-answered${attempt > 1 ? `-${attempt}` : ''}` : ''}`
   if (typeof prefix !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(prefix) || !/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(id)) {
     throw new Error('factory: hostRunId must contain only letters, digits, dots, underscores and hyphens, starting with a letter or digit.')
   }
@@ -609,6 +626,12 @@ function refsBlock(S) {
 }
 
 function taskBlock(S, round) {
+  return taskCore(S) + clarificationsFor(S, round)
+}
+
+// The task, its documents and criteria without the council's clarifications, which Pair renders
+// as explicit user decisions instead (pairDecisionsBlock).
+function taskCore(S) {
   let t = `# Task\n\n${S.task}\n`
   t += refsBlock(S)
   if (S.context) t += `\n# Context from the user\n\n${S.context}\n`
@@ -616,7 +639,7 @@ function taskBlock(S, round) {
   t += `\n# Acceptance criteria (fixed before any work began)\n\n${S.criteria.map(c => `- ${c.id}: ${c.text}`).join('\n') || '- (none recorded)'}\n`
   if (S.verify) t += `\n# Verification command\n\n\`${S.verify}\`, run from the root of a worktree (saved as ${S.run.runDir}/verify.sh).\n`
   if (tierProfile(S).gated && S.verify) t += verificationBlock(S)
-  return t + assumptionsBlock(S) + clarificationsFor(S, round)
+  return t + assumptionsBlock(S)
 }
 
 function verificationBlock(S) {
@@ -3068,7 +3091,9 @@ function pairOutcomeFacts(S) {
   return `- Outcome: the pair strategy, ${o.author.name} authoring and ${o.reviewer.name} reviewing; ` +
     `${p.reviews.length} of at most ${o.maxReviews} reviews (design ${byStage('design')}, code ${byStage('code')}), ended at the ${p.stage} stage` +
     `${p.stop ? ` (${oneLine(p.stop, 200)})` : ''}. Findings: ${p.findings.length ? countsOf(p.findings, f => `${f.stage} ${f.severity} ${f.status}`) : 'none'}. ` +
-    `Verification command: ${S.verify ? `\`${oneLine(S.verify, 200)}\`` : 'none'}.`
+    `Verification command: ${S.verify ? `\`${oneLine(S.verify, 200)}\`` : 'none'}.` +
+    (p.asked?.length ? ` Questions for the user: ${p.asked.map(q => `${q.id} (about ${q.about}, asked in ${q.label})`).join(', ')}; ` +
+      `answered: ${p.decisions.map(d => d.id).join(', ') || 'none'}.` : '')
 }
 
 function retroFacts(S, o) {
@@ -4155,7 +4180,9 @@ function evaluationFacts(S, result, elapsedMs, turns) {
     readiness: result.final?.readiness?.state || null, delivery: result.delivery?.status || 'not-recorded',
     escalated: !!S.factory?.escalation, requestedImplementation: S.factory?.intake?.mode === 'implement' || S.mode === 'implement',
     deliveredImplementation: false, tokens: null, cost: null,
-    limits: { maxTurns: S.controls.maxTurns, maxRunMin: S.controls.maxRunMin } }
+    limits: { maxTurns: S.controls.maxTurns, maxRunMin: S.controls.maxRunMin },
+    // Pair only: the questions its stops asked, the answers it took, and answers no stop took.
+    ...(S.pair ? { userDecisions: { asked: S.pair.asked?.length || 0, answered: S.pair.decisions?.length || 0, unused: (result.unusedAnswers || []).length } } : {}) }
 }
 
 // Independent candidates share the snapshot and host machinery, but ranking stays advisory.
@@ -4700,6 +4727,8 @@ async function controlledRun(work) {
     result.stopReason = requestControl.stop
     result.final = { ...result.final, readiness: { state: 'incomplete', blocked: result.final?.readiness?.blocked || [], incomplete: [...(result.final?.readiness?.incomplete || []), requestControl.stop] } }
   }
+  // Whether a stop can continue is decided after that override: a budget stop cannot.
+  withdrawResume(result)
   result.plan = result.plan || executionPlan(S)
   result.metrics = evaluationFacts(S, result, requestControl.started !== null ? hostRuntime.now() - requestControl.started : null, requestControl.turns)
   if ((S.factory || S.pairOptions) && result.runDir) {

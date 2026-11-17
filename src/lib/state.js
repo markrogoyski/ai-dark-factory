@@ -125,7 +125,9 @@ function panelKey(S, m) {
 function setupRunId(S) {
   if (S.host !== 'codex' || S.raw.hostRunId === undefined || S.raw.hostRunId === null) return null
   const prefix = S.raw.hostRunId
-  const id = `${prefix}-${S.tier || S.workflowName}`
+  // A Pair setup run again after the user answered its conflict makes a run of its own.
+  const attempt = S.pair?.setupAttempt || 0
+  const id = `${prefix}-${S.tier || S.workflowName}${attempt ? `-answered${attempt > 1 ? `-${attempt}` : ''}` : ''}`
   if (typeof prefix !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(prefix) || !/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(id)) {
     throw new Error('factory: hostRunId must contain only letters, digits, dots, underscores and hyphens, starting with a letter or digit.')
   }

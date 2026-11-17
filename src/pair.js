@@ -10,14 +10,19 @@ async function pairRun() {
   // transport: it runs on its role's model (Opus natively), since the run inherits its criteria.
   const native = [S.pairOptions.author, S.pairOptions.reviewer].find(s => s.vendor === 'claude')
   const transportModel = native ? native.model : 'haiku'
-  const setup = await ask(pairSetupPrompt(S), { label: 'setup', phase: 'Setup', schema: PAIR_SETUP_SCHEMA,
-    model: S.roles.setup.model, effort: 'medium' }, 'setup')
-  if (setup?.status === 'needs-plan') return needsPlan(S, setup.planMissing, setup.runDir)
-  if (setup?.status === 'preflight') return preflightStop(S, setup.preflight)
-  if (setup?.status === 'needs-user') {
+  let setup
+  for (;;) {
+    // A conflict the user answered runs setup again, with the decisions, as a run of its own.
+    const label = !S.pair.setupAttempt ? 'setup' : `setup-answered${S.pair.setupAttempt > 1 ? `-${S.pair.setupAttempt}` : ''}`
+    setup = await ask(pairSetupPrompt(S), { label, phase: 'Setup', schema: PAIR_SETUP_SCHEMA,
+      model: S.roles.setup.model, effort: 'medium' }, 'setup')
+    if (setup?.status === 'needs-plan') return needsPlan(S, setup.planMissing, setup.runDir)
+    if (setup?.status === 'preflight') return preflightStop(S, setup.preflight)
+    if (setup?.status !== 'needs-user') break
     S.pair.stop = setup.error || 'Setup found conflicting requirements.'
-    S.pair.questions = setup.questions || []
-    return pairResult(S, 'needs-user')
+    const stopped = await pairStop('setup', setup.questions, label)
+    if (stopped) return stopped
+    S.pair.setupAttempt++
   }
   if (!setup || setup.status === 'error' || !setup.runDir || !setup.runId || !setup.repoRoot || !/^[0-9a-f]{40,64}$/.test(setup.head || '')) {
     S.pair.stop = setup?.error || 'Setup did not return a run.'
@@ -56,8 +61,10 @@ async function pairRun() {
     const text = id => S.criteria.find(c => c.id === id)?.text
     S.pair.stop = `Setup found ${supplied.length === 1 ? 'a criterion' : 'criteria'} this run cannot verify: ${supplied.map(u => `${u.criterion} (${oneLine(u.reason, 300) || 'no reason given'})`).join('; ')}.`
     for (const u of supplied) S.notes.push(`Setup found ${u.criterion} unverifiable inside the run: ${oneLine(u.reason, 300) || 'no reason given'}.`)
-    S.pair.questions = supplied.map(u => `${u.criterion}${text(u.criterion) ? ` ("${oneLine(text(u.criterion), 200)}")` : ''} cannot be verified inside the run: ${oneLine(u.reason, 300) || 'no reason given'}. Rewrite it so the run can check it, or drop it?`)
-    return pairResult(S, 'needs-user')
+    const stopped = await pairStop('criterion', supplied.map(u => ({ about: u.criterion,
+      question: `${u.criterion}${text(u.criterion) ? ` ("${oneLine(text(u.criterion), 200)}")` : ''} cannot be verified inside the run: ${oneLine(u.reason, 300) || 'no reason given'}. Rewrite it so the run can check it, or drop it?` })), 'setup')
+    if (stopped) return stopped
+    if (!S.criteria.length) { S.pair.stop = 'The user dropped every acceptance criterion, so the run has nothing to check.'; return pairResult(S) }
   }
   if (hostRuntime) {
     // Measured by the runner process, outside any model's sandbox, with no model turn. Setup's
@@ -81,37 +88,43 @@ async function pairRun() {
     p.label = label
     phase(p.stage === 'design' ? 'Design' : 'Implement')
     let author = await pairAuthorTurn(label)
-    if (!pairDesigned(S) && author?.status === 'done') {
-      // The author writes the contract with the deliverable; a malformed one, or a mapping that
-      // doesn't fit it, gets the same single correction a malformed design contract gets.
-      const error = pairAdoptContract(S, author)
-      if (error) {
+    for (;;) {
+      if (!pairDesigned(S) && author?.status === 'done') {
+        // The author writes the contract with the deliverable; a malformed one, or a mapping that
+        // doesn't fit it, gets the same single correction a malformed design contract gets.
+        const error = pairAdoptContract(S, author)
+        if (error) {
+          p.author = author
+          S.notes.push(`${label}: ${error} Requested one author correction.`)
+          label += '-corrected'
+          p.label = label
+          author = await pairAuthorTurn(label, error)
+        }
+      } else if (p.stage === 'design' && author?.status === 'done') {
         p.author = author
-        S.notes.push(`${label}: ${error} Requested one author correction.`)
-        label += '-corrected'
-        p.label = label
-        author = await pairAuthorTurn(label, error)
+        p.design = author.design
+        p.testContract = author.testContract
+        const error = !author.design?.trim() ? 'The author returned no design.' : pairContractError(S, p.testContract)
+        if (error) {
+          S.notes.push(`${label}: ${error} Requested one author correction; no design approval was recorded.`)
+          label += '-corrected'
+          p.label = label
+          author = await pairAuthorTurn(label, error)
+        }
       }
-    } else if (p.stage === 'design' && author?.status === 'done') {
+      if (!author) { p.stop = 'The author turn failed.'; return pairResult(S, 'failed') }
       p.author = author
-      p.design = author.design
-      p.testContract = author.testContract
-      const error = !author.design?.trim() ? 'The author returned no design.' : pairContractError(S, p.testContract)
-      if (error) {
-        S.notes.push(`${label}: ${error} Requested one author correction; no design approval was recorded.`)
-        label += '-corrected'
-        p.label = label
-        author = await pairAuthorTurn(label, error)
-      }
-    }
-    if (!author) { p.stop = 'The author turn failed.'; return pairResult(S, 'failed') }
-    p.author = author
-    pairIngestReadings(S, author)
-    pairIngestLiveChecks(S, author.liveChecks, label)
-    if (author.status !== 'done') {
+      pairIngestReadings(S, author)
+      pairIngestLiveChecks(S, author.liveChecks, label)
+      if (author.status === 'done') break
       p.stop = author.summary || 'The author could not continue.'
-      p.questions = author.questions || []
-      return pairResult(S, author.status === 'needs-user' ? 'needs-user' : 'blocked')
+      if (author.status !== 'needs-user') { pairAsk(S, 'author', author.questions, label); return pairResult(S, 'blocked') }
+      // Answered, the stop continues with a fresh author turn that reads the decisions.
+      const stopped = await pairStop('author', author.questions, label)
+      if (stopped) return stopped
+      label += '-answered'
+      p.label = label
+      author = await pairAuthorTurn(label)
     }
     if (p.stage === 'design') {
       if (!author.design?.trim()) { p.stop = 'The author returned no design.'; return pairResult(S, 'failed') }
@@ -161,12 +174,14 @@ async function pairRun() {
     if (error) { p.stop = error; return pairResult(S, review ? 'blocked' : 'failed') }
     // A conflict only the user can settle stops the run now, as an author's needs-user does: the
     // review still counts, and its findings and rulings are recorded.
+    // Answered, the rest of this pass runs as usual; the decisions change the version, so the
+    // review cannot count as ready or stalled, and the next author turn reads them.
     const asked = pairReviewQuestions(S, review)
     if (asked.length) {
-      p.questions = asked
       p.stop = String(review.summary || '').trim() || 'The reviewer found a conflict only the user can settle.'
       log(`pair: ${p.stage} review ${p.reviews.length}: ${asked.length} question(s) for the user`)
-      return pairResult(S, 'needs-user')
+      const stopped = await pairStop('reviewer', asked, `review ${label}`)
+      if (stopped) return stopped
     }
     const ready = pairReadiness(S)
     log(`pair: ${p.stage} review ${p.reviews.length}: ${ready.state}; ${pairOpen(S).length} open finding(s)`)
@@ -206,10 +221,52 @@ async function pairRun() {
   return pairResult(S)
 }
 
+// Every stop that asks the user. Returns the stop's result, or null once the answers in
+// clarifications settle every question at it and the run continues. Natively the stop is recorded
+// first (worktree, snapshot ref), and a continuation is checked against that record just before
+// it: a resume replays every turn before it from the session's cache, including this record. The
+// runner's checkpoint validation does both jobs there.
+async function pairStop(kind, items, label) {
+  const p = S.pair
+  const questions = pairAsk(S, kind, items, label)
+  if (!questions.length) return pairResult(S, 'needs-user')
+  const key = questions[0].id, tag = S.run ? pairReviewTag(S) : 'base', native = !hostRuntime && !!S.run
+  const check = (prompt, turn) => ask(prompt, { label: `${turn} ${key}`, phase: 'Stop', schema: PAIR_RESUME_SCHEMA, model: 'haiku', effort: 'low', copies: true }, 'checker')
+  if (native) {
+    const record = await check(pairStopRecordPrompt(S, key, tag), 'stop')
+    if (record?.status !== 'ok') {
+      S.notes.push(`stop ${key}: the stop was not recorded (${oneLine(record?.reason || 'the transport returned nothing', 300)}), so it cannot continue in place.`)
+      p.fallback = true
+      return pairResult(S, 'needs-user')
+    }
+  }
+  const taken = pairTakeAnswers(S)
+  p.resumable = true
+  if (taken.state === 'unanswered') return pairResult(S, 'needs-user')
+  if (taken.state === 'incomplete') {
+    // Stops again at once: no further turn, and no retro or record turn for this attempt.
+    p.stop = pairAnswerMessage(taken, p.questions)
+    p.skipRetro = true
+    return pairResult(S, 'needs-user')
+  }
+  p.resumable = false
+  if (native) {
+    const verdict = await check(pairResumeCheckPrompt(S, key, tag, pairAnswersHash(S, taken.answered)), 'resume-check')
+    if (verdict?.status !== 'ok') {
+      p.stop = `The run cannot continue past ${key}: ${oneLine(verdict?.reason || 'the resume check returned nothing', 400)}`
+      p.fallback = true
+      return pairResult(S, 'blocked')
+    }
+  }
+  pairApplyDecisions(S, taken.answered)
+  log(`pair: ${questions.map(q => q.id).join(', ')} answered; continuing`)
+  return null
+}
+
 // The process retro after a Pair run, standalone or as the factory's pair strategy, once setup has
 // made a run. A factory run always records its facts; it gets the model retro only when retroWanted.
 async function pairRetro(result) {
-  if (!S.run || (!S.factory && !S.retro)) return result
+  if (!S.run || (!S.factory && !S.retro) || S.pair.skipRetro) return result
   const ready = result.final.readiness
   phase(retroWanted(S, { ready }) ? 'Retro' : 'Record')
   const retro = await runRetro({ outcome: null, W: null, endorsements: [], fixPass: false, ready, audit: null, reportMd: result.report.markdown })
@@ -273,6 +330,15 @@ async function pairCliRun() {
   phase('Pair')
   const relay = await agent(pairCliPrompt(), { model: 'sonnet', label: 'pair transport',
     schema: { type: 'object', properties: { result: { type: 'string' }, error: { type: 'string' } }, required: ['result', 'error'], additionalProperties: false } })
-  if (!relay?.result) return { status: 'failed', error: relay?.error || 'Pair transport returned no result; rerun with the same arguments and resume: <hostRunDir> to recover.' }
-  try { return JSON.parse(relay.result) } catch { return { status: 'failed', error: 'Pair transport returned output that is not the runner JSON.', output: relay.result.slice(0, 2000) } }
+  if (!relay?.result) return { status: 'failed', error: relay?.error || 'Pair transport returned no result.' }
+  let result
+  try { result = JSON.parse(relay.result) } catch { return { status: 'failed', error: 'Pair transport returned output that is not the runner JSON.', output: relay.result.slice(0, 2000) } }
+  // The runner's steps name its own --resume; from Claude Code the run continues through runtime "cli".
+  if (result?.resumable === true && typeof result.resumeSteps === 'string' && result.hostRunDir) {
+    const steps = pairResumeSteps(S, 'cli', result.hostRunDir, Array.isArray(result.questions) ? result.questions : [], result.final?.post || null)
+    const guidance = typeof result.forTheOrchestrator === 'string' ? result.forTheOrchestrator : ''
+    result.forTheOrchestrator = guidance.includes(result.resumeSteps) ? guidance.split(result.resumeSteps).join(steps) : `${steps} ${guidance}`.trim()
+    result.resumeSteps = steps
+  }
+  return result
 }

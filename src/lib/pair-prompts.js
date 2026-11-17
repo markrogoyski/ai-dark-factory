@@ -1,5 +1,17 @@
 function pairSetupPrompt(S) {
-  return setupPrompt(S) + '\n\nPair also requires head: copy the full original commit from the helper init output (head), or run.json. Do not use a later author commit or snapshot. This identity will be checked against every baseline replay.\nKeep the original task unchanged, including in TASK.md. Return repositoryNotes with observations from HEAD, configuration/tool paths, and proposed interpretations of outdated wording. These are proposals for the author and reviewer to check, not replacement requirements. Explicit user decisions and required plan filenames override the default separate-test-file preference. If substantive requirements conflict, return status needs-user with precise questions immediately. Leave questions=[] when none remain.\nYou own the criteria you write: word each one so evidence inside this run can check it, by a test, the gate, or inspection of the code. A limitation that the task or a reference document explicitly accepts is not a gap: write the criterion to match what it accepts, cite where it says so, and leave it out of unverifiable. List in unverifiable only the criteria that you have established cannot be fully met with evidence available inside this run, with origin supplied when the task, criteria or a reference document states the criterion in substance, and written when you drafted it and no checkable wording keeps its intent: anything that needs downstream, post-delivery, production or live-service evidence, or a capability the author and reviewer lack. Give the criterion ID and the reason. If a tool or capability a criterion needs might be missing, check it with one command first (for example `php -m | grep -i pcov` for a coverage driver, or run the target itself), and list the criterion only when that check shows it is missing, citing the command and its output in the reason. Doubt alone ("may not be runnable") is not a reason: record it in repositoryNotes. The verification gate and the test replays run in the helper\'s measurement, outside your sandbox: a check that fails only inside your own sandbox (a refused port bind, socket or network call, or a denied tool) does not make a criterion unverifiable. Record that in repositoryNotes instead. Return unverifiable=[] when every criterion can be checked here.\nList in liveChecks each criterion that the run can check only against a stand-in for something outside it, where the real thing can behave differently: a network service, credentials, the machine\'s certificate store or another platform-specific resource, an external CLI\'s login. Give the criterion ID, the command or action that checks it against the real thing, and why the stand-in can\'t show it. Don\'t list such a criterion in unverifiable: the run still checks it with the stand-in, and the user runs the live check before delivery. Return liveChecks=[] when there are none.'
+  return setupPrompt(S) + '\n\nPair also requires head: copy the full original commit from the helper init output (head), or run.json. Do not use a later author commit or snapshot. This identity will be checked against every baseline replay.\nKeep the original task unchanged, including in TASK.md. Return repositoryNotes with observations from HEAD, configuration/tool paths, and proposed interpretations of outdated wording. These are proposals for the author and reviewer to check, not replacement requirements. Explicit user decisions and required plan filenames override the default separate-test-file preference. If substantive requirements conflict, return status needs-user with precise questions immediately. Leave questions=[] when none remain.\nYou own the criteria you write: word each one so evidence inside this run can check it, by a test, the gate, or inspection of the code. A limitation that the task or a reference document explicitly accepts is not a gap: write the criterion to match what it accepts, cite where it says so, and leave it out of unverifiable. List in unverifiable only the criteria that you have established cannot be fully met with evidence available inside this run, with origin supplied when the task, criteria or a reference document states the criterion in substance, and written when you drafted it and no checkable wording keeps its intent: anything that needs downstream, post-delivery, production or live-service evidence, or a capability the author and reviewer lack. Give the criterion ID and the reason. If a tool or capability a criterion needs might be missing, check it with one command first (for example `php -m | grep -i pcov` for a coverage driver, or run the target itself), and list the criterion only when that check shows it is missing, citing the command and its output in the reason. Doubt alone ("may not be runnable") is not a reason: record it in repositoryNotes. The verification gate and the test replays run in the helper\'s measurement, outside your sandbox: a check that fails only inside your own sandbox (a refused port bind, socket or network call, or a denied tool) does not make a criterion unverifiable. Record that in repositoryNotes instead. Return unverifiable=[] when every criterion can be checked here.\nList in liveChecks each criterion that the run can check only against a stand-in for something outside it, where the real thing can behave differently: a network service, credentials, the machine\'s certificate store or another platform-specific resource, an external CLI\'s login. Give the criterion ID, the command or action that checks it against the real thing, and why the stand-in can\'t show it. Don\'t list such a criterion in unverifiable: the run still checks it with the stand-in, and the user runs the live check before delivery. Return liveChecks=[] when there are none.' + (pairDecisionsBlock(S) && `\n${pairDecisionsBlock(S)}`)
+}
+
+// The user's answers to the run's questions, from a stop this run continued past. Empty without
+// any, so every prompt before the first answered stop has the same bytes with and without answers.
+function pairDecisionsBlock(S) {
+  const decisions = S.pair?.decisions || []
+  if (!decisions.length) return ''
+  return `\n# Explicit user decisions\n\nThe user answered ${decisions.length === 1 ? 'this question' : 'these questions'} during the run. ` +
+    `${decisions.length === 1 ? 'The answer overrides' : 'The answers override'} setup observations and readings for the rest of the run. ` +
+    `The reviewer resolves any finding a decision settles under its existing ID.\n` +
+    decisions.map(d => `- ${d.id} (about ${d.about}; asked in ${d.label}): ${d.question} Answer: ${d.answer}` +
+      `${typeof d.criterion === 'string' ? ` ${d.about} now reads: ${d.criterion}` : d.drop === true ? ` ${d.about} was dropped.` : ''}`).join('\n') + '\n'
 }
 
 // The contract and mapping rules, shared by the design stage and by a run without one.
@@ -20,7 +32,7 @@ function pairAuthorPrompt(S, label, correction = '') {
   if (!pairDesigned(S)) return pairDirectAuthorPrompt(S, label, correction)
   return `You are the sole author in a pair workflow. Own the task through completion; an independent reviewer checks each stage.
 
-${taskBlock(S, 99)}\n# Setup observations and proposals (not requirements)\n${S.repositoryNotes || '(none)'}
+${taskCore(S)}${pairDecisionsBlock(S)}\n# Setup observations and proposals (not requirements)\n${S.repositoryNotes || '(none)'}
 # Stage: ${design ? 'design' : 'implementation'}
 
 Your worktree: ${S.seats[0].wt}. Work only there; never edit the main checkout or reviewer checkouts.
@@ -67,7 +79,7 @@ function pairDirectAuthorPrompt(S, label, correction = '') {
   const p = S.pair
   return `You are the sole author in a pair workflow. Own the task through completion; an independent reviewer checks each version.
 
-${taskBlock(S, 99)}\n# Setup observations and proposals (not requirements)\n${S.repositoryNotes || '(none)'}
+${taskCore(S)}${pairDecisionsBlock(S)}\n# Setup observations and proposals (not requirements)\n${S.repositoryNotes || '(none)'}
 # Stage: implementation (this run has no design stage)
 
 Your worktree: ${S.seats[0].wt}. Work only there; never edit the main checkout or reviewer checkouts.
@@ -108,7 +120,7 @@ function pairReviewPrompt(S, label, checkout, correction = null) {
   const tag = pairReviewTag(S)
   return `You are the independent reviewer in a pair workflow. This is a fresh review context. You did not author the work. Review the current artifact yourself, using repository evidence, and verify every proposed finding resolution. Resolve existing findings under their current IDs in both design and code reviews; never refile an unresolved issue under a new ID.
 
-${taskBlock(S, 99)}\n# Setup observations and proposals (not requirements)\n${S.repositoryNotes || '(none)'}
+${taskCore(S)}${pairDecisionsBlock(S)}\n# Setup observations and proposals (not requirements)\n${S.repositoryNotes || '(none)'}
 # Review stage: ${p.stage}
 Version: ${pairVersion(S)}
 Return that exact version. Return complete=true only after examining the entire current artifact and every acceptance criterion, including regressions introduced by fixes.
@@ -174,4 +186,23 @@ function pairMeasurePrompt(S, label) {
 ${S.cli} measure --run-dir ${shq(S.run.runDir)} --seat A --label ${shq(label)} --replay-json ${shq(JSON.stringify(pairReplayRequest(S)))} --brief --max-wait 5
 If status is running, poll ${S.cli} wait --run-dir ${shq(S.run.runDir)} --job ${shq(`measure-A-${label}`)} --brief --max-wait 5 until it finishes. Poll an active shell session before launching another command. Do not use sleep polling.
 The finished result is one line of JSON in exactly the shape you return. Return it as printed: the same keys and values, including the whole replay object and every record, with nothing added, dropped, reformatted or summarized. Never interpret base failures. If the command fails without printing that result, return status error with the actual message in error and empty snapshot, suite and replay values. Do not substitute results from the live worktree or remove required checks.`
+}
+
+// A native stop's record of the state a resume must find: wt/A's HEAD and files, and the snapshot
+// ref the run last measured ('base' before the first code measurement). It never overwrites an
+// earlier record, so at a resume the replayed turn leaves the original record in place.
+function pairStopRecordPrompt(S, stop, tag) {
+  return pairResumeCommandPrompt(S, `${S.cli} resume-check --run-dir ${shq(S.run.runDir)} --stop ${stop} --snapshot ${shq(tag)} --record`)
+}
+
+// Just before a native run continues past an answered stop: refuses when HEAD, the checkout, wt/A
+// or the snapshot ref moved since the stop, or when this stop was continued with other answers.
+function pairResumeCheckPrompt(S, stop, tag, answers) {
+  return pairResumeCommandPrompt(S, `${S.cli} resume-check --run-dir ${shq(S.run.runDir)} --stop ${stop} --snapshot ${shq(tag)} --answers ${shq(answers)}`)
+}
+
+function pairResumeCommandPrompt(S, cmd) {
+  return `You are transporting a deterministic check for the pair workflow. Do not review, change, or judge anything. Make one Bash call, exactly as written:
+${cmd}
+It prints one line of JSON with status and reason. Return status and reason exactly as printed. If the command fails without printing that JSON, return status error with the actual message in reason.`
 }

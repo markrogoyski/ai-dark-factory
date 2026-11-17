@@ -5,7 +5,9 @@
 Each Factory, Pair, Council, and Ensemble result includes versioned `metrics`; Codex also saves `metrics.json` in `hostRunDir`.
 It records workflow, tier, strategy, turns by role, failed turns, elapsed time when available,
 findings by stage, readiness, escalation, and recorded token usage. The runner also records
-repository HEAD. Factory retrospective facts include a metrics snapshot before the retrospective itself; the evaluator keeps that scope separate from completed-run metrics. Unknown measurements and dollar costs stay unknown. Native workflow results
+repository HEAD. A Pair result (and Factory's pair strategy) also records `userDecisions`:
+`asked` (questions its stops asked the user), `answered` (answers it took and continued with) and
+`unused` (answers no stop took); other workflows have no such field. Factory retrospective facts include a metrics snapshot before the retrospective itself; the evaluator keeps that scope separate from completed-run metrics. Unknown measurements and dollar costs stay unknown. Native workflow results
 can be saved as JSON and passed to the same evaluator. Native workflows have no exact clock, so
 the helper appends `{at, event, job}` lines to `<runDir>/timeline.jsonl`: one per `init`,
 `measure`, `seat-run`, `wait`, `materialize`, `verify-delivery` and `retro` call, and one at each

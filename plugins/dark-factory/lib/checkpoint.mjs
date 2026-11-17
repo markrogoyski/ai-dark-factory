@@ -138,7 +138,7 @@ export function journalRuntime(runtime, { repo, hostRunDir, args, engine, execut
       if (!result || ['error', 'failed', 'sandboxed'].includes(result.status)) broken = true
       if (request.run?.runDir) runs.add(request.run.runDir)
       if (method === 'agent' && result?.runDir) runs.add(result.runDir)
-      pending[slot] = { method, hash, result, ...(diagnostic ? { diagnostic } : {}) }
+      pending[slot] = { method, hash, ...(typeof request.label === 'string' ? { label: request.label } : {}), result, ...(diagnostic ? { diagnostic } : {}) }
       return result
     } catch (error) { broken = true; throw error } finally {
       active--

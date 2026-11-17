@@ -35,6 +35,8 @@ async function controlledRun(work) {
     result.stopReason = requestControl.stop
     result.final = { ...result.final, readiness: { state: 'incomplete', blocked: result.final?.readiness?.blocked || [], incomplete: [...(result.final?.readiness?.incomplete || []), requestControl.stop] } }
   }
+  // Whether a stop can continue is decided after that override: a budget stop cannot.
+  withdrawResume(result)
   result.plan = result.plan || executionPlan(S)
   result.metrics = evaluationFacts(S, result, requestControl.started !== null ? hostRuntime.now() - requestControl.started : null, requestControl.turns)
   if ((S.factory || S.pairOptions) && result.runDir) {

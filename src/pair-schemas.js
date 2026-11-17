@@ -111,3 +111,8 @@ const PAIR_MEASURE_SCHEMA = strict({ type: 'object', properties: {
       items: { type: 'object', properties: { name: { type: 'string' }, value: { type: 'string' } } } } } },
   replay: PAIR_REPLAY_RESULT,
 } })
+
+// The native resume record and check (dark-factory resume-check), copied as printed.
+const PAIR_RESUME_SCHEMA = strict({ type: 'object', properties: {
+  status: { type: 'string', enum: ['ok', 'refused', 'error'] }, reason: { type: 'string' },
+} })

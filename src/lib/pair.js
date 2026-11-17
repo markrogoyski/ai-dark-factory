@@ -1,6 +1,9 @@
 function newPairState() {
   return { stage: 'design', design: '', approvedDesign: '', testContract: null, approvedContract: null,
-    replayMapping: [], findings: [], readings: [], liveChecks: [], reviews: [], author: null, measurement: null, label: null, lastReview: null, signatures: [], stop: '', questions: [] }
+    replayMapping: [], findings: [], readings: [], liveChecks: [], reviews: [], author: null, measurement: null, label: null, lastReview: null, signatures: [], stop: '', questions: [],
+    // Every question the run asked (Q1, Q2, … across all its stops), the user's answers it took,
+    // and how this stop can continue. See pairAsk and pairTakeAnswers.
+    asked: [], decisions: [], resumable: false, skipRetro: false, fallback: false, setupAttempt: 0 }
 }
 
 // Pair decisions are shared by both hosts. Only the reviewer can close findings.
@@ -49,14 +52,17 @@ function parsePairConfig(args) {
   return { ...config, raw, tier: 'pair', simple: null, panel: [], specReviewers: [],
     roles: { ...(retro ? { retro } : {}), setup }, lineup: [hostSeat(config.host, author)],
     auditors: [{ ...hostSeat(config.host, reviewer), lens: 'review', id: 'PR' }],
-    pairOptions: { author, reviewer, maxReviews, design } }
+    pairOptions: { author, reviewer, maxReviews, design, answers: pairAnswersOf(raw.clarifications) } }
 }
 
 // Without a design stage the contract is the author's to revise with the code, so it is part of
 // the reviewed version: a contract change on the same tree is a new version, not a stall.
+// With the user's decisions in the prompts, the version carries them too, so a review from before
+// an answer never counts for the version after it.
 function pairVersion(S) {
-  return S.pair.stage === 'design' ? `design:${promptHash(JSON.stringify([S.pair.design, S.pair.testContract]))}:${S.pair.measurement?.snapshot?.tree || 'base'}`
-    : `code:${S.pair.measurement?.snapshot?.tree || 'unmeasured'}${pairDesigned(S) ? '' : `:${promptHash(JSON.stringify(S.pair.approvedContract))}`}`
+  const decided = S.pair.decisions?.length ? `:u${promptHash(JSON.stringify(S.pair.decisions))}` : ''
+  return (S.pair.stage === 'design' ? `design:${promptHash(JSON.stringify([S.pair.design, S.pair.testContract]))}:${S.pair.measurement?.snapshot?.tree || 'base'}`
+    : `code:${S.pair.measurement?.snapshot?.tree || 'unmeasured'}${pairDesigned(S) ? '' : `:${promptHash(JSON.stringify(S.pair.approvedContract))}`}`) + decided
 }
 
 function pairReviewTag(S) {
@@ -263,6 +269,154 @@ function pairQuestionsError(S, review) {
 function pairReviewQuestions(S, review) {
   return (Array.isArray(review?.questions) ? review.questions : []).map(q =>
     `${String(q.question).trim()} Requirements as written: ${q.quoted.map(w => String(w || '').trim()).filter(Boolean).join('; ')}`)
+}
+
+// Questions for the user, and the answers a continued run takes. A stop's questions get IDs that
+// are unique across the run, Q1, Q2, …, a later stop continuing the numbering; about names the
+// finding, criterion or reading a question is about, or none. Returns the stop's questions.
+function pairAsk(S, kind, items, label) {
+  const p = S.pair
+  const exists = id => p.findings.some(f => f.id === id) || (S.criteria || []).some(c => c.id === id) || p.readings.some(r => r.id === id)
+  p.questions = []
+  for (const item of Array.isArray(items) ? items : []) {
+    const given = item && typeof item === 'object'
+    const question = String((given ? item.question : item) ?? '').replace(/\s+/g, ' ').trim()
+    if (!question) continue
+    const about = given && item.about ? String(item.about) : kind === 'setup' ? 'none'
+      : (question.match(/\b[PCR]\d+\b/g) || []).find(exists) || 'none'
+    const q = { id: `Q${p.asked.length + 1}`, about, kind, question }
+    p.asked.push({ ...q, label })
+    p.questions.push(q)
+  }
+  return p.questions
+}
+
+// The clarification entries as given: a criterion answer keeps criterion and drop, which the
+// council's parser leaves out. An entry that is not an object is kept as one with no id.
+function pairAnswersOf(list) {
+  return (Array.isArray(list) ? list : []).map(c => c && typeof c === 'object' && !Array.isArray(c)
+    ? { id: c.id, answer: c.answer, ...(c.criterion !== undefined ? { criterion: c.criterion } : {}), ...(c.drop !== undefined ? { drop: c.drop } : {}) }
+    : { id: undefined, answer: undefined })
+}
+
+const pairAnswerName = id => typeof id === 'string' && /^Q[1-9][0-9]*$/.test(id) ? id
+  : id === undefined || id === null || id === '' ? '(no id)' : JSON.stringify(oneLine(String(id), 80))
+
+function pairAnswerProblem(a, q) {
+  // A field given as null is given: it is checked, not taken as absent.
+  const has = key => a[key] !== undefined
+  if (typeof a.answer !== 'string' || !a.answer.trim()) return 'no answer'
+  if ((has('criterion') || has('drop')) && q.kind !== 'criterion') return 'criterion and drop answer only a question about a criterion'
+  if (has('criterion') && has('drop')) return 'both criterion and drop'
+  if (has('criterion') && (typeof a.criterion !== 'string' || !a.criterion.trim())) return 'criterion is not text'
+  if (has('drop') && typeof a.drop !== 'boolean') return 'drop is not true or false'
+  return ''
+}
+
+// Sorts the answers against the run's questions: knownIds are every question the run has asked,
+// current the stop's. Answers to earlier stops are skipped. unknown: a malformed or repeated ID, or
+// one the run never asked; with hold, an ID numbered above every known one is held for a later
+// stop instead (a native run can't tell a replayed stop from a live one). invalid: an answer to a
+// current question the run cannot apply. missing: a current question without a valid answer.
+function pairAnswerCheck(answers, knownIds, current, hold) {
+  const known = new Set(knownIds), top = Math.max(0, ...knownIds.map(id => Number(String(id).slice(1)) || 0))
+  const seen = new Set(), answered = [], unknown = [], invalid = [], held = []
+  for (const a of Array.isArray(answers) ? answers : []) {
+    const id = a && typeof a === 'object' ? a.id : undefined
+    if (typeof id !== 'string' || !/^Q[1-9][0-9]*$/.test(id)) { unknown.push(pairAnswerName(id)); continue }
+    if (seen.has(id)) { unknown.push(`${id} (repeated)`); continue }
+    seen.add(id)
+    if (!known.has(id)) { (hold && Number(id.slice(1)) > top ? held : unknown).push(id); continue }
+    const q = current.find(x => x.id === id)
+    if (!q) continue
+    const why = pairAnswerProblem(a, q)
+    if (why) { invalid.push(`${id} (${why})`); continue }
+    answered.push({ id, answer: a.answer.trim(), ...(typeof a.criterion === 'string' ? { criterion: a.criterion.trim() } : {}), ...(a.drop === true ? { drop: true } : {}) })
+  }
+  return { answered, missing: current.map(q => q.id).filter(id => !answered.some(a => a.id === id)), unknown, invalid, held }
+}
+
+function pairAnswerMessage(check, current) {
+  const part = (name, xs) => xs.length ? ` ${name}: ${xs.join(', ')}.` : ''
+  return `The answers do not settle this stop (${current.map(q => q.id).join(', ')}).${part('Missing', check.missing)}${part('Unknown', check.unknown)}${part('Invalid', check.invalid)} ` +
+    'Answer every question at this stop under its ID, and only questions this run asked.'
+}
+
+// The standalone runner's check of a resume's answers against the stopped run's result. The run's
+// history says which questions exist: those earlier stops took (decisions) and the stop being
+// resumed (questions), never the clarifications saved with it. Nothing is held: the runner knows
+// the stop.
+function pairResumeAnswerCheck(prior, clarifications) {
+  const current = (Array.isArray(prior?.questions) ? prior.questions : []).filter(q => q && typeof q.id === 'string')
+  const known = [...(Array.isArray(prior?.decisions) ? prior.decisions : []).map(d => d?.id), ...current.map(q => q.id)].filter(id => typeof id === 'string')
+  const check = pairAnswerCheck(pairAnswersOf(clarifications), known, current, false)
+  const settled = !check.missing.length && !check.unknown.length && !check.invalid.length
+  return { ...check, settled, message: settled ? '' : pairAnswerMessage(check, current) }
+}
+
+// The engine's check at a stop. answered: every question at it has a valid answer; incomplete: an
+// unknown or invalid ID, or some of the questions answered; unanswered: nothing for this stop.
+function pairTakeAnswers(S) {
+  const p = S.pair
+  const check = pairAnswerCheck(S.pairOptions.answers || [], p.asked.map(q => q.id), p.questions, true)
+  const state = check.unknown.length || check.invalid.length || (check.answered.length && check.missing.length) ? 'incomplete'
+    : check.answered.length ? 'answered' : 'unanswered'
+  return { ...check, state }
+}
+
+// The identity of a stop's answers, which the native resume check records: continuing one stop
+// twice with different answers is refused.
+function pairAnswersHash(S, answered) {
+  return promptHash(JSON.stringify(answered.map(a => [a.id, a.answer, a.criterion ?? null, a.drop ?? null])))
+}
+
+// The answers become decisions: in every later prompt, the result and the review version. A
+// criterion answer rewrites or drops that criterion (IDs are never renumbered). A reading ruled
+// needs-user that an answered question cites goes back to proposed, for the next review to rule on.
+function pairApplyDecisions(S, answered) {
+  const p = S.pair
+  for (const a of answered) {
+    const q = p.asked.find(x => x.id === a.id)
+    p.decisions.push({ id: q.id, about: q.about, kind: q.kind, question: q.question, answer: a.answer, label: q.label,
+      ...(a.criterion !== undefined ? { criterion: a.criterion } : {}), ...(a.drop ? { drop: true } : {}) })
+    if (q.kind === 'criterion' && a.criterion !== undefined) S.criteria = S.criteria.map(c => c.id === q.about ? { ...c, text: a.criterion } : c)
+    if (q.kind === 'criterion' && a.drop) S.criteria = S.criteria.filter(c => c.id !== q.about)
+    const cited = new Set(q.question.match(/\bR\d+\b/g) || [])
+    for (const r of p.readings.filter(r => r.status === 'needs-user' && cited.has(r.id))) {
+      r.status = 'proposed'
+      r.history.push({ decision: q.id, status: 'proposed', evidence: `The user answered ${q.id}; the next review rules on the reading again.` })
+    }
+  }
+  p.questions = []
+  p.stop = ''
+}
+
+// Answers no stop took: held for a stop the run never reached, or unknown.
+function pairUnusedAnswers(S) {
+  const p = S.pair, taken = new Set([...p.decisions.map(d => d.id), ...p.questions.map(q => q.id)])
+  return [...new Set((S.pairOptions.answers || []).map(a => pairAnswerName(a?.id)).filter(id => !taken.has(id)))]
+}
+
+function pairNewRun(S, post = S.pair.label && S.run ? `${S.run.room}/${S.pair.label}/A.md` : null) {
+  return `start a new run with the same task and the user's answers in context${post ? `, passing the last handoff (${post}) in plan` : ''}`
+}
+
+// How to continue a resumable needs-user stop, by host: native (the same Claude Code session only),
+// codex (the standalone runner's checkpoint) or cli (runtime: "cli" from Claude Code, which reads
+// the questions and the last handoff from the runner's result).
+function pairResumeSteps(S, via, hostRunDir, questions = S.pair.questions, post = undefined) {
+  const name = S.factory ? 'factory' : 'pair', slash = `/${name}`
+  const ids = questions.map(q => q.id).join(', ')
+  const entries = '[<any earlier clarifications, unchanged>, {id, answer}, …]'
+  const how = via === 'native'
+    ? `To continue this ${slash} run, in this same Claude Code session only, call Workflow({name: "${name}", resumeFromRunId: <this run's id>, args: <the same args as before, as an object (if you passed a plain string, use {task: <that string>}), plus clarifications: ${entries}>}). The turns before this stop replay from the session's cache; another session has no such cache.`
+    : via === 'codex'
+      ? `To continue this ${S.factory ? `${slash} ` : ''}run, write a JSON file holding {"clarifications": ${entries}} and run dark-factory-codex --resume ${hostRunDir} --args-file <that file>. The runner checks every answer before any turn and replays the turns before this stop from its checkpoint.`
+      : `To continue this run, call ${slash} again with the same args plus runtime: "cli", resume: "${hostRunDir}" and clarifications: ${entries}. The runner checks every answer before any turn and replays the turns before this stop from its checkpoint.`
+  return `This run stopped for the user's answers. Show questions[] to the user, each under its ID with what it is about, and ask for an answer to every one (${ids}). ` +
+    'An answer is {id, answer}; one to a question of kind criterion may also give criterion (the criterion\'s new text) or drop: true (to remove it). ' +
+    `${how} Don't run dark-factory cleanup on the stopped run, and don't change its worktree or the checkout: continuing needs them as they are. ` +
+    `If the run cannot continue (a refused check${via === 'native' ? ', or a new session' : ''}), ${pairNewRun(S, post)}.`
 }
 
 // A challenge may cite, beside checks that cover its criterion, a check that covers only another
@@ -521,8 +675,12 @@ function pairResult(S, status = 'blocked') {
   if (p.stage !== 'code' && ready.state === 'ready') {
     ready.state = 'incomplete'; ready.incomplete.push('Implementation has not been reviewed.')
   }
-  // A stop's questions, from setup, the author or the reviewer, are what the user is asked.
-  const questions = (p.questions || []).map(q => String(q ?? '').replace(/\s+/g, ' ').trim()).filter(Boolean)
+  // A stop's questions, from setup, the author or the reviewer, are what the user is asked. Only a
+  // needs-user stop that can continue carries resume steps; every other result carries none.
+  const questions = p.questions || [], unused = pairUnusedAnswers(S)
+  const resumable = status === 'needs-user' && p.resumable && questions.length > 0
+  const hostRunDir = S.host === 'codex' && S.raw.repo && S.raw.hostRunId ? `${S.raw.repo}/.council/${S.raw.hostRunId}` : '<hostRunDir>'
+  const resumeSteps = resumable ? pairResumeSteps(S, S.host === 'codex' ? 'codex' : 'native', hostRunDir) : ''
   const live = ready.liveChecks, pending = [...new Set(live.map(c => c.criterion))]
   const report = [`Pair: ${S.pairOptions.author.name} authors; ${S.pairOptions.reviewer.name} reviews.`,
     `Readiness: ${ready.state}${pending.length ? `; live checks pending: ${pending.join(', ')}` : ''}. Reviews: ${p.reviews.length}/${S.pairOptions.maxReviews}.`,
@@ -531,7 +689,10 @@ function pairResult(S, status = 'blocked') {
     ...(Object.keys(overrides).length ? [`Verification overrides: the gate ran with explicit environment overrides from verification.json: ${Object.keys(overrides).sort().join(', ')}.`] : []),
     `Replay: ${m?.replay?.records?.length || 0} file/command records; ${m?.replay?.exclusions?.length || 0} overlay exclusions. Base outcomes require reviewer interpretation.`,
     ...ready.infrastructure, ...ready.blocked, ...ready.incomplete,
-    ...(questions.length ? [`Questions for the user:\n\n${questions.map((q, i) => `${i + 1}. ${q}`).join('\n')}`] : []),
+    ...(questions.length ? [`Questions for the user (answer each under its ID):\n\n${questions.map(q => `- ${q.id} (about ${q.about}): ${q.question}`).join('\n')}`] : []),
+    ...(p.decisions.length ? [`User decisions:\n\n${p.decisions.map(d => `- ${d.id} (about ${d.about}; asked in ${d.label}): ${d.question} Answer: ${d.answer}` +
+      `${typeof d.criterion === 'string' ? ` ${d.about} now reads: ${d.criterion}` : d.drop ? ` ${d.about} was dropped.` : ''}`).join('\n')}`] : []),
+    ...(unused.length ? [`Unused answers: ${unused.join(', ')}.`] : []),
     ...p.findings.map(f => `${f.id}: ${f.status} — ${f.statement}${f.resolution ? ` (${f.resolution})` : ''}`),
     ...p.readings.map(r => `${r.id}: reading ${r.status} — ${r.requirement} read as: ${r.reading}${r.evidence ? ` (${r.evidence})` : ''}${r.finding ? `; finding ${r.finding}` : ''}`)].join('\n\n')
   return {
@@ -545,13 +706,15 @@ function pairResult(S, status = 'blocked') {
       'Then run dark-factory verify-delivery with the same --run-dir and --result: files copied by hand are not delivered until it reports delivered. ' +
       'For --result, pass the workflow task\'s output file as it stands (the helper reads the result inside it), or omit --result when the run directory holds result.json. ' +
       `Once the delivery is verified, dark-factory cleanup --run-dir ${S.run?.runDir ? shq(S.run.runDir) : '<runDir>'} removes the run's worktrees and refs/council refs (add --all to remove the run directory too). ` +
-      'Do not start a council automatically. The Codex host can resume a validated checkpoint with --resume hostRunDir; changed inputs or evidence require a new run.',
+      'Do not start a council automatically.' +
+      (resumeSteps ? ` ${resumeSteps}` : p.fallback ? ` This stop cannot continue in place: show questions[] to the user, then ${pairNewRun(S)}.` : ''),
     status, workflow: 'pair', mode: 'implement', task: S.task, runDir: S.run?.runDir || null,
     repositoryNotes: S.repositoryNotes || '',
     room: S.run?.room || null, refs: S.refs, stage: p.stage, stopReason: p.stop,
     design: p.design, testContract: p.approvedContract || p.testContract, replayMapping: p.replayMapping,
     author: S.pairOptions.author.name, reviewer: S.pairOptions.reviewer.name,
-    reviews: p.reviews, findings: p.findings, readings: p.readings, liveChecks: live, questions: p.questions, notes: S.notes,
+    reviews: p.reviews, findings: p.findings, readings: p.readings, liveChecks: live, questions, decisions: p.decisions, unusedAnswers: unused,
+    ...(resumable ? { resumable: true, resumeSteps } : {}), notes: S.notes,
     report: { markdown: report },
     final: { author: 'A', model: S.pairOptions.author.name, summary: p.author?.summary || '',
       worktree: S.seats[0]?.wt || null, post: p.label && S.run ? `${S.run.room}/${p.label}/A.md` : null,

@@ -127,7 +127,8 @@ that settles it), it returns a question quoting each requirement involved, and c
 reading `needs-user`. The run then stops with `needs-user` after that review, as it does when the
 author asks: the review counts, its findings and rulings are recorded, and `questions` holds each
 question with the requirements it quotes. A question without a quoted requirement, or a
-`needs-user` ruling no question cites, gets the review's one correction.
+`needs-user` ruling no question cites, gets the review's one correction. You can answer and let
+the run [continue from the stop](#answering-a-stop).
 
 ### Live checks
 
@@ -206,6 +207,86 @@ arguments are refused on resume. The native path is the default. The option is r
 Codex host, which always runs this runtime. Factory doesn't support it: its runner path
 applies Codex role defaults to intake and the tiers.
 
+### Answering a stop
+
+Four stops ask you questions and can continue from where they stopped once you answer them:
+setup's conflicting requirements, setup's criterion that nothing in the run can verify, an
+author's `needs-user`, and a reviewer's questions. Every other stop is final: blocked, stalled,
+budget exhausted (`maxReviews`, `maxTurns` or `maxRunMin`), failed, a verification
+infrastructure failure, and a dirty tree. Those results carry no `resumable` flag and no resume
+guidance; a stop that asked questions but ran out of budget is a budget stop.
+
+Each question has an ID, Q1, Q2, …, unique across the run: a second stop continues the
+numbering. `questions` lists the current stop's as `{id, about, kind, question}`, and
+`report.markdown` lists them under "Questions for the user (answer each under its ID)". `kind` is
+`setup`, `criterion`, `author` or `reviewer`; `about` is the criterion of a criterion question,
+the first finding, criterion or reading ID (P3, C2, R1) of the run a question names, or `none`.
+A resumable result has `resumable: true` and `resumeSteps`, also in `forTheOrchestrator`, which
+say how to continue on its host:
+
+- Claude Code (`/pair` or `/factory`): in the **same session only**, call the Workflow tool with
+  `resumeFromRunId` of the stopped run and the same args plus `clarifications`. The turns before
+  the stop replay from the session's cache and the run continues from the stop. A new session has
+  no such cache; there, start a new run instead.
+- The Codex host: write a JSON file holding `{"clarifications": […]}` and run
+  `dark-factory-codex --resume <hostRunDir> --args-file <file>`; the arguments otherwise stay
+  those of the stopped run.
+- `runtime: "cli"` in Claude Code: the same args plus `runtime: "cli"`, `resume: "<hostRunDir>"`
+  and `clarifications`, from any session.
+
+An answer is `{id, answer}` under the question's ID; earlier entries stay unchanged and in order.
+An answer to a `criterion` question may also give `criterion` (the criterion's new text) or
+`drop: true` (to remove it); IDs are never renumbered, and dropping every criterion stops the
+run as blocked. An answer with neither keeps the criterion and is recorded as a decision.
+
+How each stop continues: a setup conflict runs setup again (`setup-answered`) with the decisions,
+as a new run directory, and pays the baseline again; an unverifiable criterion is rewritten or
+dropped and the run goes on to its first author turn; an author stop gets a fresh author turn
+(`pair-design-1-answered`, for example) and a review of what it writes; a reviewer's questions
+let the rest of that review's pass run (readiness, stall and design-revision handling), then the
+next author turn. A resume reuses the run directory, worktree, criteria, baseline, findings,
+readings and the reviews already spent: the review budget never resets, and a stop in the review
+that spent the last of it ends, once answered, as budget exhausted. Every resumed design or code
+gets a fresh review.
+
+The answers become decisions. Every later setup, author and review prompt carries them in an
+"Explicit user decisions" block, which overrides setup observations and readings for the rest of
+the run; the reviewer resolves a finding a decision settles under its existing ID. The review
+`Version` gains a `:u<hash>` suffix of the decisions, so no review from before an answer counts
+for the version after it. A reading the reviewer ruled `needs-user` goes back to proposed when
+an answered question cites it, and the next review rules on it again. Before any answer the
+block is absent, so the prompts before the stop are the same with and without answers. The
+result lists them in `decisions` as `{id, about, kind, question, answer, label}` (`label` is the
+turn that asked, plus `criterion` or `drop` when given) and in `report.markdown` under "User
+decisions", and the retro's run facts name the questions asked and the IDs answered.
+
+Answers that don't settle the stop stop the run again at once, with `needs-user`, no further
+turn and no retro: a missing answer, an empty one, `criterion` or `drop` where they don't apply,
+both of them, a `criterion` that is not text or a `drop` that is not true or false (`null`
+included), a malformed or repeated ID, or an ID the run never asked. `stopReason` names them, for example
+"The answers do not settle this stop (Q1, Q2). Missing: Q2. Unknown: Q9. Answer every question at
+this stop under its ID, and only questions this run asked." In Claude Code the run can't tell a
+replayed stop from a live one, so an ID numbered above every question asked so far is held for
+a later stop; if the run never asks it, `unusedAnswers` and `report.markdown` ("Unused answers")
+list it. The runner knows the stop, so on every resume of it, with new answers or none, it checks
+every answer, saved and new, against the run's own questions before any turn and returns
+`needs-user` with `answerIssues` (missing, unknown and invalid IDs), writing nothing. An answer
+saved with the first arguments that no stop took is unknown there; remove it and resume again.
+Once the answers settle the stop, those a stop took cannot change: a changed one fails with
+"Existing clarification answers cannot change on resume."
+
+Don't run `dark-factory cleanup` on a stopped run you mean to continue, and leave its worktree
+and your checkout as they are. In Claude Code, each resumable stop records the author's worktree
+(its HEAD and every file) and the last snapshot ref in `<runDir>/stops/<Qn>.json`
+(`dark-factory resume-check --record`, which keeps an earlier record), and just before the run
+continues `dark-factory resume-check` refuses, changing nothing, when HEAD has moved from setup's
+base, the checkout or its index differs from setup's as `apply` judges it, the worktree differs
+from the record, the snapshot ref is missing or points at another commit (even with the same
+tree), or the stop was already continued with other answers. A refusal stops the run as blocked;
+a stop that couldn't be recorded cannot continue. Both say to start a new run with the answers
+in `context` and the last handoff in `plan`. The runner's checkpoint validation refuses the same
+changes. A setup conflict has no run yet, so it has no record.
+
 ### When the run stops
 
 `maxReviews` (CLI: `--max-reviews`) limits total reviews across both stages, default **8**.
@@ -265,7 +346,8 @@ Results open with `summary` (status, readiness, open findings, snapshot, gate re
 cleanup command for after delivery), followed by `design`, `testContract`, `replayMapping`,
 `reviews`, `findings`, `readings` (each with its ruling, also listed in `report.markdown`),
 `stopReason`, `questions` (when setup, the author or the reviewer stops the run for you, also
-listed in `report.markdown` under "Questions for the user"), `liveChecks` (the
+listed in `report.markdown` under "Questions for the user"; see [Answering a stop](#answering-a-stop)
+for these and `decisions`, `unusedAnswers`, `resumable` and `resumeSteps`), `liveChecks` (the
 [live checks](#live-checks) still to run, also in `final.readiness.liveChecks`), `final.replay`,
 and `final.readiness`. `final.suite` and `final.replay` are the measurement summary; the job's
 `status.json` keeps the output tails.
@@ -281,4 +363,4 @@ dependency directories and external toolchains have the checkpoint limitations i
 snapshot has `delivery.status: pending`. Apply it within the user's authorization, then follow
 [delivery](verification-and-delivery.md#delivery). Pair never launches a council when it stops.
 The Codex host supports validated checkpoint resume; changed task inputs or evidence require a
-new run.
+new run. A result says how to resume only when it is a stop you can answer.

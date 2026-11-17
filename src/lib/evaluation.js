@@ -26,5 +26,7 @@ function evaluationFacts(S, result, elapsedMs, turns) {
     readiness: result.final?.readiness?.state || null, delivery: result.delivery?.status || 'not-recorded',
     escalated: !!S.factory?.escalation, requestedImplementation: S.factory?.intake?.mode === 'implement' || S.mode === 'implement',
     deliveredImplementation: false, tokens: null, cost: null,
-    limits: { maxTurns: S.controls.maxTurns, maxRunMin: S.controls.maxRunMin } }
+    limits: { maxTurns: S.controls.maxTurns, maxRunMin: S.controls.maxRunMin },
+    // Pair only: the questions its stops asked, the answers it took, and answers no stop took.
+    ...(S.pair ? { userDecisions: { asked: S.pair.asked?.length || 0, answered: S.pair.decisions?.length || 0, unused: (result.unusedAnswers || []).length } } : {}) }
 }

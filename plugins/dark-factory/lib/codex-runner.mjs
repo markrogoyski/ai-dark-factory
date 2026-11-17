@@ -12,7 +12,7 @@ const plugin = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const helper = join(plugin, 'bin', 'dark-factory')
 const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor
 import { parseCLI, positiveInteger } from './cli-options.mjs'
-import { promptHash } from './policy.mjs'
+import { pairResumeAnswerCheck, promptHash, withdrawResume } from './policy.mjs'
 export { parseCLI } from './cli-options.mjs'
 
 export const HELP = `Usage: dark-factory-codex [options] [--] TASK
@@ -472,9 +472,33 @@ export async function runWorkflow(options, dependencies = {}) {
     // Intake is replayed on resume, including after an authorized cap increase.
     // Keep its original budget context stable while execution uses the current caps.
     args.intakeLimits = previous.intakeLimits || { maxTurns: args.maxTurns || null, maxRunMin: args.maxRunMin || null }
+    let answeredStop = false
     if (options.resume) {
       const immutable = value => Object.fromEntries(Object.entries(value).filter(([k]) => !['clarifications', 'tierConfirmed', 'noSplit', 'maxTurns', 'maxRunMin', 'explain'].includes(k)))
       if (fingerprint(immutable(args)) !== fingerprint(immutable(previous))) throw new Error('Task or execution arguments changed; start a new run so dependent reviews are fresh.')
+      const oldAnswers = previous.clarifications || []
+      const stopped = existsSync(join(hostRunDir, 'result.json')) ? JSON.parse(readFileSync(join(hostRunDir, 'result.json'), 'utf8')) : null
+      // A Pair stop that can continue: every resume of it, with new answers or none, checks every
+      // answer against the run's own questions before anything is written or any turn runs, so a
+      // malformed, repeated, unknown or missing ID is named rather than replayed or refused
+      // generically. Then answers a stop took must stay as they were; one no stop took (held from
+      // the first arguments) never reached a prompt, so it may be removed.
+      if (stopped?.status === 'needs-user' && stopped.resumable === true) {
+        const took = new Set((Array.isArray(stopped.decisions) ? stopped.decisions : []).map(d => d?.id))
+        const taken = list => (Array.isArray(list) ? list : []).filter(a => took.has(a?.id))
+        const check = pairResumeAnswerCheck(stopped, args.clarifications || [])
+        if (check.settled && fingerprint(taken(args.clarifications)) !== fingerprint(taken(oldAnswers))) throw new Error('Existing clarification answers cannot change on resume.')
+        if (!check.settled) {
+          const { retro, ...rest } = stopped
+          const guidance = String(rest.forTheOrchestrator || '').replace(/ Last, show retro\.markdown as it is: notes on the workflow, not the user's project\./, '')
+          return { ...rest, forTheOrchestrator: guidance, stopReason: check.message,
+            answerIssues: { missing: check.missing, unknown: check.unknown, invalid: check.invalid },
+            ...(rest.summary ? { summary: { ...rest.summary, stopReason: check.message } } : {}) }
+        }
+        answeredStop = true
+      }
+    }
+    if (options.resume && !answeredStop) {
       const oldAnswers = previous.clarifications || []
       if (fingerprint((args.clarifications || []).slice(0, oldAnswers.length)) !== fingerprint(oldAnswers)) throw new Error('Existing clarification answers cannot change on resume.')
       const newAnswers = (args.clarifications || []).slice(oldAnswers.length)
@@ -495,6 +519,9 @@ export async function runWorkflow(options, dependencies = {}) {
     }
     const initialProvenance = await runProvenance(repo, args, executor)
     const saved = options.resume ? loadCheckpoint(hostRunDir, { repo, args, engine, executor }) : null
+    // The stopped run's retro (or factory record) was its last turn; the continued run ends with its
+    // own, so it keeps one, and the replay does not wait for a request that never comes.
+    if (saved && answeredStop && ['retro', 'record'].includes(saved.entries.at(-1)?.label)) saved.entries.pop()
     if (saved && pin) await validateAdmissions(hostRunDir, pin)
     const elapsedBefore = Math.max(resumeMeta?.elapsedMs || 0, saved?.runtime.elapsedMs || 0)
     const recordedTurns = readEventLog(events, true).filter(e => e.type === 'turn.started').length
@@ -532,6 +559,8 @@ export async function runWorkflow(options, dependencies = {}) {
     const runtimeStats = runtime.checkpointState()
     writeJsonAtomic(join(hostRunDir, 'host.json'), { ...hostInfo, ...runtimeStats })
     if (runtime.budgetStop() && result.final?.readiness?.state !== 'ready') result = { ...result, status: 'blocked', stopReason: runtime.budgetStop(), final: { ...result.final, readiness: { state: 'incomplete', blocked: result.final?.readiness?.blocked || [], incomplete: [runtime.budgetStop()] } } }
+    // A budget stop cannot continue, so a Pair result loses any resume steps here.
+    result = withdrawResume({ ...result })
     result = { ...result, host: 'codex', hostRunDir, hostEvents: events, checkpoint: existsSync(join(hostRunDir, 'checkpoint.json')) ? join(hostRunDir, 'checkpoint.json') : null }
     if (pin) guardEngine(pin)
     result.provenance = await runProvenance(repo, { ...args, design: result.design || args.design }, executor, { ...result.final, runDir: result.runDir, hostRunDir })
@@ -587,7 +616,7 @@ const BRIEF_GUIDANCE_MAX = 4000
 export function briefResult(result) {
   const brief = Object.fromEntries(Object.entries(result || {}).filter(([key]) => !BRIEF_DROPPED.includes(key)))
   if (Array.isArray(result?.findings)) brief.findings = result.findings.map(f => ({ id: f.id, stage: f.stage, severity: f.severity, status: f.status, statement: String(f.statement || '').slice(0, 300) }))
-  if (result?.final && typeof result.final === 'object') brief.final = Object.fromEntries(['author', 'model', 'worktree', 'snapshotRef', 'snapshotTree', 'readiness'].filter(key => key in result.final).map(key => [key, result.final[key]]))
+  if (result?.final && typeof result.final === 'object') brief.final = Object.fromEntries(['author', 'model', 'worktree', 'post', 'snapshotRef', 'snapshotTree', 'readiness'].filter(key => key in result.final).map(key => [key, result.final[key]]))
   // The retro's notes and items are in its saved file and result.json; its markdown is what is shown.
   if (result?.retro && typeof result.retro === 'object') brief.retro = Object.fromEntries(['saved', 'error', 'markdown'].filter(key => key in result.retro).map(key => [key, result.retro[key]]))
   if (typeof result?.forTheOrchestrator === 'string' && result.forTheOrchestrator.length > BRIEF_GUIDANCE_MAX) brief.forTheOrchestrator = result.forTheOrchestrator.slice(0, BRIEF_GUIDANCE_MAX) + ' [truncated; the rest is in resultFile]'

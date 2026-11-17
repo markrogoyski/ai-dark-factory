@@ -4,7 +4,7 @@ import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync, realpathSy
 import { tmpdir } from 'node:os'
 import { join, resolve, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { execFileSync, spawn } from 'node:child_process'
+import { execFileSync, spawn, spawnSync } from 'node:child_process'
 import { parseCLI, resultExitCode, validateResult, createLimiter, createRuntime, runWorkflow, keepAwake, briefResult } from '../plugins/dark-factory/lib/codex-runner.mjs'
 import { LIB } from '../tools/sources.mjs'
 
@@ -534,10 +534,10 @@ test('--brief prints what a transport relays and points at the full result', () 
   assert.equal(parseCLI(['--workflow', 'pair', '--brief', '--', 'Do it'], '/repo').brief, true)
   const result = { status: 'ready', stage: 'code', design: 'x'.repeat(50000), testContract: { checks: [] }, reviews: [{}], task: 'long', forTheOrchestrator: 'Read final.readiness first.',
     findings: [{ id: 'P1', stage: 'design', severity: 'minor', status: 'fixed', statement: 's'.repeat(400), evidence: 'e', history: [] }],
-    final: { worktree: '/wt', snapshotRef: 'r', diff: 'd'.repeat(20000), readiness: { state: 'ready' } }, metrics: { turns: 9 }, hostRunDir: '/repo/.council/host-a' }
+    final: { worktree: '/wt', post: '/repo/.council/host-a/room/pair-code-2/A.md', snapshotRef: 'r', diff: 'd'.repeat(20000), readiness: { state: 'ready' } }, metrics: { turns: 9 }, hostRunDir: '/repo/.council/host-a' }
   const brief = briefResult(result)
   assert.deepEqual(Object.keys(brief).sort(), ['final', 'findings', 'forTheOrchestrator', 'hostRunDir', 'metrics', 'resultFile', 'stage', 'status'])
-  assert.deepEqual(brief.final, { worktree: '/wt', snapshotRef: 'r', readiness: { state: 'ready' } })
+  assert.deepEqual(brief.final, { worktree: '/wt', post: '/repo/.council/host-a/room/pair-code-2/A.md', snapshotRef: 'r', readiness: { state: 'ready' } })
   assert.deepEqual(brief.findings, [{ id: 'P1', stage: 'design', severity: 'minor', status: 'fixed', statement: 's'.repeat(300) }])
   assert.equal(brief.resultFile, '/repo/.council/host-a/result.json')
   assert.equal(brief.forTheOrchestrator, 'Read final.readiness first.')
@@ -547,4 +547,141 @@ test('--brief prints what a transport relays and points at the full result', () 
   assert.ok(JSON.stringify(brief).length < 1000)
   const retro = { worked: [{ what: 'w' }], changes: [{ change: 'c' }], saved: '/r.md', error: '', notes: [{ turn: 't', text: 'n'.repeat(400) }], markdown: '### Process retro' }
   assert.deepEqual(briefResult({ ...result, retro }).retro, { saved: '/r.md', error: '', markdown: '### Process retro' })
+})
+
+// A Pair stop for the user continues on the runner with --resume and the answers appended: the
+// runner checks every answer against the run's questions before any turn, replays the turns before
+// the stop from its checkpoint, and keeps one retro.
+function pairAsking(t, ask = '1') {
+  const dir = temporary(t), repo = join(dir, 'repo'), bin = join(dir, 'bin'), log = join(dir, 'calls.jsonl')
+  initRepo(repo); mkdirSync(bin)
+  mkdirSync(join(repo, 'tests'))
+  writeFileSync(join(repo, 'tests/preserved.cjs'), "require('node:assert/strict').equal(require('../sum.cjs')(2, 0), 2)\n")
+  execFileSync('git', ['-C', repo, 'add', 'tests'])
+  execFileSync('git', ['-C', repo, 'commit', '-qm', 'Add preserved test root'])
+  for (const name of ['codex', 'claude']) writeFileSync(join(bin, name), readFileSync(join(root, 'test/fixtures/codex-cli.cjs')), { mode: 0o755 })
+  const env = { ...process.env, PATH: `${bin}:${process.env.PATH}`, CODEX_HOME: join(dir, 'codex-home'), CLAUDE_CONFIG_DIR: join(dir, 'claude-home'),
+    FACTORY_TEST_REPO: repo, FACTORY_TEST_RUN_PATH: join(dir, 'run-path'), FACTORY_TEST_LOG: log, PAIR_TEST_ASK: ask, COUNCIL_JOB_POLL: '0.01' }
+  let files = 0
+  const runner = (args, answers) => {
+    const extra = answers ? ['--args-file', join(dir, `args-${++files}.json`)] : []
+    if (answers) writeFileSync(extra[1], JSON.stringify(answers))
+    const r = spawnSync(process.execPath, [cli, ...args, ...extra], { encoding: 'utf8', timeout: 90_000, env })
+    return { ...JSON.parse(r.stdout), exitCode: r.status }
+  }
+  const calls = () => existsSync(log) ? readFileSync(log, 'utf8').trim().split('\n').map(JSON.parse) : []
+  const first = initial => runner(['--cwd', repo, '--workflow', 'pair', '--author', 'sol', ...(initial ? [] : ['Fix sum to add its operands'])],
+    initial && { task: 'Fix sum to add its operands', ...initial })
+  return { runner, calls, first }
+}
+const settle = ' Answer every question at this stop under its ID, and only questions this run asked.'
+
+test('resume: a runner Pair stop continues with the answers, after unknown ones are refused before any turn', t => {
+  const { runner, calls, first } = pairAsking(t)
+  const stopped = first()
+  assert.equal(stopped.status, 'needs-user', JSON.stringify(stopped.error || stopped.stopReason))
+  assert.equal(stopped.exitCode, 2)
+  assert.deepEqual(stopped.questions, [{ id: 'Q1', about: 'none', kind: 'author', question: 'Keep the old flag?' }])
+  assert.equal(stopped.resumable, true)
+  assert.match(stopped.resumeSteps, new RegExp(`dark-factory-codex --resume ${stopped.hostRunDir.replace(/[.]/g, '\\.')} --args-file <that file>`))
+  assert.equal(calls().filter(c => c.kind === 'retro').length, 1)
+  const before = calls().length
+  const saved = name => readFileSync(join(stopped.hostRunDir, name), 'utf8')
+  const kept = { args: saved('args.json'), result: saved('result.json'), checkpoint: saved('checkpoint.json') }
+
+  // (a) An ID the run never asked: needs-user again, naming it, before anything is written.
+  const unknown = runner(['--resume', stopped.hostRunDir], { clarifications: [{ id: 'Q9', answer: 'x' }] })
+  assert.equal(unknown.status, 'needs-user')
+  assert.equal(unknown.exitCode, 2)
+  assert.equal(unknown.stopReason, `The answers do not settle this stop (Q1). Missing: Q1. Unknown: Q9.${settle}`)
+  assert.deepEqual(unknown.answerIssues, { missing: ['Q1'], unknown: ['Q9'], invalid: [] })
+  assert.equal(unknown.resumable, true)
+  assert.equal(calls().length, before, 'no CLI launched')
+  assert.deepEqual({ args: saved('args.json'), result: saved('result.json'), checkpoint: saved('checkpoint.json') }, kept)
+
+  // (b) The answer: no turn before the stop runs again, and the run completes with one retro.
+  const done = runner(['--resume', stopped.hostRunDir], { clarifications: [{ id: 'Q1', answer: 'yes' }] })
+  assert.equal(done.status, 'done', JSON.stringify(done.error || done.stopReason))
+  assert.equal(done.final.readiness.state, 'ready')
+  assert.deepEqual(done.decisions.map(d => [d.id, d.answer, d.label]), [['Q1', 'yes', 'pair-design-1']])
+  const fresh = calls().slice(before)
+  assert.equal(fresh[0].kind, 'pair-design')
+  assert.equal(fresh[0].decisions, true, 'the first new launch is the answered author turn')
+  assert.equal(calls().filter(c => c.kind === 'retro').length, 2, 'the stopped run and the continued run each ran one retro')
+  const entries = JSON.parse(saved('checkpoint.json')).entries
+  assert.deepEqual(entries.filter(e => e.label === 'retro').length, 1, 'the checkpoint keeps one retro')
+  assert.equal(entries.at(-1).label, 'retro')
+})
+
+test('resume: an answer saved with the first arguments that no stop took is unknown until removed', t => {
+  const { runner, calls, first } = pairAsking(t)
+  const stopped = first({ clarifications: [{ id: 'Q9', answer: 'x' }] })
+  assert.equal(stopped.status, 'needs-user')
+  assert.deepEqual(stopped.unusedAnswers, ['Q9'])
+  const before = calls().length
+  const refused = runner(['--resume', stopped.hostRunDir], { clarifications: [{ id: 'Q9', answer: 'x' }, { id: 'Q1', answer: 'yes' }] })
+  assert.equal(refused.status, 'needs-user')
+  assert.equal(refused.stopReason, `The answers do not settle this stop (Q1). Unknown: Q9.${settle}`)
+  assert.equal(calls().length, before)
+  const done = runner(['--resume', stopped.hostRunDir], { clarifications: [{ id: 'Q1', answer: 'yes' }] })
+  assert.equal(done.status, 'done', JSON.stringify(done.error || done.stopReason))
+  assert.deepEqual(done.unusedAnswers, [])
+})
+
+test('resume: a runner Pair stop resumed without its answers names the missing ones before any turn', t => {
+  const { runner, calls, first } = pairAsking(t)
+  const stopped = first()
+  assert.equal(stopped.status, 'needs-user')
+  const before = calls().length
+  const saved = name => readFileSync(join(stopped.hostRunDir, name), 'utf8')
+  const kept = { args: saved('args.json'), result: saved('result.json'), checkpoint: saved('checkpoint.json') }
+  for (const answers of [undefined, { clarifications: [] }]) {
+    const again = runner(['--resume', stopped.hostRunDir], answers)
+    assert.equal(again.status, 'needs-user', JSON.stringify(again.error))
+    assert.equal(again.exitCode, 2)
+    assert.equal(again.stopReason, `The answers do not settle this stop (Q1). Missing: Q1.${settle}`)
+    assert.deepEqual(again.answerIssues, { missing: ['Q1'], unknown: [], invalid: [] })
+    assert.equal(again.resumable, true)
+    assert.ok(!('retro' in again))
+    assert.equal(calls().length, before, 'no CLI launched')
+    assert.deepEqual({ args: saved('args.json'), result: saved('result.json'), checkpoint: saved('checkpoint.json') }, kept)
+  }
+})
+
+test('resume: a repeated answer to an earlier stop is named before any turn, and a changed one is still refused', t => {
+  const { runner, calls, first } = pairAsking(t, '2')
+  const stopped = first()
+  assert.deepEqual(stopped.questions.map(q => q.id), ['Q1'])
+  const q1 = { id: 'Q1', answer: 'yes' }, q2 = { id: 'Q2', answer: 'no' }
+  const second = runner(['--resume', stopped.hostRunDir], { clarifications: [q1] })
+  assert.equal(second.status, 'needs-user', JSON.stringify(second.error || second.stopReason))
+  assert.deepEqual(second.questions, [{ id: 'Q2', about: 'none', kind: 'author', question: 'Rename the option?' }])
+  assert.deepEqual(second.decisions.map(d => d.id), ['Q1'])
+  const before = calls().length
+  const repeated = runner(['--resume', stopped.hostRunDir], { clarifications: [q1, q1, q2] })
+  assert.equal(repeated.status, 'needs-user', JSON.stringify(repeated.error))
+  assert.equal(repeated.exitCode, 2)
+  assert.equal(repeated.stopReason, `The answers do not settle this stop (Q2). Unknown: Q1 (repeated).${settle}`)
+  assert.deepEqual(repeated.answerIssues, { missing: [], unknown: ['Q1 (repeated)'], invalid: [] })
+  const missing = runner(['--resume', stopped.hostRunDir], { clarifications: [q1] })
+  assert.equal(missing.stopReason, `The answers do not settle this stop (Q2). Missing: Q2.${settle}`)
+  const changed = runner(['--resume', stopped.hostRunDir], { clarifications: [{ id: 'Q1', answer: 'no' }, q2] })
+  assert.equal(changed.status, 'failed')
+  assert.equal(changed.error, 'Existing clarification answers cannot change on resume.')
+  assert.equal(calls().length, before, 'no CLI launched')
+  const done = runner(['--resume', stopped.hostRunDir], { clarifications: [q1, q2] })
+  assert.equal(done.status, 'done', JSON.stringify(done.error || done.stopReason))
+  assert.deepEqual(done.decisions.map(d => d.id), ['Q1', 'Q2'])
+})
+
+test('resume: a runner Pair stop whose worktree changed is refused before any turn', t => {
+  const { runner, calls, first } = pairAsking(t)
+  const stopped = first()
+  assert.equal(stopped.status, 'needs-user')
+  writeFileSync(join(stopped.final.worktree, 'stray.txt'), 'written after the stop\n')
+  const before = calls().length
+  const refused = runner(['--resume', stopped.hostRunDir], { clarifications: [{ id: 'Q1', answer: 'yes' }] })
+  assert.equal(refused.status, 'failed')
+  assert.equal(refused.error, 'Checkpoint worktree or snapshot changed, possibly by an interrupted write. Start a new run; no files were reset.')
+  assert.equal(calls().length, before, 'no CLI launched')
 })

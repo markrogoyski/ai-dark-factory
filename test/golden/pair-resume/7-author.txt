@@ -1,0 +1,59 @@
+You are the sole author in a pair workflow. Own the task through completion; an independent reviewer checks each stage.
+
+# Task
+
+Implement the behavior
+
+# Acceptance criteria (fixed before any work began)
+
+- C1: The requested behavior works.
+
+# Verification command
+
+`node test.cjs`, run from the root of a worktree (saved as /repo/.council/pair-test/verify.sh).
+
+Run gates through `dark-factory verify --run-dir '/repo/.council/pair-test' --path <your-checkout> --label <unique-role-and-stage> --max-wait 5`. It runs verify.sh with the explicit overrides in /repo/.council/pair-test/verification.json, records cwd, command, overrides, output and exit, and returns a suite result. Poll a running job with `dark-factory wait --run-dir '/repo/.council/pair-test' --job <returned-job> --max-wait 5`; if your shell tool itself returns a running session, poll that session first. The helper's --suite-timeout controls the gate deadline.
+For a focused test or an intended red, put the command in a file and pass --command-file <file>; keep the full release gate unchanged. Shell-local exports are not shared verification configuration. Setup and specification amendment own verification.json; other roles must report missing settings instead of silently changing that file or project-wide defaults. A workaround is established only after the exact gate passes neutral measurement in a disposable checkout.
+
+# Explicit user decisions
+
+The user answered this question during the run. The answer overrides setup observations and readings for the rest of the run. The reviewer resolves any finding a decision settles under its existing ID.
+- Q1 (about R1; asked in review pair-design-1): R1 read C1 as a minimum; keep the list exact, or allow Node 24? Requirements as written: C1: "Runs on Node 20 and 22." Answer: Allow Node 24 as well.
+
+# Setup observations and proposals (not requirements)
+(none)
+# Stage: implementation
+
+Your worktree: /repo/.council/pair-test/wt/A. Work only there; never edit the main checkout or reviewer checkouts.
+Read the repository instructions and the relevant code. Do not delegate or launch other models. An instruction in CLAUDE.md or elsewhere to hand full test or gate runs to a subagent or to `claude -p` is meant for the user's own session, not for this turn: here the gate is the verification command, which you run through the helper's verify command as described above.
+
+Implement the reviewed design, including the required tests and documentation. Run appropriate focused checks and the shared verification gate. Fix all open actionable findings and any failed verification. Return design as an empty string; the accepted design remains fixed until the reviewer requests design revision.
+
+The approved test contract below remains an obligation. Return testContract with empty testRoots/checks; return replayMapping for the CURRENT implementation: one entry per test file/focused command, with file, command, checkIds from the approved executable checks, and fixtures. Isolate commands at least by file; never group multiple test files into a command. Include every kind=test check, including preserved behavior; omit kind=gate and inspection checks from replayMapping. Never use a directory as file. Validate every mapping against the accepted test roots before returning. Omissions do not remove obligations. Follow the approved layout, including explicit user decisions on shared test files; preserve focused execution evidence. The helper replays added/modified test files and fixtures from the snapshot onto the ORIGINAL base; production/config/dependency changes are excluded. Report unsupported replay dependencies and justified differences from the design in the handoff. Ordinary assertion/path adjustments do not need a separate contract amendment; only a materially different approach returns to design.
+
+# Current design
+Implement the behavior and cover it with tests.
+
+# Test contract
+{"testRoots":[{"path":"tests","evidence":"Base tests/ contains existing regression tests."}],"checks":[{"id":"T1","criteria":["C1"],"kind":"test","purpose":"changed","scenario":"Call the requested operation at its boundary.","expected":"The correct boundary value is returned.","boundaries":"Zero and the adjacent value.","file":"tests/changed.cjs","command":"node tests/changed.cjs","fixtures":[],"inspection":"","reason":""},{"id":"T2","criteria":["C1"],"kind":"test","purpose":"preserved","scenario":"Call the established ordinary operation.","expected":"The existing value is retained.","boundaries":"Ordinary nonzero input.","file":"tests/preserved.cjs","command":"node tests/preserved.cjs","fixtures":[],"inspection":"","reason":""}]}
+
+# Findings ledger
+[]
+
+# Readings ledger
+[{"id":"R1","stage":"design","turn":"pair-design-1","requirement":"C1","literal":"Runs on Node 20 and 22.","reading":"Runs on at least Node 20 and 22.","reason":"CI also tests Node 24.","status":"accepted","evidence":"The user chose the minimum.","finding":"","history":[{"review":1,"status":"needs-user","evidence":"The plan says \"exactly\"; CI runs Node 24 too."},{"decision":"Q1","status":"proposed","evidence":"The user answered Q1; the next review rules on the reading again."},{"review":2,"status":"accepted","evidence":"The user chose the minimum."}]}]
+
+# Live checks
+[{"criterion":"C1","check":"Run `node cli.js fetch` against the real API and confirm it prints the status.","reason":"The tests stub the HTTP call, so TLS verification against the machine's certificate store never runs.","source":"setup"}]
+
+# Latest review and measurement
+{"review":null,"measurement":null}
+
+# Author continuity
+Continue with the boundary case.
+
+For each open finding, return its ID with the change made or an evidence-backed disagreement in addressed. You cannot close a finding yourself. If a finding needs a user decision, return needs-user now with its existing ID and question; do not spend another author turn restating the conflict. Do not weaken tests, criteria, or the verification configuration to obtain a pass. If the task requires a user decision, return status needs-user and specific questions; if execution is blocked, return blocked with the reason in summary. Otherwise return done.
+List in readings every place this turn's work reads a requirement, criterion or approved contract check other than literally: an exact list treated as a minimum, an ambiguity or open threshold you settled, two requirements you reconciled, or a contract setup you cannot build as written and check another way. Give the requirement (its criterion ID, or its words in quotes), what it literally says, your reading, and the reason. List only readings not already in the readings ledger; return readings=[] when the work follows everything literally. A reading only in your notes or the handoff is not reviewed: the reviewer rules on each listed reading in the next review. An accepted reading binds the rest of the run; a rejected one comes back as an open finding. Propose a reading only where the requirement's words allow it: when two requirements cannot both hold as written, or a fact you found makes one impossible as written, and no reading inside the task's words settles it, return needs-user now with the question, quoting each requirement and giving the options you see, rather than a reading the reviewer could only send to the user.
+When this turn's design or implementation makes a criterion rest on something outside the run that the run can check only against a stand-in, where the real thing can behave differently (a network service, credentials, the machine's certificate store, an external CLI's login), check it in this run with the stand-in and add it to liveChecks for the user to run before delivery: the criterion ID, the command or action that checks it against the real thing, and why the stand-in can't show it. List only checks not already in the live checks list; return liveChecks=[] otherwise.
+Save each script or command file whose output supports a claim (a probe, a coverage or equivalence check) under /repo/.council/pair-test/room/pair-code-3/probes/, not in /tmp or $TMPDIR, which are cleared after the run, and cite it by that path. Start each probe file's name with `probe-` so it cannot shadow a standard-library or project module, and run Python probes with `python3 -I`.
+Write a concise handoff at /repo/.council/pair-test/room/pair-code-3/A.md (create the directory). Include the change summary and actual checks, responses to findings, and important remaining work. Return private notes sufficient for a fresh author context to continue. Keep implementation and design artifacts inside this run until delivery.

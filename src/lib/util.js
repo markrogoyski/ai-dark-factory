@@ -74,3 +74,18 @@ const listText = xs => xs.length > 2 ? `${xs.slice(0, -1).join(', ')} and ${xs[x
 // "seat 4, checker 6": how many of xs fall under each f(x)
 const countsOf = (xs, f) => Object.entries(xs.reduce((m, x) => { const k = f(x); m[k] = (m[k] || 0) + 1; return m }, {}))
   .map(([k, n]) => `${k} ${n}`).join(', ')
+
+// A Pair needs-user stop that can continue carries resumable and its resumeSteps, also inside
+// forTheOrchestrator. A later override of the status (a turn or time budget) withdraws all three,
+// so a result that cannot continue carries no resume guidance. Other results never carry the key.
+function withdrawResume(result) {
+  if (!result || typeof result !== 'object' || !('resumable' in result) || result.status === 'needs-user') return result
+  const steps = typeof result.resumeSteps === 'string' ? result.resumeSteps : ''
+  for (const target of [result, result.summary]) {
+    if (!target || typeof target !== 'object') continue
+    if (steps && typeof target.forTheOrchestrator === 'string') target.forTheOrchestrator = target.forTheOrchestrator.split(` ${steps}`).join('').split(steps).join('')
+    delete target.resumable
+    delete target.resumeSteps
+  }
+  return result
+}

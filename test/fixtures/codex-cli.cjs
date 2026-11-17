@@ -58,6 +58,10 @@ if ('signals' in schema.properties) {
       file: 'tests/preserved.cjs', command: 'node tests/preserved.cjs', fixtures: [], inspection: '', reason: '' },
   ] }
   result.replayMapping = design ? [] : result.testContract.checks.map(c => ({ file: c.file, command: c.command, checkIds: [c.id], fixtures: [] }))
+  // PAIR_TEST_ASK: the design author stops for the user until the prompt carries the answer; with
+  // PAIR_TEST_ASK=2 it then asks a second question, until that answer is there too.
+  if (design && process.env.PAIR_TEST_ASK && !prompt.includes('\n# Explicit user decisions\n')) Object.assign(result, { status: 'needs-user', summary: 'The author needs a choice.', questions: ['Keep the old flag?'] })
+  else if (design && process.env.PAIR_TEST_ASK === '2' && !prompt.includes('\n- Q2 (')) Object.assign(result, { status: 'needs-user', summary: 'The author needs another choice.', questions: ['Rename the option?'] })
   if (!design) fs.writeFileSync(path.join(runDir, 'wt/A/tests/sum.cjs'), "require('node:assert/strict').equal(require('../sum.cjs')(2, 3), 5)\n")
 } else if ('version' in schema.properties) {
   kind = 'pair-review'
@@ -134,7 +138,8 @@ if ('signals' in schema.properties) {
 } else throw new Error('Unhandled fixture schema')
 const thread = claude ? get(args.includes('--resume') ? '--resume' : '--session-id')
   : args.includes('resume') ? args.at(-2) : `fixture-${process.pid}`
-fs.appendFileSync(process.env.FACTORY_TEST_LOG, JSON.stringify({ kind, thread, vendor: claude ? 'claude' : 'codex', cwd: process.cwd(), args }) + '\n')
+fs.appendFileSync(process.env.FACTORY_TEST_LOG, JSON.stringify({ kind, thread, vendor: claude ? 'claude' : 'codex', cwd: process.cwd(), args,
+  ...(prompt.includes('\n# Explicit user decisions\n') ? { decisions: true } : {}) }) + '\n')
 if (claude) console.log(JSON.stringify({ subtype: 'success', session_id: thread, structured_output: result, usage: { input_tokens: 10, output_tokens: 10 } }))
 else {
   fs.writeFileSync(get('-o'), JSON.stringify(result))
