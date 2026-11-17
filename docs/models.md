@@ -44,6 +44,32 @@ and the retro runs on Sonnet. On the Codex host the orchestration roles (`intake
 `checker`, `questions`, `spec`, `retro`, `record`) can be changed with `roles`, for example
 `{"intake": "sol", "checker": {"model": "astra", "effort": "high"}}`.
 
+## Effort
+
+Effort follows the work: the models that solve, judge or review run at `high`, the roles that
+coordinate a run at `medium`, and the roles that move data at `low`. Valid levels are `low`,
+`medium`, `high`, `xhigh` and `max`; Codex also accepts `ultra`. Gemini puts the level in the
+model ID (`gemini-4-hydrogen-high`), so a level the model lacks maps to the nearest one it has,
+ties going up (Hydrogen: up to `xhigh`; Argon: up to `high`).
+
+| role | effort | changed by |
+|---|---|---|
+| council and factory seats, ensemble solvers | `high` | `effort`: one level, or per seat `{astra: 'xhigh'}` |
+| pair author and reviewer | `high` | `effort` |
+| ensemble review lenses and compare | `high` | `effort` |
+| spec reviewers | `high` | `spec: {effort}` only; the top-level `effort` doesn't reach them |
+| auditors, Feature tests lens, Architecture review lenses | `high` | `audit: {effort}` only |
+| council panel | `high` | nothing: fixed |
+| factory Simple reviewer | `high` | nothing: fixed |
+| intake, setup, checker, spec amend, retro | `medium` | Codex host: `roles: {role: {model, effort}}`; Claude Code: fixed (pair setup: see [Pair](pair.md)) |
+| questions, record | `low` | Codex host: `roles`; Claude Code: fixed |
+| relay for Codex, Gemini and OpenRouter turns (Haiku, Sonnet fallback); recovery turn after a failed external turn | `low` | nothing: fixed |
+| pair measurement transport and resume checker | `low` | nothing: fixed |
+
+A cheap trial run with `effort: 'low'` therefore lowers the seats, but not the panel, the spec
+review or the audit: pass `spec: {effort: 'low'}` and `audit: {effort: 'low'}` too, or turn them
+off with `false`.
+
 ## Swapping a vendor
 
 Claude, Codex, Gemini and OpenRouter are separate accounts with separate limits. When one runs out, or a

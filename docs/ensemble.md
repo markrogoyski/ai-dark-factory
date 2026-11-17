@@ -47,7 +47,7 @@ list.
 | `reviewers` | 2 | review lenses per candidate, 1–4, capped by the mode's lenses |
 | `seats` | | candidate models, one per candidate (its length must match `candidates` when both are given); see [Choosing the models](models.md) |
 | `models` | Claude Code: Sonnet solvers, Sonnet or Opus per lens, Opus compare; Codex: Astra for all three | `{solve, review, compare}` |
-| `effort` | | for every solver, reviewer and the comparison |
+| `effort` | `high` | for every solver, reviewer and the comparison; see [Effort](models.md#effort) |
 | `plan`, `context`, `criteria`, `verify`, `repo`, `allowDirty` | | as in the [council](council.md#arguments) |
 | `explain`, `maxTurns` | | see [Process controls](process-controls.md) |
 
