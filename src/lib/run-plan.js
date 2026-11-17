@@ -141,10 +141,27 @@ function runPlanExtendLimits(S, extension) {
   S.plan = { ...S.plan, limits }
 }
 
+// How the plan went, task by task. Each task's result file holds its own report, with how its run went.
+function runPlanStory(S) {
+  const gist = q => String(typeof q === 'string' ? q : Array.isArray(q) ? q.map(x => typeof x === 'string' ? x : x?.question || x?.text || '').filter(Boolean).join('; ') : q?.error || q?.incomplete?.[0] || q?.blocked?.[0] || '')
+    .replace(/\s+/g, ' ').trim().slice(0, 300)
+  const line = (id, title, r, after = []) => {
+    const waiting = after.filter(d => S.tasks[d].status !== 'done')
+    const tries = r.attempts ? ` after ${r.attempts} attempt${r.attempts === 1 ? '' : 's'}` : ''
+    const how = r.status === 'done' ? `done${tries}${r.commit ? `, committed ${r.commit.slice(0, 12)}` : ''}`
+      : r.status === 'parked' ? `parked${tries}${gist(r.question) ? `: ${gist(r.question)}` : ''}`
+      : r.status === 'pending' && r.attempts ? `pending${tries}` : r.status === 'pending' ? (waiting.length ? `waiting on ${waiting.join(', ')}` : 'not started') : r.status
+    return `- ${id} (${title}): ${how}${r.result ? `. Report: ${r.result}` : ''}`
+  }
+  const limits = S.plan.limits
+  return `### How the plan went\n\n${[...S.plan.tasks.map(t => line(t.id, t.title, S.tasks[t.id], t.after)), line('acceptance', 'final acceptance', S.tasks.acceptance)].join('\n')}\n\n` +
+    `Budget used: ${S.turns} of ${limits.maxTurns} turns, ${Math.round(S.elapsedMs / 60000)} of ${limits.maxRunMin} minutes.`
+}
+
 function runPlanReport(S) {
   const ready = S.tasks.acceptance.status === 'done' && S.plan.tasks.every(t => S.tasks[t.id].status === 'done')
   const liveChecks = S.plan.tasks.filter(t => S.tasks[t.id].status === 'done').flatMap(t => (S.tasks[t.id].liveChecks || []).map(c => ({ task: t.id, ...c })))
-  return { status: ready ? 'done' : 'blocked', workflow: 'run-plan', planId: S.plan.id, head: S.head,
+  return { status: ready ? 'done' : 'blocked', workflow: 'run-plan', planId: S.plan.id, head: S.head, report: { markdown: runPlanStory(S) },
     stopReason: ready ? null : S.turns >= S.plan.limits.maxTurns ? 'Run-plan turn budget exhausted.' : S.elapsedMs >= S.plan.limits.maxRunMin * 60000 ? 'Run-plan time budget exhausted.' : 'No eligible tasks; inspect parked work and dependencies.',
     final: { readiness: { state: ready ? 'ready' : 'incomplete', blocked: [], incomplete: ready ? [] : ['Required run-plan work remains; inspect tasks, parked questions, and budgets.'], liveChecks } },
     liveChecks,

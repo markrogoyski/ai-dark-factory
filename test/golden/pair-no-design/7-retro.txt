@@ -40,6 +40,15 @@ Verification: passed on the reviewed snapshot.
 
 Replay: 4 file/command records; 0 overlay exclusions. Base outcomes require reviewer interpretation.
 
+How the run went:
+
+1. Setup: 1 acceptance criterion (C1); gate `node test.cjs` passing at base.
+2. Claude Opus implemented the task. The gate passed on its snapshot.
+3. Code review 1/8 by Codex Astra: changes requested. New: P1 (minor) Cover the boundary case. Criteria all met.
+4. Claude Opus revised the implementation. No reply to P1. The gate passed on its snapshot.
+5. Code review 2/8 by Codex Astra: approved. Fixed P1. Criteria all met.
+6. Ready after 2 reviews of 8.
+
 P1: fixed — Cover the boundary case. (The boundary test now exists.)
 
 # Process notes and run facts

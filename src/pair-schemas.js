@@ -61,7 +61,7 @@ const PAIR_AUTHOR_SCHEMA = strict({ type: 'object', properties: {
   summary: { type: 'string' }, design: { type: 'string' }, notes: { type: 'string' },
   testContract: PAIR_CONTRACT, replayMapping: PAIR_REPLAY_MAPPING,
   addressed: { type: 'array', items: { type: 'object', properties: {
-    id: { type: 'string' }, response: { type: 'string' }, evidence: { type: 'string' },
+    id: { type: 'string' }, action: { type: 'string', enum: ['changed', 'disputed'] }, response: { type: 'string' }, evidence: { type: 'string' },
   } } },
   readings: { type: 'array', description: 'New readings only: each place this turn\'s work reads a requirement, criterion or approved contract check other than literally; [] when it follows everything literally.',
     items: { type: 'object', properties: {

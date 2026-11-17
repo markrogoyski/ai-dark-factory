@@ -128,6 +128,12 @@ when the task has exhausted its attempts. The default two attempts allow one ans
 The plan definition remains immutable once started; budget exhaustion is reported,
 not silently extended.
 
+The result's `report.markdown` ("How the plan went") lists every task: done with its attempts and
+commit, parked with its question, waiting on a dependency, or not started; then final acceptance,
+the budget used, and the path to each task's own result, whose report tells how that run went.
+The runner logs each task as it finishes, with its title and commit, and passes on each child
+run's progress lines.
+
 For tracked plans, completed code and the controller-owned `progress` field share a commit, with
 `Factory-Plan` and `Factory-Task` trailers. `.council/run-plan-ID/state.json` also retains
 unsuccessful attempts, questions, decisions, and budget accounting. Keep it and child-run evidence.

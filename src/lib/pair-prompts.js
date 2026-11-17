@@ -66,7 +66,7 @@ ${pairMeasurementRecord(S) ? `The measurement leaves out what each execution pri
 # Author continuity
 ${p.author?.notes || '(first author turn)'}
 
-For each open finding, return its ID with the change made or an evidence-backed disagreement in addressed. You cannot close a finding yourself. If a finding needs a user decision, return needs-user now with its existing ID and question; do not spend another author turn restating the conflict. Do not weaken tests, criteria, or the verification configuration to obtain a pass. If the task requires a user decision, return status needs-user and specific questions; if execution is blocked, return blocked with the reason in summary. Otherwise return done.
+For each open finding, return one entry in addressed: its ID, with action changed and the change made in response, or action disputed and an evidence-backed disagreement. You cannot close a finding yourself. If a finding needs a user decision, return needs-user now with its existing ID and question; do not spend another author turn restating the conflict. Do not weaken tests, criteria, or the verification configuration to obtain a pass. If the task requires a user decision, return status needs-user and specific questions; if execution is blocked, return blocked with the reason in summary. Otherwise return done.
 ${PAIR_READING_RULES}
 ${PAIR_LIVE_CHECK_RULES}
 Save each script or command file whose output supports a claim (a probe, a coverage or equivalence check) under ${S.run.room}/${label}/probes/, not in /tmp or $TMPDIR, which are cleared after the run, and cite it by that path. Start each probe file's name with \`probe-\` so it cannot shadow a standard-library or project module, and run Python probes with \`python3 -I\`.
@@ -108,7 +108,7 @@ ${pairMeasurementRecord(S) ? `The measurement leaves out what each execution pri
 # Author continuity
 ${p.author?.notes || '(first author turn)'}
 
-For each open finding, return its ID with the change made or an evidence-backed disagreement in addressed. You cannot close a finding yourself. If a finding needs a user decision, return needs-user now with its existing ID and question; do not spend another author turn restating the conflict. Do not weaken tests, criteria, or the verification configuration to obtain a pass. If the task requires a user decision, return status needs-user and specific questions; if execution is blocked, return blocked with the reason in summary. Otherwise return done.
+For each open finding, return one entry in addressed: its ID, with action changed and the change made in response, or action disputed and an evidence-backed disagreement. You cannot close a finding yourself. If a finding needs a user decision, return needs-user now with its existing ID and question; do not spend another author turn restating the conflict. Do not weaken tests, criteria, or the verification configuration to obtain a pass. If the task requires a user decision, return status needs-user and specific questions; if execution is blocked, return blocked with the reason in summary. Otherwise return done.
 ${PAIR_READING_RULES}
 ${PAIR_LIVE_CHECK_RULES}
 Save each script or command file whose output supports a claim (a probe, a coverage or equivalence check) under ${S.run.room}/${label}/probes/, not in /tmp or $TMPDIR, which are cleared after the run, and cite it by that path. Start each probe file's name with \`probe-\` so it cannot shadow a standard-library or project module, and run Python probes with \`python3 -I\`.

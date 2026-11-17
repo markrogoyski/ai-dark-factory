@@ -7,9 +7,13 @@ async function ensembleRun() {
   const candidates = await parallel(S.seats.map((s, i) => async () => {
     const stance = S.ensemble.stances[i]
     const solution = await seatTurn(s, 0, ensembleSolvePrompt(S, s, stance), ENSEMBLE_SOLUTION_SCHEMA)
-    if (!solution) return { candidate: i + 1, stance: stance.key, solution: null, reviews: [], final: { readiness: { state: 'incomplete', blocked: [], incomplete: ['The solver failed.'] } } }
+    if (!solution) {
+      milestone(ensembleSolvedLine(S, s, i, stance, null), 'ensemble: ')
+      return { candidate: i + 1, stance: stance.key, solution: null, reviews: [], final: { readiness: { state: 'incomplete', blocked: [], incomplete: ['The solver failed.'] } } }
+    }
     ingestSolve(S, s, { summary: solution.approach || solution.answer, claims: [], tests: [], questions: [] })
     await runChecks(0, s.L)
+    milestone(ensembleSolvedLine(S, s, i, stance, solution), 'ensemble: ')
     const reviews = await parallel(S.ensemble.lenses.map(a => () => ensembleReview(s, a, solution, i)))
     const missing = reviews.flatMap((r, j) => !r || r.complete !== true || r.snapshotTree !== (S.pos[s.L].tree?.hash || '')
       ? [`Missing or stale ${S.ensemble.lenses[j].lens} review.`] : [])
@@ -24,6 +28,7 @@ async function ensembleRun() {
       }
     }
     ready.state = ready.blocked.length ? 'blocked' : ready.incomplete.length ? 'incomplete' : 'ready'
+    milestone(ensembleReviewedLine(S, i, reviews, ready), 'ensemble: ')
     return { candidate: i + 1, stance: stance.key, solution, reviews: reviews.map((r, j) => ({ lens: S.ensemble.lenses[j].lens, ...(r || { missing: true }) })),
       runDir: S.run.runDir, mode: S.mode, task: S.task,
       final: { author: s.L, model: s.name, worktree: s.wt, post: postPath(S, s.L, 0),
@@ -39,13 +44,15 @@ async function ensembleRun() {
     ? await ask(prompt, { label: 'compare', phase: 'Compare', schema: ENSEMBLE_COMPARE_SCHEMA, model: a.model, effort: a.effort }, 'compare', a.name)
     : await externalTurn({ key: 'compare', threadKey: 'compare', configKey: 'compare', fresh: true, vendor: a.vendor, model: a.model, effort: a.effort, role: 'compare', who: a.name,
       sandbox: 'read-only', cwd: S.run.repoRoot, writable: [], timeoutKind: 'audit' }, prompt, ENSEMBLE_COMPARE_SCHEMA, 'compare', 'Compare')
+  if (alive.length) milestone(ensembleComparedLine(S, advisor), 'ensemble: ')
   // A selected implementation candidate is saved whole as the delivery result, so it carries the
   // full-result marker that `apply` requires; the advisory result around it does not.
   if (S.mode === 'implement') for (const c of alive) Object.assign(c, { artifactType: 'dark-factory-result', artifactVersion: 1 })
   return { status: alive.length ? 'advisory' : 'failed', workflow: 'ensemble', mode: S.mode, task: S.task, runDir: S.run.runDir, candidates, advisor, notes: S.notes,
+    report: { markdown: storySection(S).trim() },
     final: { readiness: { state: 'incomplete', blocked: [], incomplete: ['No candidate selected; ranking is advisory.', ...(!advisor ? ['Comparison unavailable.'] : [])] } },
     delivery: { status: 'pending-selection' },
-    forTheOrchestrator: 'Read every candidate readiness and the reviews before selecting or merging. A merge needs fresh verification and review. For an unchanged ready candidate, save that candidate object as the delivery result, apply its reviewed snapshot within authorization, and use verify-delivery. Never treat the advisory ranking as readiness.' }
+    forTheOrchestrator: 'Read every candidate readiness and the reviews before selecting or merging. A merge needs fresh verification and review. For an unchanged ready candidate, save that candidate object as the delivery result, apply its reviewed snapshot within authorization, and use verify-delivery. Never treat the advisory ranking as readiness. Show report.markdown, the run\'s milestones in order, to the user as it is.' }
 }
 
 function ensembleReview(s, a, solution, i) {

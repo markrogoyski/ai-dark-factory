@@ -238,7 +238,7 @@ test('pair repeatedly fixes both stages, retaining findings until reviewer closu
 })
 
 test('author claims and omission cannot close findings; unchanged work stalls', async () => {
-  const { result } = await run({ sameTree: true, author: a => ({ ...a, addressed: [{ id: 'P1', response: 'Fixed.', evidence: 'Trust me.' }] }),
+  const { result } = await run({ sameTree: true, author: a => ({ ...a, addressed: [{ id: 'P1', action: 'changed', response: 'Fixed.', evidence: 'Trust me.' }] }),
     review: (r, n) => { if (n === 2) r.findings = [finding('Still broken.')]; return r } })
   assert.equal(result.status, 'blocked')
   assert.match(result.stopReason, /stalled/)
@@ -661,6 +661,41 @@ test('pair prompts have reviewed golden coverage', async () => {
     if (process.env.UPDATE_GOLDEN) writeFileSync(file, value)
     else assert.equal(value, readFileSync(file, 'utf8'), `Prompt changed: ${fileURLToPath(file)}`)
   }
+})
+
+test('the report tells the run in order, with the author\'s disputes and how they ended', async () => {
+  let authors = 0
+  const { result } = await run({ native: true, author: a => ++authors === 2
+    ? { ...a, addressed: [{ id: 'P1', action: 'changed', response: 'Added the boundary to the design.', evidence: 'design step 2' },
+      { id: 'P2', action: 'disputed', response: 'The cache is per request, so it cannot go stale.', evidence: 'src/cache.js:4' }] }
+    : a, review: (r, n) => {
+    if (n === 1) r.findings = [finding('Cover the boundary case.'), { ...finding('The cache can go stale.'), severity: 'major' }]
+    if (n === 2) r.resolutions = [{ id: 'P1', status: 'fixed', evidence: 'Step 2 covers it.' }, { id: 'P2', status: 'refuted', evidence: 'The cache is built per request.' }]
+    if (n === 3) { r.findings = [finding('Name the helper after its result.')]; r.criteria[0].status = 'partial' }
+    if (n === 4) r.resolutions = [{ id: 'P3', status: 'open', evidence: 'Still named tmp.' }]
+    if (n === 5) r.resolutions = [{ id: 'P3', status: 'fixed', evidence: 'Renamed.' }]
+    return r
+  } })
+  assert.equal(result.status, 'done')
+  const md = result.report.markdown
+  assert.ok(md.includes('\n\nHow the run went:\n\n' + [
+    '1. Setup: 1 acceptance criterion (C1); gate `node test.cjs` passing at base.',
+    '2. Claude Opus drafted the design.',
+    '3. Design review 1/8 by Codex Astra: changes requested. New: P1 (minor) Cover the boundary case; P2 (major) The cache can go stale. Criteria all met.',
+    '4. Claude Opus revised the design. Changed P1. Disputed P2: The cache is per request, so it cannot go stale.',
+    '5. Design review 2/8 by Codex Astra: approved. Fixed P1. Refuted P2. Criteria all met.',
+    '6. Claude Opus implemented the approved design. The gate passed on its snapshot.',
+    '7. Code review 3/8 by Codex Astra: changes requested. New: P3 (minor) Name the helper after its result. Criteria: C1 partial.',
+    '8. Claude Opus revised the implementation. No reply to P3. The gate passed on its snapshot.',
+    '9. Code review 4/8 by Codex Astra: changes requested. Still open: P3. Criteria all met.',
+    '10. Claude Opus revised the implementation. No reply to P3. The gate passed on its snapshot.',
+    '11. Code review 5/8 by Codex Astra: approved. Fixed P3. Criteria all met.',
+    '12. Ready after 5 reviews of 8.',
+  ].join('\n') + '\n\nPoints of interest:\n\n' + [
+    '- Claude Opus disputed P2 (major, design), "The cache can go stale": The cache is per request, so it cannot go stale. Codex Astra accepted that and refuted it.',
+    '- P3 (minor, code) took 2 revisions before it was fixed: Name the helper after its result.',
+  ].join('\n') + '\n\nP1: fixed'), md)
+  assert.match(result.forTheOrchestrator, /Show the "How the run went" and "Points of interest" lists from report\.markdown as they are/)
 })
 
 test('pair prompts without a design stage have reviewed golden coverage', async () => {

@@ -42,6 +42,21 @@ Verification: passed on the reviewed snapshot.
 
 Replay: 4 file/command records; 0 overlay exclusions. Base outcomes require reviewer interpretation.
 
+How the run went:
+
+1. Setup: 1 acceptance criterion (C1); gate `node test.cjs` passing at base.
+2. Claude Opus drafted the design. Proposed reading R1 of C1: Runs on at least Node 20 and 22.
+3. Design review 1/8 by Codex Astra: changes requested. New: P1 (minor) Cover the boundary case. Accepted reading R1. Criteria all met.
+4. Claude Opus revised the design. No reply to P1.
+5. Design review 2/8 by Codex Astra: approved. Fixed P1. Criteria all met.
+6. Claude Opus implemented the approved design. The gate passed on its snapshot.
+7. Code review 3/8 by Codex Astra: approved. Criteria all met.
+8. Ready after 3 reviews of 8.
+
+Points of interest:
+
+- Codex Astra accepted Claude Opus's reading R1 of C1: Runs on at least Node 20 and 22.
+
 P1: fixed — Cover the boundary case. (The boundary appears in the design.)
 
 R1: reading accepted — C1 read as: Runs on at least Node 20 and 22. (The task names no other environment; the minimum keeps its intent.)

@@ -168,6 +168,9 @@ options that override them.
   command also earns the fix pass. Every repair gets a fresh independent code review as well as
   the neutral check. The default budget is one repair pass; `repair: {maxPasses: 2}` allows one
   more (see [Process controls](process-controls.md#repairs)).
+  Its report's "How the run went" lists setup, the change and its gate result, each review
+  with every item and its ruling, each repair pass (what it addressed and declined), and a stop
+  when repair stalls or runs out; the run logs each line as it happens.
   `simple: {implementer, reviewer, maxLines, maxFiles}` changes the tier, and every
   `/dark-factory:council` argument passes through to the council tiers.
 - **Facts on every run.** Each factory run puts a JSON facts block in its retro payload: tier,

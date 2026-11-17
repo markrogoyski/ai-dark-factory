@@ -268,6 +268,20 @@ test('evaluation counts specification amendments and advisory candidates separat
   assert.equal(group.turnsPerReadyCandidate, null)
 })
 
+test('the ensemble report lists each candidate\'s solution and reviews, then the comparison', async () => {
+  const { result } = await simulate('ensemble', { candidates: 2 }, { modify: (v, r) => {
+    if (r.role === 'reviewer') { v.verdict = 'flawed-but-fixable'; v.defects = [{ severity: 'major', description: 'Boundary is wrong.', evidence: 'file.js:1' }] }
+  } })
+  assert.equal(result.report.markdown, '### How the run went\n\n' + [
+    '1. Candidate 1 (minimal, Codex Astra) finished (+2/−1 in 1 file). The gate passed.',
+    '2. Candidate 2 (root-cause, Codex Astra) finished (+2/−1 in 1 file). The gate passed.',
+    '3. Candidate 1 reviewed: correctness flawed-but-fixable, 8/10 (major: Boundary is wrong); verification flawed-but-fixable, 8/10 (major: Boundary is wrong). Readiness blocked.',
+    '4. Candidate 2 reviewed: correctness flawed-but-fixable, 8/10 (major: Boundary is wrong); verification flawed-but-fixable, 8/10 (major: Boundary is wrong). Readiness blocked.',
+    '5. Codex Astra (advisory) ranked candidate 1 first and recommends adopting one candidate.',
+  ].join('\n'))
+  assert.ok(result.forTheOrchestrator.endsWith('Show report.markdown, the run\'s milestones in order, to the user as it is.'))
+})
+
 test('each ensemble review condition independently decides candidate readiness', async () => {
   const states = async modify => {
     const { result } = await simulate('ensemble', { candidates: 2 }, { modify: (v, r) => { if (r.role === 'reviewer') modify(v) } })

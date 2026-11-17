@@ -42,6 +42,23 @@ Verification: passed on the reviewed snapshot.
 
 Replay: 4 file/command records; 0 overlay exclusions. Base outcomes require reviewer interpretation.
 
+How the run went:
+
+1. Setup: 1 acceptance criterion (C1); gate `node test.cjs` passing at base.
+2. Claude Opus drafted the design. Proposed reading R1 of C1: Runs on at least Node 20 and 22.
+3. Design review 1/8 by Codex Astra: incomplete (Reading R1 needs a user decision). Reading R1 goes to the user. Criteria all met.
+4. Codex Astra asked the user a question: Q1 (about R1) R1 read C1 as a minimum; keep the list exact, or allow Node 24?
+5. The user answered Q1; the run continues.
+6. Claude Opus revised the design.
+7. Design review 2/8 by Codex Astra: approved. Accepted reading R1. Criteria all met.
+8. Claude Opus implemented the approved design. The gate passed on its snapshot.
+9. Code review 3/8 by Codex Astra: approved. Criteria all met.
+10. Ready after 3 reviews of 8.
+
+Points of interest:
+
+- Codex Astra accepted Claude Opus's reading R1 of C1: Runs on at least Node 20 and 22.
+
 User decisions:
 
 - Q1 (about R1; asked in review pair-design-1): R1 read C1 as a minimum; keep the list exact, or allow Node 24? Requirements as written: C1: "Runs on Node 20 and 22." Answer: Allow Node 24 as well.

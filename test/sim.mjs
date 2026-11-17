@@ -1809,7 +1809,7 @@ async function scenarioSpec() {
   assert.ok(solve0.prompt.includes('- C1: handles empty and null input, returning []') && solve0.prompt.includes('- C4: only timeouts are retried'))
   assert.ok(solve0.prompt.includes('# Assumptions about the request') && solve0.prompt.includes('- S3: Should 5xx responses be retried? Assumed: only timeouts.'))
   assert.ok(call('check').prompt.includes('- C4: only timeouts are retried'), 'checkers judge against the amended criteria')
-  assert.ok(logs.some(l => /spec: S1 accepted, S2 rejected, S3 decision, S4 disputed/.test(l)))
+  assert.ok(logs.some(l => /^spec: S1 \(coverage\) C1 says nothing about a null body.*: accepted; S2 \(coverage\) .*: rejected; S3 \(intent\) .*: decision; S4 \(intent\) .*: disputed$/.test(l)), logs.join('\n'))
 
   // Reported: the assumptions first, then what happened to each finding.
   assert.deepEqual(result.spec.assumptions.map(a => a.id), ['S3'])
@@ -1928,6 +1928,13 @@ async function scenarioFactoryFindings() {
   assert.ok(result.final.diff.endsWith('/room/repair1/A.diff'))
   assert.deepEqual(result.review.items.map(i => [i.id, i.status]), [['XR1', 'fixed'], ['XR2', 'judgment'], ['TXR1', 'verified']])
   assert.ok(result.report.markdown.includes('2 fresh review cycle(s)'))
+  assert.ok(result.report.markdown.includes('\n\n### How the run went\n\n' + [
+    '1. Setup: 3 acceptance criteria (C1, C2, C3); gate `make test` passing at base.',
+    '2. Claude Sonnet implemented the change (+10/−2 in 1 file). The gate passed.',
+    '3. Review 1 by Codex Astra: XR1 (major) logs the attempt index from 0, not the count: upheld; XR2 (minor, judgment) use the existing debug() helper: a judgment call; TXR1 (test) logs attempt 2 on the second try: a valid test. To fix: XR1 upheld; failing tests TXR1.',
+    '4. Claude Sonnet made repair pass 1 of 1. Addressed XR1, TXR1. Declined XR2: debug() lacks context. The gate passed.',
+    '5. Review 2 by Codex Astra: Closed XR1. Nothing new. Nothing to fix.',
+  ].join('\n') + '\n\n### Independent review'), result.report.markdown)
   return 'the review\'s upheld finding and failing test go to one fix pass, checked again, with historical evidence reviewed; still Simple'
 }
 

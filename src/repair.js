@@ -20,7 +20,7 @@ async function boundedAudit(W, o) {
   if (!S.auditors.length || (S.mode !== 'implement' && S.tier !== 'architecture')) return audit
   audit.ran = true
   if (S.mode !== 'implement' && !S.pos[W.L]?.artifactHash) { audit.gaps.push('No content hash for the reviewed design.'); return audit }
-  let previous = null
+  let previous = null, earlier = null
   for (let pass = 0; pass <= policy.maxPasses; pass++) {
     phase('Audit')
     const round = `review${pass}`, before = S.ledger.length
@@ -50,6 +50,8 @@ async function boundedAudit(W, o) {
     }
     const todo = repairTodo(S, W.L)
     const signature = repairSignature(S, W.L)
+    milestone(Object.keys(current).length ? reviewStoryLine(S, pass + 1, S.ledger.slice(before), todo, earlier) : `Review ${pass + 1}: no reviewer returned a review.`, 'audit: ')
+    earlier = todo
     audit.cycles.push({ review: round, snapshot: audit.finalTag, findings: S.ledger.slice(before).map(c => c.id), needed: todo.needed })
     // An approach defect can first appear in any review, including the final repair review.
     if (o.beforeFix) {
@@ -60,17 +62,19 @@ async function boundedAudit(W, o) {
     if (signature === previous || pass === policy.maxPasses) {
       audit.stopReason = signature === previous ? 'Repair stalled: the measured artifact and unresolved findings did not change.' : `Repair budget exhausted (${policy.maxPasses} passes).`
       audit.gaps.push(audit.stopReason)
+      milestone(`Stopped: ${audit.stopReason}`, 'audit: ')
       return audit
     }
     previous = signature
     const tag = `repair${pass + 1}`
     const fix = await seatTurn(W, tag, boundedRepairPrompt(S, W, todo, tag, pass + 1, policy.maxPasses), o.fixSchema || SYNTH_SCHEMA)
     audit.fixPass = true; audit.fixResult = fix
-    if (!fix) { audit.gaps.push('The repair turn failed.'); return audit }
+    if (!fix) { audit.gaps.push('The repair turn failed.'); milestone(`${W.name}'s repair pass ${pass + 1} failed.`, 'audit: '); return audit }
     S.pos[W.L] = { ...S.pos[W.L], summary: fix.summary || S.pos[W.L].summary, post: postPath(S, W.L, tag) }
     keepNotes(S, W, tag, fix); ingestClaims(S, W.L, tag, fix.claims); keepDeclined(S, tag, fix)
     audit.addressed.push(...(fix.addressed || []).filter(x => x?.ref))
     await runChecks(tag, W.L)
+    milestone(repairStoryLine(S, W, tag, fix, `made repair pass ${pass + 1} of ${policy.maxPasses}`), 'audit: ')
     audit.lastCheck = tag; audit.finalTag = tag
   }
   return audit

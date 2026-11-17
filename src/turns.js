@@ -3,6 +3,11 @@
 // parallel() and log(), and the state object `S` from boot; the decisions they act on are computed
 // in lib/.
 
+// A milestone of the run: logged now, for the live progress view, and kept for the report.
+function milestone(line, prefix = '') {
+  log(`${prefix}${tellStory(S, line)}`)
+}
+
 function requestClock() {
   if (S.controls.maxRunMin && !hostRuntime?.now) throw new Error('maxRunMin requires the standalone dark-factory-codex runner; the native workflow runtime has no replay-safe clock. Use maxTurns for native runs.')
   return hostRuntime?.now ? hostRuntime.now() - (hostRuntime.elapsedBefore || 0) : null
@@ -376,7 +381,7 @@ async function runSpecReview() {
         sandbox: 'read-only', cwd: S.run.repoRoot, writable: [], timeoutKind: 'panel',
       }, prompt, SPEC_PANEL_SCHEMA, `panel spec: ${m.key}`, 'Spec'))))
   const { todo, open } = specTodo(S)
-  log(`spec: ${S.spec.findings.map(f => `${f.id} ${f.status}`).join(', ')}`)
+  log(`spec: ${S.spec.findings.map(f => `${f.id} (${f.lens}) ${storyWords(f.statement, 120)}: ${f.status}`).join('; ')}`)
   if (S.specAsk && open.length) return open
   if (!todo.length) return null
   const amend = await ask(specAmendPrompt(S, todo), { label: 'spec amend', phase: 'Spec', schema: SPEC_AMEND_SCHEMA, model: 'opus', effort: 'medium', measures: true }, 'spec')
@@ -428,6 +433,7 @@ async function runAudit(W, o = {}) {
     audit.checked = true
     await runChecks('H', W.L, triage)
     audit.testsAtAudit = Object.fromEntries(triage.tests.map(id => [id, (S.testResults[id] || {})[W.L] || null]))
+    log(`audit: ${S.ledger.filter(c => c.round === 'H').map(c => `${storyItem(c)}: ${storyRuling(c)}`).join('; ')}`)
   }
   const handUp = o.beforeFix ? o.beforeFix() : null
   if (handUp) { audit.escalate = handUp; return audit }
@@ -451,6 +457,7 @@ async function runAudit(W, o = {}) {
   await runChecks('I', W.L)
   const p = S.pos[W.L]
   if (!fix) return audit
+  log(`audit: ${repairStoryLine(S, W, 'I', fix, 'made the audit fix pass')}`)
   // With rereview: false (Simple), only the evidence owner returns, with an evidence-only prompt.
   const reviewCode = o.rereview !== false && !(p.delta && p.deltaRound === 'I' && !p.delta.files)
   const historyOwner = historyCheck(S) ? evidenceOwner(S) : null
@@ -464,6 +471,8 @@ async function runAudit(W, o = {}) {
   })
   historyGap()
   const late = S.ledger.filter(c => c.round === 'J' && c.kind === 'finding' && !c.judgment && W8[c.severity] >= 2).map(c => c.id)
+  const raised = S.ledger.filter(c => c.round === 'J')
+  log(`audit: re-review of the fix by ${lookers.map(a => a.lens).join(', ')}: ${raised.length ? raised.map(storyItem).join('; ') : 'nothing new'}`)
   if (late.length) {
     log(`audit: the re-review raised ${late.join(', ')}; to the panel`)
     applyPanel(S, late, await panelRun('J', late))

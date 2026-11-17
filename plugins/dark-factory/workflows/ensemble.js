@@ -78,6 +78,12 @@ function strict(schema) {
 }
 
 const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`
+// The run's story: one line per milestone, which the flow logs as it happens (milestone() in
+// turns.js) and the report lists under "How the run went". Returns the line.
+function tellStory(S, line) {
+  (S.story ||= []).push(line)
+  return line
+}
 // The factory's Feature tier builds in increments, rounds K1, K2, …, whose snapshots are inc1, inc2, ….
 const buildStep = r => { const m = typeof r === 'string' && r.match(/^K(\d+)$/); return m ? Number(m[1]) : null }
 const atRound = r => r === 'F' ? 'in the final version' : r === 'G' ? 'in the fix pass' : r === 'I' ? 'in the audit fix pass' : buildStep(r) ? `in build increment ${buildStep(r)}` : `in round ${r}`
@@ -2838,6 +2844,11 @@ function roundsSection(S, upto, ending) {
   return lines.join('\n')
 }
 
+// The run's milestones as they were logged (tellStory), for a tier whose report has no debate to tell.
+function storySection(S) {
+  return S.story?.length ? `\n\n### How the run went\n\n${S.story.map((line, i) => `${i + 1}. ${line}`).join('\n')}` : ''
+}
+
 function problemsSection(S) {
   if (!S.notes.length) return ''
   return `\n\n### Problems during the run\n\n${S.notes.slice(0, 12).map(n => `- ${oneLine(n, 300)}`).join('\n')}` +
@@ -3675,7 +3686,7 @@ function simpleReport(S, o) {
   return {
     markdown: (assumed.length ? `### Assumptions to check\n\n${assumed.map(q => `- ${sentence(oneLine(q.question, 300))}${q.assumption ? ` Assumed: ${sentence(oneLine(q.assumption, 300))}` : ''}`).join('\n')}\n\n` : '') +
       `### Simple change, by ${W.name}\n\nThe factory routed this as a simple change: one implementer, the neutral check, and ${S.host === 'codex' ? 'one independent reviewer' : 'one reviewer from another vendor'}.\n\n${lines.join('\n')}` +
-      auditSection(S, W, audit) + problemsSection(S),
+      storySection(S) + auditSection(S, W, audit) + problemsSection(S),
   }
 }
 
@@ -4103,6 +4114,62 @@ function repairSignature(S, W) {
     p.suite?.ran, p.suite?.passed])
 }
 
+// Story lines (tellStory) for the independent review: the Simple tier's implementer, each review
+// and its rulings, each repair pass, and why the loop stopped. runAudit's audit and fix pass use
+// the same item wording.
+const storyWords = (s, n) => oneLine(s, n).replace(/[.\s]+$/, '')
+
+function storyItem(c) {
+  return `${c.id} (${c.kind === 'test' ? 'test' : `${c.severity}${c.judgment ? ', judgment' : ''}`}) ${storyWords(c.statement, 140)}`
+}
+
+function storyRuling(c) {
+  if (c.withdrawn) return 'withdrawn'
+  if (c.judgment || c.status === 'judgment') return 'a judgment call'
+  return { verified: c.kind === 'finding' ? 'upheld' : 'a valid test', refuted: 'refuted', fabricated: 'ruled fabricated', unresolved: 'unresolved' }[c.status] || 'not ruled on'
+}
+
+function storyGate(S, L) {
+  const p = S.pos[L]
+  if (S.mode !== 'implement' || !S.verify) return ''
+  return !p?.suite ? 'The gate was not measured.' : !p.suite.ran ? 'The gate did not run.' : p.suite.passed ? 'The gate passed.' : 'The gate failed.'
+}
+
+function storyTodo(todo) {
+  const ids = xs => xs.map(c => c.id).join(', ')
+  return [todo.upheld.length && `${ids(todo.upheld)} upheld`, todo.disputed.length && `${ids(todo.disputed)} unresolved`,
+    todo.failing?.length && `failing tests ${ids(todo.failing)}`, todo.criteria?.length && `${todo.criteria.map(c => c.criterion).join(', ')} unmet`,
+    todo.suite && 'the failing gate'].filter(Boolean).join('; ')
+}
+
+function setupStoryLine(S) {
+  const ids = S.criteria.map(c => c.id)
+  const gate = S.mode !== 'implement' ? '' : !S.verify ? '; no automated gate'
+    : `; gate \`${oneLine(S.verify, 160)}\` ${S.baselineOk ? 'passing at base' : `already failing at base (${storyWords(S.baselineNote, 200)})`}`
+  return `Setup: ${ids.length} acceptance ${ids.length === 1 ? 'criterion' : 'criteria'} (${ids.join(', ') || 'none'})${gate}.`
+}
+
+function solveStoryLine(S, W) {
+  const st = S.pos[W.L]?.stats
+  return `${W.name} implemented the change${st ? ` (+${st.added}/−${st.removed} in ${plural(st.files, 'file')})` : ''}. ${storyGate(S, W.L)}`.trim()
+}
+
+// After a review's items are ruled on. `items`: the ledger entries it filed; `earlier`: the
+// previous review's to-do list, whose items this review may have closed.
+function reviewStoryLine(S, n, items, todo, earlier = null) {
+  const head = `Review ${n} by ${S.auditors.map(a => a.name).join(', ')}`
+  const closed = earlier ? [...earlier.upheld, ...earlier.disputed].filter(c => c.fixed || c.withdrawn || c.status === 'refuted').map(c => c.id) : []
+  const found = items.length ? `${items.map(c => `${storyItem(c)}: ${storyRuling(c)}`).join('; ')}.` : 'Nothing new.'
+  return `${head}: ${closed.length ? `Closed ${closed.join(', ')}. ` : ''}${found} ${todo.needed ? `To fix: ${storyTodo(todo)}.` : 'Nothing to fix.'}`
+}
+
+function repairStoryLine(S, W, round, fix, label) {
+  const done = (fix?.addressed || []).filter(x => x?.ref).map(x => idOf(x.ref))
+  const declined = S.declined.filter(d => d.round === round)
+  return [`${W.name} ${label}.`, done.length && `Addressed ${done.join(', ')}.`,
+    ...declined.map(d => `Declined ${idOf(d.ref)}: ${storyWords(d.why, 200) || 'no reason given'}.`), storyGate(S, W.L)].filter(Boolean).join(' ')
+}
+
 function repairReviewPrompt(S, a, W, round, tag, checkout) {
   const arch = S.tier === 'architecture'
   const findings = S.ledger.filter(c => c.kind === 'finding' && lensOf(c.author) && c.target === W.L && !c.withdrawn)
@@ -4259,6 +4326,35 @@ Inspect every acceptance criterion and return its evidenced assessment. Return c
 ${S.mode === 'implement' ? reviewScope() : 'Review the answer against the task. Blockers invalidate its conclusion; major defects leave material claims unsupported or required questions unanswered; minor defects are localized corrections.'}
 ${a.vendor === 'gemini' ? GEMINI_REVIEWER : ''}
 Candidate's report (verify it yourself): ${JSON.stringify(solution)}`
+}
+
+// Story lines (tellStory) for an ensemble run: each candidate's solution and its reviews, as they
+// finish, then the comparison. The candidates run in parallel, so their lines interleave.
+function ensembleSolvedLine(S, s, i, stance, solution) {
+  const head = `Candidate ${i + 1} (${stance.key}, ${s.name})`
+  if (!solution) return `${head} failed: the solver returned nothing.`
+  if (S.mode !== 'implement') return `${head} answered: ${sentence(storyWords(solution.answer, 200))}`
+  const st = S.pos[s.L]?.stats
+  return `${head} finished${st ? ` (+${st.added}/−${st.removed} in ${plural(st.files, 'file')})` : ''}. ${storyGate(S, s.L)}`.trim()
+}
+
+function ensembleReviewedLine(S, i, reviews, ready) {
+  const parts = reviews.map((r, j) => {
+    const lens = S.ensemble.lenses[j].lens
+    if (!r) return `${lens}: no review`
+    const defects = r.defects || []
+    return `${lens} ${r.verdict}, ${r.score}/10${defects.length ? ` (${defects.map(d => `${d.severity}: ${storyWords(d.description, 120)}`).join('; ')})` : ''}`
+  })
+  return `Candidate ${i + 1} reviewed: ${parts.join('; ')}. Readiness ${ready.state}.`
+}
+
+function ensembleComparedLine(S, advisor) {
+  if (!advisor) return 'No comparison: the advisory judge returned nothing.'
+  const order = [...(advisor.ranking || [])].sort((a, b) => a.rank - b.rank).map(r => r.candidate)
+  const split = (advisor.disagreements || []).length
+  const advice = { 'adopt-one': 'adopting one candidate', merge: 'a merge', 'none-adequate': 'none: no candidate is adequate' }[advisor.recommendation] || advisor.recommendation
+  return `${S.ensemble.compare.name} (advisory) ${order.length ? `ranked candidate ${order[0]} first${order.length > 1 ? ` (order ${order.join(', ')})` : ''}` : 'ranked no candidate'} and recommends ${advice}` +
+    `${split ? `; ${plural(split, 'reviewer disagreement')} to adjudicate` : ''}.`
 }
 
 let S = newState(parseEnsembleConfig(args))
@@ -4699,6 +4795,11 @@ const ENSEMBLE_COMPARE_SCHEMA = strict( {
 // parallel() and log(), and the state object `S` from boot; the decisions they act on are computed
 // in lib/.
 
+// A milestone of the run: logged now, for the live progress view, and kept for the report.
+function milestone(line, prefix = '') {
+  log(`${prefix}${tellStory(S, line)}`)
+}
+
 function requestClock() {
   if (S.controls.maxRunMin && !hostRuntime?.now) throw new Error('maxRunMin requires the standalone dark-factory-codex runner; the native workflow runtime has no replay-safe clock. Use maxTurns for native runs.')
   return hostRuntime?.now ? hostRuntime.now() - (hostRuntime.elapsedBefore || 0) : null
@@ -5072,7 +5173,7 @@ async function runSpecReview() {
         sandbox: 'read-only', cwd: S.run.repoRoot, writable: [], timeoutKind: 'panel',
       }, prompt, SPEC_PANEL_SCHEMA, `panel spec: ${m.key}`, 'Spec'))))
   const { todo, open } = specTodo(S)
-  log(`spec: ${S.spec.findings.map(f => `${f.id} ${f.status}`).join(', ')}`)
+  log(`spec: ${S.spec.findings.map(f => `${f.id} (${f.lens}) ${storyWords(f.statement, 120)}: ${f.status}`).join('; ')}`)
   if (S.specAsk && open.length) return open
   if (!todo.length) return null
   const amend = await ask(specAmendPrompt(S, todo), { label: 'spec amend', phase: 'Spec', schema: SPEC_AMEND_SCHEMA, model: 'opus', effort: 'medium', measures: true }, 'spec')
@@ -5124,6 +5225,7 @@ async function runAudit(W, o = {}) {
     audit.checked = true
     await runChecks('H', W.L, triage)
     audit.testsAtAudit = Object.fromEntries(triage.tests.map(id => [id, (S.testResults[id] || {})[W.L] || null]))
+    log(`audit: ${S.ledger.filter(c => c.round === 'H').map(c => `${storyItem(c)}: ${storyRuling(c)}`).join('; ')}`)
   }
   const handUp = o.beforeFix ? o.beforeFix() : null
   if (handUp) { audit.escalate = handUp; return audit }
@@ -5147,6 +5249,7 @@ async function runAudit(W, o = {}) {
   await runChecks('I', W.L)
   const p = S.pos[W.L]
   if (!fix) return audit
+  log(`audit: ${repairStoryLine(S, W, 'I', fix, 'made the audit fix pass')}`)
   // With rereview: false (Simple), only the evidence owner returns, with an evidence-only prompt.
   const reviewCode = o.rereview !== false && !(p.delta && p.deltaRound === 'I' && !p.delta.files)
   const historyOwner = historyCheck(S) ? evidenceOwner(S) : null
@@ -5160,6 +5263,8 @@ async function runAudit(W, o = {}) {
   })
   historyGap()
   const late = S.ledger.filter(c => c.round === 'J' && c.kind === 'finding' && !c.judgment && W8[c.severity] >= 2).map(c => c.id)
+  const raised = S.ledger.filter(c => c.round === 'J')
+  log(`audit: re-review of the fix by ${lookers.map(a => a.lens).join(', ')}: ${raised.length ? raised.map(storyItem).join('; ') : 'nothing new'}`)
   if (late.length) {
     log(`audit: the re-review raised ${late.join(', ')}; to the panel`)
     applyPanel(S, late, await panelRun('J', late))
@@ -5256,7 +5361,7 @@ async function boundedAudit(W, o) {
   if (!S.auditors.length || (S.mode !== 'implement' && S.tier !== 'architecture')) return audit
   audit.ran = true
   if (S.mode !== 'implement' && !S.pos[W.L]?.artifactHash) { audit.gaps.push('No content hash for the reviewed design.'); return audit }
-  let previous = null
+  let previous = null, earlier = null
   for (let pass = 0; pass <= policy.maxPasses; pass++) {
     phase('Audit')
     const round = `review${pass}`, before = S.ledger.length
@@ -5286,6 +5391,8 @@ async function boundedAudit(W, o) {
     }
     const todo = repairTodo(S, W.L)
     const signature = repairSignature(S, W.L)
+    milestone(Object.keys(current).length ? reviewStoryLine(S, pass + 1, S.ledger.slice(before), todo, earlier) : `Review ${pass + 1}: no reviewer returned a review.`, 'audit: ')
+    earlier = todo
     audit.cycles.push({ review: round, snapshot: audit.finalTag, findings: S.ledger.slice(before).map(c => c.id), needed: todo.needed })
     // An approach defect can first appear in any review, including the final repair review.
     if (o.beforeFix) {
@@ -5296,17 +5403,19 @@ async function boundedAudit(W, o) {
     if (signature === previous || pass === policy.maxPasses) {
       audit.stopReason = signature === previous ? 'Repair stalled: the measured artifact and unresolved findings did not change.' : `Repair budget exhausted (${policy.maxPasses} passes).`
       audit.gaps.push(audit.stopReason)
+      milestone(`Stopped: ${audit.stopReason}`, 'audit: ')
       return audit
     }
     previous = signature
     const tag = `repair${pass + 1}`
     const fix = await seatTurn(W, tag, boundedRepairPrompt(S, W, todo, tag, pass + 1, policy.maxPasses), o.fixSchema || SYNTH_SCHEMA)
     audit.fixPass = true; audit.fixResult = fix
-    if (!fix) { audit.gaps.push('The repair turn failed.'); return audit }
+    if (!fix) { audit.gaps.push('The repair turn failed.'); milestone(`${W.name}'s repair pass ${pass + 1} failed.`, 'audit: '); return audit }
     S.pos[W.L] = { ...S.pos[W.L], summary: fix.summary || S.pos[W.L].summary, post: postPath(S, W.L, tag) }
     keepNotes(S, W, tag, fix); ingestClaims(S, W.L, tag, fix.claims); keepDeclined(S, tag, fix)
     audit.addressed.push(...(fix.addressed || []).filter(x => x?.ref))
     await runChecks(tag, W.L)
+    milestone(repairStoryLine(S, W, tag, fix, `made repair pass ${pass + 1} of ${policy.maxPasses}`), 'audit: ')
     audit.lastCheck = tag; audit.finalTag = tag
   }
   return audit
@@ -5635,9 +5744,13 @@ async function ensembleRun() {
   const candidates = await parallel(S.seats.map((s, i) => async () => {
     const stance = S.ensemble.stances[i]
     const solution = await seatTurn(s, 0, ensembleSolvePrompt(S, s, stance), ENSEMBLE_SOLUTION_SCHEMA)
-    if (!solution) return { candidate: i + 1, stance: stance.key, solution: null, reviews: [], final: { readiness: { state: 'incomplete', blocked: [], incomplete: ['The solver failed.'] } } }
+    if (!solution) {
+      milestone(ensembleSolvedLine(S, s, i, stance, null), 'ensemble: ')
+      return { candidate: i + 1, stance: stance.key, solution: null, reviews: [], final: { readiness: { state: 'incomplete', blocked: [], incomplete: ['The solver failed.'] } } }
+    }
     ingestSolve(S, s, { summary: solution.approach || solution.answer, claims: [], tests: [], questions: [] })
     await runChecks(0, s.L)
+    milestone(ensembleSolvedLine(S, s, i, stance, solution), 'ensemble: ')
     const reviews = await parallel(S.ensemble.lenses.map(a => () => ensembleReview(s, a, solution, i)))
     const missing = reviews.flatMap((r, j) => !r || r.complete !== true || r.snapshotTree !== (S.pos[s.L].tree?.hash || '')
       ? [`Missing or stale ${S.ensemble.lenses[j].lens} review.`] : [])
@@ -5652,6 +5765,7 @@ async function ensembleRun() {
       }
     }
     ready.state = ready.blocked.length ? 'blocked' : ready.incomplete.length ? 'incomplete' : 'ready'
+    milestone(ensembleReviewedLine(S, i, reviews, ready), 'ensemble: ')
     return { candidate: i + 1, stance: stance.key, solution, reviews: reviews.map((r, j) => ({ lens: S.ensemble.lenses[j].lens, ...(r || { missing: true }) })),
       runDir: S.run.runDir, mode: S.mode, task: S.task,
       final: { author: s.L, model: s.name, worktree: s.wt, post: postPath(S, s.L, 0),
@@ -5667,13 +5781,15 @@ async function ensembleRun() {
     ? await ask(prompt, { label: 'compare', phase: 'Compare', schema: ENSEMBLE_COMPARE_SCHEMA, model: a.model, effort: a.effort }, 'compare', a.name)
     : await externalTurn({ key: 'compare', threadKey: 'compare', configKey: 'compare', fresh: true, vendor: a.vendor, model: a.model, effort: a.effort, role: 'compare', who: a.name,
       sandbox: 'read-only', cwd: S.run.repoRoot, writable: [], timeoutKind: 'audit' }, prompt, ENSEMBLE_COMPARE_SCHEMA, 'compare', 'Compare')
+  if (alive.length) milestone(ensembleComparedLine(S, advisor), 'ensemble: ')
   // A selected implementation candidate is saved whole as the delivery result, so it carries the
   // full-result marker that `apply` requires; the advisory result around it does not.
   if (S.mode === 'implement') for (const c of alive) Object.assign(c, { artifactType: 'dark-factory-result', artifactVersion: 1 })
   return { status: alive.length ? 'advisory' : 'failed', workflow: 'ensemble', mode: S.mode, task: S.task, runDir: S.run.runDir, candidates, advisor, notes: S.notes,
+    report: { markdown: storySection(S).trim() },
     final: { readiness: { state: 'incomplete', blocked: [], incomplete: ['No candidate selected; ranking is advisory.', ...(!advisor ? ['Comparison unavailable.'] : [])] } },
     delivery: { status: 'pending-selection' },
-    forTheOrchestrator: 'Read every candidate readiness and the reviews before selecting or merging. A merge needs fresh verification and review. For an unchanged ready candidate, save that candidate object as the delivery result, apply its reviewed snapshot within authorization, and use verify-delivery. Never treat the advisory ranking as readiness.' }
+    forTheOrchestrator: 'Read every candidate readiness and the reviews before selecting or merging. A merge needs fresh verification and review. For an unchanged ready candidate, save that candidate object as the delivery result, apply its reviewed snapshot within authorization, and use verify-delivery. Never treat the advisory ranking as readiness. Show report.markdown, the run\'s milestones in order, to the user as it is.' }
 }
 
 function ensembleReview(s, a, solution, i) {

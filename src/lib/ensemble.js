@@ -69,3 +69,32 @@ ${S.mode === 'implement' ? reviewScope() : 'Review the answer against the task. 
 ${a.vendor === 'gemini' ? GEMINI_REVIEWER : ''}
 Candidate's report (verify it yourself): ${JSON.stringify(solution)}`
 }
+
+// Story lines (tellStory) for an ensemble run: each candidate's solution and its reviews, as they
+// finish, then the comparison. The candidates run in parallel, so their lines interleave.
+function ensembleSolvedLine(S, s, i, stance, solution) {
+  const head = `Candidate ${i + 1} (${stance.key}, ${s.name})`
+  if (!solution) return `${head} failed: the solver returned nothing.`
+  if (S.mode !== 'implement') return `${head} answered: ${sentence(storyWords(solution.answer, 200))}`
+  const st = S.pos[s.L]?.stats
+  return `${head} finished${st ? ` (+${st.added}/−${st.removed} in ${plural(st.files, 'file')})` : ''}. ${storyGate(S, s.L)}`.trim()
+}
+
+function ensembleReviewedLine(S, i, reviews, ready) {
+  const parts = reviews.map((r, j) => {
+    const lens = S.ensemble.lenses[j].lens
+    if (!r) return `${lens}: no review`
+    const defects = r.defects || []
+    return `${lens} ${r.verdict}, ${r.score}/10${defects.length ? ` (${defects.map(d => `${d.severity}: ${storyWords(d.description, 120)}`).join('; ')})` : ''}`
+  })
+  return `Candidate ${i + 1} reviewed: ${parts.join('; ')}. Readiness ${ready.state}.`
+}
+
+function ensembleComparedLine(S, advisor) {
+  if (!advisor) return 'No comparison: the advisory judge returned nothing.'
+  const order = [...(advisor.ranking || [])].sort((a, b) => a.rank - b.rank).map(r => r.candidate)
+  const split = (advisor.disagreements || []).length
+  const advice = { 'adopt-one': 'adopting one candidate', merge: 'a merge', 'none-adequate': 'none: no candidate is adequate' }[advisor.recommendation] || advisor.recommendation
+  return `${S.ensemble.compare.name} (advisory) ${order.length ? `ranked candidate ${order[0]} first${order.length > 1 ? ` (order ${order.join(', ')})` : ''}` : 'ranked no candidate'} and recommends ${advice}` +
+    `${split ? `; ${plural(split, 'reviewer disagreement')} to adjudicate` : ''}.`
+}

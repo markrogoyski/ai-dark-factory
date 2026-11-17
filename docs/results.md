@@ -8,6 +8,16 @@ with a compact `summary.json` beside it. Read three fields, in this order: `stat
 ended), `final.readiness` (whether the result can be trusted), and `delivery` (whether it has
 reached your checkout). A `done` status alone says nothing about readiness.
 
+## Following a run as it goes
+
+Each workflow logs its milestones while it runs. In Claude Code they appear in the workflow's
+live view (`/workflows`); on the Codex host they are `log` events on the runner's stderr and in
+`<hostRunDir>/events.jsonl`. Pair, the Simple tier and ensemble log the same lines that their
+report later lists under "How the run went", so the live view and the report agree. The council's
+tiers log each spec ruling, round, vote, audit ruling and fix pass. In Claude Code the launching
+session hears from the run only when it ends; the Codex skill polls the runner and can relay
+progress as it goes.
+
 ## `status`: how the run ended
 
 | status | meaning | what to do |
@@ -64,7 +74,13 @@ reviewed snapshot and the gate passes in your checkout. See
 ## Other fields worth reading
 
 - `report.markdown`: the run's own account (the council's report, the tier's report, the pair's
-  reviews), computed from the ledger and rulings, not written by a model.
+  reviews), computed from the ledger and rulings, not written by a model. Pair, the Simple tier,
+  ensemble and run-plan reports open their story with "How the run went" ("How the plan went"
+  for run-plan): one numbered line per milestone, such as a review with its findings and
+  rulings, the author's reply to each finding, a repair pass, or a stop. Pair adds "Points of
+  interest": the author's disputes and how they ended, findings that took more than one
+  revision, blockers, and readings the reviewer ruled on. The council's tiers tell theirs in
+  "How the debate went", "The debates" and the audit sections.
 - `final.suite` (Pair): the gate's result on the reviewed snapshot. `final.suite.overrides` is the
   explicit `env` object from `verification.json` the gate ran with, `{}` when there are none;
   when it is non-empty, `report.markdown` names each overridden variable. Overrides are

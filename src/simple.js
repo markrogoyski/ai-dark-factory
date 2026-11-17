@@ -29,6 +29,7 @@ async function simpleRun() {
   const W = S.seats[0]
   S.behaviour[W.L] = { turns: [], capitulations: [], ignored: [] }
   log(`factory: simple, ${W.name} implements, ${S.auditors.map(a => a.name).join(', ')} reviews · criteria: ${S.criteria.map(c => c.id).join(', ') || 'none'} · verify: ${S.verify || 'none'}`)
+  milestone(setupStoryLine(S), 'simple: ')
 
   phase('Solve')
   const res = await seatTurn(W, 0, simpleSolvePrompt(S, W), SIMPLE_SOLVE_SCHEMA)
@@ -37,7 +38,8 @@ async function simpleRun() {
   const tooBig = res.tooBig && res.tooBig.tier ? res.tooBig : null
   if (!tooBig) {
     await runChecks(0, W.L)
-  }
+    milestone(solveStoryLine(S, W), 'simple: ')
+  } else milestone(`${W.name} judged the task bigger than a simple change: ${storyWords(tooBig.reason, 300) || 'no reason given'}.`, 'simple: ')
   let handUp = simpleTrigger(S, 'solve', { tooBig })
   if (handUp) return escalate(handUp)
 

@@ -50,7 +50,7 @@ function simpleReport(S, o) {
   return {
     markdown: (assumed.length ? `### Assumptions to check\n\n${assumed.map(q => `- ${sentence(oneLine(q.question, 300))}${q.assumption ? ` Assumed: ${sentence(oneLine(q.assumption, 300))}` : ''}`).join('\n')}\n\n` : '') +
       `### Simple change, by ${W.name}\n\nThe factory routed this as a simple change: one implementer, the neutral check, and ${S.host === 'codex' ? 'one independent reviewer' : 'one reviewer from another vendor'}.\n\n${lines.join('\n')}` +
-      auditSection(S, W, audit) + problemsSection(S),
+      storySection(S) + auditSection(S, W, audit) + problemsSection(S),
   }
 }
 

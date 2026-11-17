@@ -111,6 +111,12 @@ function strict(schema) {
 }
 
 const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`
+// The run's story: one line per milestone, which the flow logs as it happens (milestone() in
+// turns.js) and the report lists under "How the run went". Returns the line.
+function tellStory(S, line) {
+  (S.story ||= []).push(line)
+  return line
+}
 // The factory's Feature tier builds in increments, rounds K1, K2, …, whose snapshots are inc1, inc2, ….
 const buildStep = r => { const m = typeof r === 'string' && r.match(/^K(\d+)$/); return m ? Number(m[1]) : null }
 const atRound = r => r === 'F' ? 'in the final version' : r === 'G' ? 'in the fix pass' : r === 'I' ? 'in the audit fix pass' : buildStep(r) ? `in build increment ${buildStep(r)}` : `in round ${r}`
@@ -2871,6 +2877,11 @@ function roundsSection(S, upto, ending) {
   return lines.join('\n')
 }
 
+// The run's milestones as they were logged (tellStory), for a tier whose report has no debate to tell.
+function storySection(S) {
+  return S.story?.length ? `\n\n### How the run went\n\n${S.story.map((line, i) => `${i + 1}. ${line}`).join('\n')}` : ''
+}
+
 function problemsSection(S) {
   if (!S.notes.length) return ''
   return `\n\n### Problems during the run\n\n${S.notes.slice(0, 12).map(n => `- ${oneLine(n, 300)}`).join('\n')}` +
@@ -3708,7 +3719,7 @@ function simpleReport(S, o) {
   return {
     markdown: (assumed.length ? `### Assumptions to check\n\n${assumed.map(q => `- ${sentence(oneLine(q.question, 300))}${q.assumption ? ` Assumed: ${sentence(oneLine(q.assumption, 300))}` : ''}`).join('\n')}\n\n` : '') +
       `### Simple change, by ${W.name}\n\nThe factory routed this as a simple change: one implementer, the neutral check, and ${S.host === 'codex' ? 'one independent reviewer' : 'one reviewer from another vendor'}.\n\n${lines.join('\n')}` +
-      auditSection(S, W, audit) + problemsSection(S),
+      storySection(S) + auditSection(S, W, audit) + problemsSection(S),
   }
 }
 
@@ -4136,6 +4147,62 @@ function repairSignature(S, W) {
     p.suite?.ran, p.suite?.passed])
 }
 
+// Story lines (tellStory) for the independent review: the Simple tier's implementer, each review
+// and its rulings, each repair pass, and why the loop stopped. runAudit's audit and fix pass use
+// the same item wording.
+const storyWords = (s, n) => oneLine(s, n).replace(/[.\s]+$/, '')
+
+function storyItem(c) {
+  return `${c.id} (${c.kind === 'test' ? 'test' : `${c.severity}${c.judgment ? ', judgment' : ''}`}) ${storyWords(c.statement, 140)}`
+}
+
+function storyRuling(c) {
+  if (c.withdrawn) return 'withdrawn'
+  if (c.judgment || c.status === 'judgment') return 'a judgment call'
+  return { verified: c.kind === 'finding' ? 'upheld' : 'a valid test', refuted: 'refuted', fabricated: 'ruled fabricated', unresolved: 'unresolved' }[c.status] || 'not ruled on'
+}
+
+function storyGate(S, L) {
+  const p = S.pos[L]
+  if (S.mode !== 'implement' || !S.verify) return ''
+  return !p?.suite ? 'The gate was not measured.' : !p.suite.ran ? 'The gate did not run.' : p.suite.passed ? 'The gate passed.' : 'The gate failed.'
+}
+
+function storyTodo(todo) {
+  const ids = xs => xs.map(c => c.id).join(', ')
+  return [todo.upheld.length && `${ids(todo.upheld)} upheld`, todo.disputed.length && `${ids(todo.disputed)} unresolved`,
+    todo.failing?.length && `failing tests ${ids(todo.failing)}`, todo.criteria?.length && `${todo.criteria.map(c => c.criterion).join(', ')} unmet`,
+    todo.suite && 'the failing gate'].filter(Boolean).join('; ')
+}
+
+function setupStoryLine(S) {
+  const ids = S.criteria.map(c => c.id)
+  const gate = S.mode !== 'implement' ? '' : !S.verify ? '; no automated gate'
+    : `; gate \`${oneLine(S.verify, 160)}\` ${S.baselineOk ? 'passing at base' : `already failing at base (${storyWords(S.baselineNote, 200)})`}`
+  return `Setup: ${ids.length} acceptance ${ids.length === 1 ? 'criterion' : 'criteria'} (${ids.join(', ') || 'none'})${gate}.`
+}
+
+function solveStoryLine(S, W) {
+  const st = S.pos[W.L]?.stats
+  return `${W.name} implemented the change${st ? ` (+${st.added}/−${st.removed} in ${plural(st.files, 'file')})` : ''}. ${storyGate(S, W.L)}`.trim()
+}
+
+// After a review's items are ruled on. `items`: the ledger entries it filed; `earlier`: the
+// previous review's to-do list, whose items this review may have closed.
+function reviewStoryLine(S, n, items, todo, earlier = null) {
+  const head = `Review ${n} by ${S.auditors.map(a => a.name).join(', ')}`
+  const closed = earlier ? [...earlier.upheld, ...earlier.disputed].filter(c => c.fixed || c.withdrawn || c.status === 'refuted').map(c => c.id) : []
+  const found = items.length ? `${items.map(c => `${storyItem(c)}: ${storyRuling(c)}`).join('; ')}.` : 'Nothing new.'
+  return `${head}: ${closed.length ? `Closed ${closed.join(', ')}. ` : ''}${found} ${todo.needed ? `To fix: ${storyTodo(todo)}.` : 'Nothing to fix.'}`
+}
+
+function repairStoryLine(S, W, round, fix, label) {
+  const done = (fix?.addressed || []).filter(x => x?.ref).map(x => idOf(x.ref))
+  const declined = S.declined.filter(d => d.round === round)
+  return [`${W.name} ${label}.`, done.length && `Addressed ${done.join(', ')}.`,
+    ...declined.map(d => `Declined ${idOf(d.ref)}: ${storyWords(d.why, 200) || 'no reason given'}.`), storyGate(S, W.L)].filter(Boolean).join(' ')
+}
+
 function repairReviewPrompt(S, a, W, round, tag, checkout) {
   const arch = S.tier === 'architecture'
   const findings = S.ledger.filter(c => c.kind === 'finding' && lensOf(c.author) && c.target === W.L && !c.withdrawn)
@@ -4294,12 +4361,43 @@ ${a.vendor === 'gemini' ? GEMINI_REVIEWER : ''}
 Candidate's report (verify it yourself): ${JSON.stringify(solution)}`
 }
 
+// Story lines (tellStory) for an ensemble run: each candidate's solution and its reviews, as they
+// finish, then the comparison. The candidates run in parallel, so their lines interleave.
+function ensembleSolvedLine(S, s, i, stance, solution) {
+  const head = `Candidate ${i + 1} (${stance.key}, ${s.name})`
+  if (!solution) return `${head} failed: the solver returned nothing.`
+  if (S.mode !== 'implement') return `${head} answered: ${sentence(storyWords(solution.answer, 200))}`
+  const st = S.pos[s.L]?.stats
+  return `${head} finished${st ? ` (+${st.added}/−${st.removed} in ${plural(st.files, 'file')})` : ''}. ${storyGate(S, s.L)}`.trim()
+}
+
+function ensembleReviewedLine(S, i, reviews, ready) {
+  const parts = reviews.map((r, j) => {
+    const lens = S.ensemble.lenses[j].lens
+    if (!r) return `${lens}: no review`
+    const defects = r.defects || []
+    return `${lens} ${r.verdict}, ${r.score}/10${defects.length ? ` (${defects.map(d => `${d.severity}: ${storyWords(d.description, 120)}`).join('; ')})` : ''}`
+  })
+  return `Candidate ${i + 1} reviewed: ${parts.join('; ')}. Readiness ${ready.state}.`
+}
+
+function ensembleComparedLine(S, advisor) {
+  if (!advisor) return 'No comparison: the advisory judge returned nothing.'
+  const order = [...(advisor.ranking || [])].sort((a, b) => a.rank - b.rank).map(r => r.candidate)
+  const split = (advisor.disagreements || []).length
+  const advice = { 'adopt-one': 'adopting one candidate', merge: 'a merge', 'none-adequate': 'none: no candidate is adequate' }[advisor.recommendation] || advisor.recommendation
+  return `${S.ensemble.compare.name} (advisory) ${order.length ? `ranked candidate ${order[0]} first${order.length > 1 ? ` (order ${order.join(', ')})` : ''}` : 'ranked no candidate'} and recommends ${advice}` +
+    `${split ? `; ${plural(split, 'reviewer disagreement')} to adjudicate` : ''}.`
+}
+
 function newPairState() {
   return { stage: 'design', design: '', approvedDesign: '', testContract: null, approvedContract: null,
     replayMapping: [], findings: [], readings: [], liveChecks: [], reviews: [], author: null, measurement: null, label: null, lastReview: null, signatures: [], stop: '', questions: [],
     // Every question the run asked (Q1, Q2, … across all its stops), the user's answers it took,
     // and how this stop can continue. See pairAsk and pairTakeAnswers.
-    asked: [], decisions: [], resumable: false, skipRetro: false, fallback: false, setupAttempt: 0 }
+    asked: [], decisions: [], resumable: false, skipRetro: false, fallback: false, setupAttempt: 0,
+    // The author's reply to each finding it answered (pairIngestReplies).
+    replies: [] }
 }
 
 // Pair decisions are shared by both hosts. Only the reviewer can close findings.
@@ -4959,6 +5057,121 @@ function pairReviewClean(S) {
     S.criteria.every(c => r.criteria.filter(a => a.criterion === c.id).length === 1 && r.criteria.some(a => a.criterion === c.id && a.status === 'met' && a.note?.trim()))
 }
 
+// The story lines of a pair run (tellStory): setup, each author pass, each review, each stop.
+// Words for a story line: no trailing period, so a line can end with its own.
+const pairBrief = (s, n) => oneLine(s, n).replace(/[.\s]+$/, '')
+
+function pairSetupLine(S) {
+  const ids = S.criteria.map(c => c.id)
+  const gate = !S.verify ? 'no automated gate' : `gate \`${oneLine(S.verify, 160)}\` ${S.baselineOk === false ? `already failing at base (${pairBrief(S.baselineNote, 200)})` : 'passing at base'}`
+  return `Setup: ${ids.length} acceptance ${ids.length === 1 ? 'criterion' : 'criteria'} (${ids.join(', ')}); ${gate}.`
+}
+
+// The author's reply to each open finding, changed or disputed, from its last turn of a pass. Only
+// the reviewer closes a finding; a reply records what the author did about it.
+function pairIngestReplies(S, author) {
+  const p = S.pair, seen = new Set()
+  for (const a of Array.isArray(author?.addressed) ? author.addressed : []) {
+    const id = (String(a?.id || '').match(/\bP\d+\b/) || [])[0]
+    const f = p.findings.find(f => f.id === id)
+    if (!f || f.status !== 'open' || seen.has(id)) continue
+    seen.add(id)
+    p.replies.push({ id, turn: p.label, stage: p.stage, action: a.action === 'disputed' ? 'disputed' : 'changed', response: String(a.response || '').trim() })
+  }
+}
+
+function pairGateLine(S) {
+  const m = S.pair.measurement
+  if (!S.verify || S.pair.stage !== 'code') return ''
+  if (pairInfrastructure(S).length) return 'The gate could not run: the verification environment failed.'
+  if (!m?.suite?.ran) return 'The gate did not run.'
+  return m.suite.passed ? 'The gate passed on its snapshot.' : 'The gate failed on its snapshot.'
+}
+
+// After the author's pass and, for code, its measurement.
+function pairAuthorLine(S) {
+  const p = S.pair
+  const did = p.stage === 'design' ? (p.reviews.some(r => r.stage === 'design') ? 'revised the design' : 'drafted the design')
+    : p.reviews.some(r => r.stage === 'code') ? 'revised the implementation' : pairDesigned(S) ? 'implemented the approved design' : 'implemented the task'
+  const mine = p.replies.filter(r => r.turn === p.label)
+  const out = [`${S.pairOptions.author.name} ${did}.`]
+  const changed = mine.filter(r => r.action === 'changed').map(r => r.id)
+  if (changed.length) out.push(`Changed ${changed.join(', ')}.`)
+  for (const r of mine.filter(r => r.action === 'disputed')) out.push(`Disputed ${r.id}: ${sentence(pairBrief(r.response, 200) || 'no reason given')}`)
+  const silent = pairOpen(S).filter(f => !mine.some(r => r.id === f.id)).map(f => f.id)
+  if (silent.length) out.push(`No reply to ${silent.join(', ')}.`)
+  for (const r of p.readings.filter(r => r.turn === p.label)) out.push(`Proposed reading ${r.id} of ${pairBrief(r.requirement, 60)}: ${sentence(pairBrief(r.reading, 160))}`)
+  const gate = pairGateLine(S)
+  if (gate) out.push(gate)
+  return out.join(' ')
+}
+
+// After a review is recorded; `before` is how many findings there were before it.
+function pairReviewLine(S, review, before) {
+  const p = S.pair, ready = pairReadiness(S)
+  const verdict = ready.state === 'ready' ? 'approved' : ready.state === 'blocked' ? 'changes requested'
+    : ready.state === 'unverified' ? 'nothing open, but the snapshot could not be measured'
+    : `incomplete (${pairBrief(ready.incomplete[0] || 'no reason recorded', 160)})`
+  const out = [`${p.stage === 'design' ? 'Design' : 'Code'} review ${p.reviews.length}/${S.pairOptions.maxReviews} by ${S.pairOptions.reviewer.name}: ${verdict}.`]
+  for (const [status, word] of [['fixed', 'Fixed'], ['refuted', 'Refuted']]) {
+    const ids = (review.resolutions || []).filter(r => r.status === status).map(r => r.id)
+    if (ids.length) out.push(`${word} ${ids.join(', ')}.`)
+  }
+  const open = p.findings.slice(0, before).filter(f => f.status === 'open').map(f => f.id)
+  if (open.length) out.push(`Still open: ${open.join(', ')}.`)
+  const fresh = p.findings.slice(before).filter(f => !f.reading)
+  if (fresh.length) out.push(`New: ${fresh.map(f => `${f.id} (${f.severity}) ${pairBrief(f.statement, 140)}`).join('; ')}.`)
+  for (const r of review.rulings || []) {
+    const reading = p.readings.find(x => x.id === r.id)
+    out.push(r.ruling === 'accepted' ? `Accepted reading ${r.id}.` : r.ruling === 'rejected' ? `Rejected reading ${r.id}, filed as ${reading?.finding || 'a finding'}.` : `Reading ${r.id} goes to the user.`)
+  }
+  const short = (review.criteria || []).filter(c => c.status !== 'met').map(c => `${c.criterion} ${c.status}`)
+  out.push(short.length ? `Criteria: ${short.join(', ')}.` : 'Criteria all met.')
+  if (p.stage === 'code' && review.requiresDesignRevision && pairDesigned(S)) out.push('Requires a revised design.')
+  return out.join(' ')
+}
+
+function pairQuestionsLine(S, kind, questions) {
+  const who = kind === 'reviewer' ? S.pairOptions.reviewer.name : kind === 'author' ? S.pairOptions.author.name : 'Setup'
+  return `${who} asked the user ${questions.length === 1 ? 'a question' : `${questions.length} questions`}: ${questions.map(q => `${q.id}${q.about !== 'none' ? ` (about ${q.about})` : ''} ${pairBrief(q.question.split(' Requirements as written:')[0], 200)}`).join('; ')}`.replace(/[^.!?…]$/, '$&.')
+}
+
+function pairEndLine(S, status, ready) {
+  const p = S.pair, reviews = `${plural(p.reviews.length, 'review')} of ${S.pairOptions.maxReviews}`
+  if (status === 'done' && ready.state === 'ready') return `Ready after ${reviews}.`
+  if (status === 'needs-user') return `Stopped after ${reviews} for the user's answers.`
+  return `Stopped after ${reviews} (${status}, readiness ${ready.state}): ${sentence(pairBrief(p.stop, 300) || 'no reason recorded')}`
+}
+
+// What a reader of the report would want pointed out: the author's disputes and how they ended,
+// findings that took more than one revision, blockers, readings ruled on, and designs sent back.
+function pairHighlights(S) {
+  const p = S.pair, A = S.pairOptions.author.name, R = S.pairOptions.reviewer.name, out = [], told = new Set()
+  const fate = f => f.status === 'refuted' ? `${R} accepted that and refuted it` : f.status === 'fixed' ? 'it was later fixed' : 'it is still open'
+  const disputes = [...new Map(p.replies.filter(r => r.action === 'disputed').map(r => [r.id, r])).values()]
+  for (const r of disputes) {
+    const f = p.findings.find(f => f.id === r.id)
+    told.add(f.id)
+    out.push(`${A} disputed ${f.id} (${f.severity}, ${f.stage}), "${pairBrief(f.statement, 160)}": ${sentence(pairBrief(r.response, 240) || 'no reason given')} ${fate(f)[0].toUpperCase()}${fate(f).slice(1)}.`)
+  }
+  for (const f of p.findings.filter(f => !told.has(f.id) && !f.reading)) {
+    const kept = new Set(f.history.filter(h => h.status === 'open').map(h => h.review)).size
+    if (!kept && f.severity !== 'blocker') continue
+    told.add(f.id)
+    const how = !kept ? `${f.status === 'open' ? 'is still open' : `was ${f.status}`}` : f.status === 'open' ? `is still open after ${plural(kept + 1, 'revision')}` : `took ${plural(kept + 1, 'revision')} before it was ${f.status}`
+    out.push(`${f.id} (${f.severity}, ${f.stage}) ${how}: ${sentence(pairBrief(f.statement, 200))}`)
+  }
+  for (const r of p.readings.filter(r => r.status === 'accepted' || r.status === 'rejected')) {
+    const f = r.finding && p.findings.find(f => f.id === r.finding)
+    out.push(r.status === 'accepted' ? `${R} accepted ${A}'s reading ${r.id} of ${pairBrief(r.requirement, 80)}: ${sentence(pairBrief(r.reading, 200))}`
+      : `${R} rejected ${A}'s reading ${r.id} of ${pairBrief(r.requirement, 80)} ("${pairBrief(r.reading, 160)}"); it was filed as ${r.finding}, now ${f ? f.status : 'open'}.`)
+  }
+  p.reviews.forEach((r, i) => {
+    if (r.stage === 'code' && r.requiresDesignRevision && pairDesigned(S)) out.push(`Code review ${i + 1} sent the work back to design: ${sentence(pairBrief(r.summary, 240) || 'no summary given')}`)
+  })
+  return out
+}
+
 // The explicit env overrides from verification.json the measured gate ran with, by name; {} when
 // there are none or nothing was measured. They are reported, and never change readiness.
 function pairOverrides(S, m) {
@@ -4978,6 +5191,7 @@ function pairResult(S, status = 'blocked') {
   const hostRunDir = S.host === 'codex' && S.raw.repo && S.raw.hostRunId ? `${S.raw.repo}/.council/${S.raw.hostRunId}` : '<hostRunDir>'
   const resumeSteps = resumable ? pairResumeSteps(S, S.host === 'codex' ? 'codex' : 'native', hostRunDir) : ''
   const live = ready.liveChecks, pending = [...new Set(live.map(c => c.criterion))]
+  const highlights = pairHighlights(S)
   const report = [`Pair: ${S.pairOptions.author.name} authors; ${S.pairOptions.reviewer.name} reviews.`,
     `Readiness: ${ready.state}${pending.length ? `; live checks pending: ${pending.join(', ')}` : ''}. Reviews: ${p.reviews.length}/${S.pairOptions.maxReviews}.`,
     ...live.map(c => `Live check for ${c.criterion}: ${c.check}${c.reason ? ` (${c.reason})` : ''}`),
@@ -4985,6 +5199,8 @@ function pairResult(S, status = 'blocked') {
     ...(Object.keys(overrides).length ? [`Verification overrides: the gate ran with explicit environment overrides from verification.json: ${Object.keys(overrides).sort().join(', ')}.`] : []),
     `Replay: ${m?.replay?.records?.length || 0} file/command records; ${m?.replay?.exclusions?.length || 0} overlay exclusions. Base outcomes require reviewer interpretation.`,
     ...ready.infrastructure, ...ready.blocked, ...ready.incomplete,
+    `How the run went:\n\n${[...(S.story || []), pairEndLine(S, status, ready)].map((line, i) => `${i + 1}. ${line}`).join('\n')}`,
+    ...(highlights.length ? [`Points of interest:\n\n${highlights.map(h => `- ${h}`).join('\n')}`] : []),
     ...(questions.length ? [`Questions for the user (answer each under its ID):\n\n${questions.map(q => `- ${q.id} (about ${q.about}): ${q.question}`).join('\n')}`] : []),
     ...(p.decisions.length ? [`User decisions:\n\n${p.decisions.map(d => `- ${d.id} (about ${d.about}; asked in ${d.label}): ${d.question} Answer: ${d.answer}` +
       `${typeof d.criterion === 'string' ? ` ${d.about} now reads: ${d.criterion}` : d.drop ? ` ${d.about} was dropped.` : ''}`).join('\n')}`] : []),
@@ -4995,7 +5211,7 @@ function pairResult(S, status = 'blocked') {
     forTheOrchestrator: 'Read final.readiness first. Report unresolved findings or missing evidence before any success summary. ' +
       (p.readings.some(r => r.status === 'accepted') ? 'Report the accepted readings (readings with status accepted): requirements the reviewer agreed the work may read other than literally. ' : '') +
       (live.length ? 'Before delivery, run each live check (final.readiness.liveChecks) against the real service or resource it names and report its outcome: a ready run with live checks pending is not done until they pass. ' : '') +
-      'Spot-check the reviewed snapshot and report the design and implementation review outcomes. The change stays in final.worktree. ' +
+      'Spot-check the reviewed snapshot. Show the "How the run went" and "Points of interest" lists from report.markdown as they are: they give the design and implementation reviews in order, from the run\'s record. The change stays in final.worktree. ' +
       'Readiness unverified means no review finding is open but the run could not measure the snapshot (final.readiness.infrastructure says why): run the gate on the delivered bytes before calling it done. ' +
       'Deliver only within the user\'s authorization, preserving unrelated edits. With HEAD at the original base, nothing staged, and no local edits other than those recorded at setup (run.json deliveryBaseline: unstaged tracked edits and untracked files, none on a path the reviewed change touches), ' +
       `dark-factory apply --run-dir ${S.run?.runDir ? shq(S.run.runDir) : '<runDir>'} --result <file> stages the reviewed snapshot and checks its tree hash, leaving those recorded edits in place; it refuses any other checkout. ` +
@@ -5087,7 +5303,7 @@ ${pairMeasurementRecord(S) ? `The measurement leaves out what each execution pri
 # Author continuity
 ${p.author?.notes || '(first author turn)'}
 
-For each open finding, return its ID with the change made or an evidence-backed disagreement in addressed. You cannot close a finding yourself. If a finding needs a user decision, return needs-user now with its existing ID and question; do not spend another author turn restating the conflict. Do not weaken tests, criteria, or the verification configuration to obtain a pass. If the task requires a user decision, return status needs-user and specific questions; if execution is blocked, return blocked with the reason in summary. Otherwise return done.
+For each open finding, return one entry in addressed: its ID, with action changed and the change made in response, or action disputed and an evidence-backed disagreement. You cannot close a finding yourself. If a finding needs a user decision, return needs-user now with its existing ID and question; do not spend another author turn restating the conflict. Do not weaken tests, criteria, or the verification configuration to obtain a pass. If the task requires a user decision, return status needs-user and specific questions; if execution is blocked, return blocked with the reason in summary. Otherwise return done.
 ${PAIR_READING_RULES}
 ${PAIR_LIVE_CHECK_RULES}
 Save each script or command file whose output supports a claim (a probe, a coverage or equivalence check) under ${S.run.room}/${label}/probes/, not in /tmp or $TMPDIR, which are cleared after the run, and cite it by that path. Start each probe file's name with \`probe-\` so it cannot shadow a standard-library or project module, and run Python probes with \`python3 -I\`.
@@ -5129,7 +5345,7 @@ ${pairMeasurementRecord(S) ? `The measurement leaves out what each execution pri
 # Author continuity
 ${p.author?.notes || '(first author turn)'}
 
-For each open finding, return its ID with the change made or an evidence-backed disagreement in addressed. You cannot close a finding yourself. If a finding needs a user decision, return needs-user now with its existing ID and question; do not spend another author turn restating the conflict. Do not weaken tests, criteria, or the verification configuration to obtain a pass. If the task requires a user decision, return status needs-user and specific questions; if execution is blocked, return blocked with the reason in summary. Otherwise return done.
+For each open finding, return one entry in addressed: its ID, with action changed and the change made in response, or action disputed and an evidence-backed disagreement. You cannot close a finding yourself. If a finding needs a user decision, return needs-user now with its existing ID and question; do not spend another author turn restating the conflict. Do not weaken tests, criteria, or the verification configuration to obtain a pass. If the task requires a user decision, return status needs-user and specific questions; if execution is blocked, return blocked with the reason in summary. Otherwise return done.
 ${PAIR_READING_RULES}
 ${PAIR_LIVE_CHECK_RULES}
 Save each script or command file whose output supports a claim (a probe, a coverage or equivalence check) under ${S.run.room}/${label}/probes/, not in /tmp or $TMPDIR, which are cleared after the run, and cite it by that path. Start each probe file's name with \`probe-\` so it cannot shadow a standard-library or project module, and run Python probes with \`python3 -I\`.
@@ -5590,6 +5806,11 @@ function withTurn(schema, tag) {
 // parallel() and log(), and the state object `S` from boot; the decisions they act on are computed
 // in lib/.
 
+// A milestone of the run: logged now, for the live progress view, and kept for the report.
+function milestone(line, prefix = '') {
+  log(`${prefix}${tellStory(S, line)}`)
+}
+
 function requestClock() {
   if (S.controls.maxRunMin && !hostRuntime?.now) throw new Error('maxRunMin requires the standalone dark-factory-codex runner; the native workflow runtime has no replay-safe clock. Use maxTurns for native runs.')
   return hostRuntime?.now ? hostRuntime.now() - (hostRuntime.elapsedBefore || 0) : null
@@ -5963,7 +6184,7 @@ async function runSpecReview() {
         sandbox: 'read-only', cwd: S.run.repoRoot, writable: [], timeoutKind: 'panel',
       }, prompt, SPEC_PANEL_SCHEMA, `panel spec: ${m.key}`, 'Spec'))))
   const { todo, open } = specTodo(S)
-  log(`spec: ${S.spec.findings.map(f => `${f.id} ${f.status}`).join(', ')}`)
+  log(`spec: ${S.spec.findings.map(f => `${f.id} (${f.lens}) ${storyWords(f.statement, 120)}: ${f.status}`).join('; ')}`)
   if (S.specAsk && open.length) return open
   if (!todo.length) return null
   const amend = await ask(specAmendPrompt(S, todo), { label: 'spec amend', phase: 'Spec', schema: SPEC_AMEND_SCHEMA, model: 'opus', effort: 'medium', measures: true }, 'spec')
@@ -6015,6 +6236,7 @@ async function runAudit(W, o = {}) {
     audit.checked = true
     await runChecks('H', W.L, triage)
     audit.testsAtAudit = Object.fromEntries(triage.tests.map(id => [id, (S.testResults[id] || {})[W.L] || null]))
+    log(`audit: ${S.ledger.filter(c => c.round === 'H').map(c => `${storyItem(c)}: ${storyRuling(c)}`).join('; ')}`)
   }
   const handUp = o.beforeFix ? o.beforeFix() : null
   if (handUp) { audit.escalate = handUp; return audit }
@@ -6038,6 +6260,7 @@ async function runAudit(W, o = {}) {
   await runChecks('I', W.L)
   const p = S.pos[W.L]
   if (!fix) return audit
+  log(`audit: ${repairStoryLine(S, W, 'I', fix, 'made the audit fix pass')}`)
   // With rereview: false (Simple), only the evidence owner returns, with an evidence-only prompt.
   const reviewCode = o.rereview !== false && !(p.delta && p.deltaRound === 'I' && !p.delta.files)
   const historyOwner = historyCheck(S) ? evidenceOwner(S) : null
@@ -6051,6 +6274,8 @@ async function runAudit(W, o = {}) {
   })
   historyGap()
   const late = S.ledger.filter(c => c.round === 'J' && c.kind === 'finding' && !c.judgment && W8[c.severity] >= 2).map(c => c.id)
+  const raised = S.ledger.filter(c => c.round === 'J')
+  log(`audit: re-review of the fix by ${lookers.map(a => a.lens).join(', ')}: ${raised.length ? raised.map(storyItem).join('; ') : 'nothing new'}`)
   if (late.length) {
     log(`audit: the re-review raised ${late.join(', ')}; to the panel`)
     applyPanel(S, late, await panelRun('J', late))
@@ -6147,7 +6372,7 @@ async function boundedAudit(W, o) {
   if (!S.auditors.length || (S.mode !== 'implement' && S.tier !== 'architecture')) return audit
   audit.ran = true
   if (S.mode !== 'implement' && !S.pos[W.L]?.artifactHash) { audit.gaps.push('No content hash for the reviewed design.'); return audit }
-  let previous = null
+  let previous = null, earlier = null
   for (let pass = 0; pass <= policy.maxPasses; pass++) {
     phase('Audit')
     const round = `review${pass}`, before = S.ledger.length
@@ -6177,6 +6402,8 @@ async function boundedAudit(W, o) {
     }
     const todo = repairTodo(S, W.L)
     const signature = repairSignature(S, W.L)
+    milestone(Object.keys(current).length ? reviewStoryLine(S, pass + 1, S.ledger.slice(before), todo, earlier) : `Review ${pass + 1}: no reviewer returned a review.`, 'audit: ')
+    earlier = todo
     audit.cycles.push({ review: round, snapshot: audit.finalTag, findings: S.ledger.slice(before).map(c => c.id), needed: todo.needed })
     // An approach defect can first appear in any review, including the final repair review.
     if (o.beforeFix) {
@@ -6187,17 +6414,19 @@ async function boundedAudit(W, o) {
     if (signature === previous || pass === policy.maxPasses) {
       audit.stopReason = signature === previous ? 'Repair stalled: the measured artifact and unresolved findings did not change.' : `Repair budget exhausted (${policy.maxPasses} passes).`
       audit.gaps.push(audit.stopReason)
+      milestone(`Stopped: ${audit.stopReason}`, 'audit: ')
       return audit
     }
     previous = signature
     const tag = `repair${pass + 1}`
     const fix = await seatTurn(W, tag, boundedRepairPrompt(S, W, todo, tag, pass + 1, policy.maxPasses), o.fixSchema || SYNTH_SCHEMA)
     audit.fixPass = true; audit.fixResult = fix
-    if (!fix) { audit.gaps.push('The repair turn failed.'); return audit }
+    if (!fix) { audit.gaps.push('The repair turn failed.'); milestone(`${W.name}'s repair pass ${pass + 1} failed.`, 'audit: '); return audit }
     S.pos[W.L] = { ...S.pos[W.L], summary: fix.summary || S.pos[W.L].summary, post: postPath(S, W.L, tag) }
     keepNotes(S, W, tag, fix); ingestClaims(S, W.L, tag, fix.claims); keepDeclined(S, tag, fix)
     audit.addressed.push(...(fix.addressed || []).filter(x => x?.ref))
     await runChecks(tag, W.L)
+    milestone(repairStoryLine(S, W, tag, fix, `made repair pass ${pass + 1} of ${policy.maxPasses}`), 'audit: ')
     audit.lastCheck = tag; audit.finalTag = tag
   }
   return audit
@@ -6580,7 +6809,7 @@ const PAIR_AUTHOR_SCHEMA = strict({ type: 'object', properties: {
   summary: { type: 'string' }, design: { type: 'string' }, notes: { type: 'string' },
   testContract: PAIR_CONTRACT, replayMapping: PAIR_REPLAY_MAPPING,
   addressed: { type: 'array', items: { type: 'object', properties: {
-    id: { type: 'string' }, response: { type: 'string' }, evidence: { type: 'string' },
+    id: { type: 'string' }, action: { type: 'string', enum: ['changed', 'disputed'] }, response: { type: 'string' }, evidence: { type: 'string' },
   } } },
   readings: { type: 'array', description: 'New readings only: each place this turn\'s work reads a requirement, criterion or approved contract check other than literally; [] when it follows everything literally.',
     items: { type: 'object', properties: {
@@ -6721,6 +6950,7 @@ async function pairRun() {
   }
   const p = S.pair
   log(`pair: ${S.pairOptions.author.name} authors; ${S.pairOptions.reviewer.name} reviews; budget ${S.pairOptions.maxReviews} reviews${pairDesigned(S) ? '' : '; no design stage'}`)
+  pairMilestone(pairSetupLine(S))
   while (p.reviews.length < S.pairOptions.maxReviews) {
     let label = `pair-${p.stage}-${p.reviews.length + 1}`
     p.label = label
@@ -6764,12 +6994,14 @@ async function pairRun() {
       p.label = label
       author = await pairAuthorTurn(label)
     }
+    pairIngestReplies(S, author)
     if (p.stage === 'design') {
       if (!author.design?.trim()) { p.stop = 'The author returned no design.'; return pairResult(S, 'failed') }
       p.design = author.design
       p.testContract = author.testContract
       const error = pairContractError(S, p.testContract)
       if (error) { p.stop = error; return pairResult(S, 'blocked') }
+      pairMilestone(pairAuthorLine(S))
     } else {
       if (!pairDesigned(S)) {
         const error = pairAdoptContract(S, author)
@@ -6794,6 +7026,7 @@ async function pairRun() {
         p.stop = m?.error || 'Snapshot verification failed to produce evidence.'
         return pairResult(S, 'failed')
       }
+      pairMilestone(pairAuthorLine(S))
     }
     phase(p.stage === 'design' ? 'Review design' : 'Review code')
     const trim = (review, at) => {
@@ -6802,6 +7035,7 @@ async function pairRun() {
       if (dropped.length) S.notes.push(`review ${at}: dropped rejecting checks that do not cover the challenged criterion (${dropped.join('; ')}).`)
       return review
     }
+    const before = p.findings.length
     let review = trim(await pairReviewTurn(label), label)
     let error = pairIngestReview(S, review)
     if (error && review?.complete === true && review.version === pairVersion(S) && pairCorrectableError(S, review)) {
@@ -6810,6 +7044,7 @@ async function pairRun() {
       error = pairIngestReview(S, review)
     }
     if (error) { p.stop = error; return pairResult(S, review ? 'blocked' : 'failed') }
+    pairMilestone(pairReviewLine(S, review, before))
     // A conflict only the user can settle stops the run now, as an author's needs-user does: the
     // review still counts, and its findings and rulings are recorded.
     // Answered, the rest of this pass runs as usual; the decisions change the version, so the
@@ -6817,12 +7052,10 @@ async function pairRun() {
     const asked = pairReviewQuestions(S, review)
     if (asked.length) {
       p.stop = String(review.summary || '').trim() || 'The reviewer found a conflict only the user can settle.'
-      log(`pair: ${p.stage} review ${p.reviews.length}: ${asked.length} question(s) for the user`)
       const stopped = await pairStop('reviewer', asked, `review ${label}`)
       if (stopped) return stopped
     }
     const ready = pairReadiness(S)
-    log(`pair: ${p.stage} review ${p.reviews.length}: ${ready.state}; ${pairOpen(S).length} open finding(s)`)
     if (ready.state === 'ready') {
       if (p.stage === 'code') return pairResult(S, 'done')
       p.approvedDesign = p.design
@@ -6868,6 +7101,7 @@ async function pairStop(kind, items, label) {
   const p = S.pair
   const questions = pairAsk(S, kind, items, label)
   if (!questions.length) return pairResult(S, 'needs-user')
+  pairMilestone(pairQuestionsLine(S, kind, questions))
   const key = questions[0].id, tag = S.run ? pairReviewTag(S) : 'base', native = !hostRuntime && !!S.run
   const check = (prompt, turn) => ask(prompt, { label: `${turn} ${key}`, phase: 'Stop', schema: PAIR_RESUME_SCHEMA, model: 'haiku', effort: 'low', copies: true }, 'checker')
   if (native) {
@@ -6897,9 +7131,11 @@ async function pairStop(kind, items, label) {
     }
   }
   pairApplyDecisions(S, taken.answered)
-  log(`pair: ${questions.map(q => q.id).join(', ')} answered; continuing`)
+  pairMilestone(`The user answered ${questions.map(q => q.id).join(', ')}; the run continues.`)
   return null
 }
+
+function pairMilestone(line) { milestone(line, 'pair: ') }
 
 // The process retro after a Pair run, standalone or as the factory's pair strategy, once setup has
 // made a run. A factory run always records its facts; it gets the model retro only when retroWanted.
@@ -7012,6 +7248,7 @@ async function simpleRun() {
   const W = S.seats[0]
   S.behaviour[W.L] = { turns: [], capitulations: [], ignored: [] }
   log(`factory: simple, ${W.name} implements, ${S.auditors.map(a => a.name).join(', ')} reviews · criteria: ${S.criteria.map(c => c.id).join(', ') || 'none'} · verify: ${S.verify || 'none'}`)
+  milestone(setupStoryLine(S), 'simple: ')
 
   phase('Solve')
   const res = await seatTurn(W, 0, simpleSolvePrompt(S, W), SIMPLE_SOLVE_SCHEMA)
@@ -7020,7 +7257,8 @@ async function simpleRun() {
   const tooBig = res.tooBig && res.tooBig.tier ? res.tooBig : null
   if (!tooBig) {
     await runChecks(0, W.L)
-  }
+    milestone(solveStoryLine(S, W), 'simple: ')
+  } else milestone(`${W.name} judged the task bigger than a simple change: ${storyWords(tooBig.reason, 300) || 'no reason given'}.`, 'simple: ')
   let handUp = simpleTrigger(S, 'solve', { tooBig })
   if (handUp) return escalate(handUp)
 

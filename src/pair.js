@@ -83,6 +83,7 @@ async function pairRun() {
   }
   const p = S.pair
   log(`pair: ${S.pairOptions.author.name} authors; ${S.pairOptions.reviewer.name} reviews; budget ${S.pairOptions.maxReviews} reviews${pairDesigned(S) ? '' : '; no design stage'}`)
+  pairMilestone(pairSetupLine(S))
   while (p.reviews.length < S.pairOptions.maxReviews) {
     let label = `pair-${p.stage}-${p.reviews.length + 1}`
     p.label = label
@@ -126,12 +127,14 @@ async function pairRun() {
       p.label = label
       author = await pairAuthorTurn(label)
     }
+    pairIngestReplies(S, author)
     if (p.stage === 'design') {
       if (!author.design?.trim()) { p.stop = 'The author returned no design.'; return pairResult(S, 'failed') }
       p.design = author.design
       p.testContract = author.testContract
       const error = pairContractError(S, p.testContract)
       if (error) { p.stop = error; return pairResult(S, 'blocked') }
+      pairMilestone(pairAuthorLine(S))
     } else {
       if (!pairDesigned(S)) {
         const error = pairAdoptContract(S, author)
@@ -156,6 +159,7 @@ async function pairRun() {
         p.stop = m?.error || 'Snapshot verification failed to produce evidence.'
         return pairResult(S, 'failed')
       }
+      pairMilestone(pairAuthorLine(S))
     }
     phase(p.stage === 'design' ? 'Review design' : 'Review code')
     const trim = (review, at) => {
@@ -164,6 +168,7 @@ async function pairRun() {
       if (dropped.length) S.notes.push(`review ${at}: dropped rejecting checks that do not cover the challenged criterion (${dropped.join('; ')}).`)
       return review
     }
+    const before = p.findings.length
     let review = trim(await pairReviewTurn(label), label)
     let error = pairIngestReview(S, review)
     if (error && review?.complete === true && review.version === pairVersion(S) && pairCorrectableError(S, review)) {
@@ -172,6 +177,7 @@ async function pairRun() {
       error = pairIngestReview(S, review)
     }
     if (error) { p.stop = error; return pairResult(S, review ? 'blocked' : 'failed') }
+    pairMilestone(pairReviewLine(S, review, before))
     // A conflict only the user can settle stops the run now, as an author's needs-user does: the
     // review still counts, and its findings and rulings are recorded.
     // Answered, the rest of this pass runs as usual; the decisions change the version, so the
@@ -179,12 +185,10 @@ async function pairRun() {
     const asked = pairReviewQuestions(S, review)
     if (asked.length) {
       p.stop = String(review.summary || '').trim() || 'The reviewer found a conflict only the user can settle.'
-      log(`pair: ${p.stage} review ${p.reviews.length}: ${asked.length} question(s) for the user`)
       const stopped = await pairStop('reviewer', asked, `review ${label}`)
       if (stopped) return stopped
     }
     const ready = pairReadiness(S)
-    log(`pair: ${p.stage} review ${p.reviews.length}: ${ready.state}; ${pairOpen(S).length} open finding(s)`)
     if (ready.state === 'ready') {
       if (p.stage === 'code') return pairResult(S, 'done')
       p.approvedDesign = p.design
@@ -230,6 +234,7 @@ async function pairStop(kind, items, label) {
   const p = S.pair
   const questions = pairAsk(S, kind, items, label)
   if (!questions.length) return pairResult(S, 'needs-user')
+  pairMilestone(pairQuestionsLine(S, kind, questions))
   const key = questions[0].id, tag = S.run ? pairReviewTag(S) : 'base', native = !hostRuntime && !!S.run
   const check = (prompt, turn) => ask(prompt, { label: `${turn} ${key}`, phase: 'Stop', schema: PAIR_RESUME_SCHEMA, model: 'haiku', effort: 'low', copies: true }, 'checker')
   if (native) {
@@ -259,9 +264,11 @@ async function pairStop(kind, items, label) {
     }
   }
   pairApplyDecisions(S, taken.answered)
-  log(`pair: ${questions.map(q => q.id).join(', ')} answered; continuing`)
+  pairMilestone(`The user answered ${questions.map(q => q.id).join(', ')}; the run continues.`)
   return null
 }
+
+function pairMilestone(line) { milestone(line, 'pair: ') }
 
 // The process retro after a Pair run, standalone or as the factory's pair strategy, once setup has
 // made a run. A factory run always records its facts; it gets the model retro only when retroWanted.

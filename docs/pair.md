@@ -351,6 +351,15 @@ for these and `decisions`, `unusedAnswers`, `resumable` and `resumeSteps`), `liv
 [live checks](#live-checks) still to run, also in `final.readiness.liveChecks`), `final.replay`,
 and `final.readiness`. `final.suite` and `final.replay` are the measurement summary; the job's
 `status.json` keeps the output tails.
+`report.markdown` tells the run in "How the run went": setup, each author pass (the findings it
+changed, the ones it disputed and why, any it left without a reply, new readings, and the gate on
+its snapshot), each review (its verdict, what it fixed, refuted or left open, its new findings,
+its rulings on readings, and criteria not yet met), each question for you and its answer, and
+how the run ended. The run logs each line as it happens. "Points of interest" follows: the
+author's disputes and how each ended, findings that took more than one revision, blockers,
+readings accepted or rejected, and code reviews that sent the work back to design. The
+author's entry for each finding in `addressed` says whether it `changed` the work or `disputed`
+the finding; only the reviewer closes a finding.
 `final.suite.overrides` (also in `summary.final.suite`) is the explicit `env` object from the
 run's `verification.json` that the measured gate ran with, as the measurement read it, and `{}`
 when there are none; the base environment is never included. When it is non-empty,

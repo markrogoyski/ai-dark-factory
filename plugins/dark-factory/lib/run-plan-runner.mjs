@@ -107,7 +107,8 @@ export async function runPlan(options, dependencies = {}) {
     if (task.id === 'acceptance' && status === 'done') record.head = S.head
     settle(S, result); S.active = null
     await save(S)
-    emit(`run-plan ${S.plan.id}: ${task.id} ${status}`)
+    const title = S.plan.tasks.find(t => t.id === task.id)?.title
+    emit(`run-plan ${S.plan.id}: ${task.id}${title ? ` (${title})` : ''} ${status}${status === 'done' && record.commit ? `, committed ${record.commit.slice(0, 12)}` : ''}`)
   }
 
   async function helperCall(S, argv) {

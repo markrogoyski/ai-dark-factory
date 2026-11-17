@@ -136,6 +136,11 @@ function roundsSection(S, upto, ending) {
   return lines.join('\n')
 }
 
+// The run's milestones as they were logged (tellStory), for a tier whose report has no debate to tell.
+function storySection(S) {
+  return S.story?.length ? `\n\n### How the run went\n\n${S.story.map((line, i) => `${i + 1}. ${line}`).join('\n')}` : ''
+}
+
 function problemsSection(S) {
   if (!S.notes.length) return ''
   return `\n\n### Problems during the run\n\n${S.notes.slice(0, 12).map(n => `- ${oneLine(n, 300)}`).join('\n')}` +

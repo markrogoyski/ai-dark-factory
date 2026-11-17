@@ -53,6 +53,11 @@ list.
 
 ## The result
 
+`report.markdown` lists the run in order under "How the run went": each candidate's solution and
+gate result, each candidate's reviews (verdict, score and defects per lens) with its readiness,
+and the advisory comparison. The candidates run in parallel, so their lines interleave as they
+finish; the run logs each line as it happens.
+
 Each candidate has its measured `final.snapshotRef`, `final.readiness`, review gaps, and
 `delivery` status. A candidate with a missing review, a reviewed tree that is stale, a failing
 gate or an unmet criterion is never ready. The overall result is always `advisory`, with delivery

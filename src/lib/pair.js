@@ -3,7 +3,9 @@ function newPairState() {
     replayMapping: [], findings: [], readings: [], liveChecks: [], reviews: [], author: null, measurement: null, label: null, lastReview: null, signatures: [], stop: '', questions: [],
     // Every question the run asked (Q1, Q2, … across all its stops), the user's answers it took,
     // and how this stop can continue. See pairAsk and pairTakeAnswers.
-    asked: [], decisions: [], resumable: false, skipRetro: false, fallback: false, setupAttempt: 0 }
+    asked: [], decisions: [], resumable: false, skipRetro: false, fallback: false, setupAttempt: 0,
+    // The author's reply to each finding it answered (pairIngestReplies).
+    replies: [] }
 }
 
 // Pair decisions are shared by both hosts. Only the reviewer can close findings.
@@ -663,6 +665,121 @@ function pairReviewClean(S) {
     S.criteria.every(c => r.criteria.filter(a => a.criterion === c.id).length === 1 && r.criteria.some(a => a.criterion === c.id && a.status === 'met' && a.note?.trim()))
 }
 
+// The story lines of a pair run (tellStory): setup, each author pass, each review, each stop.
+// Words for a story line: no trailing period, so a line can end with its own.
+const pairBrief = (s, n) => oneLine(s, n).replace(/[.\s]+$/, '')
+
+function pairSetupLine(S) {
+  const ids = S.criteria.map(c => c.id)
+  const gate = !S.verify ? 'no automated gate' : `gate \`${oneLine(S.verify, 160)}\` ${S.baselineOk === false ? `already failing at base (${pairBrief(S.baselineNote, 200)})` : 'passing at base'}`
+  return `Setup: ${ids.length} acceptance ${ids.length === 1 ? 'criterion' : 'criteria'} (${ids.join(', ')}); ${gate}.`
+}
+
+// The author's reply to each open finding, changed or disputed, from its last turn of a pass. Only
+// the reviewer closes a finding; a reply records what the author did about it.
+function pairIngestReplies(S, author) {
+  const p = S.pair, seen = new Set()
+  for (const a of Array.isArray(author?.addressed) ? author.addressed : []) {
+    const id = (String(a?.id || '').match(/\bP\d+\b/) || [])[0]
+    const f = p.findings.find(f => f.id === id)
+    if (!f || f.status !== 'open' || seen.has(id)) continue
+    seen.add(id)
+    p.replies.push({ id, turn: p.label, stage: p.stage, action: a.action === 'disputed' ? 'disputed' : 'changed', response: String(a.response || '').trim() })
+  }
+}
+
+function pairGateLine(S) {
+  const m = S.pair.measurement
+  if (!S.verify || S.pair.stage !== 'code') return ''
+  if (pairInfrastructure(S).length) return 'The gate could not run: the verification environment failed.'
+  if (!m?.suite?.ran) return 'The gate did not run.'
+  return m.suite.passed ? 'The gate passed on its snapshot.' : 'The gate failed on its snapshot.'
+}
+
+// After the author's pass and, for code, its measurement.
+function pairAuthorLine(S) {
+  const p = S.pair
+  const did = p.stage === 'design' ? (p.reviews.some(r => r.stage === 'design') ? 'revised the design' : 'drafted the design')
+    : p.reviews.some(r => r.stage === 'code') ? 'revised the implementation' : pairDesigned(S) ? 'implemented the approved design' : 'implemented the task'
+  const mine = p.replies.filter(r => r.turn === p.label)
+  const out = [`${S.pairOptions.author.name} ${did}.`]
+  const changed = mine.filter(r => r.action === 'changed').map(r => r.id)
+  if (changed.length) out.push(`Changed ${changed.join(', ')}.`)
+  for (const r of mine.filter(r => r.action === 'disputed')) out.push(`Disputed ${r.id}: ${sentence(pairBrief(r.response, 200) || 'no reason given')}`)
+  const silent = pairOpen(S).filter(f => !mine.some(r => r.id === f.id)).map(f => f.id)
+  if (silent.length) out.push(`No reply to ${silent.join(', ')}.`)
+  for (const r of p.readings.filter(r => r.turn === p.label)) out.push(`Proposed reading ${r.id} of ${pairBrief(r.requirement, 60)}: ${sentence(pairBrief(r.reading, 160))}`)
+  const gate = pairGateLine(S)
+  if (gate) out.push(gate)
+  return out.join(' ')
+}
+
+// After a review is recorded; `before` is how many findings there were before it.
+function pairReviewLine(S, review, before) {
+  const p = S.pair, ready = pairReadiness(S)
+  const verdict = ready.state === 'ready' ? 'approved' : ready.state === 'blocked' ? 'changes requested'
+    : ready.state === 'unverified' ? 'nothing open, but the snapshot could not be measured'
+    : `incomplete (${pairBrief(ready.incomplete[0] || 'no reason recorded', 160)})`
+  const out = [`${p.stage === 'design' ? 'Design' : 'Code'} review ${p.reviews.length}/${S.pairOptions.maxReviews} by ${S.pairOptions.reviewer.name}: ${verdict}.`]
+  for (const [status, word] of [['fixed', 'Fixed'], ['refuted', 'Refuted']]) {
+    const ids = (review.resolutions || []).filter(r => r.status === status).map(r => r.id)
+    if (ids.length) out.push(`${word} ${ids.join(', ')}.`)
+  }
+  const open = p.findings.slice(0, before).filter(f => f.status === 'open').map(f => f.id)
+  if (open.length) out.push(`Still open: ${open.join(', ')}.`)
+  const fresh = p.findings.slice(before).filter(f => !f.reading)
+  if (fresh.length) out.push(`New: ${fresh.map(f => `${f.id} (${f.severity}) ${pairBrief(f.statement, 140)}`).join('; ')}.`)
+  for (const r of review.rulings || []) {
+    const reading = p.readings.find(x => x.id === r.id)
+    out.push(r.ruling === 'accepted' ? `Accepted reading ${r.id}.` : r.ruling === 'rejected' ? `Rejected reading ${r.id}, filed as ${reading?.finding || 'a finding'}.` : `Reading ${r.id} goes to the user.`)
+  }
+  const short = (review.criteria || []).filter(c => c.status !== 'met').map(c => `${c.criterion} ${c.status}`)
+  out.push(short.length ? `Criteria: ${short.join(', ')}.` : 'Criteria all met.')
+  if (p.stage === 'code' && review.requiresDesignRevision && pairDesigned(S)) out.push('Requires a revised design.')
+  return out.join(' ')
+}
+
+function pairQuestionsLine(S, kind, questions) {
+  const who = kind === 'reviewer' ? S.pairOptions.reviewer.name : kind === 'author' ? S.pairOptions.author.name : 'Setup'
+  return `${who} asked the user ${questions.length === 1 ? 'a question' : `${questions.length} questions`}: ${questions.map(q => `${q.id}${q.about !== 'none' ? ` (about ${q.about})` : ''} ${pairBrief(q.question.split(' Requirements as written:')[0], 200)}`).join('; ')}`.replace(/[^.!?…]$/, '$&.')
+}
+
+function pairEndLine(S, status, ready) {
+  const p = S.pair, reviews = `${plural(p.reviews.length, 'review')} of ${S.pairOptions.maxReviews}`
+  if (status === 'done' && ready.state === 'ready') return `Ready after ${reviews}.`
+  if (status === 'needs-user') return `Stopped after ${reviews} for the user's answers.`
+  return `Stopped after ${reviews} (${status}, readiness ${ready.state}): ${sentence(pairBrief(p.stop, 300) || 'no reason recorded')}`
+}
+
+// What a reader of the report would want pointed out: the author's disputes and how they ended,
+// findings that took more than one revision, blockers, readings ruled on, and designs sent back.
+function pairHighlights(S) {
+  const p = S.pair, A = S.pairOptions.author.name, R = S.pairOptions.reviewer.name, out = [], told = new Set()
+  const fate = f => f.status === 'refuted' ? `${R} accepted that and refuted it` : f.status === 'fixed' ? 'it was later fixed' : 'it is still open'
+  const disputes = [...new Map(p.replies.filter(r => r.action === 'disputed').map(r => [r.id, r])).values()]
+  for (const r of disputes) {
+    const f = p.findings.find(f => f.id === r.id)
+    told.add(f.id)
+    out.push(`${A} disputed ${f.id} (${f.severity}, ${f.stage}), "${pairBrief(f.statement, 160)}": ${sentence(pairBrief(r.response, 240) || 'no reason given')} ${fate(f)[0].toUpperCase()}${fate(f).slice(1)}.`)
+  }
+  for (const f of p.findings.filter(f => !told.has(f.id) && !f.reading)) {
+    const kept = new Set(f.history.filter(h => h.status === 'open').map(h => h.review)).size
+    if (!kept && f.severity !== 'blocker') continue
+    told.add(f.id)
+    const how = !kept ? `${f.status === 'open' ? 'is still open' : `was ${f.status}`}` : f.status === 'open' ? `is still open after ${plural(kept + 1, 'revision')}` : `took ${plural(kept + 1, 'revision')} before it was ${f.status}`
+    out.push(`${f.id} (${f.severity}, ${f.stage}) ${how}: ${sentence(pairBrief(f.statement, 200))}`)
+  }
+  for (const r of p.readings.filter(r => r.status === 'accepted' || r.status === 'rejected')) {
+    const f = r.finding && p.findings.find(f => f.id === r.finding)
+    out.push(r.status === 'accepted' ? `${R} accepted ${A}'s reading ${r.id} of ${pairBrief(r.requirement, 80)}: ${sentence(pairBrief(r.reading, 200))}`
+      : `${R} rejected ${A}'s reading ${r.id} of ${pairBrief(r.requirement, 80)} ("${pairBrief(r.reading, 160)}"); it was filed as ${r.finding}, now ${f ? f.status : 'open'}.`)
+  }
+  p.reviews.forEach((r, i) => {
+    if (r.stage === 'code' && r.requiresDesignRevision && pairDesigned(S)) out.push(`Code review ${i + 1} sent the work back to design: ${sentence(pairBrief(r.summary, 240) || 'no summary given')}`)
+  })
+  return out
+}
+
 // The explicit env overrides from verification.json the measured gate ran with, by name; {} when
 // there are none or nothing was measured. They are reported, and never change readiness.
 function pairOverrides(S, m) {
@@ -682,6 +799,7 @@ function pairResult(S, status = 'blocked') {
   const hostRunDir = S.host === 'codex' && S.raw.repo && S.raw.hostRunId ? `${S.raw.repo}/.council/${S.raw.hostRunId}` : '<hostRunDir>'
   const resumeSteps = resumable ? pairResumeSteps(S, S.host === 'codex' ? 'codex' : 'native', hostRunDir) : ''
   const live = ready.liveChecks, pending = [...new Set(live.map(c => c.criterion))]
+  const highlights = pairHighlights(S)
   const report = [`Pair: ${S.pairOptions.author.name} authors; ${S.pairOptions.reviewer.name} reviews.`,
     `Readiness: ${ready.state}${pending.length ? `; live checks pending: ${pending.join(', ')}` : ''}. Reviews: ${p.reviews.length}/${S.pairOptions.maxReviews}.`,
     ...live.map(c => `Live check for ${c.criterion}: ${c.check}${c.reason ? ` (${c.reason})` : ''}`),
@@ -689,6 +807,8 @@ function pairResult(S, status = 'blocked') {
     ...(Object.keys(overrides).length ? [`Verification overrides: the gate ran with explicit environment overrides from verification.json: ${Object.keys(overrides).sort().join(', ')}.`] : []),
     `Replay: ${m?.replay?.records?.length || 0} file/command records; ${m?.replay?.exclusions?.length || 0} overlay exclusions. Base outcomes require reviewer interpretation.`,
     ...ready.infrastructure, ...ready.blocked, ...ready.incomplete,
+    `How the run went:\n\n${[...(S.story || []), pairEndLine(S, status, ready)].map((line, i) => `${i + 1}. ${line}`).join('\n')}`,
+    ...(highlights.length ? [`Points of interest:\n\n${highlights.map(h => `- ${h}`).join('\n')}`] : []),
     ...(questions.length ? [`Questions for the user (answer each under its ID):\n\n${questions.map(q => `- ${q.id} (about ${q.about}): ${q.question}`).join('\n')}`] : []),
     ...(p.decisions.length ? [`User decisions:\n\n${p.decisions.map(d => `- ${d.id} (about ${d.about}; asked in ${d.label}): ${d.question} Answer: ${d.answer}` +
       `${typeof d.criterion === 'string' ? ` ${d.about} now reads: ${d.criterion}` : d.drop ? ` ${d.about} was dropped.` : ''}`).join('\n')}`] : []),
@@ -699,7 +819,7 @@ function pairResult(S, status = 'blocked') {
     forTheOrchestrator: 'Read final.readiness first. Report unresolved findings or missing evidence before any success summary. ' +
       (p.readings.some(r => r.status === 'accepted') ? 'Report the accepted readings (readings with status accepted): requirements the reviewer agreed the work may read other than literally. ' : '') +
       (live.length ? 'Before delivery, run each live check (final.readiness.liveChecks) against the real service or resource it names and report its outcome: a ready run with live checks pending is not done until they pass. ' : '') +
-      'Spot-check the reviewed snapshot and report the design and implementation review outcomes. The change stays in final.worktree. ' +
+      'Spot-check the reviewed snapshot. Show the "How the run went" and "Points of interest" lists from report.markdown as they are: they give the design and implementation reviews in order, from the run\'s record. The change stays in final.worktree. ' +
       'Readiness unverified means no review finding is open but the run could not measure the snapshot (final.readiness.infrastructure says why): run the gate on the delivered bytes before calling it done. ' +
       'Deliver only within the user\'s authorization, preserving unrelated edits. With HEAD at the original base, nothing staged, and no local edits other than those recorded at setup (run.json deliveryBaseline: unstaged tracked edits and untracked files, none on a path the reviewed change touches), ' +
       `dark-factory apply --run-dir ${S.run?.runDir ? shq(S.run.runDir) : '<runDir>'} --result <file> stages the reviewed snapshot and checks its tree hash, leaving those recorded edits in place; it refuses any other checkout. ` +

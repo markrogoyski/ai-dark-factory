@@ -81,3 +81,59 @@ function repairSignature(S, W) {
     validTests(S).map(t => [t.id, S.testResults[t.id]?.[W] || 'missing']).sort(),
     p.suite?.ran, p.suite?.passed])
 }
+
+// Story lines (tellStory) for the independent review: the Simple tier's implementer, each review
+// and its rulings, each repair pass, and why the loop stopped. runAudit's audit and fix pass use
+// the same item wording.
+const storyWords = (s, n) => oneLine(s, n).replace(/[.\s]+$/, '')
+
+function storyItem(c) {
+  return `${c.id} (${c.kind === 'test' ? 'test' : `${c.severity}${c.judgment ? ', judgment' : ''}`}) ${storyWords(c.statement, 140)}`
+}
+
+function storyRuling(c) {
+  if (c.withdrawn) return 'withdrawn'
+  if (c.judgment || c.status === 'judgment') return 'a judgment call'
+  return { verified: c.kind === 'finding' ? 'upheld' : 'a valid test', refuted: 'refuted', fabricated: 'ruled fabricated', unresolved: 'unresolved' }[c.status] || 'not ruled on'
+}
+
+function storyGate(S, L) {
+  const p = S.pos[L]
+  if (S.mode !== 'implement' || !S.verify) return ''
+  return !p?.suite ? 'The gate was not measured.' : !p.suite.ran ? 'The gate did not run.' : p.suite.passed ? 'The gate passed.' : 'The gate failed.'
+}
+
+function storyTodo(todo) {
+  const ids = xs => xs.map(c => c.id).join(', ')
+  return [todo.upheld.length && `${ids(todo.upheld)} upheld`, todo.disputed.length && `${ids(todo.disputed)} unresolved`,
+    todo.failing?.length && `failing tests ${ids(todo.failing)}`, todo.criteria?.length && `${todo.criteria.map(c => c.criterion).join(', ')} unmet`,
+    todo.suite && 'the failing gate'].filter(Boolean).join('; ')
+}
+
+function setupStoryLine(S) {
+  const ids = S.criteria.map(c => c.id)
+  const gate = S.mode !== 'implement' ? '' : !S.verify ? '; no automated gate'
+    : `; gate \`${oneLine(S.verify, 160)}\` ${S.baselineOk ? 'passing at base' : `already failing at base (${storyWords(S.baselineNote, 200)})`}`
+  return `Setup: ${ids.length} acceptance ${ids.length === 1 ? 'criterion' : 'criteria'} (${ids.join(', ') || 'none'})${gate}.`
+}
+
+function solveStoryLine(S, W) {
+  const st = S.pos[W.L]?.stats
+  return `${W.name} implemented the change${st ? ` (+${st.added}/−${st.removed} in ${plural(st.files, 'file')})` : ''}. ${storyGate(S, W.L)}`.trim()
+}
+
+// After a review's items are ruled on. `items`: the ledger entries it filed; `earlier`: the
+// previous review's to-do list, whose items this review may have closed.
+function reviewStoryLine(S, n, items, todo, earlier = null) {
+  const head = `Review ${n} by ${S.auditors.map(a => a.name).join(', ')}`
+  const closed = earlier ? [...earlier.upheld, ...earlier.disputed].filter(c => c.fixed || c.withdrawn || c.status === 'refuted').map(c => c.id) : []
+  const found = items.length ? `${items.map(c => `${storyItem(c)}: ${storyRuling(c)}`).join('; ')}.` : 'Nothing new.'
+  return `${head}: ${closed.length ? `Closed ${closed.join(', ')}. ` : ''}${found} ${todo.needed ? `To fix: ${storyTodo(todo)}.` : 'Nothing to fix.'}`
+}
+
+function repairStoryLine(S, W, round, fix, label) {
+  const done = (fix?.addressed || []).filter(x => x?.ref).map(x => idOf(x.ref))
+  const declined = S.declined.filter(d => d.round === round)
+  return [`${W.name} ${label}.`, done.length && `Addressed ${done.join(', ')}.`,
+    ...declined.map(d => `Declined ${idOf(d.ref)}: ${storyWords(d.why, 200) || 'no reason given'}.`), storyGate(S, W.L)].filter(Boolean).join(' ')
+}

@@ -67,6 +67,12 @@ function strict(schema) {
 }
 
 const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`
+// The run's story: one line per milestone, which the flow logs as it happens (milestone() in
+// turns.js) and the report lists under "How the run went". Returns the line.
+function tellStory(S, line) {
+  (S.story ||= []).push(line)
+  return line
+}
 // The factory's Feature tier builds in increments, rounds K1, K2, …, whose snapshots are inc1, inc2, ….
 const buildStep = r => { const m = typeof r === 'string' && r.match(/^K(\d+)$/); return m ? Number(m[1]) : null }
 const atRound = r => r === 'F' ? 'in the final version' : r === 'G' ? 'in the fix pass' : r === 'I' ? 'in the audit fix pass' : buildStep(r) ? `in build increment ${buildStep(r)}` : `in round ${r}`
