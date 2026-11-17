@@ -138,7 +138,7 @@ describe('runtime adapter boundary', () => {
     h.state.run = run
     await h.ask('check snapshot', { label: 'check r0:A', phase: 'Solve', model: 'sonnet', effort: 'medium', schema }, 'checker')
     assert.equal(calls[0].vendor, 'codex')
-    assert.equal(calls[0].model, 'gpt-6.1-sol')
+    assert.equal(calls[0].model, 'gpt-6.2-sol')
     assert.equal(calls[0].effort, 'high')
     assert.equal(calls[0].run, null)
     assert.equal(calls[1].run, run)
@@ -465,7 +465,7 @@ describe('Codex factory phase routing', () => {
     assert.equal(result.factory.startedAt, 'simple')
     assert.equal(result.escalated, true)
     assert.equal(calls.filter(c => c.role === 'setup').length, 2)
-    assert.ok(calls.filter(c => c.role === 'checker').every(c => c.model === 'gpt-6-astra'))
+    assert.ok(calls.filter(c => c.role === 'checker').every(c => c.model === 'gpt-6.2-astra'))
     const attempts = calls.filter(c => c.role === 'seat' && /-r0$/.test(c.key))
     assert.equal(attempts.length, 4)
     assert.notEqual(attempts[0].run.runDir, attempts[1].run.runDir)

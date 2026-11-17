@@ -1105,7 +1105,7 @@ test('pair setup runs on Opus for Claude Code and for weaker Claude authors on t
   }
   // A Codex author keeps its own setup, and an explicit effort still sets setup's effort.
   let { calls } = await run({ args: { author: 'sol' } })
-  assert.deepEqual([calls.find(c => c.kind === 'setup').model, calls.find(c => c.kind === 'setup').effort], ['gpt-6.1-sol', 'medium'])
+  assert.deepEqual([calls.find(c => c.kind === 'setup').model, calls.find(c => c.kind === 'setup').effort], ['gpt-6.2-sol', 'medium'])
   assert.equal(L.parsePairConfig({ task: 'x', host: 'codex' }).roles.setup.key, 'astra')
   ;({ calls } = await run({ args: { author: 'sonnet', effort: 'xhigh' } }))
   assert.deepEqual([calls.find(c => c.kind === 'setup').model, calls.find(c => c.kind === 'setup').effort], ['opus', 'xhigh'])

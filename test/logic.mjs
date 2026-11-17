@@ -867,7 +867,7 @@ describe('config', () => {
   test('efforts: per seat, validated per vendor, and mapped onto what Gemini has', () => {
     const c = lib.parseConfig({ task: 't', seats: 'opus,astra,gemini,argon', effort: { astra: 'ultra', gemini: 'max', argon: 'max' } })
     assert.deepEqual(c.lineup.map(s => [s.key, s.effort, s.model]), [
-      ['opus', 'high', 'opus'], ['astra', 'ultra', 'gpt-6-astra'], ['gemini', 'xhigh', 'gemini-4-hydrogen-xhigh'], ['argon', 'high', 'gemini-4-argon-high'],
+      ['opus', 'high', 'opus'], ['astra', 'ultra', 'gpt-6.2-astra'], ['gemini', 'xhigh', 'gemini-4-hydrogen-xhigh'], ['argon', 'high', 'gemini-4-argon-high'],
     ])
     assert.throws(() => lib.parseConfig({ task: 't', effort: 'ultra', seats: 'opus,sonnet' }), /effort 'ultra' is not valid for Claude Opus/)
   })

@@ -6,7 +6,7 @@ Step 1. Make one Bash tool call with exactly these four parameters:
 - dangerouslyDisableSandbox: true (the Codex CLI has its own sandbox and can't start inside the Bash tool's)
 - description: "Run the Codex CLI turn"
 
-dark-factory seat-run --run-dir '/tmp/proj/.council/test-consensus' --vendor codex --seat 'D' --job 'D-r0' --model 'gpt-6-astra' --effort high --sandbox workspace-write --cwd '/tmp/proj/.council/test-consensus/wt/D' --writable '/tmp/proj/.council/test-consensus/room' --prompt-file '/tmp/proj/.council/test-consensus/jobs/D-r0.haiku.prompt.md' --expect 11118-4a9b96a3
+dark-factory seat-run --run-dir '/tmp/proj/.council/test-consensus' --vendor codex --seat 'D' --job 'D-r0' --model 'gpt-6.2-astra' --effort high --sandbox workspace-write --cwd '/tmp/proj/.council/test-consensus/wt/D' --writable '/tmp/proj/.council/test-consensus/room' --prompt-file '/tmp/proj/.council/test-consensus/jobs/D-r0.haiku.prompt.md' --expect 11118-4a9b96a3
 
 It reads the payload from your saved prompt itself, so don't copy it unless step 2 asks you to. The command can take up to 10 minutes. That is normal: wait for it.
 

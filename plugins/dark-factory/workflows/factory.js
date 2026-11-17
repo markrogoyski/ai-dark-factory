@@ -171,13 +171,13 @@ const LARGE_DIFF = 400                                                          
 const NOTES_CHARS = 4000                                                         // cap on private notes carried to the next turn
 
 const CATALOG = {
-  opus:   { vendor: 'claude', model: 'opus',        name: 'Claude Opus' },
-  sonnet: { vendor: 'claude', model: 'sonnet',      name: 'Claude Sonnet' },
-  fable:  { vendor: 'claude', model: 'fable',       name: 'Claude Fable' },
-  haiku:  { vendor: 'claude', model: 'haiku',       name: 'Claude Haiku' },
-  astra:  { vendor: 'codex',  model: 'gpt-6-astra', name: 'Codex Astra' },
-  sol:    { vendor: 'codex',  model: 'gpt-6.1-sol', name: 'Codex Sol' },
-  luna:   { vendor: 'codex',  model: 'gpt-6-luna',  name: 'Codex Luna' },
+  opus:   { vendor: 'claude', model: 'opus',          name: 'Claude Opus' },
+  sonnet: { vendor: 'claude', model: 'sonnet',        name: 'Claude Sonnet' },
+  fable:  { vendor: 'claude', model: 'fable',         name: 'Claude Fable' },
+  haiku:  { vendor: 'claude', model: 'haiku',         name: 'Claude Haiku' },
+  astra:  { vendor: 'codex',  model: 'gpt-6.2-astra', name: 'Codex Astra' },
+  sol:    { vendor: 'codex',  model: 'gpt-6.2-sol',   name: 'Codex Sol' },
+  luna:   { vendor: 'codex',  model: 'gpt-6-luna',    name: 'Codex Luna' },
   gemini: { vendor: 'gemini', model: 'gemini-4-hydrogen', name: 'Gemini Hydrogen', efforts: ['low', 'medium', 'high', 'xhigh'] },
   argon:  { vendor: 'gemini', model: 'gemini-4-argon',    name: 'Gemini Argon',    efforts: ['low', 'medium', 'high'] },
 }

@@ -316,7 +316,7 @@ async function scenarioConsensus() {
   const gem = calls.find(c => c.role.kind === 'solve' && c.role.key === 'gemini')
   const ast = calls.find(c => c.role.kind === 'solve' && c.role.key === 'astra')
   assert.ok(gem && /seat-run [^\n]*--vendor gemini [^\n]*--model 'gemini-4-hydrogen-high' --effort high/.test(gem.raw), 'gemini relay command')
-  assert.ok(ast && /seat-run [^\n]*--vendor codex [^\n]*--model 'gpt-6-astra'/.test(ast.raw), 'codex relay command')
+  assert.ok(ast && /seat-run [^\n]*--vendor codex [^\n]*--model 'gpt-6.2-astra'/.test(ast.raw), 'codex relay command')
   assert.ok(gem.raw.startsWith('You are a relay between a workflow and the Antigravity CLI (agy).'))
   // Codex and Gemini debate prompts are the short resumed form; Claude ones carry the full protocol.
   const r1 = calls.filter(c => c.role.kind === 'debate')
@@ -1685,7 +1685,7 @@ async function scenarioAudit() {
   assert.ok(design.prompt.includes('# Your lens: design') && corr.prompt.includes('# Your lens: correctness'))
   assert.ok(design.prompt.includes(`materialize --run-dir /tmp/proj/.council/test-audit --seat ${W} --label final --name audit-design`))
   assert.deepEqual([design.opts.model, /\(relay/.test(corr.label)], ['opus', true], 'design by Opus, correctness by Astra through a relay')
-  assert.ok(/seat-run [^\n]*--model 'gpt-6-astra'[^\n]*--cwd '\/tmp\/proj\/\.council\/test-audit\/snap\/audit-correctness'[^\n]*--fresh[^\n]*--checkout '[A-C]-final'/.test(corr.raw), 'a fresh Codex thread in its own checkout of the final version')
+  assert.ok(/seat-run [^\n]*--model 'gpt-6.2-astra'[^\n]*--cwd '\/tmp\/proj\/\.council\/test-audit\/snap\/audit-correctness'[^\n]*--fresh[^\n]*--checkout '[A-C]-final'/.test(corr.raw), 'a fresh Codex thread in its own checkout of the final version')
   assert.ok(result.notes.some(n => /Ignored test 'T9Z1' from the correctness auditor/.test(n)))
 
   // Triage: the checker runs the auditor's test and rules on fact findings; the panel takes blocker
@@ -1791,7 +1791,7 @@ async function scenarioSpec() {
     assert.ok(calls.indexOf(c) < calls.findIndex(x => x.role.kind === 'solve'), 'before any seat starts')
   }
   assert.ok(cov.prompt.includes('# Your lens: coverage') && int.prompt.includes('# Your lens: intent'))
-  assert.ok(/seat-run [^\n]*--model 'gpt-6-astra'[^\n]*--sandbox read-only --cwd '\/tmp\/proj'[^\n]*--fresh/.test(cov.raw), 'coverage by Astra, read-only in the repo')
+  assert.ok(/seat-run [^\n]*--model 'gpt-6.2-astra'[^\n]*--sandbox read-only --cwd '\/tmp\/proj'[^\n]*--fresh/.test(cov.raw), 'coverage by Astra, read-only in the repo')
   assert.equal(int.opts.model, 'opus')
 
   // The panel rules on all four; the amendment gets only what was accepted or is a decision.
