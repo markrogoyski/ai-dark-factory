@@ -14,11 +14,11 @@ whether the result is ready. Nothing reaches your checkout until you deliver it.
 
 | Workflow | Use It For | What You Get Back | Rough Cost |
 |---|---|---|---|
-| [`factory`](docs/factory.md) | any task, when you don't know how much review it needs: an intake agent picks the lightest process that fits and moves up if it proves too light | the finished result | 6–50 turns, by tier |
-| [`pair`](docs/pair.md) | a scoped change one agent should own: one author, one reviewer, repeated until review passes | a reviewed, measured snapshot, or the open findings | 12–17 turns |
-| [`council`](docs/council.md) | a subtle bug, a real trade-off, an investigation where the obvious answer may be wrong: 2–6 seats solve blind, then debate on an evidence ledger | one converged result, or the scorecard's pick | 30–50 turns |
-| [`ensemble`](docs/ensemble.md) | a task worth several attempts: independent solvers with distinct stances, each reviewed through several lenses | ranked candidates for you to pick or merge | about 18 turns |
-| [`run-plan`](docs/run-plan.md) | a whole plan of tasks: each goes through factory or pair and is committed once verified | local commits, parked questions, a final acceptance check | per task |
+| [`factory`](docs/factory.md) | Any task, when you don't know how much review it needs. It picks the lightest process that fits and moves up if needed. | The finished result. | 6–50 turns, by tier. |
+| [`pair`](docs/pair.md) | A scoped change that one agent should own. One author and one reviewer repeat until review passes. | A reviewed snapshot, or the open findings. | 12–17 turns. |
+| [`council`](docs/council.md) | A subtle bug, a design with real trade-offs, or a problem with several plausible answers. Several seats solve it blind, then debate. | One converged result, or the scorecard's pick. | 30–50 turns. |
+| [`ensemble`](docs/ensemble.md) | A task worth several attempts. Independent solvers each try it, and every attempt is reviewed. | Ranked candidates for you to pick or merge. | About 18 turns. |
+| [`run-plan`](docs/run-plan.md) | A whole plan of tasks. Each goes through factory or pair and is committed once verified. | Local commits, parked questions, and a final acceptance check. | Per task. |
 
 ## Install
 
