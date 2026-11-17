@@ -10,9 +10,9 @@ model OpenRouter serves. Every run works in its own git worktrees, reviewers sta
 contexts, the verification gate runs on a frozen snapshot, and code rather than a model decides
 whether the result is ready. Nothing reaches your checkout until you deliver it.
 
-## The workflows
+## The Workflows
 
-| workflow | use it for | what you get back | rough cost |
+| Workflow | Use It For | What You Get Back | Rough Cost |
 |---|---|---|---|
 | [`factory`](docs/factory.md) | any task, when you don't know how much review it needs: an intake agent picks the lightest process that fits and moves up if it proves too light | the finished result | 6–50 turns, by tier |
 | [`pair`](docs/pair.md) | a scoped change one agent should own: one author, one reviewer, repeated until review passes | a reviewed, measured snapshot, or the open findings | 12–17 turns |
@@ -22,7 +22,9 @@ whether the result is ready. Nothing reaches your checkout until you deliver it.
 
 ## Install
 
-**Claude Code.** In a session:
+### Claude Code
+
+In a session:
 
     /plugin marketplace add markrogoyski/ai-dark-factory
     /plugin install dark-factory@ai-dark-factory
@@ -37,7 +39,9 @@ The default lineups also use the [`codex`](https://github.com/openai/codex) and 
 `"toolPermission": "proceed-in-sandbox"` in `~/.gemini/antigravity-cli/settings.json`. Without
 those CLIs, pick Claude-only models (see the examples below).
 
-**Codex.** Clone the repository somewhere it can stay and link the skill into your project:
+### Codex
+
+Clone the repository somewhere it can stay and link the skill into your project:
 
 ```sh
 git clone https://github.com/markrogoyski/ai-dark-factory.git ~/ai-dark-factory
@@ -51,37 +55,51 @@ update and uninstall.
 
 Run from a repository with a clean working tree.
 
-**You have a small change and don't want to decide how much review it needs.** Factory sizes it;
+### Small Change
+
+You have a small change and don't want to decide how much review it needs. Factory sizes it;
 this one goes to the Simple tier, one implementer and one reviewer:
 
     /dark-factory:factory Add a debug log line with the retry count in Fetcher::retry
 
-**You have a scoped feature and want one agent to own it end to end.** Pair drafts a design, gets
+### Scoped Feature
+
+You have a scoped feature and want one agent to own it end to end. Pair drafts a design, gets
 it reviewed, implements it, and fixes findings until the measured result passes review:
 
     /dark-factory:pair Implement the retry policy with jittered exponential backoff in HttpClient
 
-**You have a bug where the obvious fix might be wrong.** The council's seats investigate
+### Tricky Bug
+
+You have a bug where the obvious fix might be wrong. The council's seats investigate
 independently, then debate until they agree:
 
     /dark-factory:council Fix the race condition that lets two workers claim the same job
 
-**You want to see several approaches before choosing.** Ensemble returns ranked, cross-reviewed
+### Several Approaches
+
+You want to see several approaches before choosing. Ensemble returns ranked, cross-reviewed
 candidates and leaves the choice to you:
 
     /dark-factory:ensemble Find why pagination skips the last item when the page size divides the total
 
-**You have a plan and want it built and committed task by task.** Run-plan works the tasks in
+### Whole Plan
+
+You have a plan and want it built and committed task by task. Run-plan works the tasks in
 dependency order and parks any that need your answer ([plan format](docs/run-plan.md)):
 
     /dark-factory:run-plan {planFile: "/absolute/path/plan.json", repo: "/path/to/project"}
 
-**You only have Claude.** Name the models:
+### Claude Only
+
+You only have Claude. Name the models:
 
     /dark-factory:pair --author opus --reviewer sonnet Implement the retry policy
     /dark-factory:council --seats opus,sonnet Fix the race condition that lets two workers claim the same job
 
-**In Codex**, the same workflows go through one skill:
+### In Codex
+
+The same workflows go through one skill:
 
 ```text
 $dark-factory Add a debug log line with the retry count in Fetcher::retry
@@ -89,7 +107,7 @@ $dark-factory --tier fix Find why the sync drops the last page
 $dark-factory --workflow pair Implement the retry policy
 ```
 
-## After a run
+## After a Run
 
 Each run returns a result with a `final.readiness`. A ready change stays in its worktree until
 you deliver it with `dark-factory apply`, which stages the reviewed snapshot without committing,
