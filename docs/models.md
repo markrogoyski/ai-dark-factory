@@ -87,6 +87,20 @@ name another seat in its place; to use one in place of a vendor that ran out, na
 way, for example `--seats opus,sonnet,openrouter:moonshotai/kimi-k2`. Remember that it adds no
 vendor to the consensus rule.
 
+## Cost
+
+Rough cost, in agent turns at the defaults:
+
+| run | agent turns |
+|---|---|
+| factory, Simple tier | 6–9 |
+| pair | 12–17 in recent runs (`maxReviews` caps the reviews at 8) |
+| factory, Fix tier | 15–25 |
+| ensemble, 4 candidates × 2 lenses | about 18, before relays and retries |
+| factory, Feature tier | 25–40 |
+| council | 30–50 |
+| factory, Architecture tier | 35–50 |
+
 ## OpenRouter seats
 
 `openrouter:<model-id>` runs the Claude CLI (`claude -p`, as the Claude provider runs it) with its

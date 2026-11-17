@@ -2,6 +2,41 @@
 
 [Documentation index](README.md) · [Project README](../README.md)
 
+## How the workflows fit together
+
+```text
+  run-plan    a plan of many tasks, worked one at a time
+     |
+     +-- each task, in dependency order, goes through factory or pair:
+     |       reviewed and verified --> committed
+     |       not ready -------------> parked; tasks that depend on it wait
+     |
+     '-- when every task is done, a council checks the whole plan was implemented
+
+  factory     chooses how much process a task needs
+     |
+  an intake agent reads the task and the code, then picks:
+     |
+     +-- a small, clear change ----> Simple        one implementer, one reviewer
+     |                                              (moves up to Fix or Feature if it struggles)
+     +-- a subtle bug -------------> Fix           a council
+     +-- a new feature ------------> Feature       two plans debated, then built in checked steps
+     |                                              (moves up to Architecture if it is too big)
+     +-- a design or a plan -------> Architecture  designs only, returns milestones to build
+     '-- a scoped change, one owner -> Pair          one author, one reviewer
+
+  council and ensemble are used on their own.
+```
+
+## Shared guarantees
+
+Every workflow shares the same guarantees. Seats work in their own git worktrees from HEAD.
+Neutral checks run the verification gate on a snapshot, never on a live worktree. Reviewers work
+in fresh contexts, and code, not a model, decides readiness. Nothing reaches your checkout until
+it is delivered, by you or by a plan run you authorized to commit. Model names in the diagrams
+are the Claude Code defaults; the Codex profile substitutes OpenAI models for most roles
+([both hosts' defaults](models.md#defaults)).
+
 ## Layout
 
     .claude-plugin/marketplace.json   the marketplace: lists the plugins in this repo

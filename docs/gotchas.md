@@ -58,7 +58,7 @@
   read that as a Codex, Gemini or OpenRouter failure.
 - **A Codex, Gemini or OpenRouter seat fails at once.** Run `--prepare` (Codex host) or check the
   `Bash(dark-factory:*)` allow rule and the agy settings under
-  [Install in Claude Code](../README.md#install-in-claude-code); setup's preflight names the
+  [Installing](install.md#permission-required); setup's preflight names the
   CLI it couldn't start.
 - **A resume is refused.** Resume checks the engine, HEAD, tracked changes, reference bytes and
   saved evidence, and refuses on any mismatch rather than reset; start a new run, carrying any

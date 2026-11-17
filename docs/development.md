@@ -50,6 +50,6 @@ read `git diff test/golden` before committing. The CLI's polling intervals can b
 for tests with `COUNCIL_JOB_POLL`, `COUNCIL_TRANSCRIPT_POLL` and `COUNCIL_TRANSCRIPT_WAIT`.
 
 Requirements, the permission rule and agy settings are under
-[Install in Claude Code](../README.md#install-in-claude-code); `make check` itself needs only Node,
+[Installing](install.md#install-in-claude-code); `make check` itself needs only Node,
 `python3` and `git`.
 
