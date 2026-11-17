@@ -151,7 +151,7 @@ function architectureResult(S, o) {
       '(4) what your spot-check found, including anything you disagree with; ' +
       `(5) the milestones (milestones[]) as a short numbered list: each one's title, tier, the milestones it builds on, and what works once it lands${retro && retro.markdown ? '; (6) last, retro.markdown as it is: notes on the workflow, not the user\'s project, so don\'t act on them unless the user asks' : ''}. ` +
       'Then offer to build the milestones one at a time, in order. Don\'t start one unasked, and don\'t chain them: the user decides after each. ' +
-      (S.host === 'codex' ? 'For each, write milestones[i].args to an args file and launch the runner. ' : 'For each: Workflow({name: "factory", args: milestones[i].args}). ') +
+      (S.host === 'codex' ? 'For each, write milestones[i].args to an args file and launch the runner. ' : 'For each: Workflow({name: "dark-factory:factory", args: milestones[i].args}). ') +
       'Those args hold the milestone\'s task with its draft criteria and any review findings still open against it, the final design as its plan document, and the tier the plan gave it, confirmed. ' +
       'If the user settles an open finding or question first, put the answer in the task. ' +
       'Each run starts from HEAD and stops on a dirty tree, so present each result as usual and wait for the user to commit it before the next milestone starts. ' +

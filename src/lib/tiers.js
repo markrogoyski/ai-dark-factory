@@ -205,7 +205,7 @@ function needsTier(S, push, intake) {
       `Ask the user in one short message whether to keep ${push.asked} or switch to ${push.recommended}, with intake's reason. ` +
       (S.host === 'codex'
         ? `Rerun the runner with the original args file and tierConfirmed: true to keep it, or tier: "${push.recommended}" to switch. This starts a new run. `
-        : `To keep it: Workflow({name: "factory", resumeFromRunId: <this run's id>, args: <exactly the args you launched with, as an object>, plus tierConfirmed: true}). ` +
+        : `To keep it: Workflow({name: "dark-factory:factory", resumeFromRunId: <this run's id>, args: <exactly the args you launched with, as an object>, plus tierConfirmed: true}). ` +
           `To switch: the same call with tier: "${push.recommended}" instead. Intake replays from cache either way. `) +
       'A kept tier is only where the run starts: if the evidence shows it is too low, the run still hands the work up.',
   }
@@ -224,12 +224,12 @@ function needsSplit(S, items, intake) {
       `Show the user the pieces (items[]: title, estimated tier, and the earlier pieces each builds on) and ask in one short message: run them one at a time (recommended), or the whole task as one ${pinned || tier} run. ` +
       (S.host === 'codex'
         ? 'One at a time: rerun the runner for each piece in order, preserving the original args and replacing task with that piece\'s task, so plan, context and the rest carry over. '
-        : 'One at a time: for each piece in order, Workflow({name: "factory", args: <the args you launched with>, with task replaced by the piece\'s task}), so plan, context and the rest carry over. ') +
+        : 'One at a time: for each piece in order, Workflow({name: "dark-factory:factory", args: <the args you launched with>, with task replaced by the piece\'s task}), so plan, context and the rest carry over. ') +
       'Each run starts from HEAD and stops on a dirty tree, so present each result as usual and wait for the user to commit it before the next piece starts. ' +
       `Don't pin the estimated tiers: each run's intake picks its own${pinned ? `. The user pinned ${pinned} for the whole task; ask whether it applies to each piece` : ''}. ` +
       (S.host === 'codex'
         ? 'As one: rerun the runner with the original args and noSplit: true. This starts a new run.'
-        : 'As one: Workflow({name: "factory", resumeFromRunId: <this run\'s id>, args: <exactly the args you launched with, as an object>, plus noSplit: true}). Intake replays from cache.'),
+        : 'As one: Workflow({name: "dark-factory:factory", resumeFromRunId: <this run\'s id>, args: <exactly the args you launched with, as an object>, plus noSplit: true}). Intake replays from cache.'),
   }
 }
 

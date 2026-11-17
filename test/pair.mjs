@@ -1659,10 +1659,10 @@ test('resume: guidance appears only on a needs-user stop that can continue, with
     return result.resumeSteps
   }
   const native = steps((await run({ native: true, author: askAt('pair-design-1') })).result)
-  assert.match(native, /in this same Claude Code session only, call Workflow\(\{name: "pair", resumeFromRunId: /)
+  assert.match(native, /in this same Claude Code session only, call Workflow\(\{name: "dark-factory:pair", resumeFromRunId: /)
   const factory = await run({ native: true, factory: true, author: askAt('pair-design-1') })
   assert.equal(factory.result.workflow, 'factory')
-  assert.match(steps(factory.result), /To continue this \/factory run, in this same Claude Code session only, call Workflow\(\{name: "factory", resumeFromRunId: /)
+  assert.match(steps(factory.result), /To continue this \/factory run, in this same Claude Code session only, call Workflow\(\{name: "dark-factory:factory", resumeFromRunId: /)
   const codex = await run({ args: { hostRunId: 'host-x' }, author: askAt('pair-design-1') })
   assert.match(steps(codex.result), /To continue this run, write a JSON file holding \{"clarifications": \[[^\]]*\]\} and run dark-factory-codex --resume \/repo\/\.council\/host-x --args-file <that file>\./)
   // A /factory run on the Codex host says it is one.

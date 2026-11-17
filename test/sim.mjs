@@ -2062,7 +2062,7 @@ async function scenarioFactoryRoute() {
   assert.equal(inv.result.factory.tier, 'fix', 'Simple is for changes; an investigation goes to fix')
   const plan = await route({ ...INTAKE('feature'), status: 'needs-plan', planMissing: '"the plan": no file named' })
   assert.deepEqual([plan.result.status, plan.calls.length], ['needs-plan', 1])
-  assert.ok(plan.result.forTheOrchestrator.includes('Workflow({name: "factory"'))
+  assert.ok(plan.result.forTheOrchestrator.includes('Workflow({name: "dark-factory:factory"'))
   return 'fix → Opus and Astra (or the user\'s seats); architecture → design mode, three seats; an investigation is never Simple; a missing plan stops at intake'
 }
 

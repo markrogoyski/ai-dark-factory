@@ -51,7 +51,7 @@ CLI isn't installed, pick the lineup yourself, for example with Codex Sol in pla
 
     /dark-factory:council --seats opus,sonnet,astra,sol Fix the cancellation in ...
 
-or, from a session, `Workflow({name: 'council', args: {task: '...', seats: ['opus', 'sonnet', 'astra', 'sol']}})`.
+or, from a session, `Workflow({name: 'dark-factory:council', args: {task: '...', seats: ['opus', 'sonnet', 'astra', 'sol']}})`.
 Asking in words ("run the council with Sol instead of Gemini") works too: the launching
 session passes `seats`.
 
@@ -70,7 +70,7 @@ lineup without a vendor also has to move that vendor's other roles:
 
 A Claude-only factory run in Claude Code, for example, moves every Codex and Gemini default:
 
-    Workflow({name: 'factory', args: {task: '...', seats: ['opus', 'sonnet'], panel: ['opus', 'sonnet'],
+    Workflow({name: 'dark-factory:factory', args: {task: '...', seats: ['opus', 'sonnet'], panel: ['opus', 'sonnet'],
       spec: {coverage: 'sonnet'}, audit: {correctness: 'sonnet', grounding: 'sonnet', risk: 'sonnet'},
       simple: {reviewer: 'opus'}}})
 

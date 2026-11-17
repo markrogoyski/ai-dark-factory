@@ -143,7 +143,7 @@ The council handles that in three layers:
    session to call it with the plan's absolute path and to say in the task which part to do,
    without pasting the document:
 
-       Workflow({name: 'council', args: {task: 'Do item 13 on the bug checklist',
+       Workflow({name: 'dark-factory:council', args: {task: 'Do item 13 on the bug checklist',
                                          plan: ['/abs/path/BUG_CHECK_LIST.md']}})
 
 2. **Setup snapshots it.** `dark-factory init --ref` copies each document into `<run>/refs/`, byte
@@ -220,7 +220,7 @@ each seat's reading to what the decision needs:
 
 ## Arguments
 
-`/dark-factory:council <task>` passes a string. From a session, `Workflow({name: 'council', args: {...}})`
+`/dark-factory:council <task>` passes a string. From a session, `Workflow({name: 'dark-factory:council', args: {...}})`
 accepts:
 
 | arg | default | |

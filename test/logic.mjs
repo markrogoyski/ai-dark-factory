@@ -1387,7 +1387,7 @@ describe('the factory', () => {
     for (const t of [L.simpleSolvePrompt(S, W), L.setupPrompt(S), L.recordPrompt(S, 'payload', '7-aaaaaaaa'),
       L.needsTier(S, { asked: 'simple', recommended: 'feature' }, { reasons: 'API change' }).forTheOrchestrator,
       L.needsPlan(S, 'the plan', null).forTheOrchestrator, L.auditPrompt(S, S.auditors[0], W, 'H'), res.forTheOrchestrator]) assert.ok(isText(t))
-    assert.ok(L.setupPrompt(S).includes('Write 1 to 3 acceptance criteria') && L.needsPlan(S, 'x').forTheOrchestrator.includes('name: "factory"'))
+    assert.ok(L.setupPrompt(S).includes('Write 1 to 3 acceptance criteria') && L.needsPlan(S, 'x').forTheOrchestrator.includes('name: "dark-factory:factory"'))
     const fix = L.auditFixPrompt(S, W, { upheld: [], disputed: [], failing: [], suggestions: [], suite: 'FAIL x', needed: true })
     assert.ok(fix.startsWith('# How this works') && fix.includes('# Fix pass') && fix.includes('The verification command fails on your version'))
     S.factory.escalation = { from: 'simple', to: 'fix', trigger: 'verify-failed', why: 'it fails', runDir: '/r' }

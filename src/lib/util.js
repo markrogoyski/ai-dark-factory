@@ -11,6 +11,9 @@ function sum(xs) { return xs.reduce((a, b) => a + b, 0) }
 
 function uniqueBy(xs, f) { const seen = new Set(); return xs.filter(x => { const k = f(x); if (seen.has(k)) return false; seen.add(k); return true }) }
 
+// The Workflow tool registers a plugin workflow only under its plugin-qualified name.
+function workflowCall(name) { return `dark-factory:${name}` }
+
 function shq(s) { return `'${String(s).replace(/'/g, `'\\''`)}'` }
 
 // Models often return an ID with its text attached ("1B3: the suite passes", "[1B3] …").

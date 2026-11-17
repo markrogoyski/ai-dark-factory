@@ -1,7 +1,7 @@
 export const meta = {
   name: 'factory',
   description: 'Routes one task to the process it needs: a simple change gets one implementer and one reviewer, harder work the council; escalates on evidence',
-  whenToUse: 'Use for implementation work the user wants done end to end with independent review, when it is not obvious how much process it needs. An Opus intake reads the task and the code and picks a tier: simple (Sonnet implements, Codex Astra reviews, at most one fix pass: about 6-9 agent turns), fix (a subtle bug: Opus and Astra attempt it blind and debate, through /council), feature (Opus and Astra each plan it blind and debate the plans; the chosen plan, merged with the best of the other, is built by its author in at most 4 checked increments, then audited for correctness, design and tests: about 25-40 agent turns) or architecture (a request for a design or plan, or one connected piece of work too big for one feature: Opus, Astra and Sonnet design it blind and debate the designs; the chosen design\'s author writes a milestone plan, reviewed for grounding (Astra), sequencing (Opus) and risk and alternatives (Gemini Hydrogen) and revised once; nothing is built: about 35-50 agent turns). The lowest tier that plausibly suffices is chosen, because a run whose tier the evidence shows is too low hands the work to a higher tier automatically, in the same run: Simple on failing verification after its fix pass, an upheld design finding, a change over its size budget, or the implementer saying so; Feature when its chosen plan needs more than 4 increments, which goes to architecture before anything is built. An architecture result lists milestones[], each with a task, draft criteria, the earlier milestones it builds on, a tier and ready-made args: show them, then offer to run each as its own /factory run with Workflow({name: "factory", args: milestones[i].args}), one at a time and in order, committing each before the next; never start one unasked. When the user names a tier, pass it in `tier` (or prefix a string task with --tier simple); if intake disagrees, the run stops with status needs-tier before creating anything, and you ask the user once: rerun with tierConfirmed: true to keep their tier, or with intake\'s. A kept tier is where the run starts, not a ceiling. When the task bundles separate pieces of work (a checklist, several fixes with their own causes, one commit per item), intake stops the run with status needs-split and lists them: ask the user once whether to run each piece as its own /factory run, in order and committing each before the next, or the whole task as one (rerun with noSplit: true). Seats work in git worktrees checked out from HEAD, so they cannot see uncommitted files: if the work follows a plan or other document that is not committed (a plan from plan mode under ~/.claude/plans/, an untracked PLAN.md, a checklist), pass its absolute path in `plan`, e.g. {task: "Do item 13 on the bug checklist", plan: ["/abs/path/BUG_CHECK_LIST.md"]}, and say in the task which part to do; do not paste the document. `simple: {implementer, reviewer, maxLines, maxFiles}` changes the Simple tier; every /council argument (seats, spec, audit, rounds, ...) passes through to the council tiers, audit: {tests: <model>} swaps the Feature tier\'s tests auditor (Sonnet), and audit: {risk: <model>} the Architecture tier\'s risk reviewer (Gemini Hydrogen; swap it for "sonnet" if the Antigravity CLI is unavailable).',
+  whenToUse: 'Use for implementation work the user wants done end to end with independent review, when it is not obvious how much process it needs. An Opus intake reads the task and the code and picks a tier: simple (Sonnet implements, Codex Astra reviews, at most one fix pass: about 6-9 agent turns), fix (a subtle bug: Opus and Astra attempt it blind and debate, through /council), feature (Opus and Astra each plan it blind and debate the plans; the chosen plan, merged with the best of the other, is built by its author in at most 4 checked increments, then audited for correctness, design and tests: about 25-40 agent turns) or architecture (a request for a design or plan, or one connected piece of work too big for one feature: Opus, Astra and Sonnet design it blind and debate the designs; the chosen design\'s author writes a milestone plan, reviewed for grounding (Astra), sequencing (Opus) and risk and alternatives (Gemini Hydrogen) and revised once; nothing is built: about 35-50 agent turns). The lowest tier that plausibly suffices is chosen, because a run whose tier the evidence shows is too low hands the work to a higher tier automatically, in the same run: Simple on failing verification after its fix pass, an upheld design finding, a change over its size budget, or the implementer saying so; Feature when its chosen plan needs more than 4 increments, which goes to architecture before anything is built. An architecture result lists milestones[], each with a task, draft criteria, the earlier milestones it builds on, a tier and ready-made args: show them, then offer to run each as its own /factory run with Workflow({name: "dark-factory:factory", args: milestones[i].args}), one at a time and in order, committing each before the next; never start one unasked. When the user names a tier, pass it in `tier` (or prefix a string task with --tier simple); if intake disagrees, the run stops with status needs-tier before creating anything, and you ask the user once: rerun with tierConfirmed: true to keep their tier, or with intake\'s. A kept tier is where the run starts, not a ceiling. When the task bundles separate pieces of work (a checklist, several fixes with their own causes, one commit per item), intake stops the run with status needs-split and lists them: ask the user once whether to run each piece as its own /factory run, in order and committing each before the next, or the whole task as one (rerun with noSplit: true). Seats work in git worktrees checked out from HEAD, so they cannot see uncommitted files: if the work follows a plan or other document that is not committed (a plan from plan mode under ~/.claude/plans/, an untracked PLAN.md, a checklist), pass its absolute path in `plan`, e.g. {task: "Do item 13 on the bug checklist", plan: ["/abs/path/BUG_CHECK_LIST.md"]}, and say in the task which part to do; do not paste the document. `simple: {implementer, reviewer, maxLines, maxFiles}` changes the Simple tier; every /council argument (seats, spec, audit, rounds, ...) passes through to the council tiers, audit: {tests: <model>} swaps the Feature tier\'s tests auditor (Sonnet), and audit: {risk: <model>} the Architecture tier\'s risk reviewer (Gemini Hydrogen; swap it for "sonnet" if the Antigravity CLI is unavailable).',
   phases: [
     { title: 'Intake', detail: 'reads the task and the code, and picks the tier the work needs', model: 'opus' },
     { title: 'Setup', detail: 'worktrees, room, and acceptance criteria fixed before anyone starts', model: 'opus' },
@@ -54,6 +54,9 @@ function oneLine(s, n) { return clip(String(s ?? '').replace(/\s+/g, ' ').trim()
 function sum(xs) { return xs.reduce((a, b) => a + b, 0) }
 
 function uniqueBy(xs, f) { const seen = new Set(); return xs.filter(x => { const k = f(x); if (seen.has(k)) return false; seen.add(k); return true }) }
+
+// The Workflow tool registers a plugin workflow only under its plugin-qualified name.
+function workflowCall(name) { return `dark-factory:${name}` }
 
 function shq(s) { return `'${String(s).replace(/'/g, `'\\''`)}'` }
 
@@ -2993,7 +2996,7 @@ function specQuestions(S, qs) {
       :
       `Before any seat started, the spec review found ${qs.length === 1 ? 'a question' : 'questions'} about the request that the code and the task don't settle, ` +
       'and this run was told to ask rather than assume (spec: "ask"). Ask the user (AskUserQuestion works well: offer each question\'s readings as options; the first is the most conservative). ' +
-      `Then resume the same run: Workflow({name: "${S.workflowName}", resumeFromRunId: <this run's id>, args: <exactly the args you launched with, as an object; ` +
+      `Then resume the same run: Workflow({name: "${workflowCall(S.workflowName)}", resumeFromRunId: <this run's id>, args: <exactly the args you launched with, as an object; ` +
       'if you passed a plain string, use {task: <that string>}>, plus clarifications: [<any earlier clarifications, unchanged>, {id, answer}, …]}). ' +
       'The review replays from cache, the criteria are amended to the answers, and the council starts. Workspaces persist on disk, so this works only from this session.',
   }
@@ -3294,7 +3297,7 @@ function needsPlan(S, missing, runDir) {
       (S.host === 'codex'
         ? 'look in the repository and the documents named in this conversation. Then rerun the runner with the original args and the document\'s absolute path in plan. '
         : 'a plan made in this conversation is under ~/.claude/plans/; otherwise look in the repository for the file the user named. ' +
-          `Then rerun with object args and its absolute path: Workflow({name: "${S.workflowName}", args: {task: <the task, saying which part to do>, plan: ["/abs/path"], …the other args}}). `) +
+          `Then rerun with object args and its absolute path: Workflow({name: "${workflowCall(S.workflowName)}", args: {task: <the task, saying which part to do>, plan: ["/abs/path"], …the other args}}). `) +
       'Don\'t paste the document into the task. If you can\'t tell which document is meant, ask the user.' +
       (runDir ? ` Remove the partial run with \`${S.cli} cleanup --run-dir ${runDir} --all\`.` : ''),
   }
@@ -3348,7 +3351,7 @@ function needsUser(S, k, qs) {
       `${qs.length === 1 ? 'A question' : 'Questions'} reached the escalation threshold (${escalateAt(S)} seats) after ${roundTag(k)}: ` +
       'the council believes the request itself is ambiguous. First show the user report.markdown, the debate so far, with the seat-to-model reveal, so they can see what prompted the question. ' +
       'Then ask (AskUserQuestion works well; show each seat\'s assumption as an option). ' +
-      `Then resume the same run: Workflow({name: "${S.workflowName}", resumeFromRunId: <this run's id>, args: <exactly the args you launched with, as an object; ` +
+      `Then resume the same run: Workflow({name: "${workflowCall(S.workflowName)}", resumeFromRunId: <this run's id>, args: <exactly the args you launched with, as an object; ` +
       `if you passed a plain string, use {task: <that string>}>, plus clarifications: [<any earlier clarifications, unchanged>, {id, answer, afterRound: ${k}}, …]}). ` +
       'Completed rounds replay from cache; the debate continues with the answers. Workspaces and Codex and Gemini threads persist on disk, so this works only from this session.',
   }
@@ -3578,7 +3581,7 @@ function needsTier(S, push, intake) {
       `Ask the user in one short message whether to keep ${push.asked} or switch to ${push.recommended}, with intake's reason. ` +
       (S.host === 'codex'
         ? `Rerun the runner with the original args file and tierConfirmed: true to keep it, or tier: "${push.recommended}" to switch. This starts a new run. `
-        : `To keep it: Workflow({name: "factory", resumeFromRunId: <this run's id>, args: <exactly the args you launched with, as an object>, plus tierConfirmed: true}). ` +
+        : `To keep it: Workflow({name: "dark-factory:factory", resumeFromRunId: <this run's id>, args: <exactly the args you launched with, as an object>, plus tierConfirmed: true}). ` +
           `To switch: the same call with tier: "${push.recommended}" instead. Intake replays from cache either way. `) +
       'A kept tier is only where the run starts: if the evidence shows it is too low, the run still hands the work up.',
   }
@@ -3597,12 +3600,12 @@ function needsSplit(S, items, intake) {
       `Show the user the pieces (items[]: title, estimated tier, and the earlier pieces each builds on) and ask in one short message: run them one at a time (recommended), or the whole task as one ${pinned || tier} run. ` +
       (S.host === 'codex'
         ? 'One at a time: rerun the runner for each piece in order, preserving the original args and replacing task with that piece\'s task, so plan, context and the rest carry over. '
-        : 'One at a time: for each piece in order, Workflow({name: "factory", args: <the args you launched with>, with task replaced by the piece\'s task}), so plan, context and the rest carry over. ') +
+        : 'One at a time: for each piece in order, Workflow({name: "dark-factory:factory", args: <the args you launched with>, with task replaced by the piece\'s task}), so plan, context and the rest carry over. ') +
       'Each run starts from HEAD and stops on a dirty tree, so present each result as usual and wait for the user to commit it before the next piece starts. ' +
       `Don't pin the estimated tiers: each run's intake picks its own${pinned ? `. The user pinned ${pinned} for the whole task; ask whether it applies to each piece` : ''}. ` +
       (S.host === 'codex'
         ? 'As one: rerun the runner with the original args and noSplit: true. This starts a new run.'
-        : 'As one: Workflow({name: "factory", resumeFromRunId: <this run\'s id>, args: <exactly the args you launched with, as an object>, plus noSplit: true}). Intake replays from cache.'),
+        : 'As one: Workflow({name: "dark-factory:factory", resumeFromRunId: <this run\'s id>, args: <exactly the args you launched with, as an object>, plus noSplit: true}). Intake replays from cache.'),
   }
 }
 
@@ -4038,7 +4041,7 @@ function architectureResult(S, o) {
       '(4) what your spot-check found, including anything you disagree with; ' +
       `(5) the milestones (milestones[]) as a short numbered list: each one's title, tier, the milestones it builds on, and what works once it lands${retro && retro.markdown ? '; (6) last, retro.markdown as it is: notes on the workflow, not the user\'s project, so don\'t act on them unless the user asks' : ''}. ` +
       'Then offer to build the milestones one at a time, in order. Don\'t start one unasked, and don\'t chain them: the user decides after each. ' +
-      (S.host === 'codex' ? 'For each, write milestones[i].args to an args file and launch the runner. ' : 'For each: Workflow({name: "factory", args: milestones[i].args}). ') +
+      (S.host === 'codex' ? 'For each, write milestones[i].args to an args file and launch the runner. ' : 'For each: Workflow({name: "dark-factory:factory", args: milestones[i].args}). ') +
       'Those args hold the milestone\'s task with its draft criteria and any review findings still open against it, the final design as its plan document, and the tier the plan gave it, confirmed. ' +
       'If the user settles an open finding or question first, put the answer in the task. ' +
       'Each run starts from HEAD and stops on a dirty tree, so present each result as usual and wait for the user to commit it before the next milestone starts. ' +
@@ -4701,7 +4704,7 @@ function pairResumeSteps(S, via, hostRunDir, questions = S.pair.questions, post 
   const ids = questions.map(q => q.id).join(', ')
   const entries = '[<any earlier clarifications, unchanged>, {id, answer}, …]'
   const how = via === 'native'
-    ? `To continue this ${slash} run, in this same Claude Code session only, call Workflow({name: "${name}", resumeFromRunId: <this run's id>, args: <the same args as before, as an object (if you passed a plain string, use {task: <that string>}), plus clarifications: ${entries}>}). The turns before this stop replay from the session's cache; another session has no such cache.`
+    ? `To continue this ${slash} run, in this same Claude Code session only, call Workflow({name: "${workflowCall(name)}", resumeFromRunId: <this run's id>, args: <the same args as before, as an object (if you passed a plain string, use {task: <that string>}), plus clarifications: ${entries}>}). The turns before this stop replay from the session's cache; another session has no such cache.`
     : via === 'codex'
       ? `To continue this ${S.factory ? `${slash} ` : ''}run, write a JSON file holding {"clarifications": ${entries}} and run dark-factory-codex --resume ${hostRunDir} --args-file <that file>. The runner checks every answer before any turn and replays the turns before this stop from its checkpoint.`
       : `To continue this run, call ${slash} again with the same args plus runtime: "cli", resume: "${hostRunDir}" and clarifications: ${entries}. The runner checks every answer before any turn and replays the turns before this stop from its checkpoint.`

@@ -262,7 +262,7 @@ function specQuestions(S, qs) {
       :
       `Before any seat started, the spec review found ${qs.length === 1 ? 'a question' : 'questions'} about the request that the code and the task don't settle, ` +
       'and this run was told to ask rather than assume (spec: "ask"). Ask the user (AskUserQuestion works well: offer each question\'s readings as options; the first is the most conservative). ' +
-      `Then resume the same run: Workflow({name: "${S.workflowName}", resumeFromRunId: <this run's id>, args: <exactly the args you launched with, as an object; ` +
+      `Then resume the same run: Workflow({name: "${workflowCall(S.workflowName)}", resumeFromRunId: <this run's id>, args: <exactly the args you launched with, as an object; ` +
       'if you passed a plain string, use {task: <that string>}>, plus clarifications: [<any earlier clarifications, unchanged>, {id, answer}, …]}). ' +
       'The review replays from cache, the criteria are amended to the answers, and the council starts. Workspaces persist on disk, so this works only from this session.',
   }
@@ -563,7 +563,7 @@ function needsPlan(S, missing, runDir) {
       (S.host === 'codex'
         ? 'look in the repository and the documents named in this conversation. Then rerun the runner with the original args and the document\'s absolute path in plan. '
         : 'a plan made in this conversation is under ~/.claude/plans/; otherwise look in the repository for the file the user named. ' +
-          `Then rerun with object args and its absolute path: Workflow({name: "${S.workflowName}", args: {task: <the task, saying which part to do>, plan: ["/abs/path"], …the other args}}). `) +
+          `Then rerun with object args and its absolute path: Workflow({name: "${workflowCall(S.workflowName)}", args: {task: <the task, saying which part to do>, plan: ["/abs/path"], …the other args}}). `) +
       'Don\'t paste the document into the task. If you can\'t tell which document is meant, ask the user.' +
       (runDir ? ` Remove the partial run with \`${S.cli} cleanup --run-dir ${runDir} --all\`.` : ''),
   }
@@ -617,7 +617,7 @@ function needsUser(S, k, qs) {
       `${qs.length === 1 ? 'A question' : 'Questions'} reached the escalation threshold (${escalateAt(S)} seats) after ${roundTag(k)}: ` +
       'the council believes the request itself is ambiguous. First show the user report.markdown, the debate so far, with the seat-to-model reveal, so they can see what prompted the question. ' +
       'Then ask (AskUserQuestion works well; show each seat\'s assumption as an option). ' +
-      `Then resume the same run: Workflow({name: "${S.workflowName}", resumeFromRunId: <this run's id>, args: <exactly the args you launched with, as an object; ` +
+      `Then resume the same run: Workflow({name: "${workflowCall(S.workflowName)}", resumeFromRunId: <this run's id>, args: <exactly the args you launched with, as an object; ` +
       `if you passed a plain string, use {task: <that string>}>, plus clarifications: [<any earlier clarifications, unchanged>, {id, answer, afterRound: ${k}}, …]}). ` +
       'Completed rounds replay from cache; the debate continues with the answers. Workspaces and Codex and Gemini threads persist on disk, so this works only from this session.',
   }
