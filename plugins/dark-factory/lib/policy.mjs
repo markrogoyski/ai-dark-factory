@@ -614,7 +614,8 @@ function refsBlock(S) {
     `because your worktree is a checkout of the last commit and doesn't have ${S.refs.length === 1 ? 'it' : 'them'}, or has an older version.\n` +
     S.refs.map(r => `- ${r.path} (from ${r.source})`).join('\n') +
     `\n\nTreat ${S.refs.length === 1 ? 'it' : 'them'} as part of the task. The work must stand on its own: don't copy ${S.refs.length === 1 ? 'it' : 'them'} into your worktree, ` +
-    `and don't cite ${S.refs.length === 1 ? 'it' : 'them'} (file names, step or item numbers) in code, comments or tests.\n`
+    `and don't cite ${S.refs.length === 1 ? 'it' : 'them'} (file names, step or item numbers) in code, comments or tests.` +
+    (S.pairOptions ? ` A document deliverable, such as a plan, may name ${S.refs.length === 1 ? 'it' : 'them'} and ${S.refs.length === 1 ? 'its' : 'their'} item numbers where that lets its reader trace an item to its source.` : '') + `\n`
 }
 
 function taskBlock(S, round) {
@@ -5063,7 +5064,7 @@ Read the repository instructions and the relevant code. Do not delegate or launc
 ${correction ? `\n# Correct the previous output\nThe engine could not accept your test contract or replay mapping: ${correction}\nReturn a complete corrected testContract and replayMapping for the current implementation, and this turn's readings and live checks again, changing the worktree only where the correction needs it. This is the one correction attempt for this turn. Preserve the task and substantive requirements.\n` : ''}
 This run skips the design stage: write the deliverable itself, not a design or a plan for it, including the required tests and documentation; the reviewer reviews the measured result directly. Check setup observations against the original task, reference documents, explicit user decisions, and repository; explain any reconciliation in the handoff and list it in readings, preserving every requirement; unresolved contradictions require needs-user. Run appropriate focused checks and the shared verification gate. Fix all open actionable findings and any failed verification; when the latest review says the approach itself must change, change it in this turn. Return design as an empty string.
 
-Return testContract for the CURRENT deliverable: the checks the reviewer holds it to. ${PAIR_CONTRACT_RULES} When the deliverable is a document or a plan, its criteria are usually checked by kind=inspection, and testRoots may be empty when no check is kind=test. The contract is yours to keep current: return it whole every turn, extended or corrected where findings call for it, never weakened to obtain a pass. ${PAIR_LAYOUT_RULES} If isolation cannot work, report the limitation in the handoff instead of claiming a preserved baseline pass.
+Return testContract for the CURRENT deliverable: the checks the reviewer holds it to. ${PAIR_CONTRACT_RULES} When the deliverable is a document or a plan, its criteria are usually checked by kind=inspection, and testRoots may be empty when no check is kind=test. Every file:line, code snippet, literal and call chain such a document states or prescribes is a claim: confirm each one against HEAD, with a saved probe where reading is not enough, before handoff. The contract is yours to keep current: return it whole every turn, extended or corrected where findings call for it, never weakened to obtain a pass. ${PAIR_LAYOUT_RULES} If isolation cannot work, report the limitation in the handoff instead of claiming a preserved baseline pass.
 Return replayMapping for the CURRENT implementation: ${pairMappingRules("your contract's", "your contract's")} ${PAIR_REPLAY_NOTE} Report unsupported replay dependencies in the handoff.
 
 # Test contract

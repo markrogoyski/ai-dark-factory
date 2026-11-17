@@ -675,7 +675,8 @@ function refsBlock(S) {
     `because your worktree is a checkout of the last commit and doesn't have ${S.refs.length === 1 ? 'it' : 'them'}, or has an older version.\n` +
     S.refs.map(r => `- ${r.path} (from ${r.source})`).join('\n') +
     `\n\nTreat ${S.refs.length === 1 ? 'it' : 'them'} as part of the task. The work must stand on its own: don't copy ${S.refs.length === 1 ? 'it' : 'them'} into your worktree, ` +
-    `and don't cite ${S.refs.length === 1 ? 'it' : 'them'} (file names, step or item numbers) in code, comments or tests.\n`
+    `and don't cite ${S.refs.length === 1 ? 'it' : 'them'} (file names, step or item numbers) in code, comments or tests.` +
+    (S.pairOptions ? ` A document deliverable, such as a plan, may name ${S.refs.length === 1 ? 'it' : 'them'} and ${S.refs.length === 1 ? 'its' : 'their'} item numbers where that lets its reader trace an item to its source.` : '') + `\n`
 }
 
 function taskBlock(S, round) {
