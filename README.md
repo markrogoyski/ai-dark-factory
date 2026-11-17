@@ -95,7 +95,13 @@ dependency order and parks any that need your answer ([plan format](docs/run-pla
 You only have Claude. Name the models:
 
     /dark-factory:pair --author opus --reviewer sonnet Implement the retry policy
-    /dark-factory:council --seats opus,sonnet Fix the race condition that lets two workers claim the same job
+    /dark-factory:council --seats opus,sonnet,fable Fix the race condition that lets two workers claim the same job
+
+### Codex Only
+
+You only have Codex. Name the seats:
+
+    /dark-factory:council --seats astra,sol,luna Fix the race condition that lets two workers claim the same job
 
 ### In Codex
 
