@@ -11,12 +11,12 @@
 | `gemini` | Gemini 4 Hydrogen | Antigravity CLI (`agy`) |
 | `argon` | Gemini 4 Argon (low, medium and high effort only); only when asked for | Antigravity CLI |
 | `codex:<model-id>`, `gemini:<model-id>` | any model the CLI offers (`agy models` lists Gemini's) | |
-| `openrouter:<model-id>` | any model OpenRouter lists, e.g. `openrouter:deepseek/deepseek-v4-pro`; only when asked for | `claude -p` against OpenRouter's Anthropic-compatible endpoint (see [OpenRouter seats](#openrouter-seats)) |
+| `openrouter:<model-id>` | any model OpenRouter lists, e.g. `openrouter:deepseek/deepseek-v4-pro`; only when asked for | `claude -p` against OpenRouter's Anthropic-compatible endpoint ([OpenRouter seats](#openrouter-seats)) |
 
-Use 2–6 seats. Consensus needs votes from at least two vendors whenever the lineup has more
-than one vendor. An OpenRouter seat's vote counts toward the number of votes needed, but it
-never supplies a vendor of its own: `opus, astra, openrouter:x` still needs a Claude vote and a
-Codex vote, and `opus, sonnet, openrouter:x` is a one-vendor lineup for this rule.
+Use 2–6 seats. Consensus needs votes from at least two vendors whenever the lineup has more than
+one vendor. An OpenRouter seat's vote counts toward the number of votes needed but never supplies
+a vendor of its own: `opus, astra, openrouter:x` still needs a Claude vote and a Codex vote, and
+`opus, sonnet, openrouter:x` is a one-vendor lineup for this rule.
 
 ## Defaults
 
@@ -39,18 +39,18 @@ The same workflow picks different defaults depending on the host that launches i
 | ensemble (solvers, reviewers, compare) | `sonnet`, Sonnet or Opus per lens, `opus` | `astra`, `astra`, `astra` |
 | run-plan tasks | the Codex column, on both hosts | |
 
-In Claude Code, Codex, Gemini and OpenRouter turns go through a Haiku relay agent (Sonnet as the fallback),
-and the retro runs on Sonnet. On the Codex host the orchestration roles (`intake`, `setup`,
-`checker`, `questions`, `spec`, `retro`, `record`) can be changed with `roles`, for example
+In Claude Code, Codex, Gemini and OpenRouter turns go through a Haiku relay agent (Sonnet as the
+fallback), and the retro runs on Sonnet. On the Codex host you can change the orchestration roles
+(`intake`, `setup`, `checker`, `questions`, `spec`, `retro`, `record`) with `roles`, for example
 `{"intake": "sol", "checker": {"model": "astra", "effort": "high"}}`.
 
 ## Effort
 
-Effort follows the work: the models that solve, judge or review run at `high`, the roles that
-coordinate a run at `medium`, and the roles that move data at `low`. Valid levels are `low`,
-`medium`, `high`, `xhigh` and `max`; Codex also accepts `ultra`. Gemini puts the level in the
-model ID (`gemini-4-hydrogen-high`), so a level the model lacks maps to the nearest one it has,
-ties going up (Hydrogen: up to `xhigh`; Argon: up to `high`).
+Models that solve, judge or review run at `high`; roles that coordinate a run at `medium`; roles
+that move data at `low`. Valid levels are `low`, `medium`, `high`, `xhigh` and `max`; Codex also
+accepts `ultra`. Gemini puts the level in the model ID (`gemini-4-hydrogen-high`), so a level the
+model lacks maps to the nearest one it has, ties going up (Hydrogen: up to `xhigh`; Argon: up to
+`high`).
 
 | role | effort | changed by |
 |---|---|---|
@@ -66,23 +66,22 @@ ties going up (Hydrogen: up to `xhigh`; Argon: up to `high`).
 | relay for Codex, Gemini and OpenRouter turns (Haiku, Sonnet fallback); recovery turn after a failed external turn | `low` | nothing: fixed |
 | pair measurement transport and resume checker | `low` | nothing: fixed |
 
-A cheap trial run with `effort: 'low'` therefore lowers the seats, but not the panel, the spec
-review or the audit: pass `spec: {effort: 'low'}` and `audit: {effort: 'low'}` too, or turn them
-off with `false`.
+So a cheap trial with `effort: 'low'` lowers the seats but not the panel, spec review or audit.
+Pass `spec: {effort: 'low'}` and `audit: {effort: 'low'}` too, or turn them off with `false`.
 
 ## Swapping a vendor
 
-Claude, Codex, Gemini and OpenRouter are separate accounts with separate limits. When one runs out, or a
-CLI isn't installed, pick the lineup yourself, for example with Codex Sol in place of Gemini:
+Claude, Codex, Gemini and OpenRouter are separate accounts with separate limits. When one runs
+out, or a CLI isn't installed, pick the lineup yourself, for example Codex Sol in place of Gemini:
 
     /dark-factory:council --seats opus,sonnet,astra,sol Fix the cancellation in ...
 
 or, from a session, `Workflow({name: 'dark-factory:council', args: {task: '...', seats: ['opus', 'sonnet', 'astra', 'sol']}})`.
-Asking in words ("run the council with Sol instead of Gemini") works too: the launching
-session passes `seats`.
+Asking in words ("run the council with Sol instead of Gemini") works too: the launching session
+passes `seats`.
 
-`seats` sets the debating seats only. The other roles in the table keep their defaults, so a
-lineup without a vendor also has to move that vendor's other roles:
+`seats` sets the debating seats only. The other roles keep their defaults, so a lineup without a
+vendor must also move that vendor's other roles:
 
 | option | sets |
 |---|---|
@@ -105,13 +104,12 @@ strategy, whose reviewer would otherwise default to Astra.
 
 Setup's preflight checks every CLI the resolved lineup needs and stops the run before any seat
 starts if one can't run, naming the seat to swap. `--prepare` runs the same check with no model
-turn; see [Process controls](process-controls.md).
+turn ([Process controls](process-controls.md)).
 
 An OpenRouter seat goes wherever a seat name does (`seats`, `panel`, `spec`, `audit`, `simple`,
-pair `author` and `reviewer`, ensemble `seats` and `models`, Codex-host `roles`). To swap one out,
-name another seat in its place; to use one in place of a vendor that ran out, name it the same
-way, for example `--seats opus,sonnet,openrouter:moonshotai/kimi-k2`. Remember that it adds no
-vendor to the consensus rule.
+pair `author` and `reviewer`, ensemble `seats` and `models`, Codex-host `roles`). To use one in
+place of a vendor that ran out, name it the same way, for example
+`--seats opus,sonnet,openrouter:moonshotai/kimi-k2`. It adds no vendor to the consensus rule.
 
 ## Cost
 
@@ -129,49 +127,51 @@ Rough cost, in agent turns at the defaults:
 
 ## OpenRouter seats
 
-`openrouter:<model-id>` runs the Claude CLI (`claude -p`, as the Claude provider runs it) with its
-API pointed at OpenRouter, for that one process: `ANTHROPIC_BASE_URL=https://openrouter.ai/api`,
-the key as `ANTHROPIC_AUTH_TOKEN`, an empty `ANTHROPIC_API_KEY`, the model ID for `--model` and
-for every Claude model alias (so no background call reaches a Claude model through OpenRouter),
-and `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1`. Claude Code's tools, sandbox and permission
-rules are the ones a Claude seat gets. In Claude Code the turn goes through the relay and
-`dark-factory seat-run --vendor openrouter`, never a native subagent; on the Codex host through the
-same helper. Token use is recorded per turn in `usage.jsonl`; Claude Code's dollar figure is wrong
-for these models and is never reported.
+`openrouter:<model-id>` runs `claude -p` (as the Claude provider does) with its API pointed at
+OpenRouter, for that one process only:
+
+- `ANTHROPIC_BASE_URL=https://openrouter.ai/api`
+- the key as `ANTHROPIC_AUTH_TOKEN`, and an empty `ANTHROPIC_API_KEY`
+- the model ID for `--model` and for every Claude model alias, so no background call reaches a
+  Claude model through OpenRouter
+- `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1`
+
+Claude Code's tools, sandbox and permission rules are the ones a Claude seat gets. In Claude Code
+the turn goes through the relay and `dark-factory seat-run --vendor openrouter`, never a native
+subagent; on the Codex host, through the same helper. Token use is recorded per turn in
+`usage.jsonl`. Claude Code's dollar figure is wrong for these models and is never reported.
 
 - **The key.** Export `OPENROUTER_API_KEY` in the environment that starts the helper (the Claude
   Code session or `dark-factory-codex`). It is read at each turn and never written to argv,
   `spec.json`, prompts, job directories, the room, `usage.jsonl`, logs, errors or reports. Like
-  any exported variable, the other vendors' CLIs and the verification command inherit it from
-  the helper's environment.
+  any exported variable, the other vendors' CLIs and the verification command inherit it.
 - **Preflight.** `dark-factory preflight --vendors openrouter:<model-id>` (which setup and
   `--prepare` run for you) checks that `claude` is on `PATH`, that `OPENROUTER_API_KEY` is set,
   that OpenRouter accepts it (`GET https://openrouter.ai/api/v1/key` answers 200) and that it
   lists every model asked for (`GET https://openrouter.ai/api/v1/models`). A bad key would
   otherwise cost about three minutes per seat in Claude Code's own retries.
-- **Failures.** OpenRouter's HTTP status, from the envelope Claude prints, decides: 401 (the key),
-  402 (out of credits) and 400 `invalid_request_error` (no such model) end the seat without a
-  retry and name the status and message; 429 and 5xx get the usual single capacity retry.
-- **Its own Claude configuration.** Each OpenRouter seat gets a `CLAUDE_CONFIG_DIR` of its own,
+- **Failures.** OpenRouter's HTTP status, from the envelope Claude prints, decides. 401 (the
+  key), 402 (out of credits) and 400 `invalid_request_error` (no such model) end the seat without
+  a retry and name the status and message; 429 and 5xx get the usual single capacity retry.
+- **Its own Claude configuration.** Each seat gets its own `CLAUDE_CONFIG_DIR`,
   `<runDir>/openrouter/<seat>/config` (mode 0700; a Codex-host role's is under the host run's
-  directory), made by the helper outside the sandbox and kept across that seat's turns, so
-  resumes and fix passes find their session. It is in no directory the seat can write, and a
-  turn is refused if any part of that path is a symbolic link. Your
-  global `CLAUDE.md`, hooks, plugins, MCP servers and Claude login never reach the provider. The
-  seat's Bash tool runs with the token unset (`CLAUDE_ENV_FILE`), so no command the model runs
-  can read or write it.
+  directory). The helper makes it outside the sandbox and keeps it across that seat's turns, so
+  resumes and fix passes find their session. It is in no directory the seat can write, and a turn
+  is refused if any part of the path is a symbolic link. Your global `CLAUDE.md`, hooks, plugins,
+  MCP servers and Claude login never reach the provider. The seat's Bash tool runs with the token
+  unset (`CLAUDE_ENV_FILE`), so no command the model runs can read or write it.
 - **Privacy.** The seat's prompts, the code it reads and the tool output it sees go to OpenRouter
   and to the provider that serves the model, under their terms, not Anthropic's.
-- **What remains.** Claude Code keeps the seat's full session transcripts in that configuration
-  directory, and the helper can't stop Claude writing whatever the endpoint sends back into
-  them; if the endpoint ever echoed the key, a transcript would hold it. After every OpenRouter
-  turn the helper searches that directory, the job directory and the files the turn changed for
-  the key; a copy is redacted in place and the turn fails with error class `leak` (not retried).
-  A file or directory left read-only or unreadable is opened up for the search and given its
-  mode back; one the helper still can't read or rewrite fails the turn the same way, so a
-  search that couldn't finish never passes a turn.
-  `dark-factory cleanup --run-dir <runDir>` deletes these directories, with or without `--all`,
-  opening up any the seat or the search left without owner permissions; a directory it still
-  can't delete is named in `openrouterConfigsRemaining` and the cleanup exits with an error.
-  The search reads raw bytes, so it can't see inside Git's compressed objects; the Bash unset is
-  what keeps the key out of a commit.
+- **Leak check.** Claude Code keeps the seat's full session transcripts in that configuration
+  directory, and the helper can't stop Claude writing whatever the endpoint sends back into them;
+  if the endpoint ever echoed the key, a transcript would hold it. After every OpenRouter turn the
+  helper searches that directory, the job directory and the files the turn changed for the key. A
+  copy is redacted in place and the turn fails with error class `leak` (not retried). A file or
+  directory left read-only or unreadable is opened up for the search and given its mode back; one
+  the helper still can't read or rewrite fails the turn the same way, so a search that couldn't
+  finish never passes a turn. The search reads raw bytes, so it can't see inside Git's compressed
+  objects; the Bash unset is what keeps the key out of a commit.
+- **Cleanup.** `dark-factory cleanup --run-dir <runDir>` deletes these directories, with or
+  without `--all`, opening up any the seat or the search left without owner permissions. A
+  directory it still can't delete is named in `openrouterConfigsRemaining` and the cleanup exits
+  with an error.

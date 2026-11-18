@@ -14,7 +14,7 @@
 
 - [Installing](install.md): requirements, the permission rule and agy settings, Claude-only use, Codex, update and uninstall.
 - [Reading a result](results.md): statuses, readiness, delivery, and what to do next.
-- [Choosing the models](models.md): every seat name, each host's defaults, how to swap a vendor, and rough cost per run.
+- [Choosing the models](models.md): seat names, each host's defaults, swapping a vendor, and rough cost per run.
 - [Running in Codex](codex.md): the Codex skill and the standalone runner.
 - [Process controls, explanation, and resume](process-controls.md): `--explain`, `--prepare`, budgets, repairs, checkpoints.
 - [Verification and delivery](verification-and-delivery.md): the gate, measurement, `apply` and `verify-delivery`.
@@ -26,8 +26,7 @@
 
 ## Internals
 
-- [Architecture](architecture.md): how the workflows fit together, the shared guarantees, the plugin layout, how the pieces fit, and the run directory.
-- [Pinning the engine](engine-pinning.md): running a frozen plugin export for a self-update;
-  the [admission reference](engine-pinning-reference.md) has the full policy.
+- [Architecture](architecture.md): how the workflows fit together, shared guarantees, plugin layout, and the run directory.
+- [Pinning the engine](engine-pinning.md): running a frozen plugin export for a self-update; the [admission reference](engine-pinning-reference.md) has the full policy.
 - [Development](development.md): building, testing and golden prompts.
 - [Gotchas and troubleshooting](gotchas.md): platform and CLI quirks, and where to look when a run fails.

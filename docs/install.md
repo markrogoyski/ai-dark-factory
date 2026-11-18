@@ -6,9 +6,8 @@
 
 ### Requirements
 
-Claude Code with the Workflow tool, `git`, `python3` and Node on PATH, and work in a Git
-repository with at least one commit. The default lineups also use other vendors' CLIs, each
-installed and logged in:
+Claude Code with the Workflow tool, `git`, `python3` and Node on PATH, and a Git repository with
+at least one commit. The default lineups also use other vendors' CLIs, each installed and logged in:
 
 | CLI | needed for | without it |
 |---|---|---|
@@ -20,8 +19,7 @@ OpenRouter seats (`openrouter:<model-id>`) need `OPENROUTER_API_KEY`; see
 
 ### Install the plugin
 
-The repo is a Claude Code plugin marketplace with one plugin, `dark-factory`. In a Claude Code
-session:
+The repo is a Claude Code plugin marketplace with one plugin, `dark-factory`. In a session:
 
     /plugin marketplace add markrogoyski/ai-dark-factory
     /plugin install dark-factory@ai-dark-factory
@@ -36,14 +34,13 @@ A plugin can't grant permissions, so add this to `~/.claude/settings.json` yours
 
     "permissions": { "allow": [ "Bash(dark-factory:*)" ] }
 
-It stops the relay and checker agents prompting mid-run, and Codex and Gemini seats depend on
-it: neither CLI can run inside Claude Code's Bash sandbox, because each writes to its home
-directory (`~/.codex`, `~/.gemini`) as it starts and needs the network. `dark-factory seat-run`
-detects this, and the relay runs the command outside the sandbox from the first try. Per the
-Claude Code docs, an allow rule also approves running the commands it matches outside the
-sandbox, and it applies before auto mode's classifier. Without it, setup's preflight finds the
-CLI stuck in the sandbox and stops the run before any seat starts, saying how to fix it or which
-seat to swap.
+It stops the relay and checker agents prompting mid-run. Codex and Gemini seats depend on it:
+neither CLI can run inside Claude Code's Bash sandbox, because each writes to its home directory
+(`~/.codex`, `~/.gemini`) as it starts and needs the network. `dark-factory seat-run` detects
+this and the relay runs the command outside the sandbox from the first try (per the Claude Code
+docs, an allow rule approves running matching commands outside the sandbox, and applies before
+auto mode's classifier). Without the rule, setup's preflight finds the CLI stuck in the sandbox
+and stops the run before any seat starts, saying how to fix it or which seat to swap.
 
 ### agy settings (required for Gemini seats)
 
@@ -52,10 +49,10 @@ Headless agy can't ask for permission, so it denies every command and file edit 
 
     "toolPermission": "proceed-in-sandbox"
 
-Commands then run without prompting inside agy's sandbox, which has no network and can only
-write where a grant allows. This setting is global, so it applies to interactive agy sessions
-too; `seat-run` refuses to start a Gemini turn without it. `seat-run` adds the one grant a run
-needs, `write_file(<repo>/.council)`, the first time a repository has a Gemini seat.
+Commands then run without prompting inside agy's sandbox, which has no network and can only write
+where a grant allows. The setting is global, so it applies to interactive agy sessions too.
+`seat-run` refuses to start a Gemini turn without it, and adds the one grant a run needs,
+`write_file(<repo>/.council)`, the first time a repository has a Gemini seat.
 
 ### Claude only
 
@@ -65,8 +62,8 @@ Without `codex` and `agy`, choose Claude models explicitly:
     /dark-factory:council --seats opus,sonnet Fix the cancellation in ...
 
 The factory's defaults use Codex in several roles (the Simple reviewer, the panel, the spec
-review and the audit), so a Claude-only factory run has to move each of them;
-[Swapping a vendor](models.md#swapping-a-vendor) has the full example.
+review and the audit), so a Claude-only factory run has to move each of them; see
+[Swapping a vendor](models.md#swapping-a-vendor).
 
 ### Update and uninstall
 
@@ -77,26 +74,26 @@ review and the audit), so a Claude-only factory run has to move each of them;
 ## Install in Codex
 
 Codex uses dark-factory as a skill linked from a local checkout. Clone the repository somewhere
-it can stay, then install the skill in the project where you want to use it:
+it can stay, then install the skill in the project where you want it:
 
 ```sh
 git clone https://github.com/markrogoyski/ai-dark-factory.git ~/ai-dark-factory
 ~/ai-dark-factory/install-codex.sh --repo /path/to/project
 ```
 
-With no `--repo`, the installer uses the current Git repository. `install-codex.sh --user`
-installs in `~/.agents/skills` for use across projects. It creates a symlink to the shipped skill,
-so keep the checkout in place. It does not replace an existing skill from another location or
-change account settings. Codex discovers the skill automatically; start a new session if it
-doesn't appear.
+- With no `--repo`, the installer uses the current Git repository. `--user` installs in
+  `~/.agents/skills` for use across projects.
+- It symlinks the shipped skill, so keep the checkout in place. It doesn't replace an existing
+  skill from another location or change account settings.
+- Codex discovers the skill automatically; start a new session if it doesn't appear.
 
-Node, Python 3, Git, and authenticated `codex` and `claude` CLIs are required (`agy` too for
+Requirements: Node, Python 3, Git, and authenticated `codex` and `claude` CLIs (plus `agy` for
 Gemini seats, with the [agy settings](#agy-settings-required-for-gemini-seats) above). Runner
 options, resume, and the standalone CLI are in [Running in Codex](codex.md).
 
-To update, `git pull` in the checkout: the link points at it, so the next session uses the new
-version. To uninstall, remove the link, `.agents/skills/dark-factory` in the project (or
-`~/.agents/skills/dark-factory`), and the checkout.
+To update, `git pull` in the checkout; the next session uses the new version. To uninstall,
+remove the link (`.agents/skills/dark-factory` in the project, or `~/.agents/skills/dark-factory`)
+and the checkout.
 
 ## Working on dark-factory itself
 

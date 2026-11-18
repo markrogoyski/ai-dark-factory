@@ -13,21 +13,28 @@ published one:
     make unhooks                 # turn that off again
     make clean                   # remove __pycache__ and .pytest_cache left by ad hoc test runs
 
-**The pre-commit hook.** `make hooks` sets `core.hooksPath=.githooks` in this clone's git
-config, not in any tracked file, so it lasts until `make unhooks` (or `git config --unset
-core.hooksPath`) and is never turned on by `make` or `make check`. It refuses to replace a hooks
-path you set yourself. The hook runs `make check` on the working tree, so unstaged edits are
-tested too; `git commit --no-verify` skips it once. Git exports `GIT_INDEX_FILE` to a pre-commit
-hook, and `GIT_DIR` too from a linked worktree; the Makefile unexports these and the helper drops
-them itself (`GIT_REPO_ENV` in `dark_factory_cli/common.py`, mirrored in `lib/engine.mjs` and
-the Makefile; `test/test_git_environment.py` keeps the three lists equal).
-
+`make check` needs only Node, `python3` and `git`; requirements for the plugin itself, the
+permission rule and agy settings are under [Installing](install.md#install-in-claude-code).
 `NODE=… PYTHON=…` choose the interpreters that run the gates; scripts the tests start through
 their shebangs still use `node` and `python3` from `PATH`.
 
-The pieces of `make check`. The quick ones run first, then `unit` and `host-test` run side by
-side; `host-test` is one `node --test` run whose files run in parallel, so it lasts about as long
-as its slowest file:
+## The pre-commit hook
+
+`make hooks` sets `core.hooksPath=.githooks` in this clone's git config, not in a tracked file.
+It lasts until `make unhooks` (or `git config --unset core.hooksPath`), is never turned on by
+`make` or `make check`, and refuses to replace a hooks path you set yourself. The hook runs
+`make check` on the working tree, so unstaged edits are tested too; `git commit --no-verify`
+skips it once.
+
+Git exports `GIT_INDEX_FILE` to a pre-commit hook, and `GIT_DIR` too from a linked worktree. The
+Makefile unexports them and the helper drops them itself (`GIT_REPO_ENV` in
+`dark_factory_cli/common.py`, mirrored in `lib/engine.mjs` and the Makefile;
+`test/test_git_environment.py` keeps the three lists equal).
+
+## The pieces of `make check`
+
+The quick ones run first, then `unit` and `host-test` run side by side. `host-test` is one
+`node --test` run whose files run in parallel, so it lasts about as long as its slowest file.
 
     make syntax                  # every script, runner, helper, test, fixture and shell script parses (static parses the workflows)
     node test/sim.mjs            # the real script against stub agents, and bin/dark-factory against a stub agy and real git
@@ -42,14 +49,11 @@ as its slowest file:
 `test/validation-overhead.mjs` times one pause and resume (about 30 s);
 `VALIDATION_SAMPLES=3 node --test test/validation-overhead.mjs` takes three samples for a median.
 
-**Prompt golden files.** `test/golden/<run>/<kind>.txt` holds the rendered prompt of each kind
-(setup, solve, debate, checker, panel, ratify, relay and so on) for fixed scenarios, and the
-sim compares against them. The prompts are the product, so a change to one shows up as a
-failure naming the line. After an intended change, run `UPDATE_GOLDEN=1 node test/sim.mjs` and
-read `git diff test/golden` before committing. The CLI's polling intervals can be shortened
-for tests with `COUNCIL_JOB_POLL`, `COUNCIL_TRANSCRIPT_POLL` and `COUNCIL_TRANSCRIPT_WAIT`.
+## Prompt golden files
 
-Requirements, the permission rule and agy settings are under
-[Installing](install.md#install-in-claude-code); `make check` itself needs only Node,
-`python3` and `git`.
-
+`test/golden/<run>/<kind>.txt` holds the rendered prompt of each kind (setup, solve, debate,
+checker, panel, ratify, relay and so on) for fixed scenarios, and the sim compares against them.
+The prompts are the product, so a change to one fails the sim with the line named. After an
+intended change, run `UPDATE_GOLDEN=1 node test/sim.mjs` and read `git diff test/golden` before
+committing. To shorten the CLI's polling intervals in tests, set `COUNCIL_JOB_POLL`,
+`COUNCIL_TRANSCRIPT_POLL` and `COUNCIL_TRANSCRIPT_WAIT`.

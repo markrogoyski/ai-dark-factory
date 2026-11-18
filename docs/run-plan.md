@@ -2,37 +2,33 @@
 
 [Documentation index](README.md) · [Project README](../README.md)
 
-The `run-plan` workflow executes a suite of features or defects sequentially through Factory or Pair. Each task
-has fresh agent sessions, separate worktrees, and the existing independent review and readiness
-gates. A successful task is applied, checked with `verify-delivery`, and committed together with
-its progress record. Requesting a plan run authorizes those local commits. Use a checkout with clean tracked files
-on the intended feature branch; the plan run does not publish, deploy, or switch branches.
+`run-plan` executes a suite of features or defects sequentially through Factory or Pair. Each task
+gets fresh sessions, its own worktrees and the usual review and readiness gates. A successful task
+is applied, checked with `verify-delivery`, and committed with its progress record; requesting a
+plan run authorizes those local commits. Use a checkout with clean tracked files on the intended
+feature branch. The run never publishes, deploys or switches branches.
 
 ```text
-  plan.json (bytes frozen)                  .council/run-plan-<id>/state.json: attempts,
-     |                                      budgets, answers, questions, decisions
-     v
-  +-> next eligible task: dependencies done, attempts and budget left
-  |      |
-  |   reserve its turns and time
+  plan.json (bytes frozen)         state: .council/run-plan-<id>/state.json
+     |
+  +-> next eligible task (dependencies done, attempts and budget left); reserve its turns and time
   |      |
   |   a Factory or Pair run: fresh sessions, its own worktrees, review and readiness
-  |      |
-  |      +-- ready ----------> apply --> verify-delivery --> commit code + progress
-  |      |                     (a failed check or commit hook rolls back and parks)
-  |      +-- failed run, attempts left --> tried again
+  |      |-- ready ---> apply -> verify-delivery -> commit code + progress
+  |      |              (a failed check or commit hook rolls back and parks)
+  |      |-- failed run, attempts left --> tried again
   |      '-- needs-user / needs-tier / needs-split / not ready --> parked; dependents wait
   +------'
-     |
-  no eligible task left
-     +-- every task done --> acceptance: run acceptance.verify, then a fresh council
-     |                       investigation on the integrated revision; both must pass
-     '-- otherwise --------> incomplete: answer the parked tasks, rerun the same command
+  no eligible task left:
+     every task done --> acceptance: acceptance.verify, then a fresh council investigation
+                         on the integrated revision; both must pass
+     otherwise -------> incomplete: answer the parked tasks, rerun the same command
 ```
 
-Create a plan such as `plan.json`. It may stay untracked: its bytes are frozen for the run and
-progress is kept in the run's `state.json`. A tracked plan also has its `progress` field committed
-with each task:
+## The plan file
+
+It may stay untracked: its bytes are frozen for the run and progress is kept in `state.json`. A
+tracked plan also has its `progress` field committed with each task.
 
 ```json
 {
@@ -69,12 +65,22 @@ with each task:
 }
 ```
 
-`workflow` defaults to `factory`. Task IDs are stable; dependencies can appear in any order,
-but missing IDs and cycles are rejected. Each task and final acceptance need explicit criteria.
-The limits above are also the defaults. Turn limits count workflow model turns, including failed
-turns and explicit recovery turns; retries inside a provider's CLI helper don't count. These are execution limits, not dollar forecasts. Final acceptance uses a fresh Council
-investigation after independently running `acceptance.verify`; both must pass on the integrated
-revision. Its model options go in `acceptance.args`.
+- `workflow` defaults to `factory`.
+- Task IDs are stable. `after` dependencies can appear in any order; missing IDs and cycles are
+  rejected.
+- Each task and the final acceptance need explicit criteria.
+- The `limits` shown are the defaults. They count workflow model turns (including failed and
+  explicit recovery turns, not retries inside a provider's CLI helper) and minutes. They are
+  execution limits, not dollar forecasts.
+- Final acceptance runs `acceptance.verify`, then a fresh Council investigation; both must pass on
+  the integrated revision. Its model options go in `acceptance.args`.
+- Reference documents named in task or default `plan` options are frozen by hash; changes
+  invalidate resume. Don't reference the plan file itself.
+- To use an Architecture result, map its milestones to task IDs and `after` dependencies, keep
+  their criteria, and pass the reviewed design as a reference. Final acceptance covers the
+  original requirements across all milestones.
+
+## Running it
 
 ```text
 $dark-factory --workflow run-plan --plan-file /absolute/path/plan.json
@@ -86,31 +92,25 @@ Or run the shipped CLI directly:
 node plugins/dark-factory/bin/dark-factory-codex --workflow run-plan --cwd /path/to/project --plan-file /path/to/project/plan.json
 ```
 
-In Claude Code, invoke `/dark-factory:run-plan` with object arguments
-`{planFile: "/absolute/path/plan.json", repo: "/path/to/project"}`. A transport turn
-launches the same standalone controller. Plan runs use its Codex model profile on both hosts;
-explicit participants in task/default args override that profile. Node, Python, Git, and the selected authenticated CLIs are required.
-
-Reference documents named in task/default `plan` options are frozen by hash for the plan run;
-changes invalidate resume. Keep the plan run's own changing JSON file out of those references.
-To use an Architecture result, map its milestones to task IDs and `after` dependencies, retain
-their criteria, and pass the reviewed design as a reference. Final acceptance covers the original
-requirements across all milestones.
+In Claude Code, invoke `/dark-factory:run-plan` with
+`{planFile: "/absolute/path/plan.json", repo: "/path/to/project"}`; a transport turn launches the
+same standalone controller. Plan runs use its Codex model profile on both hosts; explicit
+participants in task or default args override it. Node, Python, Git and the selected
+authenticated CLIs are required.
 
 Each task gets a snapshot of settled decisions, answers, and pointers to accepted designs and
-final posts. It reads the relevant evidence instead of inheriting prior agent conversations.
-Routine implementation choices stay with the task agents; scope changes and conflicting
-requirements must become questions. Factory specification review uses `ask`. `needs-tier`,
-`needs-split`, `needs-user`, unresolved readiness, and exhausted attempts park the task with
-its result. Its dependents wait while independent tasks continue. Transport failures retry only
-within the attempt and run-plan limits. If no task is eligible, the result remains incomplete.
-A committed Pair task can leave [live checks](pair.md#live-checks) pending: criteria its run
-checked only against a stand-in. The plan's result lists those of committed tasks, each with its
-task ID, in `liveChecks` and `final.readiness.liveChecks`. They change no commit, park or
-readiness state; run them before relying on the plan.
+final posts, not earlier conversations. Routine implementation choices stay with the task agents;
+scope changes and conflicting requirements must become questions. Factory's specification review
+uses `ask`; when intake selects Pair, that doesn't force a council.
 
-Repeat the same invocation to resume; run-plan resume does not use `--resume`. To answer parked
-tasks, use `--args-file` with:
+## Parked tasks, answers and resume
+
+`needs-tier`, `needs-split`, `needs-user`, unresolved readiness and exhausted attempts park the
+task with its result; dependents wait while independent tasks continue. Transport failures retry
+only within the attempt and run-plan limits. With no eligible task left, the result is incomplete.
+
+Repeat the same invocation to resume (run-plan doesn't use `--resume`). Answer parked tasks with
+`--args-file`:
 
 ```json
 {
@@ -121,52 +121,14 @@ tasks, use `--args-file` with:
 }
 ```
 
-Answers may be strings or `{answer, tier?, noSplit?}`. A split proposal can be kept as one task
-with explicit `noSplit: true`; creating a different decomposition or changing requirements needs
-a revised plan with a new ID. Answers never reset attempts or budgets; new answers are rejected
-when the task has exhausted its attempts. The default two attempts allow one answered retry.
-The plan definition remains immutable once started; budget exhaustion is reported,
-not silently extended.
+- An answer is a string or `{answer, tier?, noSplit?}`.
+- A split proposal can be kept as one task with `noSplit: true`. A different decomposition or
+  changed requirements need a revised plan with a new ID; the plan is immutable once started.
+- A parked task stays idle until an answer requests a retry within its remaining limits. Answers
+  never reset attempts or budgets, and are rejected once attempts are exhausted. The default two
+  attempts allow one answered retry.
 
-The result's `report.markdown` ("How the plan went") lists every task: done with its attempts and
-commit, parked with its question, waiting on a dependency, or not started; then final acceptance,
-the budget used, and the path to each task's own result, whose report tells how that run went.
-The runner logs each task as it finishes, with its title and commit, and passes on each child
-run's progress lines.
-
-For tracked plans, completed code and the controller-owned `progress` field share a commit, with
-`Factory-Plan` and `Factory-Task` trailers. `.council/run-plan-ID/state.json` also retains
-unsuccessful attempts, questions, decisions, and budget accounting. Keep it and child-run evidence.
-It records the engine's package digest and each task's base commit. Resuming after a plugin
-update is refused: finish the plan with the plugin that started it, or start a new plan. Older
-journals without the digest resume with a warning. When the engine lives inside the target
-repository, its digest follows the plan's own commits, so a change only warns; use a frozen export.
-Before launching, the controller reserves an attempt's allowed turns and time. A completed
-attempt settles to measured usage; an interrupted attempt conservatively retains its full
-reservation, so restarting cannot replenish its budget. Interrupted delivery reserves additional
-verification time before retrying; if none remains, the task is rolled back and parked.
-Time between completed invocations is not charged.
-
-Recovery recognizes an exact prepared delivery or its completed commit. A failed delivery check
-or rejected commit hook restores the recorded base and parks the task, charging that attempt once.
-Reinvoking leaves a parked task idle until an answer requests a retry within its remaining limits.
-Rollback only removes the recorded delivery bytes; unexpected edits are preserved.
-Unexpected edits, changed HEAD/branch/requirements, or a still-running child stop recovery with
-a diagnostic. Ordinary interrupted tasks are parked with their artifacts retained; an answer
-can retry them if attempts remain. Child checkpoints are validated as strictly as any other resume.
-There is no background supervisor: an interrupted plan run is resumable, not guaranteed to keep
-running after its host closes. Final acceptance checks the settled criteria without a new specification
-review; its Council must return ready with every criterion met on the integrated repository.
-Final acceptance failures are parked for inspection; the plan run does not
-invent repair scope or weaken acceptance criteria.
-
-Untracked execution plans, named reference documents, and root-level local agent instruction files
-(`CLAUDE.md`, `CLAUDE.local.md`, `AGENTS.md`, `GEMINI.md`) are allowed without committing or excluding
-them. Their bytes are frozen and checked on resume; tracked edits and unrelated untracked files
-still stop the run. Untracked plans are never staged or rewritten: progress lives in the run's
-`state.json`. A task cannot overwrite these control files.
-
-To raise execution limits on resume, keep the plan unchanged and pass an args file:
+To raise limits on resume, keep the plan unchanged and add `extendLimits`:
 
 ```json
 {
@@ -179,9 +141,60 @@ To raise execution limits on resume, keep the plan unchanged and pass an args fi
 }
 ```
 
-Limits may only increase. The journal records the reason, old and new limits, and prior usage;
-spent time, turns, and attempts remain charged. The new limits apply to subsequent attempts,
-not to an already running child process. The deadline remains a hard cap, including audits.
-Intake sees that cap and can warn when the selected process is unlikely to fit. Run-plan's
-request to ask about unresolved requirements does not force a council when intake selects Pair.
+Limits may only increase. The journal records the reason, old and new limits and prior usage;
+spent time, turns and attempts stay charged. New limits apply to later attempts, not a running
+child. The deadline stays a hard cap, including audits; intake sees it and can warn when the
+process is unlikely to fit.
 
+## The result
+
+`report.markdown` ("How the plan went") lists every task (done with attempts and commit, parked
+with its question, waiting on a dependency, or not started), then final acceptance, the budget
+used, and the path to each task's own result. The runner logs each task as it finishes and passes
+on each child run's progress lines.
+
+A committed Pair task can leave [live checks](pair.md#live-checks) pending: criteria its run
+checked only against a stand-in. They appear with their task IDs in `liveChecks` and
+`final.readiness.liveChecks`, and change no commit, park or readiness state; run them before
+relying on the plan.
+
+Final acceptance checks the settled criteria without a new specification review; its Council must
+return ready with every criterion met on the integrated repository. A failure is parked for
+inspection; the run never invents repair scope or weakens criteria.
+
+## Commits, state and budgets
+
+- **Commits.** For tracked plans, completed code and the controller-owned `progress` field share
+  a commit with `Factory-Plan` and `Factory-Task` trailers.
+- **State.** `.council/run-plan-ID/state.json` retains unsuccessful attempts, questions, decisions
+  and budget accounting, plus the engine's package digest and each task's base commit. Keep it
+  and the child-run evidence.
+- **Plugin updates.** Resuming after one is refused: finish the plan with the plugin that started
+  it, or start a new plan. Older journals without the digest resume with a warning. When the
+  engine lives inside the target repository, its digest follows the plan's own commits, so a
+  change only warns; use a frozen export.
+- **Budgets.** Before launching, the controller reserves an attempt's allowed turns and time. A
+  completed attempt settles to measured usage; an interrupted one keeps its full reservation, so
+  restarting can't replenish the budget. Interrupted delivery reserves extra verification time
+  before retrying; if none remains, the task is rolled back and parked. Time between completed
+  invocations isn't charged.
+
+## Interruption and recovery
+
+There is no background supervisor: an interrupted run is resumable, but stops when its host closes.
+
+- Recovery recognizes an exact prepared delivery or its completed commit.
+- A failed delivery check or rejected commit hook restores the recorded base and parks the task,
+  charging that attempt once. Rollback removes only the recorded delivery bytes; unexpected edits
+  are preserved.
+- Unexpected edits, a changed HEAD, branch or requirements, or a still-running child stop recovery
+  with a diagnostic.
+- Other interrupted tasks are parked with artifacts retained; an answer can retry them if attempts
+  remain. Child checkpoints are validated as strictly as any other resume.
+
+## Untracked control files
+
+Untracked plans, named reference documents and root-level agent instruction files (`CLAUDE.md`,
+`CLAUDE.local.md`, `AGENTS.md`, `GEMINI.md`) are allowed without committing or excluding them.
+Their bytes are frozen and checked on resume, they are never staged or rewritten, and a task
+can't overwrite them. Tracked edits and unrelated untracked files still stop the run.
