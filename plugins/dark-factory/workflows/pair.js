@@ -159,6 +159,7 @@ const CATALOG = {
   luna:   { vendor: 'codex',  model: 'gpt-6-luna',    name: 'Codex Luna' },
   gemini: { vendor: 'gemini', model: 'gemini-4-hydrogen', name: 'Gemini Hydrogen', efforts: ['low', 'medium', 'high', 'xhigh'] },
   argon:  { vendor: 'gemini', model: 'gemini-4-argon',    name: 'Gemini Argon',    efforts: ['low', 'medium', 'high'] },
+  neon:   { vendor: 'gemini', model: 'gemini-4-neon',     name: 'Gemini Neon',     efforts: ['low', 'medium', 'high', 'xhigh'] },
 }
 
 const DEFAULT_SEATS = ['opus', 'sonnet', 'astra', 'gemini']

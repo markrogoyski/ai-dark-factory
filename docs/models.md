@@ -10,6 +10,7 @@
 | `astra`, `sol`, `luna` | gpt-6.2-astra, gpt-6.2-sol, gpt-6-luna | Codex CLI |
 | `gemini` | Gemini 4 Hydrogen | Antigravity CLI (`agy`) |
 | `argon` | Gemini 4 Argon (low, medium and high effort only); only when asked for | Antigravity CLI |
+| `neon` | Gemini 4 Neon (low, medium, high and xhigh effort) | Antigravity CLI |
 | `codex:<model-id>`, `gemini:<model-id>` | any model the CLI offers (`agy models` lists Gemini's) | |
 | `openrouter:<model-id>` | any model OpenRouter lists, e.g. `openrouter:deepseek/deepseek-v4-pro`; only when asked for | `claude -p` against OpenRouter's Anthropic-compatible endpoint ([OpenRouter seats](#openrouter-seats)) |
 
@@ -49,7 +50,7 @@ fallback), and the retro runs on Sonnet. On the Codex host you can change the or
 Models that solve, judge or review run at `high`; roles that coordinate a run at `medium`; roles
 that move data at `low`. Valid levels are `low`, `medium`, `high`, `xhigh` and `max`; Codex also
 accepts `ultra`. Gemini puts the level in the model ID (`gemini-4-hydrogen-high`), so a level the
-model lacks maps to the nearest one it has, ties going up (Hydrogen: up to `xhigh`; Argon: up to
+model lacks maps to the nearest one it has, ties going up (Hydrogen and Neon: up to `xhigh`; Argon: up to
 `high`).
 
 | role | effort | changed by |
