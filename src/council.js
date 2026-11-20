@@ -173,9 +173,9 @@ async function councilRun() {
       (S.mode === 'implement'
         ? deliveryNote(S, finalTag, W, 'The final change')
         : '') +
-      `The room (${S.run.room}) holds the full transcript. When the user is done with it, \`${S.cli} cleanup --run-dir ${S.run.runDir}\` ` +
+      `The room (${S.run.room}) holds the full transcript. When the user is done with it, \`${S.cli} cleanup --run-dir ${shp(S.run.runDir)}\` ` +
       'removes the worktrees and snapshot refs and keeps the transcript; add --all to delete everything. ' +
-      `Codex and Gemini token usage: \`${S.cli} usage --run-dir ${S.run.runDir}\`.`,
+      `Codex and Gemini token usage: \`${S.cli} usage --run-dir ${shp(S.run.runDir)}\`.`,
   }
 }
 

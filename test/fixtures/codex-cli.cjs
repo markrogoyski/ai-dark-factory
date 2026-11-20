@@ -106,7 +106,7 @@ if ('signals' in schema.properties) {
 } else if ('measured' in schema.properties) {
   kind = 'checker'
   const runDir = fs.readFileSync(runPath, 'utf8')
-  const command = prompt.match(/dark-factory measure --run-dir \S+ --seat (\w+) --label (\w+)(?: --since (\w+))?/)
+  const command = prompt.match(/dark-factory measure --run-dir (?:'[^']*'|\S+) --seat (\w+) --label (\w+)(?: --since (\w+))?/)
   const [, seat, label, since] = command
   const measured = helper('measure', '--run-dir', runDir, '--seat', seat, '--label', label, ...(since ? ['--since', since] : []))
   const stat = measured.snapshot

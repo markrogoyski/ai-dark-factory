@@ -15,6 +15,9 @@ function uniqueBy(xs, f) { const seen = new Set(); return xs.filter(x => { const
 function workflowCall(name) { return `dark-factory:${name}` }
 
 function shq(s) { return `'${String(s).replace(/'/g, `'\\''`)}'` }
+// A path for a command line in a prompt: as it is when the shell reads it as one word, quoted
+// otherwise (a repository under a directory with spaces), so the command runs as the model pastes it.
+function shp(s) { return /^[\w./:@%+=,-]+$/.test(String(s)) ? String(s) : shq(s) }
 
 // Models often return an ID with its text attached ("1B3: the suite passes", "[1B3] …").
 // Accept the first ledger-shaped token instead of requiring an exact string.

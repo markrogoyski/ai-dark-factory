@@ -946,6 +946,17 @@ describe('util', () => {
     assert.deepEqual([lib.plural(1, 'claim'), lib.plural(2, 'claim')], ['1 claim', '2 claims'])
     assert.equal(lib.shq("it's"), `'it'\\''s'`)
   })
+  test('shp leaves a plain path alone and quotes one the shell would split', () => {
+    assert.equal(lib.shp('/tmp/proj/.council/run-1'), '/tmp/proj/.council/run-1')
+    assert.equal(lib.shp('/Users/a b/repo/.council/x'), `'/Users/a b/repo/.council/x'`)
+    assert.equal(lib.shp('/r/$HOME'), `'/r/$HOME'`)
+  })
+  test('the checker\'s measure command quotes a run directory with spaces', () => {
+    const { L, S } = makeRun()
+    S.run.runDir = '/Users/a b/repo/.council/run-1'
+    S.pos.A.round = 0
+    assert.match(L.checkerPrompt(S, 'A', 0, []), /measure --run-dir '\/Users\/a b\/repo\/\.council\/run-1' --seat A/)
+  })
 })
 
 describe('debates in the report', () => {

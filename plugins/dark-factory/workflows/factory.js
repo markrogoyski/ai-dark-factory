@@ -59,6 +59,9 @@ function uniqueBy(xs, f) { const seen = new Set(); return xs.filter(x => { const
 function workflowCall(name) { return `dark-factory:${name}` }
 
 function shq(s) { return `'${String(s).replace(/'/g, `'\\''`)}'` }
+// A path for a command line in a prompt: as it is when the shell reads it as one word, quoted
+// otherwise (a repository under a directory with spaces), so the command runs as the model pastes it.
+function shp(s) { return /^[\w./:@%+=,-]+$/.test(String(s)) ? String(s) : shq(s) }
 
 // Models often return an ID with its text attached ("1B3: the suite passes", "[1B3] …").
 // Accept the first ledger-shaped token instead of requiring an exact string.
@@ -1483,7 +1486,7 @@ Where the user answered, write the criteria to the answer. Otherwise choose the 
 - Keep each criterion's ID. Reword a criterion in place; number a new one after the highest ID; remove one only when an accepted finding says it is out of scope or can't be checked.${given ? ' The user wrote the criteria: never reword or remove theirs. Add a criterion beside one instead.' : ''}
 - Every criterion must stay checkable from inside a worktree, by reading files and running commands, with no network, logins or subagents. Name the evidence where it isn't obvious.
 - Keep it short: 3 to 9 criteria. Merge rather than pile on.${S.mode === 'implement' ? `
-${tierProfile(S).factory ? '- If execution settings need amendment, update verification.json as an env object of explicit string overrides without weakening checks. Remeasure through the disposable-checkout path even when only the overrides changed. Do not rely on shell exports.\n' : ''}- If an amendment changes the verification command${tierProfile(S).factory ? ' or its environment overrides' : ''}, write the new command to ${S.run.runDir}/verify.sh, just the command, with no shebang line, and measure the baseline again: ${S.cli} measure --run-dir ${S.run.runDir} --seat ${S.letters[0]} --label base2${tierProfile(S).factory ? '' : ' --no-snapshot'} (if it prints status "running", poll with ${S.cli} wait --run-dir ${S.run.runDir} --job measure-${S.letters[0]}-base2). Set baselinePasses to suite.passed, and baselineNote to the reason and the failing tail if it fails. If ${tierProfile(S).factory ? 'neither the command nor the overrides change' : 'the command doesn\'t change'}, return it as it is, with baselinePasses ${S.baselineOk} and baselineNote "${S.baselineOk ? '' : oneLine(S.baselineNote, 300).replace(/"/g, "'")}".` : `
+${tierProfile(S).factory ? '- If execution settings need amendment, update verification.json as an env object of explicit string overrides without weakening checks. Remeasure through the disposable-checkout path even when only the overrides changed. Do not rely on shell exports.\n' : ''}- If an amendment changes the verification command${tierProfile(S).factory ? ' or its environment overrides' : ''}, write the new command to ${S.run.runDir}/verify.sh, just the command, with no shebang line, and measure the baseline again: ${S.cli} measure --run-dir ${shp(S.run.runDir)} --seat ${S.letters[0]} --label base2${tierProfile(S).factory ? '' : ' --no-snapshot'} (if it prints status "running", poll with ${S.cli} wait --run-dir ${shp(S.run.runDir)} --job measure-${S.letters[0]}-base2). Set baselinePasses to suite.passed, and baselineNote to the reason and the failing tail if it fails. If ${tierProfile(S).factory ? 'neither the command nor the overrides change' : 'the command doesn\'t change'}, return it as it is, with baselinePasses ${S.baselineOk} and baselineNote "${S.baselineOk ? '' : oneLine(S.baselineNote, 300).replace(/"/g, "'")}".` : `
 - Return the verification command as it is, with baselinePasses false and baselineNote "".`}
 - Update the criteria in ${S.run.runDir}/TASK.md to match, and add the assumptions there under their own heading.
 
@@ -1564,7 +1567,7 @@ ${taskBlock(S, 'H')}
 # What you are auditing
 
 - The change, as a diff against the starting commit: ${S.run.room}/${tag}/${W.L}.diff${large}
-- Your own checkout of the changed code: ${auditCheckout(S, a, 'H')}. If it doesn't exist yet, create it with \`${S.cli} materialize --run-dir ${S.run.runDir} --seat ${W.L} --label ${tag} --name ${roundTag('H')}-${a.lens}\`, which prints its path. Run tests and experiments there; nobody else uses it.
+- Your own checkout of the changed code: ${auditCheckout(S, a, 'H')}. If it doesn't exist yet, create it with \`${S.cli} materialize --run-dir ${shp(S.run.runDir)} --seat ${W.L} --label ${tag} --name ${roundTag('H')}-${a.lens}\`, which prints its path. Run tests and experiments there; nobody else uses it.
 - The user's own checkout of the repository: ${S.run.repoRoot}. Read only. The code before the change is the diff's base; \`git log\` in your checkout gives the history.
 
 Don't open anything else under ${S.run.room}: it holds the discussion that produced this change, and reading it would cost you the independence you are here for. Write only to your checkout, to ${S.run.room}/tests/ and to your review${tierProfile(S).factory ? '; the verification helper may also write its jobs and logs' : ''}.${auditEvidenceBlock(S, a, W, tag)}
@@ -1608,7 +1611,7 @@ ${mine.map(c => `- [${c.id}] ${c.severity}${c.judgment ? ', judgment' : ''}: ${o
 The author has since made one fix pass:
 - What the fix changed: ${p.delta && p.deltaRound === 'I' ? `${p.deltaPath} (${p.delta.files} files, +${p.delta.added}/−${p.delta.removed})` : `the difference between ${S.run.room}/${S.auditedTag}/${W.L}.diff and ${S.run.room}/${roundTag('I')}/${W.L}.diff`}
 - The author's account of it: ${postPath(S, W.L, 'I')}
-- A checkout of the fixed version: ${auditCheckout(S, a, 'J')}. If it doesn't exist yet, create it with \`${S.cli} materialize --run-dir ${S.run.runDir} --seat ${W.L} --label ${roundTag('I')} --name ${roundTag('J')}-${a.lens}\`.
+- A checkout of the fixed version: ${auditCheckout(S, a, 'J')}. If it doesn't exist yet, create it with \`${S.cli} materialize --run-dir ${shp(S.run.runDir)} --seat ${W.L} --label ${roundTag('I')} --name ${roundTag('J')}-${a.lens}\`.
 
 Review only what the fix changed: defects it introduced, and fixes that don't fix what they claim to. Don't re-file findings the fix left alone, and don't widen the review to code the fix didn't touch. This is the last pass and there is no further fix, so what you find here is reported to the user as it is ruled. File fact findings only, each with evidence (a file:line, or a command and the real tail of its output). Leave \`tests\` and \`probes\` empty.
 
@@ -1749,7 +1752,7 @@ function auditFixPrompt(S, W, todo) {
 function versionText(S, c, Y, k) {
   if (c.snapshotTag) return S.mode === 'implement' ? `${Y}'s reviewed snapshot (diff ${S.run.room}/${c.snapshotTag}/${Y}.diff; git -C ${S.run.repoRoot} show refs/council/${S.run.runId}/${Y}-${c.snapshotTag}:<path>)` : `${Y}'s reviewed artifact ${c.artifactPost}`
   const snap = r => S.mode === 'implement'
-    ? `${Y}'s round-${r} version (diff ${S.run.room}/r${r}/${Y}.diff; checkout: \`${S.cli} materialize --run-dir ${S.run.runDir} --seat ${Y} --label r${r}\`)`
+    ? `${Y}'s round-${r} version (diff ${S.run.room}/r${r}/${Y}.diff; checkout: \`${S.cli} materialize --run-dir ${shp(S.run.runDir)} --seat ${Y} --label r${r}\`)`
     : `${Y}'s round-${r} post (${S.run.room}/r${r}/${Y}.md)`
   if (c.kind === 'finding' && (c.round === 'H' || c.round === 'J') && tierProfile(S).architecture) {
     return c.round === 'H' ? `${Y}'s final milestone plan (${S.run.room}/${S.auditedTag}/${Y}.md)` : `${Y}'s revised milestone plan (${postPath(S, Y, 'I')})`
@@ -1801,9 +1804,9 @@ function checkerPrompt(S, Y, k, items) {
     ? `# Step 1 — measure
 
 ${S.host === 'codex' ? 'Run this using the available shell tool. Poll any running shell session until it returns JSON; do not supply a Bash timeout parameter:' : 'Run this exactly, with Bash timeout 600000:'}
-${S.cli} measure --run-dir ${S.run.runDir} --seat ${Y} --label ${tag}${since ? ` --since ${since}` : ''}${tests.length ? ` --tests ${tests.join(',')}` : ''}${S.host === 'codex' ? ' --max-wait 5' : ''}
+${S.cli} measure --run-dir ${shp(S.run.runDir)} --seat ${Y} --label ${tag}${since ? ` --since ${since}` : ''}${tests.length ? ` --tests ${tests.join(',')}` : ''}${S.host === 'codex' ? ' --max-wait 5' : ''}
 
-It snapshots ${Y}'s worktree, then runs the verification command and each published test against a disposable checkout of that snapshot. If it prints status "running", run \`${S.cli} wait --run-dir ${S.run.runDir} --job measure-${Y}-${tag}${S.host === 'codex' ? ' --max-wait 5' : ''}\` ${S.host === 'codex' ? 'and poll any running shell session until the job completes. The helper\'s --suite-timeout controls the suite deadline' : '(timeout 600000) until it doesn\'t'}. Copy its numbers exactly: \`diff\` from its snapshot (files, added, removed, and tree, the full hash), \`delta\` from snapshot.delta, \`postWords\`, \`suite\` (ran, passed, and the last 15 or so lines of its tail), and every cross-test outcome. Set measured=false only if the command itself failed.
+It snapshots ${Y}'s worktree, then runs the verification command and each published test against a disposable checkout of that snapshot. If it prints status "running", run \`${S.cli} wait --run-dir ${shp(S.run.runDir)} --job measure-${Y}-${tag}${S.host === 'codex' ? ' --max-wait 5' : ''}\` ${S.host === 'codex' ? 'and poll any running shell session until the job completes. The helper\'s --suite-timeout controls the suite deadline' : '(timeout 600000) until it doesn\'t'}. Copy its numbers exactly: \`diff\` from its snapshot (files, added, removed, and tree, the full hash), \`delta\` from snapshot.delta, \`postWords\`, \`suite\` (ran, passed, and the last 15 or so lines of its tail), and every cross-test outcome. Set measured=false only if the command itself failed.
 `
     : `# Step 1 — count the post
 
@@ -1815,7 +1818,7 @@ ${taskBlock(S, k)}
 # What you are checking: seat ${Y}, ${what}
 - Current version: ${S.mode === 'implement' ? `worktree ${s.wt}; post ${post}` : `post ${post}`}
 - Supporting files: scripts the post cites should sit next to it, named ${Y}-<name>; if one isn't there, use the path the post gives. The room's directories for later rounds and stages are created up front, so ignore the empty ones.
-- Earlier versions: ${S.mode === 'implement' ? `${S.run.room}/r<N>/${Y}.diff, or a checkout via \`${S.cli} materialize --run-dir ${S.run.runDir} --seat ${Y} --label r<N>\`, which prints its path` : `${S.run.room}/r<N>/${Y}.md`}
+- Earlier versions: ${S.mode === 'implement' ? `${S.run.room}/r<N>/${Y}.diff, or a checkout via \`${S.cli} materialize --run-dir ${shp(S.run.runDir)} --seat ${Y} --label r<N>\`, which prints its path` : `${S.run.room}/r<N>/${Y}.md`}
 ${S.mode === 'plan' ? `- The code the plan builds on: ${s.wt}, a checkout of the starting commit that stays unchanged while plans are written. Judge its claims about the code there.\n` : arch ? `- The code the design builds on: ${S.run.repoRoot}. Judge its claims about the code there, and don't modify it.\n` : ''}
 ${measure}
 # Step 2 — rule on each item
@@ -3348,7 +3351,7 @@ function needsPlan(S, missing, runDir) {
         : 'a plan made in this conversation is under ~/.claude/plans/; otherwise look in the repository for the file the user named. ' +
           `Then rerun with object args and its absolute path: Workflow({name: "${workflowCall(S.workflowName)}", args: {task: <the task, saying which part to do>, plan: ["/abs/path"], …the other args}}). `) +
       'Don\'t paste the document into the task. If you can\'t tell which document is meant, ask the user.' +
-      (runDir ? ` Remove the partial run with \`${S.cli} cleanup --run-dir ${runDir} --all\`.` : ''),
+      (runDir ? ` Remove the partial run with \`${S.cli} cleanup --run-dir ${shp(runDir)} --all\`.` : ''),
   }
 }
 
@@ -3359,7 +3362,7 @@ function reveal(S) {
 function failure(S, status, reason, extra) {
   return { status, reason, mode: S.mode, task: S.task, runDir: S.run ? S.run.runDir : null, notes: S.notes, ...(extra || {}),
     forTheOrchestrator: `The council stopped early (${status}): ${reason}. Tell the user plainly; nothing was applied to their tree.` +
-      (S.run ? ` Clean up with \`${S.cli} cleanup --run-dir ${S.run.runDir} --all\` unless they want to inspect it.` : '') }
+      (S.run ? ` Clean up with \`${S.cli} cleanup --run-dir ${shp(S.run.runDir)} --all\` unless they want to inspect it.` : '') }
 }
 
 // A vendor CLI that can't run would cost its seat every turn after round 0 (a Gemini seat once sat
@@ -3697,7 +3700,7 @@ function escalatedResult(S, res) {
       escalation: { from: e.from, to: e.to, trigger: e.trigger, why: e.why, runDir: e.runDir, ...(chain.length > 1 ? { earlier: chain.slice(0, -1).map(x => ({ from: x.from, to: x.to, trigger: x.trigger, why: x.why, runDir: x.runDir })) } : {}) } },
     report: res.report ? { ...res.report, markdown: `${escalatedSection(S)}${res.report.markdown}` } : res.report,
     forTheOrchestrator: `This run started as ${as[chain[0].from] || chain[0].from} and the factory handed it ${chain.map(x => `to the ${x.to} tier because ${x.why}`).join(', then ')}. Say so first, in one sentence. ` +
-      chain.map(x => `The ${capital(x.from)} attempt is in ${x.runDir}; clean it up with \`${S.cli} cleanup --run-dir ${x.runDir} --all\` when the user is done. `).join('') + (res.forTheOrchestrator || ''),
+      chain.map(x => `The ${capital(x.from)} attempt is in ${x.runDir}; clean it up with \`${S.cli} cleanup --run-dir ${shp(x.runDir)} --all\` when the user is done. `).join('') + (res.forTheOrchestrator || ''),
   }
 }
 
@@ -3800,7 +3803,7 @@ function simpleResult(S, o) {
       'a short body only if needed, no references to plans, the factory or models, and no attribution lines' +
       `${retro && retro.markdown ? '; (5) last, retro.markdown as it is: notes on the workflow, not the user\'s project' : ''}. ` +
       deliveryNote(S, tag, W, 'The change') +
-      `When the user is done, \`${S.cli} cleanup --run-dir ${S.run.runDir}\` removes the worktree and keeps the transcript; add --all to delete everything.`,
+      `When the user is done, \`${S.cli} cleanup --run-dir ${shp(S.run.runDir)}\` removes the worktree and keeps the transcript; add --all to delete everything.`,
   }
   return { ...res, ...deliveryFields(S, res) }
 }
@@ -3940,9 +3943,9 @@ function featureResult(S, o) {
       (retro && retro.markdown ? '(6) last, retro.markdown as it is: notes on the workflow, not the user\'s project, so don\'t act on them unless the user asks. ' : '') +
       'Run `git status` in the main tree to confirm no seat touched it. ' +
       deliveryNote(S, tag, W, 'The final change') +
-      `The room (${S.run.room}) holds the full transcript. When the user is done with it, \`${S.cli} cleanup --run-dir ${S.run.runDir}\` ` +
+      `The room (${S.run.room}) holds the full transcript. When the user is done with it, \`${S.cli} cleanup --run-dir ${shp(S.run.runDir)}\` ` +
       'removes the worktrees and snapshot refs and keeps the transcript; add --all to delete everything. ' +
-      `Codex and Gemini token usage: \`${S.cli} usage --run-dir ${S.run.runDir}\`.`,
+      `Codex and Gemini token usage: \`${S.cli} usage --run-dir ${shp(S.run.runDir)}\`.`,
   }
 }
 
@@ -4103,9 +4106,9 @@ function architectureResult(S, o) {
       'Those args hold the milestone\'s task with its draft criteria and any review findings still open against it, the final design as its plan document, and the tier the plan gave it, confirmed. ' +
       'If the user settles an open finding or question first, put the answer in the task. ' +
       'Each run starts from HEAD and stops on a dirty tree, so present each result as usual and wait for the user to commit it before the next milestone starts. ' +
-      `Keep this run's directory until the milestones are done, since each milestone run reads the design from ${design}: \`${S.cli} cleanup --run-dir ${S.run.runDir}\` (without --all) removes the worktrees and keeps the room. ` +
+      `Keep this run's directory until the milestones are done, since each milestone run reads the design from ${design}: \`${S.cli} cleanup --run-dir ${shp(S.run.runDir)}\` (without --all) removes the worktrees and keeps the room. ` +
       'Run `git status` in the main tree to confirm no seat touched it. ' +
-      `Codex and Gemini token usage: \`${S.cli} usage --run-dir ${S.run.runDir}\`.`,
+      `Codex and Gemini token usage: \`${S.cli} usage --run-dir ${shp(S.run.runDir)}\`.`,
   }
 }
 
@@ -4851,7 +4854,7 @@ function pairResumeSteps(S, via, hostRunDir, questions = S.pair.questions, post 
   const how = via === 'native'
     ? `To continue this ${slash} run, in this same Claude Code session only, call Workflow({name: "${workflowCall(name)}", resumeFromRunId: <this run's id>, args: <the same args as before, as an object (if you passed a plain string, use {task: <that string>}), plus clarifications: ${entries}>}). The turns before this stop replay from the session's cache; another session has no such cache.`
     : via === 'codex'
-      ? `To continue this ${S.factory ? `${slash} ` : ''}run, write a JSON file holding {"clarifications": ${entries}} and run dark-factory-codex --resume ${hostRunDir} --args-file <that file>. The runner checks every answer before any turn and replays the turns before this stop from its checkpoint.`
+      ? `To continue this ${S.factory ? `${slash} ` : ''}run, write a JSON file holding {"clarifications": ${entries}} and run dark-factory-codex --resume ${shp(hostRunDir)} --args-file <that file>. The runner checks every answer before any turn and replays the turns before this stop from its checkpoint.`
       : `To continue this run, call ${slash} again with the same args plus runtime: "cli", resume: "${hostRunDir}" and clarifications: ${entries}. The runner checks every answer before any turn and replays the turns before this stop from its checkpoint.`
   return `This run stopped for the user's answers. Show questions[] to the user, each under its ID with what it is about, and ask for an answer to every one (${ids}). ` +
     'An answer is {id, answer}; one to a question of kind criterion may also give criterion (the criterion\'s new text) or drop: true (to remove it). ' +
@@ -6654,9 +6657,9 @@ async function councilRun() {
       (S.mode === 'implement'
         ? deliveryNote(S, finalTag, W, 'The final change')
         : '') +
-      `The room (${S.run.room}) holds the full transcript. When the user is done with it, \`${S.cli} cleanup --run-dir ${S.run.runDir}\` ` +
+      `The room (${S.run.room}) holds the full transcript. When the user is done with it, \`${S.cli} cleanup --run-dir ${shp(S.run.runDir)}\` ` +
       'removes the worktrees and snapshot refs and keeps the transcript; add --all to delete everything. ' +
-      `Codex and Gemini token usage: \`${S.cli} usage --run-dir ${S.run.runDir}\`.`,
+      `Codex and Gemini token usage: \`${S.cli} usage --run-dir ${shp(S.run.runDir)}\`.`,
   }
 }
 

@@ -570,7 +570,7 @@ function needsPlan(S, missing, runDir) {
         : 'a plan made in this conversation is under ~/.claude/plans/; otherwise look in the repository for the file the user named. ' +
           `Then rerun with object args and its absolute path: Workflow({name: "${workflowCall(S.workflowName)}", args: {task: <the task, saying which part to do>, plan: ["/abs/path"], …the other args}}). `) +
       'Don\'t paste the document into the task. If you can\'t tell which document is meant, ask the user.' +
-      (runDir ? ` Remove the partial run with \`${S.cli} cleanup --run-dir ${runDir} --all\`.` : ''),
+      (runDir ? ` Remove the partial run with \`${S.cli} cleanup --run-dir ${shp(runDir)} --all\`.` : ''),
   }
 }
 
@@ -581,7 +581,7 @@ function reveal(S) {
 function failure(S, status, reason, extra) {
   return { status, reason, mode: S.mode, task: S.task, runDir: S.run ? S.run.runDir : null, notes: S.notes, ...(extra || {}),
     forTheOrchestrator: `The council stopped early (${status}): ${reason}. Tell the user plainly; nothing was applied to their tree.` +
-      (S.run ? ` Clean up with \`${S.cli} cleanup --run-dir ${S.run.runDir} --all\` unless they want to inspect it.` : '') }
+      (S.run ? ` Clean up with \`${S.cli} cleanup --run-dir ${shp(S.run.runDir)} --all\` unless they want to inspect it.` : '') }
 }
 
 // A vendor CLI that can't run would cost its seat every turn after round 0 (a Gemini seat once sat

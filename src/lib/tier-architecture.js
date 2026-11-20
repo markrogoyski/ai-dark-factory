@@ -155,8 +155,8 @@ function architectureResult(S, o) {
       'Those args hold the milestone\'s task with its draft criteria and any review findings still open against it, the final design as its plan document, and the tier the plan gave it, confirmed. ' +
       'If the user settles an open finding or question first, put the answer in the task. ' +
       'Each run starts from HEAD and stops on a dirty tree, so present each result as usual and wait for the user to commit it before the next milestone starts. ' +
-      `Keep this run's directory until the milestones are done, since each milestone run reads the design from ${design}: \`${S.cli} cleanup --run-dir ${S.run.runDir}\` (without --all) removes the worktrees and keeps the room. ` +
+      `Keep this run's directory until the milestones are done, since each milestone run reads the design from ${design}: \`${S.cli} cleanup --run-dir ${shp(S.run.runDir)}\` (without --all) removes the worktrees and keeps the room. ` +
       'Run `git status` in the main tree to confirm no seat touched it. ' +
-      `Codex and Gemini token usage: \`${S.cli} usage --run-dir ${S.run.runDir}\`.`,
+      `Codex and Gemini token usage: \`${S.cli} usage --run-dir ${shp(S.run.runDir)}\`.`,
   }
 }

@@ -835,7 +835,7 @@ Where the user answered, write the criteria to the answer. Otherwise choose the 
 - Keep each criterion's ID. Reword a criterion in place; number a new one after the highest ID; remove one only when an accepted finding says it is out of scope or can't be checked.${given ? ' The user wrote the criteria: never reword or remove theirs. Add a criterion beside one instead.' : ''}
 - Every criterion must stay checkable from inside a worktree, by reading files and running commands, with no network, logins or subagents. Name the evidence where it isn't obvious.
 - Keep it short: 3 to 9 criteria. Merge rather than pile on.${S.mode === 'implement' ? `
-${tierProfile(S).factory ? '- If execution settings need amendment, update verification.json as an env object of explicit string overrides without weakening checks. Remeasure through the disposable-checkout path even when only the overrides changed. Do not rely on shell exports.\n' : ''}- If an amendment changes the verification command${tierProfile(S).factory ? ' or its environment overrides' : ''}, write the new command to ${S.run.runDir}/verify.sh, just the command, with no shebang line, and measure the baseline again: ${S.cli} measure --run-dir ${S.run.runDir} --seat ${S.letters[0]} --label base2${tierProfile(S).factory ? '' : ' --no-snapshot'} (if it prints status "running", poll with ${S.cli} wait --run-dir ${S.run.runDir} --job measure-${S.letters[0]}-base2). Set baselinePasses to suite.passed, and baselineNote to the reason and the failing tail if it fails. If ${tierProfile(S).factory ? 'neither the command nor the overrides change' : 'the command doesn\'t change'}, return it as it is, with baselinePasses ${S.baselineOk} and baselineNote "${S.baselineOk ? '' : oneLine(S.baselineNote, 300).replace(/"/g, "'")}".` : `
+${tierProfile(S).factory ? '- If execution settings need amendment, update verification.json as an env object of explicit string overrides without weakening checks. Remeasure through the disposable-checkout path even when only the overrides changed. Do not rely on shell exports.\n' : ''}- If an amendment changes the verification command${tierProfile(S).factory ? ' or its environment overrides' : ''}, write the new command to ${S.run.runDir}/verify.sh, just the command, with no shebang line, and measure the baseline again: ${S.cli} measure --run-dir ${shp(S.run.runDir)} --seat ${S.letters[0]} --label base2${tierProfile(S).factory ? '' : ' --no-snapshot'} (if it prints status "running", poll with ${S.cli} wait --run-dir ${shp(S.run.runDir)} --job measure-${S.letters[0]}-base2). Set baselinePasses to suite.passed, and baselineNote to the reason and the failing tail if it fails. If ${tierProfile(S).factory ? 'neither the command nor the overrides change' : 'the command doesn\'t change'}, return it as it is, with baselinePasses ${S.baselineOk} and baselineNote "${S.baselineOk ? '' : oneLine(S.baselineNote, 300).replace(/"/g, "'")}".` : `
 - Return the verification command as it is, with baselinePasses false and baselineNote "".`}
 - Update the criteria in ${S.run.runDir}/TASK.md to match, and add the assumptions there under their own heading.
 
@@ -916,7 +916,7 @@ ${taskBlock(S, 'H')}
 # What you are auditing
 
 - The change, as a diff against the starting commit: ${S.run.room}/${tag}/${W.L}.diff${large}
-- Your own checkout of the changed code: ${auditCheckout(S, a, 'H')}. If it doesn't exist yet, create it with \`${S.cli} materialize --run-dir ${S.run.runDir} --seat ${W.L} --label ${tag} --name ${roundTag('H')}-${a.lens}\`, which prints its path. Run tests and experiments there; nobody else uses it.
+- Your own checkout of the changed code: ${auditCheckout(S, a, 'H')}. If it doesn't exist yet, create it with \`${S.cli} materialize --run-dir ${shp(S.run.runDir)} --seat ${W.L} --label ${tag} --name ${roundTag('H')}-${a.lens}\`, which prints its path. Run tests and experiments there; nobody else uses it.
 - The user's own checkout of the repository: ${S.run.repoRoot}. Read only. The code before the change is the diff's base; \`git log\` in your checkout gives the history.
 
 Don't open anything else under ${S.run.room}: it holds the discussion that produced this change, and reading it would cost you the independence you are here for. Write only to your checkout, to ${S.run.room}/tests/ and to your review${tierProfile(S).factory ? '; the verification helper may also write its jobs and logs' : ''}.${auditEvidenceBlock(S, a, W, tag)}
@@ -960,7 +960,7 @@ ${mine.map(c => `- [${c.id}] ${c.severity}${c.judgment ? ', judgment' : ''}: ${o
 The author has since made one fix pass:
 - What the fix changed: ${p.delta && p.deltaRound === 'I' ? `${p.deltaPath} (${p.delta.files} files, +${p.delta.added}/−${p.delta.removed})` : `the difference between ${S.run.room}/${S.auditedTag}/${W.L}.diff and ${S.run.room}/${roundTag('I')}/${W.L}.diff`}
 - The author's account of it: ${postPath(S, W.L, 'I')}
-- A checkout of the fixed version: ${auditCheckout(S, a, 'J')}. If it doesn't exist yet, create it with \`${S.cli} materialize --run-dir ${S.run.runDir} --seat ${W.L} --label ${roundTag('I')} --name ${roundTag('J')}-${a.lens}\`.
+- A checkout of the fixed version: ${auditCheckout(S, a, 'J')}. If it doesn't exist yet, create it with \`${S.cli} materialize --run-dir ${shp(S.run.runDir)} --seat ${W.L} --label ${roundTag('I')} --name ${roundTag('J')}-${a.lens}\`.
 
 Review only what the fix changed: defects it introduced, and fixes that don't fix what they claim to. Don't re-file findings the fix left alone, and don't widen the review to code the fix didn't touch. This is the last pass and there is no further fix, so what you find here is reported to the user as it is ruled. File fact findings only, each with evidence (a file:line, or a command and the real tail of its output). Leave \`tests\` and \`probes\` empty.
 
@@ -1101,7 +1101,7 @@ function auditFixPrompt(S, W, todo) {
 function versionText(S, c, Y, k) {
   if (c.snapshotTag) return S.mode === 'implement' ? `${Y}'s reviewed snapshot (diff ${S.run.room}/${c.snapshotTag}/${Y}.diff; git -C ${S.run.repoRoot} show refs/council/${S.run.runId}/${Y}-${c.snapshotTag}:<path>)` : `${Y}'s reviewed artifact ${c.artifactPost}`
   const snap = r => S.mode === 'implement'
-    ? `${Y}'s round-${r} version (diff ${S.run.room}/r${r}/${Y}.diff; checkout: \`${S.cli} materialize --run-dir ${S.run.runDir} --seat ${Y} --label r${r}\`)`
+    ? `${Y}'s round-${r} version (diff ${S.run.room}/r${r}/${Y}.diff; checkout: \`${S.cli} materialize --run-dir ${shp(S.run.runDir)} --seat ${Y} --label r${r}\`)`
     : `${Y}'s round-${r} post (${S.run.room}/r${r}/${Y}.md)`
   if (c.kind === 'finding' && (c.round === 'H' || c.round === 'J') && tierProfile(S).architecture) {
     return c.round === 'H' ? `${Y}'s final milestone plan (${S.run.room}/${S.auditedTag}/${Y}.md)` : `${Y}'s revised milestone plan (${postPath(S, Y, 'I')})`
@@ -1153,9 +1153,9 @@ function checkerPrompt(S, Y, k, items) {
     ? `# Step 1 — measure
 
 ${S.host === 'codex' ? 'Run this using the available shell tool. Poll any running shell session until it returns JSON; do not supply a Bash timeout parameter:' : 'Run this exactly, with Bash timeout 600000:'}
-${S.cli} measure --run-dir ${S.run.runDir} --seat ${Y} --label ${tag}${since ? ` --since ${since}` : ''}${tests.length ? ` --tests ${tests.join(',')}` : ''}${S.host === 'codex' ? ' --max-wait 5' : ''}
+${S.cli} measure --run-dir ${shp(S.run.runDir)} --seat ${Y} --label ${tag}${since ? ` --since ${since}` : ''}${tests.length ? ` --tests ${tests.join(',')}` : ''}${S.host === 'codex' ? ' --max-wait 5' : ''}
 
-It snapshots ${Y}'s worktree, then runs the verification command and each published test against a disposable checkout of that snapshot. If it prints status "running", run \`${S.cli} wait --run-dir ${S.run.runDir} --job measure-${Y}-${tag}${S.host === 'codex' ? ' --max-wait 5' : ''}\` ${S.host === 'codex' ? 'and poll any running shell session until the job completes. The helper\'s --suite-timeout controls the suite deadline' : '(timeout 600000) until it doesn\'t'}. Copy its numbers exactly: \`diff\` from its snapshot (files, added, removed, and tree, the full hash), \`delta\` from snapshot.delta, \`postWords\`, \`suite\` (ran, passed, and the last 15 or so lines of its tail), and every cross-test outcome. Set measured=false only if the command itself failed.
+It snapshots ${Y}'s worktree, then runs the verification command and each published test against a disposable checkout of that snapshot. If it prints status "running", run \`${S.cli} wait --run-dir ${shp(S.run.runDir)} --job measure-${Y}-${tag}${S.host === 'codex' ? ' --max-wait 5' : ''}\` ${S.host === 'codex' ? 'and poll any running shell session until the job completes. The helper\'s --suite-timeout controls the suite deadline' : '(timeout 600000) until it doesn\'t'}. Copy its numbers exactly: \`diff\` from its snapshot (files, added, removed, and tree, the full hash), \`delta\` from snapshot.delta, \`postWords\`, \`suite\` (ran, passed, and the last 15 or so lines of its tail), and every cross-test outcome. Set measured=false only if the command itself failed.
 `
     : `# Step 1 — count the post
 
@@ -1167,7 +1167,7 @@ ${taskBlock(S, k)}
 # What you are checking: seat ${Y}, ${what}
 - Current version: ${S.mode === 'implement' ? `worktree ${s.wt}; post ${post}` : `post ${post}`}
 - Supporting files: scripts the post cites should sit next to it, named ${Y}-<name>; if one isn't there, use the path the post gives. The room's directories for later rounds and stages are created up front, so ignore the empty ones.
-- Earlier versions: ${S.mode === 'implement' ? `${S.run.room}/r<N>/${Y}.diff, or a checkout via \`${S.cli} materialize --run-dir ${S.run.runDir} --seat ${Y} --label r<N>\`, which prints its path` : `${S.run.room}/r<N>/${Y}.md`}
+- Earlier versions: ${S.mode === 'implement' ? `${S.run.room}/r<N>/${Y}.diff, or a checkout via \`${S.cli} materialize --run-dir ${shp(S.run.runDir)} --seat ${Y} --label r<N>\`, which prints its path` : `${S.run.room}/r<N>/${Y}.md`}
 ${S.mode === 'plan' ? `- The code the plan builds on: ${s.wt}, a checkout of the starting commit that stays unchanged while plans are written. Judge its claims about the code there.\n` : arch ? `- The code the design builds on: ${S.run.repoRoot}. Judge its claims about the code there, and don't modify it.\n` : ''}
 ${measure}
 # Step 2 — rule on each item

@@ -133,8 +133,8 @@ function featureResult(S, o) {
       (retro && retro.markdown ? '(6) last, retro.markdown as it is: notes on the workflow, not the user\'s project, so don\'t act on them unless the user asks. ' : '') +
       'Run `git status` in the main tree to confirm no seat touched it. ' +
       deliveryNote(S, tag, W, 'The final change') +
-      `The room (${S.run.room}) holds the full transcript. When the user is done with it, \`${S.cli} cleanup --run-dir ${S.run.runDir}\` ` +
+      `The room (${S.run.room}) holds the full transcript. When the user is done with it, \`${S.cli} cleanup --run-dir ${shp(S.run.runDir)}\` ` +
       'removes the worktrees and snapshot refs and keeps the transcript; add --all to delete everything. ' +
-      `Codex and Gemini token usage: \`${S.cli} usage --run-dir ${S.run.runDir}\`.`,
+      `Codex and Gemini token usage: \`${S.cli} usage --run-dir ${shp(S.run.runDir)}\`.`,
   }
 }

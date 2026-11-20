@@ -272,7 +272,7 @@ function escalatedResult(S, res) {
       escalation: { from: e.from, to: e.to, trigger: e.trigger, why: e.why, runDir: e.runDir, ...(chain.length > 1 ? { earlier: chain.slice(0, -1).map(x => ({ from: x.from, to: x.to, trigger: x.trigger, why: x.why, runDir: x.runDir })) } : {}) } },
     report: res.report ? { ...res.report, markdown: `${escalatedSection(S)}${res.report.markdown}` } : res.report,
     forTheOrchestrator: `This run started as ${as[chain[0].from] || chain[0].from} and the factory handed it ${chain.map(x => `to the ${x.to} tier because ${x.why}`).join(', then ')}. Say so first, in one sentence. ` +
-      chain.map(x => `The ${capital(x.from)} attempt is in ${x.runDir}; clean it up with \`${S.cli} cleanup --run-dir ${x.runDir} --all\` when the user is done. `).join('') + (res.forTheOrchestrator || ''),
+      chain.map(x => `The ${capital(x.from)} attempt is in ${x.runDir}; clean it up with \`${S.cli} cleanup --run-dir ${shp(x.runDir)} --all\` when the user is done. `).join('') + (res.forTheOrchestrator || ''),
   }
 }
 

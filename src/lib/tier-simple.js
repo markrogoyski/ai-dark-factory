@@ -86,7 +86,7 @@ function simpleResult(S, o) {
       'a short body only if needed, no references to plans, the factory or models, and no attribution lines' +
       `${retro && retro.markdown ? '; (5) last, retro.markdown as it is: notes on the workflow, not the user\'s project' : ''}. ` +
       deliveryNote(S, tag, W, 'The change') +
-      `When the user is done, \`${S.cli} cleanup --run-dir ${S.run.runDir}\` removes the worktree and keeps the transcript; add --all to delete everything.`,
+      `When the user is done, \`${S.cli} cleanup --run-dir ${shp(S.run.runDir)}\` removes the worktree and keeps the transcript; add --all to delete everything.`,
   }
   return { ...res, ...deliveryFields(S, res) }
 }

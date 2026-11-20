@@ -413,7 +413,7 @@ function pairResumeSteps(S, via, hostRunDir, questions = S.pair.questions, post 
   const how = via === 'native'
     ? `To continue this ${slash} run, in this same Claude Code session only, call Workflow({name: "${workflowCall(name)}", resumeFromRunId: <this run's id>, args: <the same args as before, as an object (if you passed a plain string, use {task: <that string>}), plus clarifications: ${entries}>}). The turns before this stop replay from the session's cache; another session has no such cache.`
     : via === 'codex'
-      ? `To continue this ${S.factory ? `${slash} ` : ''}run, write a JSON file holding {"clarifications": ${entries}} and run dark-factory-codex --resume ${hostRunDir} --args-file <that file>. The runner checks every answer before any turn and replays the turns before this stop from its checkpoint.`
+      ? `To continue this ${S.factory ? `${slash} ` : ''}run, write a JSON file holding {"clarifications": ${entries}} and run dark-factory-codex --resume ${shp(hostRunDir)} --args-file <that file>. The runner checks every answer before any turn and replays the turns before this stop from its checkpoint.`
       : `To continue this run, call ${slash} again with the same args plus runtime: "cli", resume: "${hostRunDir}" and clarifications: ${entries}. The runner checks every answer before any turn and replays the turns before this stop from its checkpoint.`
   return `This run stopped for the user's answers. Show questions[] to the user, each under its ID with what it is about, and ask for an answer to every one (${ids}). ` +
     'An answer is {id, answer}; one to a question of kind criterion may also give criterion (the criterion\'s new text) or drop: true (to remove it). ' +
