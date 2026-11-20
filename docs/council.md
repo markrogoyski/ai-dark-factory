@@ -49,8 +49,9 @@ The Feature and Architecture tiers reuse this flow's setup, spec review and deba
 ```
 
 1. **Setup.** One Opus agent runs `dark-factory preflight` for the Codex, Gemini and OpenRouter
-   CLIs the lineup and panel need; if one can't start from this session, the run stops before
-   anything is created, naming the fix or the seat to swap. It then creates the run directory and
+   CLIs the lineup and panel need, and for the `Bash(dark-factory:*)` permission in Claude Code's
+   settings; if a CLI can't start from this session or the permission is missing, the run stops
+   before anything is created, naming the fix or the seat to swap. It then creates the run directory and
    a worktree per seat, finds the verification command, measures the baseline, and writes 3–7
    acceptance criteria *before anyone starts*. Each must be checkable from inside a seat's sandbox.
 2. **Spec review** (every mode; `spec: false` skips it). Every later check measures against the

@@ -15,7 +15,7 @@ workflow's agents call it. Every subcommand prints one JSON object on its last l
     dark-factory wait        --run-dir D --job KEY [--brief]
     dark-factory materialize --run-dir D --seat L --label rN [--name DIR]
     dark-factory usage       --run-dir D [--no-claude]
-    dark-factory preflight   --vendors codex,gemini,claude
+    dark-factory preflight   [--vendors codex,gemini,claude] [--claude-settings]
     dark-factory jobs        --run-dir D
     dark-factory cleanup     --run-dir D [--all]
     dark-factory retro       --run-dir D [--expect HASH] [--payload-file FILE] [--out-dir DIR]
@@ -157,7 +157,8 @@ def main():
     p.add_argument('--run-dir', required=True)
 
     p = sub.add_parser('preflight')
-    p.add_argument('--vendors', required=True, help='comma-separated: codex, gemini, claude, openrouter[:<model-id>]')
+    p.add_argument('--vendors', default='', help='comma-separated: codex, gemini, claude, openrouter[:<model-id>]')
+    p.add_argument('--claude-settings', action='store_true', help="also check that Claude Code's settings allow the helper")
 
     p = sub.add_parser('cleanup')
     p.add_argument('--run-dir', required=True)

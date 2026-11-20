@@ -588,6 +588,9 @@ function failure(S, status, reason, extra) {
 // out three of four phases). Stop before anything starts and say how to fix it or swap the seat.
 function preflightStop(S, bad) {
   const lines = bad.map(p => `${p.vendor}: ${oneLine(p.error, 300) || 'failed'}`)
+  // claude-settings is Claude Code's permission for the helper, not a vendor: no seat swap fixes it.
+  const settings = bad.find(p => p.vendor === 'claude-settings')
+  if (settings) return settingsStop(S, bad, lines, settings)
   const used = bad.map(p => p.vendor)
   // An OpenRouter entry names its model (openrouter:<id>), so it matches the seats with that model.
   const uses = s => used.includes(s.vendor) || used.includes(preflightEntry(s))
@@ -606,6 +609,17 @@ function preflightStop(S, bad) {
       'if a CLI is missing or its settings are wrong, they install or fix it as the error says. ' +
       `Or rerun without that vendor: swap ${seats.length ? `the seat(s) ${seats.join(', ')}` : 'nothing in the lineup'}${panel.length ? ` and the panel member(s) ${panel.join(', ')} (args.panel, e.g. ["opus", "sonnet"])` : ''}${lenses.length ? ` and the auditor(s) ${lenses.join(', ')} (args.audit, e.g. {${lenses[0]}: "sonnet"})` : ''} ` +
       'for models from vendors that work, e.g. args.seats ["opus", "sonnet", "astra", "sol"] when Gemini is the problem.',
+  }
+}
+
+function settingsStop(S, bad, lines, settings) {
+  const others = lines.filter((_, i) => bad[i] !== settings)
+  return {
+    status: 'blocked', reason: `Claude Code's settings don't let the run call ${S.cli} (${lines.join('; ')})`, mode: S.mode, task: S.task, runDir: null,
+    preflight: bad, notes: S.notes,
+    forTheOrchestrator: `The run stopped before creating anything: the preflight check found that ${oneLine(settings.error, 400)}. Tell the user plainly, and give the fix: ` +
+      `add "Bash(${S.cli}:*)" to permissions.allow in ~/.claude/settings.json (a plugin can't grant it), then rerun. Don't add the rule yourself unless the user asks.` +
+      (others.length ? ` The same check also found: ${others.join('; ')}; once the rule is in place, a rerun reports whether those remain.` : ''),
   }
 }
 

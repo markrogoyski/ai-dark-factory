@@ -39,8 +39,11 @@ neither CLI can run inside Claude Code's Bash sandbox, because each writes to it
 (`~/.codex`, `~/.gemini`) as it starts and needs the network. `dark-factory seat-run` detects
 this and the relay runs the command outside the sandbox from the first try (per the Claude Code
 docs, an allow rule approves running matching commands outside the sandbox, and applies before
-auto mode's classifier). Without the rule, setup's preflight finds the CLI stuck in the sandbox
-and stops the run before any seat starts, saying how to fix it or which seat to swap.
+auto mode's classifier). Every run's setup checks for the rule before anything is created
+(`dark-factory preflight --claude-settings`). It reads your user, project and managed Claude Code
+settings, accepts any allow rule that covers every helper call (`Bash`, `Bash(dark-factory *)` and
+so on) or `defaultMode: "bypassPermissions"`, and stops the run with the line to add when none
+does, or when a deny or ask rule catches the helper. A macOS MDM profile is not read.
 
 ### agy settings (required for Gemini seats)
 

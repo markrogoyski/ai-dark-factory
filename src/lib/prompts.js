@@ -1267,11 +1267,11 @@ ${S.context ? `\n# Context from the user\n\n${S.context}\n` : ''}${S.escalation 
 ${S.modeGiven ? `Mode: ${S.mode}. Return it as \`mode\`.\n` : ''}${startedAt ? `
 ## Before you start — the time
 Before anything else, run \`date -u +%Y-%m-%dT%H:%M:%SZ\` and keep what it prints. Step 2 passes it to init, so the run's timeline counts setup from its start.
-` : ''}${vendors.length ? `
-## Step 0 — can the other vendors' CLIs run?
-${S.host === 'codex' ? `The host runtime already checked the required CLIs (${vendors.join(',')}) before starting this setup turn. Use the attached preflight JSON; do not run preflight again from inside your sandbox. Copy its vendors entries into \`preflight\` (vendor, ok, error). If status is not "ok", return status "preflight" with those entries and empty values elsewhere, and do not create anything. Otherwise continue to step 1.` : `Some seats run through the ${clis.join(' and the ')}. Check that they can start from here before anything is created. Make one Bash call with the sandbox disabled (dangerouslyDisableSandbox: true), exactly as written:
-${S.cli} preflight --vendors ${vendorList}
-It prints JSON with a "status" and, under "vendors", an entry per vendor with "ok" and "error". Copy each entry into \`preflight\` (vendor, ok, error). If status is "ok", go on to step 1. Otherwise stop here: return status "preflight" with the entries, and empty values elsewhere. Don't try to fix it, and don't run anything else.`}
+` : ''}${vendors.length || S.host !== 'codex' ? `
+## Step 0 — ${vendors.length ? 'can the other vendors\' CLIs run?' : 'can the run call the helper?'}
+${S.host === 'codex' ? `The host runtime already checked the required CLIs (${vendors.join(',')}) before starting this setup turn. Use the attached preflight JSON; do not run preflight again from inside your sandbox. Copy its vendors entries into \`preflight\` (vendor, ok, error). If status is not "ok", return status "preflight" with those entries and empty values elsewhere, and do not create anything. Otherwise continue to step 1.` : `${vendors.length ? `Some seats run through the ${clis.join(' and the ')}. Check that they can start from here, and that Claude Code's settings let the run's agents call ${S.cli},` : `Check that Claude Code's settings let the run's agents call ${S.cli}`} before anything is created. Make one Bash call with the sandbox disabled (dangerouslyDisableSandbox: true), exactly as written:
+${S.cli} preflight${vendors.length ? ` --vendors ${vendorList}` : ''} --claude-settings
+It prints JSON with a "status" and, under "vendors", an entry per check with "ok" and "error". Copy each entry into \`preflight\` (vendor, ok, error). If status is "ok", go on to step 1. Otherwise stop here: return status "preflight" with the entries, and empty values elsewhere. Don't try to fix it, and don't run anything else.`}
 ` : ''}
 ## Step 1 — the documents the work follows
 The seats work in git worktrees checked out from HEAD, so they can't see uncommitted files. If the task follows a plan, a checklist, a spec or notes that aren't committed, the seats would never see them.

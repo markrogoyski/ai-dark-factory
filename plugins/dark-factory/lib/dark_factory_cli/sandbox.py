@@ -162,10 +162,112 @@ def endpoint_checks(endpoint, models):
     return None, {m: None if m in listed else f'{name} has no model {m} (GET {url})' for m in models}
 
 
+# Where Claude Code reads managed settings: Linux, then macOS. Each holds managed-settings.json and a
+# managed-settings.d/ of further JSON files. (A macOS MDM plist is not read.)
+CLAUDE_MANAGED_DIRS = ('/etc/claude-code', '/Library/Application Support/ClaudeCode')
+
+# Calls the run's agents make, standing for every helper call: a rule must allow all of them.
+HELPER_CALLS = ('dark-factory seat-run --run-dir /r --seat A --job a1', 'dark-factory measure --run-dir /r --seat A --label base',
+                'dark-factory wait --run-dir /r --job j', 'dark-factory preflight --vendors codex')
+HELPER_RULE = 'Bash(dark-factory:*)'
+
+
+def bash_rule_matches(rule, command):
+    """Whether a Claude Code permission rule matches a Bash command: bare "Bash" matches every command,
+    "Bash(p:*)" the prefix p followed by nothing or by a space, and any other "*" matches any text."""
+    rule = rule.strip() if isinstance(rule, str) else ''
+    if rule in ('Bash', 'Bash(*)'):
+        return True
+    m = re.fullmatch(r'Bash\((.*)\)', rule, re.S)
+    if not m:
+        return False
+    pattern = m.group(1)
+    if pattern.endswith(':*'):
+        pattern = pattern[:-2]
+        if command == pattern:
+            return True
+        pattern += ' *'
+    return re.fullmatch('.*'.join(re.escape(part) for part in pattern.split('*')), command, re.S) is not None
+
+
+def claude_settings_layers(cwd):
+    """Claude Code's settings files that could hold permission rules for a session started in cwd:
+    (path, managed) for the user's settings.json, each enclosing directory's .claude/settings.json and
+    settings.local.json, and the managed settings. Only files that exist."""
+    home = os.environ.get('CLAUDE_CONFIG_DIR') or os.path.expanduser('~/.claude')
+    paths = [(os.path.join(home, 'settings.json'), False)]
+    d = os.path.realpath(cwd)
+    while True:
+        paths += [(os.path.join(d, '.claude', name), False) for name in ('settings.json', 'settings.local.json')]
+        if os.path.dirname(d) == d:
+            break
+        d = os.path.dirname(d)
+    for base in CLAUDE_MANAGED_DIRS:
+        paths.append((os.path.join(base, 'managed-settings.json'), True))
+        extra = os.path.join(base, 'managed-settings.d')
+        if os.path.isdir(extra):
+            paths += [(os.path.join(extra, n), True) for n in sorted(os.listdir(extra)) if n.endswith('.json')]
+    # ~/.claude/settings.json is also the .claude/settings.json of the home directory: read it once.
+    seen, layers = set(), []
+    for p, managed in paths:
+        real = os.path.realpath(p)
+        if real not in seen and os.path.isfile(p):
+            seen.add(real)
+            layers.append((p, managed))
+    return layers
+
+
+def claude_settings_check(cwd):
+    """Whether Claude Code's settings let the run's agents call the helper without asking: some allow rule
+    matches every helper call, or the default mode bypasses permissions, and no deny or ask rule matches
+    one. Without it each call stops to ask, or auto mode's classifier may refuse it, and the Codex, Gemini
+    and OpenRouter seats, which run outside the sandbox, can't start."""
+    user = os.path.join(os.environ.get('CLAUDE_CONFIG_DIR') or os.path.expanduser('~/.claude'), 'settings.json')
+    layers, unreadable = [], []
+    for path, managed in claude_settings_layers(cwd):
+        try:
+            data = json.loads(read(path))
+        except (OSError, ValueError) as e:
+            unreadable.append(f'{path}: {getattr(e, "strerror", None) or e}')
+            continue
+        if isinstance(data, dict):
+            perms = data.get('permissions') if isinstance(data.get('permissions'), dict) else {}
+            layers.append((path, managed, data, perms))
+    managed_only = any(managed and data.get('allowManagedPermissionRulesOnly') is True for _, managed, data, _ in layers)
+    ruled = [layer for layer in layers if layer[1] or not managed_only]
+
+    def rules(kind):
+        return [(r, path) for path, _, _, perms in ruled for r in (perms.get(kind) if isinstance(perms.get(kind), list) else [])]
+
+    check = {'ok': False, 'rule': HELPER_RULE}
+    for kind, what in (('deny', 'blocks'), ('ask', 'makes Claude Code ask before')):
+        hit = next(((r, path) for r, path in rules(kind) if any(bash_rule_matches(r, c) for c in HELPER_CALLS)), None)
+        if hit:
+            check['error'] = f'the {kind} rule "{hit[0]}" in {hit[1]} {what} every dark-factory call the run makes; remove it, or narrow it so it leaves dark-factory out'
+            return check
+    allow = next(((r, path) for r, path in rules('allow') if all(bash_rule_matches(r, c) for c in HELPER_CALLS)), None)
+    if allow:
+        check.update(ok=True, source=allow[1], matched=allow[0])
+        return check
+    bypass_off = any((perms.get('disableBypassPermissionsMode') == 'disable') for _, _, _, perms in layers)
+    bypass = next((path for path, _, _, perms in layers if perms.get('defaultMode') == 'bypassPermissions'), None)
+    if bypass and not bypass_off:
+        check.update(ok=True, source=bypass, matched='defaultMode: bypassPermissions')
+        return check
+    where = ('the managed settings (they set allowManagedPermissionRulesOnly, so only managed rules count; ask the administrator to add it)'
+             if managed_only else f'permissions.allow in {user}')
+    check['error'] = (f'no Claude Code permission rule allows the dark-factory helper: add "{HELPER_RULE}" to {where}. '
+                      'Without it every helper call stops to ask or is refused, and Codex, Gemini and OpenRouter seats cannot run outside the sandbox'
+                      + (f' (could not read {"; ".join(unreadable)})' if unreadable else ''))
+    return check
+
+
 def cmd_preflight(a):
     """Check, before any seat starts, that each external vendor's CLI can run from here: it is on
     PATH, answers --version, and isn't stuck inside Claude Code's sandbox (the same probe seat-run
-    makes). Gemini also needs agy's proceed-in-sandbox mode. Costs no model turn."""
+    makes). Gemini also needs agy's proceed-in-sandbox mode. With --claude-settings, also check that
+    Claude Code's settings let the run's agents call the helper, as the entry "claude-settings".
+    Costs no model turn."""
     vendors = [v for v in (a.vendors or '').split(',') if v]
     # An endpoint entry is the endpoint's name, optionally with a model ID: openrouter:deepseek/deepseek-v4-pro.
     base = {v: v.split(':', 1)[0] if v.split(':', 1)[0] in ENDPOINTS and (':' not in v or v.split(':', 1)[1]) else v for v in vendors}
@@ -220,6 +322,8 @@ def cmd_preflight(a):
                 c.update(version=oneline(r.stdout, 80), error=error)
                 continue
         c.update(ok=True, version=oneline(r.stdout, 80))
-    bad = {v: c for v, c in checks.items() if not c['ok']}
+    if getattr(a, 'claude_settings', False):
+        checks['claude-settings'] = claude_settings_check(os.getcwd())
+    bad ={v: c for v, c in checks.items() if not c['ok']}
     status = 'ok' if not bad else 'sandboxed' if all(c.get('sandboxed') for c in bad.values()) else 'error'
     common.emit({'status': status, 'vendors': checks})

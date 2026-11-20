@@ -1272,9 +1272,23 @@ async function scenarioPreflight() {
       default: throw new Error(`unexpected role ${role.kind}`)
     }
   }, { task: 'Fix the flaky retry', seats: ['opus', 'sonnet', 'fable'], panel: ['opus', 'sonnet'], audit: { correctness: 'sonnet' }, spec: { coverage: 'sonnet' }, rounds: 1 })
-  assert.ok(!claudeOnly.calls[0].prompt.includes('preflight'), 'no preflight when no seat, panel member, spec reviewer or auditor needs another CLI')
+  const cp = claudeOnly.calls[0].prompt
+  assert.ok(cp.includes('dark-factory preflight --claude-settings\n') && !cp.includes('--vendors'), 'only the settings check when no seat, panel member, spec reviewer or auditor needs another CLI')
+  assert.ok(sp.includes('preflight --vendors codex,gemini --claude-settings'), 'the settings check rides along with the CLI check')
   assert.equal(claudeOnly.result.status, 'converged')
-  return 'a CLI that fails preflight stops the run before anything is created, naming the fix and the seat to swap'
+
+  const unset = await run('preflight-settings', async role => {
+    if (role.kind === 'setup') {
+      return { ...SETUP('test-preflight-settings'), status: 'preflight', runDir: '', preflight: [
+        { vendor: 'claude-settings', ok: false, error: 'no Claude Code permission rule allows the dark-factory helper: add "Bash(dark-factory:*)" to permissions.allow in /Users/x/.claude/settings.json' }] }
+    }
+    throw new Error(`unexpected role ${role.kind}`)
+  }, { task: 'Fix the flaky retry', seats: ['opus', 'sonnet'], panel: ['opus', 'sonnet'], audit: { correctness: 'sonnet' }, spec: { coverage: 'sonnet' }, rounds: 1 })
+  assert.equal(unset.result.status, 'blocked')
+  assert.equal(unset.calls.length, 1, 'nothing but setup ran')
+  const ufo = unset.result.forTheOrchestrator
+  assert.ok(ufo.includes('"Bash(dark-factory:*)"') && ufo.includes('~/.claude/settings.json') && !ufo.includes('swap'), ufo)
+  return 'a CLI or a missing helper permission that fails preflight stops the run before anything is created, naming the fix and the seat to swap'
 }
 
 // ---------------------------------------------------------------- OpenRouter seats

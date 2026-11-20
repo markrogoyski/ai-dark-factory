@@ -210,7 +210,7 @@ const SETUP_SCHEMA = strict({ type: 'object', properties: {
     source: { type: 'string' }, path: { type: 'string' }, inWorktrees: { type: 'boolean' },
   } } },
   planMissing:    { type: 'string', description: 'With status "needs-plan": the document the task depends on that you could not find. Otherwise "".' },
-  preflight:      { type: 'array', description: 'From the "vendors" in the preflight output: one entry per vendor checked; [] if there was no preflight step.', items: { type: 'object', properties: {
+  preflight:      { type: 'array', description: 'From the "vendors" in the preflight output: one entry per check (each vendor, and claude-settings), with its key as vendor; [] if there was no preflight step.', items: { type: 'object', properties: {
     vendor: { type: 'string' }, ok: { type: 'boolean' }, error: { type: 'string', description: 'Its "error", or "".' },
   } } },
 } })

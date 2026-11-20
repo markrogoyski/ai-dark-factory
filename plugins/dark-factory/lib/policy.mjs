@@ -1874,11 +1874,11 @@ ${S.context ? `\n# Context from the user\n\n${S.context}\n` : ''}${S.escalation 
 ${S.modeGiven ? `Mode: ${S.mode}. Return it as \`mode\`.\n` : ''}${startedAt ? `
 ## Before you start — the time
 Before anything else, run \`date -u +%Y-%m-%dT%H:%M:%SZ\` and keep what it prints. Step 2 passes it to init, so the run's timeline counts setup from its start.
-` : ''}${vendors.length ? `
-## Step 0 — can the other vendors' CLIs run?
-${S.host === 'codex' ? `The host runtime already checked the required CLIs (${vendors.join(',')}) before starting this setup turn. Use the attached preflight JSON; do not run preflight again from inside your sandbox. Copy its vendors entries into \`preflight\` (vendor, ok, error). If status is not "ok", return status "preflight" with those entries and empty values elsewhere, and do not create anything. Otherwise continue to step 1.` : `Some seats run through the ${clis.join(' and the ')}. Check that they can start from here before anything is created. Make one Bash call with the sandbox disabled (dangerouslyDisableSandbox: true), exactly as written:
-${S.cli} preflight --vendors ${vendorList}
-It prints JSON with a "status" and, under "vendors", an entry per vendor with "ok" and "error". Copy each entry into \`preflight\` (vendor, ok, error). If status is "ok", go on to step 1. Otherwise stop here: return status "preflight" with the entries, and empty values elsewhere. Don't try to fix it, and don't run anything else.`}
+` : ''}${vendors.length || S.host !== 'codex' ? `
+## Step 0 — ${vendors.length ? 'can the other vendors\' CLIs run?' : 'can the run call the helper?'}
+${S.host === 'codex' ? `The host runtime already checked the required CLIs (${vendors.join(',')}) before starting this setup turn. Use the attached preflight JSON; do not run preflight again from inside your sandbox. Copy its vendors entries into \`preflight\` (vendor, ok, error). If status is not "ok", return status "preflight" with those entries and empty values elsewhere, and do not create anything. Otherwise continue to step 1.` : `${vendors.length ? `Some seats run through the ${clis.join(' and the ')}. Check that they can start from here, and that Claude Code's settings let the run's agents call ${S.cli},` : `Check that Claude Code's settings let the run's agents call ${S.cli}`} before anything is created. Make one Bash call with the sandbox disabled (dangerouslyDisableSandbox: true), exactly as written:
+${S.cli} preflight${vendors.length ? ` --vendors ${vendorList}` : ''} --claude-settings
+It prints JSON with a "status" and, under "vendors", an entry per check with "ok" and "error". Copy each entry into \`preflight\` (vendor, ok, error). If status is "ok", go on to step 1. Otherwise stop here: return status "preflight" with the entries, and empty values elsewhere. Don't try to fix it, and don't run anything else.`}
 ` : ''}
 ## Step 1 — the documents the work follows
 The seats work in git worktrees checked out from HEAD, so they can't see uncommitted files. If the task follows a plan, a checklist, a spec or notes that aren't committed, the seats would never see them.
@@ -3325,6 +3325,9 @@ function failure(S, status, reason, extra) {
 // out three of four phases). Stop before anything starts and say how to fix it or swap the seat.
 function preflightStop(S, bad) {
   const lines = bad.map(p => `${p.vendor}: ${oneLine(p.error, 300) || 'failed'}`)
+  // claude-settings is Claude Code's permission for the helper, not a vendor: no seat swap fixes it.
+  const settings = bad.find(p => p.vendor === 'claude-settings')
+  if (settings) return settingsStop(S, bad, lines, settings)
   const used = bad.map(p => p.vendor)
   // An OpenRouter entry names its model (openrouter:<id>), so it matches the seats with that model.
   const uses = s => used.includes(s.vendor) || used.includes(preflightEntry(s))
@@ -3343,6 +3346,17 @@ function preflightStop(S, bad) {
       'if a CLI is missing or its settings are wrong, they install or fix it as the error says. ' +
       `Or rerun without that vendor: swap ${seats.length ? `the seat(s) ${seats.join(', ')}` : 'nothing in the lineup'}${panel.length ? ` and the panel member(s) ${panel.join(', ')} (args.panel, e.g. ["opus", "sonnet"])` : ''}${lenses.length ? ` and the auditor(s) ${lenses.join(', ')} (args.audit, e.g. {${lenses[0]}: "sonnet"})` : ''} ` +
       'for models from vendors that work, e.g. args.seats ["opus", "sonnet", "astra", "sol"] when Gemini is the problem.',
+  }
+}
+
+function settingsStop(S, bad, lines, settings) {
+  const others = lines.filter((_, i) => bad[i] !== settings)
+  return {
+    status: 'blocked', reason: `Claude Code's settings don't let the run call ${S.cli} (${lines.join('; ')})`, mode: S.mode, task: S.task, runDir: null,
+    preflight: bad, notes: S.notes,
+    forTheOrchestrator: `The run stopped before creating anything: the preflight check found that ${oneLine(settings.error, 400)}. Tell the user plainly, and give the fix: ` +
+      `add "Bash(${S.cli}:*)" to permissions.allow in ~/.claude/settings.json (a plugin can't grant it), then rerun. Don't add the rule yourself unless the user asks.` +
+      (others.length ? ` The same check also found: ${others.join('; ')}; once the rule is in place, a rerun reports whether those remain.` : ''),
   }
 }
 

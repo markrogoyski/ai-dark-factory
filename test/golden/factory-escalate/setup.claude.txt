@@ -7,9 +7,9 @@ Fix the retry count in Fetcher::retry
 Mode: implement. Return it as `mode`.
 
 ## Step 0 — can the other vendors' CLIs run?
-Some seats run through the Codex CLI. Check that they can start from here before anything is created. Make one Bash call with the sandbox disabled (dangerouslyDisableSandbox: true), exactly as written:
-dark-factory preflight --vendors codex
-It prints JSON with a "status" and, under "vendors", an entry per vendor with "ok" and "error". Copy each entry into `preflight` (vendor, ok, error). If status is "ok", go on to step 1. Otherwise stop here: return status "preflight" with the entries, and empty values elsewhere. Don't try to fix it, and don't run anything else.
+Some seats run through the Codex CLI. Check that they can start from here, and that Claude Code's settings let the run's agents call dark-factory, before anything is created. Make one Bash call with the sandbox disabled (dangerouslyDisableSandbox: true), exactly as written:
+dark-factory preflight --vendors codex --claude-settings
+It prints JSON with a "status" and, under "vendors", an entry per check with "ok" and "error". Copy each entry into `preflight` (vendor, ok, error). If status is "ok", go on to step 1. Otherwise stop here: return status "preflight" with the entries, and empty values elsewhere. Don't try to fix it, and don't run anything else.
 
 ## Step 1 — the documents the work follows
 The seats work in git worktrees checked out from HEAD, so they can't see uncommitted files. If the task follows a plan, a checklist, a spec or notes that aren't committed, the seats would never see them.

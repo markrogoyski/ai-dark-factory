@@ -64,7 +64,8 @@
   that as a Codex, Gemini or OpenRouter failure.
 - **A Codex, Gemini or OpenRouter seat fails at once.** Run `--prepare` (Codex host), or check the
   `Bash(dark-factory:*)` allow rule and the agy settings under
-  [Installing](install.md#permission-required). Setup's preflight names the CLI it couldn't start.
+  [Installing](install.md#permission-required). Setup's preflight names the CLI it couldn't start,
+  or the missing permission (the entry `claude-settings`).
 - **A resume is refused.** Resume checks the engine, HEAD, tracked changes, reference bytes and
   saved evidence, and refuses on any mismatch rather than reset. Start a new run, carrying any
   answers in `context`. See [Process controls](process-controls.md#resume).

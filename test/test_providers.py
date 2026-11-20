@@ -326,6 +326,101 @@ sys.exit(int(os.environ.get('CLAUDE_TEST_EXIT', '0')))
         self.assertIn(inside, [args[i + 1] for i, v in enumerate(args) if v == '--add-dir'])
 
 
+class ClaudeSettingsPreflight(unittest.TestCase):
+    """preflight --claude-settings: Claude Code's settings must let the run's agents call the helper."""
+
+    def setUp(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.root = os.path.realpath(tmp.name)
+        self.home = os.path.join(self.root, 'claude-home')
+        self.repo = os.path.join(self.root, 'work', 'repo')
+        self.managed = os.path.join(self.root, 'managed')
+        for d in (self.home, os.path.join(self.repo, '.claude'), os.path.join(self.managed, 'managed-settings.d')):
+            os.makedirs(d)
+        sandbox = sys.modules[council.cmd_preflight.__module__]
+        for patch in (mock.patch.dict(os.environ, {'CLAUDE_CONFIG_DIR': self.home}),
+                      mock.patch.object(sandbox, 'CLAUDE_MANAGED_DIRS', (self.managed,))):
+            patch.start()
+            self.addCleanup(patch.stop)
+        self.sandbox = sandbox
+
+    def settings(self, path, data):
+        council.write(path, data if isinstance(data, str) else json.dumps(data))
+
+    def check(self):
+        return self.sandbox.claude_settings_check(self.repo)
+
+    def test_rule_matching(self):
+        m = self.sandbox.bash_rule_matches
+        cmd = 'dark-factory measure --run-dir /r'
+        for rule in ('Bash', 'Bash(*)', 'Bash(dark-factory:*)', 'Bash(dark-factory *)', 'Bash(dark-factory*)', 'Bash(dark-*)'):
+            self.assertTrue(m(rule, cmd), rule)
+        for rule in ('Bash(dark-factory)', 'Bash(dark-factory wait:*)', 'Bash(git:*)', 'Read', 'Bash(dark-factoryx:*)', None):
+            self.assertFalse(m(rule, cmd), rule)
+        self.assertTrue(m('Bash(dark-factory:*)', 'dark-factory'))
+        self.assertFalse(m('Bash(dark-factory:*)', 'dark-factoryx measure'))
+
+    def test_no_settings_names_the_rule_and_the_user_file(self):
+        c = self.check()
+        self.assertFalse(c['ok'])
+        self.assertIn('"Bash(dark-factory:*)"', c['error'])
+        self.assertIn(os.path.join(self.home, 'settings.json'), c['error'])
+
+    def test_allow_rule_in_user_project_or_local_settings(self):
+        for path in (os.path.join(self.home, 'settings.json'), os.path.join(self.repo, '.claude', 'settings.local.json'),
+                     os.path.join(self.root, 'work', '.claude', 'settings.json')):
+            os.makedirs(os.path.dirname(path), exist_ok=True)
+            self.settings(path, {'permissions': {'allow': ['Read', 'Bash(dark-factory:*)']}})
+            c = self.check()
+            self.assertEqual((c['ok'], c['source']), (True, path))
+            os.unlink(path)
+
+    def test_a_rule_for_some_subcommands_is_not_enough(self):
+        self.settings(os.path.join(self.home, 'settings.json'), {'permissions': {'allow': ['Bash(dark-factory measure:*)']}})
+        self.assertFalse(self.check()['ok'])
+
+    def test_deny_or_ask_rule_overrides_allow(self):
+        user = os.path.join(self.home, 'settings.json')
+        for kind in ('deny', 'ask'):
+            self.settings(user, {'permissions': {'allow': ['Bash(dark-factory:*)'], kind: ['Bash(dark-factory seat-run:*)']}})
+            c = self.check()
+            self.assertFalse(c['ok'])
+            self.assertIn(f'the {kind} rule "Bash(dark-factory seat-run:*)" in {user}', c['error'])
+
+    def test_bypass_mode_counts_unless_managed_settings_disable_it(self):
+        self.settings(os.path.join(self.home, 'settings.json'), {'permissions': {'defaultMode': 'bypassPermissions'}})
+        self.assertTrue(self.check()['ok'])
+        self.settings(os.path.join(self.managed, 'managed-settings.json'), {'permissions': {'disableBypassPermissionsMode': 'disable'}})
+        self.assertFalse(self.check()['ok'])
+
+    def test_managed_only_rules_ignore_the_user_allow_rule(self):
+        self.settings(os.path.join(self.home, 'settings.json'), {'permissions': {'allow': ['Bash(dark-factory:*)']}})
+        self.settings(os.path.join(self.managed, 'managed-settings.json'), {'allowManagedPermissionRulesOnly': True})
+        c = self.check()
+        self.assertFalse(c['ok'])
+        self.assertIn('allowManagedPermissionRulesOnly', c['error'])
+        self.settings(os.path.join(self.managed, 'managed-settings.d', '10-tools.json'), {'permissions': {'allow': ['Bash(dark-factory *)']}})
+        self.assertTrue(self.check()['ok'])
+
+    def test_unreadable_settings_are_named(self):
+        self.settings(os.path.join(self.home, 'settings.json'), '{not json')
+        c = self.check()
+        self.assertFalse(c['ok'])
+        self.assertIn('could not read', c['error'])
+
+    def test_preflight_reports_it_as_its_own_entry(self):
+        with patch_cli('emit') as emit, mock.patch('os.getcwd', return_value=self.repo):
+            council.cmd_preflight(argparse.Namespace(vendors='', claude_settings=True))
+        out = emit.call_args.args[0]
+        self.assertEqual(out['status'], 'error')
+        self.assertFalse(out['vendors']['claude-settings']['ok'])
+        self.settings(os.path.join(self.repo, '.claude', 'settings.json'), {'permissions': {'allow': ['Bash(dark-factory:*)']}})
+        with patch_cli('emit') as emit, mock.patch('os.getcwd', return_value=self.repo):
+            council.cmd_preflight(argparse.Namespace(vendors='', claude_settings=True))
+        self.assertEqual(emit.call_args.args[0]['status'], 'ok')
+
+
 class CodexRecovery(unittest.TestCase):
     def test_first_turn_timeout_keeps_the_streamed_thread_for_recovery(self):
         with tempfile.TemporaryDirectory() as tmp:
