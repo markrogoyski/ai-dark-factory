@@ -1,7 +1,7 @@
 export const meta = {
   name: 'pair',
   description: 'One author and one independent reviewer take a task from design through implementation, repeating review until the verified result has no open findings',
-  whenToUse: 'Use for a scoped implementation with one author and one reviewer. The author drafts a design, revises it until review passes, implements it, and fixes review findings until the exact measured snapshot passes review and required checks. No council, voting, or automatic escalation. Defaults to Claude Opus author and Codex Astra reviewer in Claude Code; Codex Astra author and Claude Opus reviewer in Codex. Object args: {task, author, reviewer, maxReviews, design, effort, plan, context, criteria, verify, repo, allowDirty, timeoutMin, retro}. String tasks may start with --author opus --reviewer astra --max-reviews 8 --no-design --no-retro. Pass design: false (--no-design) when the deliverable is itself a document or plan: the author writes it directly and review starts at the measured result, instead of paying for a design that is the deliverable. maxReviews is the total review budget across design and code (default 8); exhaustion or stalled progress returns unresolved work, never success. Pass absolute paths in plan for uncommitted reference documents. Work takes place in a separate worktree from HEAD; review contexts are fresh. Inspect final.readiness and present remaining findings before delivery. Apply the reviewed snapshot only within the user\'s authorization, then use dark-factory verify-delivery to check the delivered bytes and gate. The run ends with a process retro on the workflow; pass retro: false (--no-retro) to skip it. This workflow does not publish, deploy, or automatically start a council.',
+  whenToUse: 'Use for a scoped implementation with one author and one reviewer. The author drafts a design, revises it until review passes, implements it, and fixes review findings until the exact measured snapshot passes review and required checks. No council, voting, or automatic escalation. Defaults to Claude Opus author and Codex Astra reviewer in Claude Code; Codex Astra author and Claude Opus reviewer in Codex. Object args: {task, author, reviewer, maxReviews, maxDesignReviews, design, effort, plan, context, criteria, verify, repo, allowDirty, timeoutMin, retro}. String tasks may start with --author opus --reviewer astra --max-reviews 8 --max-design-reviews 3 --no-design --no-retro. Pass design: false (--no-design) when the deliverable is itself a document or plan: the author writes it directly and review starts at the measured result, instead of paying for a design that is the deliverable. maxReviews is the total review budget across design and code (default 8); exhaustion or stalled progress returns unresolved work, never success. A design not approved after maxDesignReviews reviews (default 3) stops for the user: answer to continue the design with a scope decision, or with implement: true to start the implementation with the open design findings carried into code review. Minor design findings do not hold the design; they carry into code review. Pass absolute paths in plan for uncommitted reference documents. Work takes place in a separate worktree from HEAD; review contexts are fresh. Inspect final.readiness and present remaining findings before delivery. Apply the reviewed snapshot only within the user\'s authorization, then use dark-factory verify-delivery to check the delivered bytes and gate. The run ends with a process retro on the workflow; pass retro: false (--no-retro) to skip it. This workflow does not publish, deploy, or automatically start a council.',
   phases: [
     { title: 'Setup', detail: 'author establishes criteria, references, worktree, and verification' },
     { title: 'Design', detail: 'author drafts or revises the design' },
@@ -127,7 +127,7 @@ function withdrawResume(result) {
 function parseArgs(a, switches = {}) {
   if (typeof a !== 'string') return a || {}
   const out = {}, names = { seats: 'seats', tier: 'tier', strategy: 'strategy', author: 'author', reviewer: 'reviewer',
-    'max-reviews': 'maxReviews', 'max-turns': 'maxTurns', 'max-run-min': 'maxRunMin', candidates: 'candidates', reviewers: 'reviewers', mode: 'mode', runtime: 'runtime' }
+    'max-reviews': 'maxReviews', 'max-design-reviews': 'maxDesignReviews', 'max-turns': 'maxTurns', 'max-run-min': 'maxRunMin', candidates: 'candidates', reviewers: 'reviewers', mode: 'mode', runtime: 'runtime' }
   let rest = a, match
   while (true) {
     if (/^\s*--explain(?:\s|$)/.test(rest)) { out.explain = true; rest = rest.replace(/^\s*--explain(?:\s+|$)/, ''); continue }
@@ -3150,7 +3150,7 @@ function pairOutcomeFacts(S) {
   const p = S.pair, o = S.pairOptions
   const byStage = stage => p.reviews.filter(r => r.stage === stage).length
   return `- Outcome: the pair strategy, ${o.author.name} authoring and ${o.reviewer.name} reviewing; ` +
-    `${p.reviews.length} of at most ${o.maxReviews} reviews (design ${byStage('design')}, code ${byStage('code')}), ended at the ${p.stage} stage` +
+    `${p.reviews.length} of at most ${o.maxReviews} reviews (design ${byStage('design')}${o.design !== false && o.maxDesignReviews ? `, asking the user after every ${o.maxDesignReviews} without approval` : ''}, code ${byStage('code')}), ended at the ${p.stage} stage` +
     `${p.stop ? ` (${oneLine(p.stop, 200)})` : ''}. Findings: ${p.findings.length ? countsOf(p.findings, f => `${f.stage} ${f.severity} ${f.status}`) : 'none'}. ` +
     `Verification command: ${S.verify ? `\`${oneLine(S.verify, 200)}\`` : 'none'}.` +
     (p.asked?.length ? ` Questions for the user: ${p.asked.map(q => `${q.id} (about ${q.about}, asked in ${q.label})`).join(', ')}; ` +
@@ -4419,7 +4419,9 @@ function newPairState() {
     // and how this stop can continue. See pairAsk and pairTakeAnswers.
     asked: [], decisions: [], resumable: false, skipRetro: false, fallback: false, setupAttempt: 0,
     // The author's reply to each finding it answered (pairIngestReplies).
-    replies: [] }
+    replies: [],
+    // One entry per design review: new findings, design findings left open, and the design's size.
+    designRounds: [] }
 }
 
 // Pair decisions are shared by both hosts. Only the reviewer can close findings.
@@ -4449,6 +4451,12 @@ function parsePairConfig(args) {
   if (!Number.isSafeInteger(maxReviews) || maxReviews < 2 || maxReviews > 100) throw new Error('pair: maxReviews must be an integer from 2 to 100.')
   if (raw.design !== undefined && typeof raw.design !== 'boolean') throw new Error('pair: design must be true or false (--no-design in a string task).')
   const design = raw.design !== false
+  // The design's share of the budget: it may use up to maxReviews - 1, leaving at least one code
+  // review; by default 3, or fewer when the budget is small, leaving two (a finding and its check).
+  const designCap = Math.max(1, maxReviews - 1), designDefault = Math.min(3, Math.max(1, maxReviews - 2))
+  const maxDesignReviews = raw.maxDesignReviews === undefined ? designDefault : Number(raw.maxDesignReviews)
+  if (!Number.isSafeInteger(maxDesignReviews) || maxDesignReviews < 1 || maxDesignReviews > designCap)
+    throw new Error(`pair: maxDesignReviews must be an integer from 1 to maxReviews - 1 (${designCap}).`)
   // The process retro is on unless retro: false (--no-retro in a string task), as in the other workflows.
   const config = parseConfig({ ...raw, mode: 'implement',
     simple: { implementer: author.key, reviewer: reviewer.key } }, { workflow: 'pair', tier: 'simple' })
@@ -4468,7 +4476,7 @@ function parsePairConfig(args) {
   return { ...config, raw, tier: 'pair', simple: null, panel: [], specReviewers: [],
     roles: { ...(retro ? { retro } : {}), setup }, lineup: [hostSeat(config.host, author)],
     auditors: [{ ...hostSeat(config.host, reviewer), lens: 'review', id: 'PR' }],
-    pairOptions: { author, reviewer, maxReviews, design, answers: pairAnswersOf(raw.clarifications) } }
+    pairOptions: { author, reviewer, maxReviews, maxDesignReviews, design, answers: pairAnswersOf(raw.clarifications) } }
 }
 
 // Without a design stage the contract is the author's to revise with the code, so it is part of
@@ -4711,7 +4719,8 @@ function pairAsk(S, kind, items, label) {
 // council's parser leaves out. An entry that is not an object is kept as one with no id.
 function pairAnswersOf(list) {
   return (Array.isArray(list) ? list : []).map(c => c && typeof c === 'object' && !Array.isArray(c)
-    ? { id: c.id, answer: c.answer, ...(c.criterion !== undefined ? { criterion: c.criterion } : {}), ...(c.drop !== undefined ? { drop: c.drop } : {}) }
+    ? { id: c.id, answer: c.answer, ...(c.criterion !== undefined ? { criterion: c.criterion } : {}), ...(c.drop !== undefined ? { drop: c.drop } : {}),
+      ...(c.implement !== undefined ? { implement: c.implement } : {}) }
     : { id: undefined, answer: undefined })
 }
 
@@ -4726,6 +4735,8 @@ function pairAnswerProblem(a, q) {
   if (has('criterion') && has('drop')) return 'both criterion and drop'
   if (has('criterion') && (typeof a.criterion !== 'string' || !a.criterion.trim())) return 'criterion is not text'
   if (has('drop') && typeof a.drop !== 'boolean') return 'drop is not true or false'
+  if (has('implement') && q.kind !== 'design') return 'implement answers only a question about the design review allowance'
+  if (has('implement') && typeof a.implement !== 'boolean') return 'implement is not true or false'
   return ''
 }
 
@@ -4747,7 +4758,8 @@ function pairAnswerCheck(answers, knownIds, current, hold) {
     if (!q) continue
     const why = pairAnswerProblem(a, q)
     if (why) { invalid.push(`${id} (${why})`); continue }
-    answered.push({ id, answer: a.answer.trim(), ...(typeof a.criterion === 'string' ? { criterion: a.criterion.trim() } : {}), ...(a.drop === true ? { drop: true } : {}) })
+    answered.push({ id, answer: a.answer.trim(), ...(typeof a.criterion === 'string' ? { criterion: a.criterion.trim() } : {}), ...(a.drop === true ? { drop: true } : {}),
+      ...(a.implement === true ? { implement: true } : {}) })
   }
   return { answered, missing: current.map(q => q.id).filter(id => !answered.some(a => a.id === id)), unknown, invalid, held }
 }
@@ -4781,9 +4793,10 @@ function pairTakeAnswers(S) {
 }
 
 // The identity of a stop's answers, which the native resume check records: continuing one stop
-// twice with different answers is refused.
+// twice with different answers is refused. implement is added only when given, so an answer
+// without it keeps the hash it had before the field existed.
 function pairAnswersHash(S, answered) {
-  return promptHash(JSON.stringify(answered.map(a => [a.id, a.answer, a.criterion ?? null, a.drop ?? null])))
+  return promptHash(JSON.stringify(answered.map(a => [a.id, a.answer, a.criterion ?? null, a.drop ?? null, ...(a.implement ? [true] : [])])))
 }
 
 // The answers become decisions: in every later prompt, the result and the review version. A
@@ -4794,7 +4807,7 @@ function pairApplyDecisions(S, answered) {
   for (const a of answered) {
     const q = p.asked.find(x => x.id === a.id)
     p.decisions.push({ id: q.id, about: q.about, kind: q.kind, question: q.question, answer: a.answer, label: q.label,
-      ...(a.criterion !== undefined ? { criterion: a.criterion } : {}), ...(a.drop ? { drop: true } : {}) })
+      ...(a.criterion !== undefined ? { criterion: a.criterion } : {}), ...(a.drop ? { drop: true } : {}), ...(a.implement ? { implement: true } : {}) })
     if (q.kind === 'criterion' && a.criterion !== undefined) S.criteria = S.criteria.map(c => c.id === q.about ? { ...c, text: a.criterion } : c)
     if (q.kind === 'criterion' && a.drop) S.criteria = S.criteria.filter(c => c.id !== q.about)
     const cited = new Set(q.question.match(/\bR\d+\b/g) || [])
@@ -4831,6 +4844,7 @@ function pairResumeSteps(S, via, hostRunDir, questions = S.pair.questions, post 
       : `To continue this run, call ${slash} again with the same args plus runtime: "cli", resume: "${hostRunDir}" and clarifications: ${entries}. The runner checks every answer before any turn and replays the turns before this stop from its checkpoint.`
   return `This run stopped for the user's answers. Show questions[] to the user, each under its ID with what it is about, and ask for an answer to every one (${ids}). ` +
     'An answer is {id, answer}; one to a question of kind criterion may also give criterion (the criterion\'s new text) or drop: true (to remove it). ' +
+    (questions.some(q => q.kind === 'design') ? 'One to a question of kind design continues the design with the answer as a scope decision, or, with implement: true, starts the implementation with the open design findings carried into code review; to stop, don\'t continue the run. ' : '') +
     `${how} Don't run dark-factory cleanup on the stopped run, and don't change its worktree or the checkout: continuing needs them as they are. ` +
     `If the run cannot continue (a refused check${via === 'native' ? ', or a new session' : ''}), ${pairNewRun(S, post)}.`
 }
@@ -4871,15 +4885,18 @@ function pairChallengeError(S, review) {
     return `${S.pair.stage === 'code' ? 'This code review' : 'Design review'} needs exactly one challenge for each acceptance criterion (${S.criteria.map(c => c.id).join(', ')}).` +
       `${missing.length ? ` Missing: ${missing.join(', ')}.` : ''}${repeated.length ? ` Repeated: ${[...new Set(repeated)].join(', ')}.` : ''}`
   }
+  // A minor design finding does not hold the design (pairReadiness), so at design it cannot stand
+  // in for the missing rejecting check either.
+  const rejecting = S.pair.stage === 'design' ? ['blocker', 'major'] : ['blocker', 'major', 'minor']
   for (const c of challenges) {
     const rejectsDesign = review.requiresDesignRevision === true ||
-      (review.findings || []).some(f => String(f.statement || '').trim() && String(f.evidence || '').trim() && ['blocker', 'major', 'minor'].includes(f.severity)) ||
+      (review.findings || []).some(f => String(f.statement || '').trim() && String(f.evidence || '').trim() && rejecting.includes(f.severity)) ||
       (review.criteria || []).some(a => a.criterion === c.criterion && ['partial', 'unmet'].includes(a.status) && String(a.note || '').trim())
     const covers = id => contract.checks.some(check => check.id === id && check.criteria.includes(c.criterion))
     if (!S.criteria.some(x => x.id === c.criterion)) return `Challenge ${c.criterion} names no acceptance criterion.`
     if (!String(c.wrongImplementation || '').trim()) return `Challenge ${c.criterion} needs a plausible wrong implementation.`
     if (!Array.isArray(c.rejectingCheckIds) || new Set(c.rejectingCheckIds).size !== c.rejectingCheckIds.length) return `Challenge ${c.criterion} needs distinct rejectingCheckIds.`
-    if (!c.rejectingCheckIds.length && !rejectsDesign) return `Challenge ${c.criterion} cites no rejecting check. Cite a contract check whose criteria include ${c.criterion}, or, if none rejects the wrong implementation, raise an evidenced finding or assess ${c.criterion} partial or unmet.`
+    if (!c.rejectingCheckIds.length && !rejectsDesign) return `Challenge ${c.criterion} cites no rejecting check. Cite a contract check whose criteria include ${c.criterion}, or, if none rejects the wrong implementation, raise an evidenced ${S.pair.stage === 'design' ? 'blocker or major ' : ''}finding or assess ${c.criterion} partial or unmet.`
     const stray = c.rejectingCheckIds.filter(id => !covers(id))
     if (stray.length) {
       const owner = id => contract.checks.find(check => check.id === id)
@@ -4954,7 +4971,7 @@ function pairReplayReadiness(S, blocked, incomplete) {
 }
 
 function pairIngestReview(S, review) {
-  const p = S.pair
+  const p = S.pair, before = p.findings.length
   if (!review || review.version !== pairVersion(S) || review.complete !== true) return 'The reviewer did not complete a review of the current version.'
   const challenged = pairChallengesDue(S)
   if (p.stage === 'design' || challenged) {
@@ -5013,6 +5030,10 @@ function pairIngestReview(S, review) {
   const { process: note, ...kept } = review
   p.lastReview = kept
   p.reviews.push({ stage: p.stage, label: p.label, ...kept })
+  if (p.stage === 'design') {
+    ;(p.designRounds ||= []).push({ review: p.reviews.length, label: p.label, fresh: p.findings.length - before,
+      ...pairSeverityCounts(pairOpen(S).filter(f => f.stage === 'design')), words: String(p.design || '').split(/\s+/).filter(Boolean).length })
+  }
   return null
 }
 
@@ -5032,7 +5053,9 @@ function pairReadiness(S) {
   const blocked = [], incomplete = [], infrastructure = pairInfrastructure(S)
   if (p.stop) incomplete.push(p.stop)
   if (!r || r.version !== pairVersion(S) || !r.complete) incomplete.push('The current version has no completed review.')
-  for (const f of pairOpen(S).filter(f => p.stage === 'code' || f.stage === 'design')) blocked.push(`${f.id} (${f.severity}): ${f.statement}`)
+  // At the design stage a minor design finding does not hold the design: it stays open into the
+  // code stage, where every open finding blocks.
+  for (const f of pairOpen(S).filter(f => p.stage === 'code' || (f.stage === 'design' && f.severity !== 'minor'))) blocked.push(`${f.id} (${f.severity}): ${f.statement}`)
   for (const r of p.readings.filter(r => r.status === 'proposed')) incomplete.push(`Reading ${r.id} has no ruling.`)
   for (const r of p.readings.filter(r => r.status === 'needs-user')) incomplete.push(`Reading ${r.id} needs a user decision.`)
   if (!S.criteria.length) incomplete.push('No acceptance criteria were established.')
@@ -5077,6 +5100,51 @@ function pairReviewClean(S) {
   const r = S.pair.lastReview
   return r?.complete && r.version === pairVersion(S) && !r.requiresDesignRevision && !pairOpen(S).length &&
     S.criteria.every(c => r.criteria.filter(a => a.criterion === c.id).length === 1 && r.criteria.some(a => a.criterion === c.id && a.status === 'met' && a.note?.trim()))
+}
+
+// The design reviews the run may spend before it stops for the user: maxDesignReviews, and as many
+// again for every answer that continued the design. Counted over the whole run, a return to
+// design from the code stage included; the total budget bounds it as always.
+function pairDesignAllowance(S) {
+  const continued = (S.pair.decisions || []).filter(d => d.kind === 'design' && !d.implement).length
+  return S.pairOptions.maxDesignReviews * (1 + continued)
+}
+
+// After a design review that did not approve the design: whether the design has spent its
+// allowance, with budget left for the user's choice to buy anything.
+function pairDesignCapped(S) {
+  const p = S.pair
+  return pairDesigned(S) && p.stage === 'design' && p.reviews.length < S.pairOptions.maxReviews &&
+    p.reviews.filter(r => r.stage === 'design').length >= pairDesignAllowance(S)
+}
+
+// Open findings by severity, as counts ({blocker, major, minor}), in words: "1 major, 2 minor".
+const pairSeverityCounts = fs => Object.fromEntries(['blocker', 'major', 'minor'].map(s => [s, fs.filter(f => f.severity === s).length]))
+const pairSeverities = counts => ['blocker', 'major', 'minor'].filter(s => counts[s]).map(s => `${counts[s]} ${s}`).join(', ')
+
+// The stop's reason, and its one question: how the design rounds went, what is open, the choices.
+function pairDesignStopReason(S) {
+  const p = S.pair, open = pairOpen(S).filter(f => f.stage === 'design')
+  const used = p.reviews.filter(r => r.stage === 'design').length
+  return `The design used its review allowance (${used} of ${pairDesignAllowance(S)} design reviews) without approval` +
+    `${open.length ? `, with ${plural(open.length, 'design finding')} open (${pairSeverities(pairSeverityCounts(open))})` : ''}.`
+}
+
+function pairDesignQuestion(S) {
+  const p = S.pair, o = S.pairOptions, open = pairOpen(S).filter(f => f.stage === 'design')
+  const rounds = (p.designRounds || []).map(r => `review ${r.review}: ${plural(r.fresh, 'new finding')}; open ${pairSeverities(r) || 'none'}; design ${r.words} words`).join('. ')
+  const left = o.maxReviews - p.reviews.length
+  return `${pairDesignStopReason(S)} Design rounds: ${rounds}. ` +
+    `Open design findings: ${open.map(f => `${f.id} (${f.severity}) ${pairBrief(f.statement, 160)}`).join('; ') || 'none'}${open.length ? '.' : ''} ` +
+    `${plural(left, 'review')} of ${o.maxReviews} remain. Choose one. (a) Continue the design: answer with a scope decision the author and reviewer then follow, ` +
+    `for example narrow the scope, or accept named findings as documented residuals; the design gets up to ${plural(o.maxDesignReviews, 'more review')}. ` +
+    '(b) Start the implementation now: answer with implement: true; the open design findings carry into code review as open items, and each still blocks readiness until the reviewer closes it. ' +
+    '(c) Stop: don\'t continue this run.'
+}
+
+// The choice the user made at a design stop (question `id`): implement, or continue the design.
+function pairDesignChoice(S, id) {
+  return (S.pair.decisions || []).some(d => d.id === id && d.kind === 'design' && d.implement) ? 'implement' : 'continue'
 }
 
 // The story lines of a pair run (tellStory): setup, each author pass, each review, each stop.
@@ -5149,11 +5217,14 @@ function pairReviewLine(S, review, before) {
   }
   const short = (review.criteria || []).filter(c => c.status !== 'met').map(c => `${c.criterion} ${c.status}`)
   out.push(short.length ? `Criteria: ${short.join(', ')}.` : 'Criteria all met.')
+  const carried = p.stage === 'design' && ready.state === 'ready' ? pairOpen(S).filter(f => f.stage === 'design').map(f => f.id) : []
+  if (carried.length) out.push(`Minor ${carried.length === 1 ? 'finding' : 'findings'} ${carried.join(', ')} ${carried.length === 1 ? 'stays' : 'stay'} open for code review.`)
   if (p.stage === 'code' && review.requiresDesignRevision && pairDesigned(S)) out.push('Requires a revised design.')
   return out.join(' ')
 }
 
 function pairQuestionsLine(S, kind, questions) {
+  if (kind === 'design') return `${pairDesignStopReason(S)} The run asked the user ${questions.map(q => q.id).join(', ')}: continue the design with a scope decision, start the implementation with the open design findings, or stop.`
   const who = kind === 'reviewer' ? S.pairOptions.reviewer.name : kind === 'author' ? S.pairOptions.author.name : 'Setup'
   return `${who} asked the user ${questions.length === 1 ? 'a question' : `${questions.length} questions`}: ${questions.map(q => `${q.id}${q.about !== 'none' ? ` (about ${q.about})` : ''} ${pairBrief(q.question.split(' Requirements as written:')[0], 200)}`).join('; ')}`.replace(/[^.!?…]$/, '$&.')
 }
@@ -5191,6 +5262,12 @@ function pairHighlights(S) {
   p.reviews.forEach((r, i) => {
     if (r.stage === 'code' && r.requiresDesignRevision && pairDesigned(S)) out.push(`Code review ${i + 1} sent the work back to design: ${sentence(pairBrief(r.summary, 240) || 'no summary given')}`)
   })
+  for (const q of p.asked.filter(q => q.kind === 'design')) {
+    const d = p.decisions.find(d => d.id === q.id)
+    out.push(`The design reached its review allowance in ${q.label}; ${!d ? `the run stopped for the user (${q.id})`
+      : d.implement ? `the user chose to start the implementation with the open design findings carried into code review (${q.id})`
+      : `the user continued the design (${q.id}): ${pairBrief(d.answer, 200) || 'no answer given'}`}.`)
+  }
   return out
 }
 
@@ -5225,7 +5302,7 @@ function pairResult(S, status = 'blocked') {
     ...(highlights.length ? [`Points of interest:\n\n${highlights.map(h => `- ${h}`).join('\n')}`] : []),
     ...(questions.length ? [`Questions for the user (answer each under its ID):\n\n${questions.map(q => `- ${q.id} (about ${q.about}): ${q.question}`).join('\n')}`] : []),
     ...(p.decisions.length ? [`User decisions:\n\n${p.decisions.map(d => `- ${d.id} (about ${d.about}; asked in ${d.label}): ${d.question} Answer: ${d.answer}` +
-      `${typeof d.criterion === 'string' ? ` ${d.about} now reads: ${d.criterion}` : d.drop ? ` ${d.about} was dropped.` : ''}`).join('\n')}`] : []),
+      `${typeof d.criterion === 'string' ? ` ${d.about} now reads: ${d.criterion}` : d.drop ? ` ${d.about} was dropped.` : d.implement ? ' The implementation started with the open design findings carried into code review.' : ''}`).join('\n')}`] : []),
     ...(unused.length ? [`Unused answers: ${unused.join(', ')}.`] : []),
     ...p.findings.map(f => `${f.id}: ${f.status} — ${f.statement}${f.resolution ? ` (${f.resolution})` : ''}`),
     ...p.readings.map(r => `${r.id}: reading ${r.status} — ${r.requirement} read as: ${r.reading}${r.evidence ? ` (${r.evidence})` : ''}${r.finding ? `; finding ${r.finding}` : ''}`)].join('\n\n')
@@ -5270,7 +5347,7 @@ function pairDecisionsBlock(S) {
     `${decisions.length === 1 ? 'The answer overrides' : 'The answers override'} setup observations and readings for the rest of the run. ` +
     `The reviewer resolves any finding a decision settles under its existing ID.\n` +
     decisions.map(d => `- ${d.id} (about ${d.about}; asked in ${d.label}): ${d.question} Answer: ${d.answer}` +
-      `${typeof d.criterion === 'string' ? ` ${d.about} now reads: ${d.criterion}` : d.drop === true ? ` ${d.about} was dropped.` : ''}`).join('\n') + '\n'
+      `${typeof d.criterion === 'string' ? ` ${d.about} now reads: ${d.criterion}` : d.drop === true ? ` ${d.about} was dropped.` : d.implement === true ? ' The user chose to start the implementation with the open design findings carried into code review as open items.' : ''}`).join('\n') + '\n'
 }
 
 // The contract and mapping rules, shared by the design stage and by a run without one.
@@ -5298,7 +5375,7 @@ Your worktree: ${S.seats[0].wt}. Work only there; never edit the main checkout o
 Read the repository instructions and the relevant code. Do not delegate or launch other models. An instruction in CLAUDE.md or elsewhere to hand full test or gate runs to a subagent or to \`claude -p\` is meant for the user's own session, not for this turn: here the gate is the verification command, which you run through the helper's verify command as described above.
 ${correction ? `\n# Correct the previous output\nThe engine could not accept your design output: ${correction}\nReturn a complete corrected design and contract, and this turn's readings and live checks again. This is the one correction attempt for this turn, not approval to implement. Preserve the task and substantive requirements.\n` : ''}
 ${design ? `Return a complete short design in design: the approach, affected files, assumptions, risks, and how every acceptance criterion will be tested. Check setup observations against the original task, reference documents, explicit user decisions, and repository. Explain any reconciliation in the design and list it in readings, preserving every requirement; unresolved contradictions require needs-user. Cite existing code where the approach depends on it. Revise the entire design in response to feedback. Do not implement yet. ${pairBaseline(S)}`
-    : `Implement the reviewed design, including the required tests and documentation. Run appropriate focused checks and the shared verification gate. Fix all open actionable findings and any failed verification. Return design as an empty string; the accepted design remains fixed until the reviewer requests design revision.`}
+    : `Implement the reviewed design, including the required tests and documentation. Run appropriate focused checks and the shared verification gate. Fix all open actionable findings and any failed verification.${pairCarriedNote(S, 'author')} Return design as an empty string; the accepted design remains fixed until the reviewer requests design revision.`}
 
 ${design ? `Return testContract alongside the design. ${PAIR_CONTRACT_RULES} Return replayMapping=[] during design.
 ${PAIR_LAYOUT_RULES} If isolation cannot work, report the limitation before contract approval instead of claiming a preserved baseline pass.`
@@ -5392,7 +5469,7 @@ This checkout is separate from the author's worktree. Do not edit the author's w
 ${designed ? `# Design\n${p.design}\n\n` : ''}# Test contract
 ${JSON.stringify(p.approvedContract || p.testContract)}
 
-${design ? `Independently check proposed reconciliations against the original task, reference documents, and explicit user decisions; setup notes cannot waive requirements. Check that the criteria cover the entire original request. Check the approach against the task and existing code: correctness, missing requirements, assumptions, alternatives that materially affect the outcome, scope, and planned test coverage. Where the change copies or mirrors behaviour from another function, require a side-by-side check that the two agree. Verify every proposed test root against the BASE repository configuration/layout and its cited evidence; naming a directory does not make it a test root. Reject production roots and missing concrete outcomes/boundaries. Check that every planned test and fixture is a regular file under an accepted root and each focused command is executable by the replay helper. Shared files are allowed when required by the user or plan: inspect focused selection and base loadability. Prefer separate files otherwise. Whole-suite preservation must use kind=gate with the exact designated command, never a directory in a file mapping. Gate evidence establishes final-suite success, not a changed-behavior baseline failure. Each criterion is met only if the design explains how it will be satisfied and checked.
+${design ? `Independently check proposed reconciliations against the original task, reference documents, and explicit user decisions; setup notes cannot waive requirements. Check that the criteria cover the entire original request. Check the approach against the task and existing code: correctness, missing requirements, assumptions, alternatives that materially affect the outcome, scope, and planned test coverage. Where the change copies or mirrors behaviour from another function, require a side-by-side check that the two agree. Verify every proposed test root against the BASE repository configuration/layout and its cited evidence; naming a directory does not make it a test root. Reject production roots and missing concrete outcomes/boundaries. Check that every planned test and fixture is a regular file under an accepted root and each focused command is executable by the replay helper. Shared files are allowed when required by the user or plan: inspect focused selection and base loadability. Prefer separate files otherwise. Whole-suite preservation must use kind=gate with the exact designated command, never a directory in a file mapping. Gate evidence establishes final-suite success, not a changed-behavior baseline failure. Each criterion is met only if the design explains how it will be satisfied and checked; assess it met when the design satisfies it apart from minor findings.
 ${pairChallengeRules(true)} ${pairBaseline(S)}`
     : `${designed ? 'Review the implementation and tests against the task and approved design.' : `Review the implementation and tests against the task. This run has no design stage, so no one has reviewed the test contract above: review it here as part of the artifact. Verify every test root against the BASE repository configuration/layout and its cited evidence, check that the contract covers the entire original request and every criterion, and ${challenged ? `file a finding for each gap. No review has challenged this contract yet. ${pairChallengeRules(false)}` : 'judge for each criterion whether its checks would reject a plausible wrong implementation; file a finding for each gap.'} Inspection checks must name a concrete inspection; perform each one yourself.`} Inspect the whole diff at ${p.measurement.snapshot.diff}, not only the latest fixes. Look for incorrect behavior, regressions, missing requirements, and tests that would miss the defect. The neutral helper measured this exact snapshot. This summary leaves out what each execution printed: read that in the helper's full record, ${pairMeasurementRecord(S)}, where every replay record and the suite carry the tail of their output, and in the logs they name:
 ${JSON.stringify(p.measurement)}
@@ -5407,10 +5484,26 @@ ${JSON.stringify({ findings: p.findings, addressed: p.author.addressed })}
 # Readings ledger
 ${JSON.stringify(p.readings)}
 ${pairLiveChecksNote(S)}
-Use resolutions to update existing IDs: open if still actionable, fixed only after inspecting the correction, refuted only with evidence that the finding was mistaken. Give concrete evidence for every resolution. Reopen an old ID when its defect recurs. Missing resolutions leave findings open.${designed ? ' In design review, leave code findings open until the implementation is fixed; check that the revised design explains their correction.' : ''} Add only genuinely new defects in findings; the engine assigns their IDs. Actionable minor findings count too. Put optional preferences and unrelated improvements in suggestions; do not manufacture findings to fill a quota.
+Use resolutions to update existing IDs: open if still actionable, fixed only after inspecting the correction, refuted only with evidence that the finding was mistaken. Give concrete evidence for every resolution. Reopen an old ID when its defect recurs. Missing resolutions leave findings open.${designed ? ' In design review, leave code findings open until the implementation is fixed; check that the revised design explains their correction.' : ''}${pairCarriedNote(S, 'reviewer')} Add only genuinely new defects in findings; the engine assigns their IDs. ${design ? PAIR_DESIGN_SEVERITY : 'Actionable minor findings count too.'} Put optional preferences and unrelated improvements in suggestions; do not manufacture findings to fill a quota.
 In rulings, rule on every reading the ledger lists as proposed, exactly one ruling each, with evidence. Accept a reading only when it keeps the requirement's intent and the original task, reference documents or explicit user decisions support it; setup observations alone cannot. Reject it when the requirement can and must be met as written, citing what shows that; the engine files each rejected reading as a major finding. Rule needs-user only on a reading that one of your questions cites. Accepted readings are settled: hold the work to them and do not reopen them. Return rulings=[] when no reading is proposed.
 Return a question in questions when a finding, new or existing, or a reading can be settled only by the user: two requirements that cannot both hold as written, or a requirement that a fact your evidence shows makes impossible as written, with no reading inside the task's words that settles it. Put the exact words of each requirement involved in quoted; in question, cite the finding or reading ID and give the options you see; say in summary what the user must decide. Keep any finding it concerns open as usual. A question stops the run and goes to the user at once, so ask it in the first review that can show the conflict, not after another round. Ordinary defects, missing evidence, unclear code and preferences are findings, never questions. Otherwise return questions=[].
 Return an evidenced met/partial/unmet assessment for every acceptance criterion, exactly one each, with criterion set to its bare ID (C1, not the criterion's text); challenges name their criterion the same way. ${designed ? 'In code review, set requiresDesignRevision=true only if the implementation needs a materially different design; explain it in a finding. The engine will return the author to design review. In design review, keep that field false and express needed revisions as findings.' : 'This run has no design stage to return to: keep requiresDesignRevision false, and when the approach itself must change, say so in a finding; the author reworks it in the next implementation turn.'} Return complete=false if you cannot finish the review; an empty findings list is not approval in that case.`
+}
+
+// At design, minor findings don't hold the design: they stay open into the code stage, where every
+// open finding blocks readiness. So design review spends its findings on what the design decides.
+const PAIR_DESIGN_SEVERITY = 'Minor findings do not block design approval: they stay open, and code review checks them against the implementation, where every open finding blocks readiness. Blocker and major findings block design approval. At design, raise a new finding for a defect that affects an acceptance criterion, correctness or scope; leave benchmark, documentation and wording detail to code review unless a criterion depends on it.'
+
+// Design findings still open at the code stage: minor ones the design was approved with, and any
+// the user chose to carry into the implementation. Both participants hold them as code-stage items.
+function pairCarriedNote(S, role) {
+  const p = S.pair
+  const ids = p.stage === 'code' && pairDesigned(S) ? pairOpen(S).filter(f => f.stage === 'design').map(f => f.id) : []
+  if (!ids.length) return ''
+  const list = ids.length === 1 ? `Design finding ${ids[0]} is` : `Design findings ${ids.join(', ')} are`
+  return role === 'author'
+    ? ` ${list} still open and carried into this implementation: fix each in the code, tests or documentation, or dispute it with evidence; the reviewer checks ${ids.length === 1 ? 'it' : 'them'} against the code.`
+    : ` ${list} still open and carried into code review: resolve ${ids.length === 1 ? 'it' : 'each'} against the implementation, fixed once the code, tests or documentation address it, open otherwise.`
 }
 
 // The reviewer reads the live checks and leaves them alone: they are for the user to run, against
@@ -5424,7 +5517,7 @@ function pairLiveChecksNote(S) {
 // returns whenever the contract is new to review: for each criterion a plausible wrong
 // implementation and the checks that reject it.
 function pairChallengeRules(designed) {
-  return `Return exactly one structured challenge per criterion in challenges: criterion, a substantive wrongImplementation, and rejectingCheckIds that resolve to contract checks covering that criterion: each cited check's criteria must include the challenged criterion (a check covering only C5 cannot reject a wrong implementation of C3). If no check rejects a plausible wrong implementation, return rejectingCheckIds=[] and raise an evidenced finding, ${designed ? 'assess that criterion partial/unmet, or request design revision with the reason in summary' : 'or assess that criterion partial/unmet'}. Never cite a check you believe is ineffective just to fill the array. Approval requires a rejecting check for every challenge. Describe a plausible incorrect result and its rejecting inspection for non-code criteria. Judge whether the checks actually reject that implementation; valid IDs alone are insufficient.`
+  return `Return exactly one structured challenge per criterion in challenges: criterion, a substantive wrongImplementation, and rejectingCheckIds that resolve to contract checks covering that criterion: each cited check's criteria must include the challenged criterion (a check covering only C5 cannot reject a wrong implementation of C3). If no check rejects a plausible wrong implementation, return rejectingCheckIds=[] and raise an evidenced ${designed ? 'blocker or major finding, assess that criterion partial/unmet, or request design revision with the reason in summary' : 'finding, or assess that criterion partial/unmet'}. Never cite a check you believe is ineffective just to fill the array. Approval requires a rejecting check for every challenge. Describe a plausible incorrect result and its rejecting inspection for non-code criteria. Judge whether the checks actually reject that implementation; valid IDs alone are insufficient.`
 }
 
 // The design stage needs no gate run: setup measured the base revision, or on the standalone
@@ -6584,7 +6677,7 @@ async function pairRun() {
     pairBaselineResult(S, base)
   }
   const p = S.pair
-  log(`pair: ${S.pairOptions.author.name} authors; ${S.pairOptions.reviewer.name} reviews; budget ${S.pairOptions.maxReviews} reviews${pairDesigned(S) ? '' : '; no design stage'}`)
+  log(`pair: ${S.pairOptions.author.name} authors; ${S.pairOptions.reviewer.name} reviews; budget ${S.pairOptions.maxReviews} reviews${pairDesigned(S) ? `, the design asking the user after ${S.pairOptions.maxDesignReviews}` : '; no design stage'}`)
   pairMilestone(pairSetupLine(S))
   while (p.reviews.length < S.pairOptions.maxReviews) {
     let label = `pair-${p.stage}-${p.reviews.length + 1}`
@@ -6713,6 +6806,24 @@ async function pairRun() {
       p.stop = pairOpen(S).length ? 'Review stalled: the artifact and unresolved findings did not change.'
         : 'Review stalled: the artifact and unmet criteria or verification results did not change.'
       return pairResult(S)
+    }
+    // A design still not approved after its allowance stops for the user, who continues it with a
+    // scope decision, starts the implementation with the open design findings carried into code
+    // review (implement: true), or stops. The run never moves on past them without that answer.
+    if (pairDesignCapped(S)) {
+      p.stop = pairDesignStopReason(S)
+      const id = `Q${p.asked.length + 1}`
+      const stopped = await pairStop('design', [{ about: 'none', question: pairDesignQuestion(S) }], `review ${label}`)
+      if (stopped) return stopped
+      if (pairDesignChoice(S, id) === 'implement') {
+        const open = pairOpen(S).filter(f => f.stage === 'design').map(f => f.id)
+        pairMilestone(`The implementation starts on the user's answer${open.length ? `, with ${open.join(', ')} open for code review` : ''}.`)
+        p.approvedDesign = p.design
+        p.approvedContract = JSON.parse(JSON.stringify(p.testContract))
+        p.stage = 'code'
+        p.lastReview = null
+        continue
+      }
     }
     // Without a design stage there is none to return to: the flag blocks readiness like a finding,
     // and the author reworks the approach in the next implementation turn.

@@ -5,7 +5,9 @@ function newPairState() {
     // and how this stop can continue. See pairAsk and pairTakeAnswers.
     asked: [], decisions: [], resumable: false, skipRetro: false, fallback: false, setupAttempt: 0,
     // The author's reply to each finding it answered (pairIngestReplies).
-    replies: [] }
+    replies: [],
+    // One entry per design review: new findings, design findings left open, and the design's size.
+    designRounds: [] }
 }
 
 // Pair decisions are shared by both hosts. Only the reviewer can close findings.
@@ -35,6 +37,12 @@ function parsePairConfig(args) {
   if (!Number.isSafeInteger(maxReviews) || maxReviews < 2 || maxReviews > 100) throw new Error('pair: maxReviews must be an integer from 2 to 100.')
   if (raw.design !== undefined && typeof raw.design !== 'boolean') throw new Error('pair: design must be true or false (--no-design in a string task).')
   const design = raw.design !== false
+  // The design's share of the budget: it may use up to maxReviews - 1, leaving at least one code
+  // review; by default 3, or fewer when the budget is small, leaving two (a finding and its check).
+  const designCap = Math.max(1, maxReviews - 1), designDefault = Math.min(3, Math.max(1, maxReviews - 2))
+  const maxDesignReviews = raw.maxDesignReviews === undefined ? designDefault : Number(raw.maxDesignReviews)
+  if (!Number.isSafeInteger(maxDesignReviews) || maxDesignReviews < 1 || maxDesignReviews > designCap)
+    throw new Error(`pair: maxDesignReviews must be an integer from 1 to maxReviews - 1 (${designCap}).`)
   // The process retro is on unless retro: false (--no-retro in a string task), as in the other workflows.
   const config = parseConfig({ ...raw, mode: 'implement',
     simple: { implementer: author.key, reviewer: reviewer.key } }, { workflow: 'pair', tier: 'simple' })
@@ -54,7 +62,7 @@ function parsePairConfig(args) {
   return { ...config, raw, tier: 'pair', simple: null, panel: [], specReviewers: [],
     roles: { ...(retro ? { retro } : {}), setup }, lineup: [hostSeat(config.host, author)],
     auditors: [{ ...hostSeat(config.host, reviewer), lens: 'review', id: 'PR' }],
-    pairOptions: { author, reviewer, maxReviews, design, answers: pairAnswersOf(raw.clarifications) } }
+    pairOptions: { author, reviewer, maxReviews, maxDesignReviews, design, answers: pairAnswersOf(raw.clarifications) } }
 }
 
 // Without a design stage the contract is the author's to revise with the code, so it is part of
@@ -297,7 +305,8 @@ function pairAsk(S, kind, items, label) {
 // council's parser leaves out. An entry that is not an object is kept as one with no id.
 function pairAnswersOf(list) {
   return (Array.isArray(list) ? list : []).map(c => c && typeof c === 'object' && !Array.isArray(c)
-    ? { id: c.id, answer: c.answer, ...(c.criterion !== undefined ? { criterion: c.criterion } : {}), ...(c.drop !== undefined ? { drop: c.drop } : {}) }
+    ? { id: c.id, answer: c.answer, ...(c.criterion !== undefined ? { criterion: c.criterion } : {}), ...(c.drop !== undefined ? { drop: c.drop } : {}),
+      ...(c.implement !== undefined ? { implement: c.implement } : {}) }
     : { id: undefined, answer: undefined })
 }
 
@@ -312,6 +321,8 @@ function pairAnswerProblem(a, q) {
   if (has('criterion') && has('drop')) return 'both criterion and drop'
   if (has('criterion') && (typeof a.criterion !== 'string' || !a.criterion.trim())) return 'criterion is not text'
   if (has('drop') && typeof a.drop !== 'boolean') return 'drop is not true or false'
+  if (has('implement') && q.kind !== 'design') return 'implement answers only a question about the design review allowance'
+  if (has('implement') && typeof a.implement !== 'boolean') return 'implement is not true or false'
   return ''
 }
 
@@ -333,7 +344,8 @@ function pairAnswerCheck(answers, knownIds, current, hold) {
     if (!q) continue
     const why = pairAnswerProblem(a, q)
     if (why) { invalid.push(`${id} (${why})`); continue }
-    answered.push({ id, answer: a.answer.trim(), ...(typeof a.criterion === 'string' ? { criterion: a.criterion.trim() } : {}), ...(a.drop === true ? { drop: true } : {}) })
+    answered.push({ id, answer: a.answer.trim(), ...(typeof a.criterion === 'string' ? { criterion: a.criterion.trim() } : {}), ...(a.drop === true ? { drop: true } : {}),
+      ...(a.implement === true ? { implement: true } : {}) })
   }
   return { answered, missing: current.map(q => q.id).filter(id => !answered.some(a => a.id === id)), unknown, invalid, held }
 }
@@ -367,9 +379,10 @@ function pairTakeAnswers(S) {
 }
 
 // The identity of a stop's answers, which the native resume check records: continuing one stop
-// twice with different answers is refused.
+// twice with different answers is refused. implement is added only when given, so an answer
+// without it keeps the hash it had before the field existed.
 function pairAnswersHash(S, answered) {
-  return promptHash(JSON.stringify(answered.map(a => [a.id, a.answer, a.criterion ?? null, a.drop ?? null])))
+  return promptHash(JSON.stringify(answered.map(a => [a.id, a.answer, a.criterion ?? null, a.drop ?? null, ...(a.implement ? [true] : [])])))
 }
 
 // The answers become decisions: in every later prompt, the result and the review version. A
@@ -380,7 +393,7 @@ function pairApplyDecisions(S, answered) {
   for (const a of answered) {
     const q = p.asked.find(x => x.id === a.id)
     p.decisions.push({ id: q.id, about: q.about, kind: q.kind, question: q.question, answer: a.answer, label: q.label,
-      ...(a.criterion !== undefined ? { criterion: a.criterion } : {}), ...(a.drop ? { drop: true } : {}) })
+      ...(a.criterion !== undefined ? { criterion: a.criterion } : {}), ...(a.drop ? { drop: true } : {}), ...(a.implement ? { implement: true } : {}) })
     if (q.kind === 'criterion' && a.criterion !== undefined) S.criteria = S.criteria.map(c => c.id === q.about ? { ...c, text: a.criterion } : c)
     if (q.kind === 'criterion' && a.drop) S.criteria = S.criteria.filter(c => c.id !== q.about)
     const cited = new Set(q.question.match(/\bR\d+\b/g) || [])
@@ -417,6 +430,7 @@ function pairResumeSteps(S, via, hostRunDir, questions = S.pair.questions, post 
       : `To continue this run, call ${slash} again with the same args plus runtime: "cli", resume: "${hostRunDir}" and clarifications: ${entries}. The runner checks every answer before any turn and replays the turns before this stop from its checkpoint.`
   return `This run stopped for the user's answers. Show questions[] to the user, each under its ID with what it is about, and ask for an answer to every one (${ids}). ` +
     'An answer is {id, answer}; one to a question of kind criterion may also give criterion (the criterion\'s new text) or drop: true (to remove it). ' +
+    (questions.some(q => q.kind === 'design') ? 'One to a question of kind design continues the design with the answer as a scope decision, or, with implement: true, starts the implementation with the open design findings carried into code review; to stop, don\'t continue the run. ' : '') +
     `${how} Don't run dark-factory cleanup on the stopped run, and don't change its worktree or the checkout: continuing needs them as they are. ` +
     `If the run cannot continue (a refused check${via === 'native' ? ', or a new session' : ''}), ${pairNewRun(S, post)}.`
 }
@@ -457,15 +471,18 @@ function pairChallengeError(S, review) {
     return `${S.pair.stage === 'code' ? 'This code review' : 'Design review'} needs exactly one challenge for each acceptance criterion (${S.criteria.map(c => c.id).join(', ')}).` +
       `${missing.length ? ` Missing: ${missing.join(', ')}.` : ''}${repeated.length ? ` Repeated: ${[...new Set(repeated)].join(', ')}.` : ''}`
   }
+  // A minor design finding does not hold the design (pairReadiness), so at design it cannot stand
+  // in for the missing rejecting check either.
+  const rejecting = S.pair.stage === 'design' ? ['blocker', 'major'] : ['blocker', 'major', 'minor']
   for (const c of challenges) {
     const rejectsDesign = review.requiresDesignRevision === true ||
-      (review.findings || []).some(f => String(f.statement || '').trim() && String(f.evidence || '').trim() && ['blocker', 'major', 'minor'].includes(f.severity)) ||
+      (review.findings || []).some(f => String(f.statement || '').trim() && String(f.evidence || '').trim() && rejecting.includes(f.severity)) ||
       (review.criteria || []).some(a => a.criterion === c.criterion && ['partial', 'unmet'].includes(a.status) && String(a.note || '').trim())
     const covers = id => contract.checks.some(check => check.id === id && check.criteria.includes(c.criterion))
     if (!S.criteria.some(x => x.id === c.criterion)) return `Challenge ${c.criterion} names no acceptance criterion.`
     if (!String(c.wrongImplementation || '').trim()) return `Challenge ${c.criterion} needs a plausible wrong implementation.`
     if (!Array.isArray(c.rejectingCheckIds) || new Set(c.rejectingCheckIds).size !== c.rejectingCheckIds.length) return `Challenge ${c.criterion} needs distinct rejectingCheckIds.`
-    if (!c.rejectingCheckIds.length && !rejectsDesign) return `Challenge ${c.criterion} cites no rejecting check. Cite a contract check whose criteria include ${c.criterion}, or, if none rejects the wrong implementation, raise an evidenced finding or assess ${c.criterion} partial or unmet.`
+    if (!c.rejectingCheckIds.length && !rejectsDesign) return `Challenge ${c.criterion} cites no rejecting check. Cite a contract check whose criteria include ${c.criterion}, or, if none rejects the wrong implementation, raise an evidenced ${S.pair.stage === 'design' ? 'blocker or major ' : ''}finding or assess ${c.criterion} partial or unmet.`
     const stray = c.rejectingCheckIds.filter(id => !covers(id))
     if (stray.length) {
       const owner = id => contract.checks.find(check => check.id === id)
@@ -540,7 +557,7 @@ function pairReplayReadiness(S, blocked, incomplete) {
 }
 
 function pairIngestReview(S, review) {
-  const p = S.pair
+  const p = S.pair, before = p.findings.length
   if (!review || review.version !== pairVersion(S) || review.complete !== true) return 'The reviewer did not complete a review of the current version.'
   const challenged = pairChallengesDue(S)
   if (p.stage === 'design' || challenged) {
@@ -599,6 +616,10 @@ function pairIngestReview(S, review) {
   const { process: note, ...kept } = review
   p.lastReview = kept
   p.reviews.push({ stage: p.stage, label: p.label, ...kept })
+  if (p.stage === 'design') {
+    ;(p.designRounds ||= []).push({ review: p.reviews.length, label: p.label, fresh: p.findings.length - before,
+      ...pairSeverityCounts(pairOpen(S).filter(f => f.stage === 'design')), words: String(p.design || '').split(/\s+/).filter(Boolean).length })
+  }
   return null
 }
 
@@ -618,7 +639,9 @@ function pairReadiness(S) {
   const blocked = [], incomplete = [], infrastructure = pairInfrastructure(S)
   if (p.stop) incomplete.push(p.stop)
   if (!r || r.version !== pairVersion(S) || !r.complete) incomplete.push('The current version has no completed review.')
-  for (const f of pairOpen(S).filter(f => p.stage === 'code' || f.stage === 'design')) blocked.push(`${f.id} (${f.severity}): ${f.statement}`)
+  // At the design stage a minor design finding does not hold the design: it stays open into the
+  // code stage, where every open finding blocks.
+  for (const f of pairOpen(S).filter(f => p.stage === 'code' || (f.stage === 'design' && f.severity !== 'minor'))) blocked.push(`${f.id} (${f.severity}): ${f.statement}`)
   for (const r of p.readings.filter(r => r.status === 'proposed')) incomplete.push(`Reading ${r.id} has no ruling.`)
   for (const r of p.readings.filter(r => r.status === 'needs-user')) incomplete.push(`Reading ${r.id} needs a user decision.`)
   if (!S.criteria.length) incomplete.push('No acceptance criteria were established.')
@@ -663,6 +686,51 @@ function pairReviewClean(S) {
   const r = S.pair.lastReview
   return r?.complete && r.version === pairVersion(S) && !r.requiresDesignRevision && !pairOpen(S).length &&
     S.criteria.every(c => r.criteria.filter(a => a.criterion === c.id).length === 1 && r.criteria.some(a => a.criterion === c.id && a.status === 'met' && a.note?.trim()))
+}
+
+// The design reviews the run may spend before it stops for the user: maxDesignReviews, and as many
+// again for every answer that continued the design. Counted over the whole run, a return to
+// design from the code stage included; the total budget bounds it as always.
+function pairDesignAllowance(S) {
+  const continued = (S.pair.decisions || []).filter(d => d.kind === 'design' && !d.implement).length
+  return S.pairOptions.maxDesignReviews * (1 + continued)
+}
+
+// After a design review that did not approve the design: whether the design has spent its
+// allowance, with budget left for the user's choice to buy anything.
+function pairDesignCapped(S) {
+  const p = S.pair
+  return pairDesigned(S) && p.stage === 'design' && p.reviews.length < S.pairOptions.maxReviews &&
+    p.reviews.filter(r => r.stage === 'design').length >= pairDesignAllowance(S)
+}
+
+// Open findings by severity, as counts ({blocker, major, minor}), in words: "1 major, 2 minor".
+const pairSeverityCounts = fs => Object.fromEntries(['blocker', 'major', 'minor'].map(s => [s, fs.filter(f => f.severity === s).length]))
+const pairSeverities = counts => ['blocker', 'major', 'minor'].filter(s => counts[s]).map(s => `${counts[s]} ${s}`).join(', ')
+
+// The stop's reason, and its one question: how the design rounds went, what is open, the choices.
+function pairDesignStopReason(S) {
+  const p = S.pair, open = pairOpen(S).filter(f => f.stage === 'design')
+  const used = p.reviews.filter(r => r.stage === 'design').length
+  return `The design used its review allowance (${used} of ${pairDesignAllowance(S)} design reviews) without approval` +
+    `${open.length ? `, with ${plural(open.length, 'design finding')} open (${pairSeverities(pairSeverityCounts(open))})` : ''}.`
+}
+
+function pairDesignQuestion(S) {
+  const p = S.pair, o = S.pairOptions, open = pairOpen(S).filter(f => f.stage === 'design')
+  const rounds = (p.designRounds || []).map(r => `review ${r.review}: ${plural(r.fresh, 'new finding')}; open ${pairSeverities(r) || 'none'}; design ${r.words} words`).join('. ')
+  const left = o.maxReviews - p.reviews.length
+  return `${pairDesignStopReason(S)} Design rounds: ${rounds}. ` +
+    `Open design findings: ${open.map(f => `${f.id} (${f.severity}) ${pairBrief(f.statement, 160)}`).join('; ') || 'none'}${open.length ? '.' : ''} ` +
+    `${plural(left, 'review')} of ${o.maxReviews} remain. Choose one. (a) Continue the design: answer with a scope decision the author and reviewer then follow, ` +
+    `for example narrow the scope, or accept named findings as documented residuals; the design gets up to ${plural(o.maxDesignReviews, 'more review')}. ` +
+    '(b) Start the implementation now: answer with implement: true; the open design findings carry into code review as open items, and each still blocks readiness until the reviewer closes it. ' +
+    '(c) Stop: don\'t continue this run.'
+}
+
+// The choice the user made at a design stop (question `id`): implement, or continue the design.
+function pairDesignChoice(S, id) {
+  return (S.pair.decisions || []).some(d => d.id === id && d.kind === 'design' && d.implement) ? 'implement' : 'continue'
 }
 
 // The story lines of a pair run (tellStory): setup, each author pass, each review, each stop.
@@ -735,11 +803,14 @@ function pairReviewLine(S, review, before) {
   }
   const short = (review.criteria || []).filter(c => c.status !== 'met').map(c => `${c.criterion} ${c.status}`)
   out.push(short.length ? `Criteria: ${short.join(', ')}.` : 'Criteria all met.')
+  const carried = p.stage === 'design' && ready.state === 'ready' ? pairOpen(S).filter(f => f.stage === 'design').map(f => f.id) : []
+  if (carried.length) out.push(`Minor ${carried.length === 1 ? 'finding' : 'findings'} ${carried.join(', ')} ${carried.length === 1 ? 'stays' : 'stay'} open for code review.`)
   if (p.stage === 'code' && review.requiresDesignRevision && pairDesigned(S)) out.push('Requires a revised design.')
   return out.join(' ')
 }
 
 function pairQuestionsLine(S, kind, questions) {
+  if (kind === 'design') return `${pairDesignStopReason(S)} The run asked the user ${questions.map(q => q.id).join(', ')}: continue the design with a scope decision, start the implementation with the open design findings, or stop.`
   const who = kind === 'reviewer' ? S.pairOptions.reviewer.name : kind === 'author' ? S.pairOptions.author.name : 'Setup'
   return `${who} asked the user ${questions.length === 1 ? 'a question' : `${questions.length} questions`}: ${questions.map(q => `${q.id}${q.about !== 'none' ? ` (about ${q.about})` : ''} ${pairBrief(q.question.split(' Requirements as written:')[0], 200)}`).join('; ')}`.replace(/[^.!?…]$/, '$&.')
 }
@@ -777,6 +848,12 @@ function pairHighlights(S) {
   p.reviews.forEach((r, i) => {
     if (r.stage === 'code' && r.requiresDesignRevision && pairDesigned(S)) out.push(`Code review ${i + 1} sent the work back to design: ${sentence(pairBrief(r.summary, 240) || 'no summary given')}`)
   })
+  for (const q of p.asked.filter(q => q.kind === 'design')) {
+    const d = p.decisions.find(d => d.id === q.id)
+    out.push(`The design reached its review allowance in ${q.label}; ${!d ? `the run stopped for the user (${q.id})`
+      : d.implement ? `the user chose to start the implementation with the open design findings carried into code review (${q.id})`
+      : `the user continued the design (${q.id}): ${pairBrief(d.answer, 200) || 'no answer given'}`}.`)
+  }
   return out
 }
 
@@ -811,7 +888,7 @@ function pairResult(S, status = 'blocked') {
     ...(highlights.length ? [`Points of interest:\n\n${highlights.map(h => `- ${h}`).join('\n')}`] : []),
     ...(questions.length ? [`Questions for the user (answer each under its ID):\n\n${questions.map(q => `- ${q.id} (about ${q.about}): ${q.question}`).join('\n')}`] : []),
     ...(p.decisions.length ? [`User decisions:\n\n${p.decisions.map(d => `- ${d.id} (about ${d.about}; asked in ${d.label}): ${d.question} Answer: ${d.answer}` +
-      `${typeof d.criterion === 'string' ? ` ${d.about} now reads: ${d.criterion}` : d.drop ? ` ${d.about} was dropped.` : ''}`).join('\n')}`] : []),
+      `${typeof d.criterion === 'string' ? ` ${d.about} now reads: ${d.criterion}` : d.drop ? ` ${d.about} was dropped.` : d.implement ? ' The implementation started with the open design findings carried into code review.' : ''}`).join('\n')}`] : []),
     ...(unused.length ? [`Unused answers: ${unused.join(', ')}.`] : []),
     ...p.findings.map(f => `${f.id}: ${f.status} — ${f.statement}${f.resolution ? ` (${f.resolution})` : ''}`),
     ...p.readings.map(r => `${r.id}: reading ${r.status} — ${r.requirement} read as: ${r.reading}${r.evidence ? ` (${r.evidence})` : ''}${r.finding ? `; finding ${r.finding}` : ''}`)].join('\n\n')

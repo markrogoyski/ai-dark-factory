@@ -19,7 +19,7 @@ function runPlanDefinition(S) {
   if (!object(S) || S.version !== 1 || !id(S.id)) fail('version 1 and a stable id are required')
   for (const key of Object.keys(S)) if (!['version', 'id', 'tasks', 'decisions', 'acceptance', 'limits', 'defaults', 'progress'].includes(key)) fail(`unknown plan field: ${key}`)
   if (!Array.isArray(S.tasks) || !S.tasks.length) fail('tasks must be a nonempty array')
-  const allowed = new Set(['tier', 'strategy', 'pair', 'author', 'reviewer', 'maxReviews', 'seats', 'simple', 'roles', 'panel', 'spec', 'audit', 'repair', 'effort', 'context', 'plan', 'verify', 'rounds', 'retro', 'evidence'])
+  const allowed = new Set(['tier', 'strategy', 'pair', 'author', 'reviewer', 'maxReviews', 'maxDesignReviews', 'seats', 'simple', 'roles', 'panel', 'spec', 'audit', 'repair', 'effort', 'context', 'plan', 'verify', 'rounds', 'retro', 'evidence'])
   const options = value => {
     if (value === undefined) return {}
     if (!object(value)) fail('task options must be an object')
@@ -91,7 +91,7 @@ function runPlanBrief(S, task) {
   if (task.workflow === 'pair') {
     for (const key of ['tier', 'strategy', 'pair', 'seats', 'simple', 'roles', 'panel', 'spec', 'audit', 'repair', 'rounds', 'retro', 'evidence']) delete options[key]
   } else {
-    for (const key of ['author', 'reviewer', 'maxReviews']) delete options[key]
+    for (const key of ['author', 'reviewer', 'maxReviews', 'maxDesignReviews']) delete options[key]
   }
   const refs = Array.isArray(options.plan) ? options.plan : options.plan ? [options.plan] : []
   return { ...options, task: task.task, context, criteria: task.criteria, plan: [...refs, S.active.decisionsFile],

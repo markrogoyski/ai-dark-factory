@@ -20,7 +20,7 @@ Models here are the Claude Code defaults; the Codex host has its own ([Choosing 
 
 Intake can also choose [Pair](pair.md) for a scoped implementation with one clear approach.
 `strategy: "independent"` keeps the tier's process; `strategy: "pair"`, with
-`pair: {author, reviewer, maxReviews}`, asks for Pair. The result reports tier and strategy
+`pair: {author, reviewer, maxReviews, maxDesignReviews}`, asks for Pair. The result reports tier and strategy
 separately. Passing `seats`, `simple`, `panel`, `spec`, `audit`, `roles` or `evidence` keeps
 routing independent, and combining one with `strategy: "pair"` is rejected.
 

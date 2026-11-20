@@ -30,12 +30,18 @@ Use `--workflow ensemble` for independently reviewed alternatives. Its overall r
 Use `--workflow pair` for one author with one reviewer and `--workflow council` for a requested
 council run; factory is the default. Pair owns design review, implementation, repeated fixes,
 and readiness. Its defaults are Codex Astra author and Claude Opus reviewer; preserve requested
-`--author`, `--reviewer`, `--max-reviews`, `--no-design`, and `--no-retro`. The review budget defaults to 8 across design and
+`--author`, `--reviewer`, `--max-reviews`, `--max-design-reviews`, `--no-design`, and `--no-retro`. The review budget defaults to 8 across design and
 code. A stalled or exhausted run remains unresolved; do not start a council automatically.
+A design not approved after `--max-design-reviews` reviews (default 3, at most the budget minus
+one) stops with `needs-user` and one question of kind `design`: show its rounds, open findings
+and choices, and let the user choose. An answer continues the design with it as a scope decision;
+`implement: true` in the answer starts the implementation with the open design findings carried
+into code review; not resuming stops. Minor design findings never hold the design; they carry
+into code review, where every open finding blocks readiness.
 `--no-design` (`design: false`) skips the design stage when the deliverable is itself a document
 or plan: the author writes it directly and review starts at the measured result. `--no-retro`
 (`retro: false`) skips the closing process retro.
-For Pair, use `--args-file` for `task`, `author`, `reviewer`, `maxReviews`, `design`, `effort`, `context`,
+For Pair, use `--args-file` for `task`, `author`, `reviewer`, `maxReviews`, `maxDesignReviews`, `design`, `effort`, `context`,
 `plan`, `criteria`, `verify`, `repo`, `allowDirty`, `timeoutMin`, and `retro`. Tier, seats, panel, roles,
 spec, audit, and historical-evidence options belong to other workflows.
 

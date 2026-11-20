@@ -13,7 +13,7 @@ export function positiveInteger(value, name) {
 export function parseCLI(argv, cwd = process.cwd()) {
   const out = { workflow: 'factory', cwd, concurrency: 3, timeoutMin: 90, concurrencyGiven: false, timeoutMinGiven: false, args: {} }
   const task = []
-  const values = new Set(['workflow', 'cwd', 'tier', 'seats', 'author', 'reviewer', 'max-reviews', 'args-file', 'output', 'concurrency', 'timeout-min', 'strategy', 'max-turns', 'max-run-min', 'repair-passes', 'resume', 'candidates', 'reviewers', 'mode', 'plan-file', 'pin-engine'])
+  const values = new Set(['workflow', 'cwd', 'tier', 'seats', 'author', 'reviewer', 'max-reviews', 'max-design-reviews', 'args-file', 'output', 'concurrency', 'timeout-min', 'strategy', 'max-turns', 'max-run-min', 'repair-passes', 'resume', 'candidates', 'reviewers', 'mode', 'plan-file', 'pin-engine'])
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i]
     if (arg === '--') { task.push(...argv.slice(i + 1)); break }
@@ -38,6 +38,7 @@ export function parseCLI(argv, cwd = process.cwd()) {
     else if (name === 'plan-file') out.args.planFile = resolve(cwd, value)
     else if (name === 'workflow') { out.workflow = value; out.workflowGiven = true }
     else if (name === 'max-reviews') out.args.maxReviews = positiveInteger(value, '--max-reviews')
+    else if (name === 'max-design-reviews') out.args.maxDesignReviews = positiveInteger(value, '--max-design-reviews')
     else if (name === 'concurrency') { out.concurrency = positiveInteger(value, '--concurrency'); out.concurrencyGiven = true }
     else if (name === 'timeout-min') { out.timeoutMin = positiveInteger(value, '--timeout-min'); out.timeoutMinGiven = true }
     else if (name === 'args-file') out.argsFile = resolve(cwd, value)
@@ -51,7 +52,7 @@ export function parseCLI(argv, cwd = process.cwd()) {
     out.args = { ...args, ...out.args }
   }
   if (task.length) out.args.task = task.join(' ')
-  if (!out.resume && out.workflow !== 'pair' && ['author', 'reviewer', 'maxReviews'].some(key => out.args[key] !== undefined)) throw new Error('author, reviewer, and maxReviews require --workflow pair')
+  if (!out.resume && out.workflow !== 'pair' && ['author', 'reviewer', 'maxReviews', 'maxDesignReviews'].some(key => out.args[key] !== undefined)) throw new Error('author, reviewer, maxReviews, and maxDesignReviews require --workflow pair')
   if (!out.resume && out.workflow !== 'pair' && out.noDesign) throw new Error('--no-design requires --workflow pair')
   if (!out.resume && out.workflow !== 'pair' && out.noRetro) throw new Error('--no-retro requires --workflow pair')
   delete out.noDesign

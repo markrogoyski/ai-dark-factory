@@ -28,6 +28,8 @@ Git, and authenticated CLIs for the selected models.
   --author MODEL             Pair author (default in Codex: astra)
   --reviewer MODEL           Pair reviewer (default: other vendor)
   --max-reviews N            Pair review budget across design and code (default: 8)
+  --max-design-reviews N     Pair design reviews before the run asks the user how to go on
+                             (default: 3, at most maxReviews - 1)
   --no-design                Pair: skip the design stage; the author writes the deliverable
                              directly (for a document or plan deliverable)
   --no-retro                 Pair: skip the closing process retro

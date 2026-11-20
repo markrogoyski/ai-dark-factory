@@ -37,9 +37,11 @@ authenticated CLIs. `--author sol --reviewer astra` uses only Codex models.
      ^    (one correction if malformed)         wrong implementation and the checks that
      |                                          reject it, for every criterion
      |                                                |
-     +--------------- not approved: open findings ----+
-                                                      | approved
+     +--- not approved: open blocker/major findings --+
+                                                      | approved (minor findings
+                                                      | carry into code review)
                                                       v
+  (a design not approved after maxDesignReviews reviews stops and asks the user)
   CODE STAGE
   +-> author: implement, or fix findings and failed checks; map checks to test files
   |      |
@@ -107,6 +109,37 @@ evidenced finding, a partial/unmet assessment, or a design revision request, whi
 back to the author. A malformed contract or challenge gets one correction attempt before the run
 stops; corrections count toward the turn budget and never count as approval.
 
+**Minor findings don't hold the design.** Open blocker and major design findings block design
+approval; open minor ones don't. They stay open into the code stage, where every open finding
+blocks readiness, and the code-stage author and reviewer prompts name them as carried items to fix
+and check against the implementation. The design reviewer is told to raise new findings for
+defects that affect an acceptance criterion, correctness or scope, and to leave benchmark,
+documentation and wording detail to code review unless a criterion depends on it; a criterion can
+be assessed met when the design satisfies it apart from minor findings. A challenge with no
+rejecting check needs a blocker or major finding (or a partial/unmet assessment, or a design
+revision request): a minor one can't stand in for it.
+
+**The design's review allowance.** In the retros no run that ended ready used more than two
+design reviews, while the runs that spent most of the budget on design ended with little or no
+code reviewed. So a design still not approved after `maxDesignReviews` design reviews (default 3)
+stops the run with `needs-user` instead of reviewing it again. The stop has one question, of kind
+`design`, that gives how each design round went (new findings, the blocker, major and minor
+findings left open, the design's size in words), the open design findings, the reviews left, and
+the choices:
+
+- **Continue the design**: answer with a scope decision the author and reviewer then follow, for
+  example narrowing the scope or accepting named findings as documented residuals (the reviewer
+  resolves them under their IDs). The design gets `maxDesignReviews` more reviews.
+- **Start the implementation**: answer with `implement: true`. The current design and contract
+  become the approved ones, and the open design findings, major ones included, carry into code
+  review as open items that block readiness until the reviewer closes them.
+- **Stop**: don't continue the run.
+
+The allowance counts every design review in the run, a return from the code stage included. A
+design never moves on past an open blocker or major finding without your answer. The stop comes
+only while reviews remain: an allowance that would outrun `maxReviews` ends the run on the budget
+instead.
+
 ## Code stage
 
 1. The author implements the reviewed design in its own worktree. The helper snapshots the change,
@@ -117,9 +150,9 @@ stops; corrections count toward the turn budget and never count as approval.
 3. The author fixes findings and failed checks, then measurement and review repeat. A material
    approach problem can send the task back through design review.
 
-All actionable findings, including minor ones, must close; optional preferences are reported
-separately. The author's `addressed` entry for each finding says whether it `changed` the work or
-`disputed` the finding.
+All actionable findings, including minor ones and those carried from the design stage, must
+close; optional preferences are reported separately. The author's `addressed` entry for each
+finding says whether it `changed` the work or `disputed` the finding.
 
 ### Readings
 
@@ -216,17 +249,18 @@ the compact `--brief` result: status, stage, readiness, findings, notes, metrics
 
 ## Answering a stop
 
-Four stops ask you questions and can continue once you answer: setup's conflicting requirements,
-setup's criterion nothing in the run can verify, an author's `needs-user`, and a reviewer's
-questions. Every other stop is final and carries no `resumable` flag or resume guidance: blocked,
-stalled, budget exhausted (`maxReviews`, `maxTurns` or `maxRunMin`; including a stop that asked
-questions but ran out of budget), failed, verification infrastructure failure, and a dirty tree.
+Five stops ask you questions and can continue once you answer: setup's conflicting requirements,
+setup's criterion nothing in the run can verify, an author's `needs-user`, a reviewer's
+questions, and a design that used its [review allowance](#design-stage) without approval. Every
+other stop is final and carries no `resumable` flag or resume guidance: blocked, stalled, budget
+exhausted (`maxReviews`, `maxTurns` or `maxRunMin`; including a stop that asked questions but ran
+out of budget), failed, verification infrastructure failure, and a dirty tree.
 
 Question IDs Q1, Q2, … are unique across the run; a second stop continues the numbering.
 `questions` lists the current stop's as `{id, about, kind, question}`, and `report.markdown` lists
 them under "Questions for the user (answer each under its ID)". `kind` is `setup`, `criterion`,
-`author` or `reviewer`. `about` is the criterion of a criterion question, the first finding,
-criterion or reading ID (P3, C2, R1) a question names, or `none`.
+`author`, `reviewer` or `design`. `about` is the criterion of a criterion question, the first
+finding, criterion or reading ID (P3, C2, R1) a question names, or `none`.
 
 A resumable result has `resumable: true` and `resumeSteps` (also in `forTheOrchestrator`) saying
 how to continue on its host:
@@ -243,7 +277,9 @@ how to continue on its host:
 An answer is `{id, answer}` under the question's ID; earlier entries stay unchanged and in order.
 An answer to a `criterion` question may also give `criterion` (the new text) or `drop: true`. IDs
 are never renumbered, and dropping every criterion stops the run as blocked. An answer with neither
-keeps the criterion and is recorded as a decision.
+keeps the criterion and is recorded as a decision. An answer to a `design` question continues the
+design with the answer as a scope decision, or, with `implement: true`, starts the implementation
+with the open design findings carried into code review.
 
 | Stop | On resume |
 |---|---|
@@ -251,6 +287,7 @@ keeps the criterion and is recorded as a decision.
 | Unverifiable criterion | The criterion is rewritten or dropped; the run goes on to its first author turn. |
 | Author | A fresh author turn (`pair-design-1-answered`, for example), then a review of what it writes. |
 | Reviewer | The rest of that review's pass runs (readiness, stall and design-revision handling), then the next author turn. |
+| Design allowance | A fresh design author turn with the decision and another `maxDesignReviews` reviews; with `implement: true`, the first implementation turn (`pair-code-4`, for example). |
 
 A resume reuses the run directory, worktree, criteria, baseline, findings, readings and reviews
 already spent. The review budget never resets: a stop in the review that spent the last of it ends,
@@ -261,13 +298,14 @@ decisions" block, which overrides setup observations and readings for the rest o
 reviewer resolves a finding a decision settles under its existing ID. The review `Version` gains a
 `:u<hash>` suffix, so no review from before an answer counts for the version after it. A reading
 ruled `needs-user` goes back to proposed when an answered question cites it. `decisions` lists
-`{id, about, kind, question, answer, label}` (`label` is the turn that asked, plus `criterion` or
-`drop` when given); `report.markdown` lists them under "User decisions".
+`{id, about, kind, question, answer, label}` (`label` is the turn that asked, plus `criterion`,
+`drop` or `implement` when given); `report.markdown` lists them under "User decisions".
 
 **Answers that don't settle the stop** stop the run again at once with `needs-user`, no further
 turn and no retro. These are a missing, empty or repeated answer, a malformed ID or one the run
 never asked, `criterion` or `drop` where they don't apply or both together, a non-text `criterion`,
-and a `drop` that is not true or false (`null` included). `stopReason` names them, for example "The
+a `drop` that is not true or false (`null` included), and an `implement` on a question that is not
+of kind `design`, or that is not true or false. `stopReason` names them, for example "The
 answers do not settle this stop (Q1, Q2). Missing: Q2. Unknown: Q9. Answer every question at this
 stop under its ID, and only questions this run asked."
 
@@ -300,6 +338,8 @@ checkpoint validation refuses the same changes. A setup conflict has no run yet,
 ## When the run stops
 
 `maxReviews` (CLI: `--max-reviews`) limits total reviews across both stages, default **8**.
+`maxDesignReviews` (`--max-design-reviews`) is how many design reviews may pass without approval
+before the run stops for you ([above](#design-stage)), default **3**.
 
 - **Stalled.** An unchanged artifact with the same open findings and verification results on
   consecutive attempts, or unchanged unmet criteria or failed verification with no open finding. A
@@ -340,6 +380,7 @@ Object arguments, or the Codex runner's `--args-file`:
 | `author` | `opus` in Claude Code, `astra` in Codex | any seat name; `--author` at the start of a string task |
 | `reviewer` | the other vendor: `astra` for a Claude author, else `opus` | `--reviewer` |
 | `maxReviews` | 8 | total reviews across design and code, 2–100; `--max-reviews` |
+| `maxDesignReviews` | 3 (`maxReviews` − 2 when that is smaller, at least 1) | design reviews without approval before the run asks you how to go on, 1 to `maxReviews` − 1; `--max-design-reviews`; ignored with `design: false` |
 | `design` | true | `false` (`--no-design`) skips the design stage; see [above](#without-a-design-stage) |
 | `effort` | `high` | for both participants, or per seat: `{astra: 'xhigh'}` |
 | `context` | | extra context for every turn |

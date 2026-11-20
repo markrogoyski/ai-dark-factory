@@ -42,6 +42,8 @@ const measurement = (label, tree = 'a'.repeat(40)) => ({ status: 'done', error: 
   ref: `refs/council/pair-test/A-${label}`, tree, diff: `/repo/.council/pair-test/room/${label}/A.diff`,
 }, suite: { ran: true, passed: true, command: 'node test.cjs', failureKind: '', log: `/repo/.council/pair-test/logs/suite-A-${label}.log` }, replay: replay(tree) })
 const finding = statement => ({ severity: 'minor', statement, evidence: 'src/example.js:12 lacks the required case.' })
+// A minor design finding no longer holds the design, so a test that needs a design revision files a major one.
+const major = statement => ({ ...finding(statement), severity: 'major' })
 const reading = (over = {}) => ({ requirement: 'C1', literal: 'Runs on Node 20 and 22.', reading: 'Runs on at least Node 20 and 22.', reason: 'CI also tests Node 24.', ...over })
 const liveCheck = (over = {}) => ({ criterion: 'C1', check: 'Run `node cli.js fetch` against the real API and confirm it prints the status.',
   reason: 'The tests stub the HTTP call, so TLS verification against the machine\'s certificate store never runs.', ...over })
@@ -223,7 +225,7 @@ test('a pair run ends with a process retro holding the author and reviewer notes
 
 test('pair repeatedly fixes both stages, retaining findings until reviewer closure', async () => {
   const { result, calls } = await run({ review: (r, n) => {
-    if (n === 1) r.findings = [finding('Design omits an edge case.')]
+    if (n === 1) r.findings = [major('Design omits an edge case.')]
     if (n === 2) r.resolutions = [{ id: 'P1', status: 'fixed', evidence: 'The design now covers the boundary.' }]
     if (n === 3) r.findings = [finding('Implementation misses the boundary.')]
     if (n === 4) r.findings = [finding('Another case needs a regression test.')]
@@ -480,8 +482,9 @@ test('pair results report the verification overrides the gate ran with, without 
 })
 
 test('budget exhaustion after design approval cannot report unbuilt work as ready', async () => {
-  const { result } = await run({ args: { maxReviews: 2 }, review: (r, n) => {
-    if (n === 1) r.findings = [finding('Missing design detail.')]
+  // With maxReviews 2 the design asks the user after one review; continued, it spends the last.
+  const { result } = await run({ args: { maxReviews: 2, clarifications: [{ id: 'Q1', answer: 'Keep the scope.' }] }, review: (r, n) => {
+    if (n === 1) r.findings = [major('Missing design detail.')]
     else r.resolutions = [{ id: 'P1', status: 'fixed', evidence: 'The revised design covers it.' }]
     return r
   } })
@@ -647,7 +650,7 @@ test('pair prompts have reviewed golden coverage', async () => {
   let authors = 0
   const { calls } = await run({ native: true, setup: { liveChecks: [liveCheck()] }, author: a => ({ ...a, readings: ++authors === 1 ? [reading()] : [] }), review: (r, n) => {
     if (n === 1) {
-      r.findings = [finding('Cover the boundary case.')]
+      r.findings = [major('Cover the boundary case.')]
       r.rulings = [{ id: 'R1', ruling: 'accepted', evidence: 'The task names no other environment; the minimum keeps its intent.' }]
     }
     if (n === 2) r.resolutions = [{ id: 'P1', status: 'fixed', evidence: 'The boundary appears in the design.' }]
@@ -787,7 +790,7 @@ test('reviewers can identify a missing rejecting check and obtain a design revis
     const { result, calls } = await run({ native, review: (r, n) => {
       if (n === 1) {
         r.challenges[0].rejectingCheckIds = []
-        if (rejection === 'finding') r.findings = [finding('The contract cannot reject the wrong boundary value.')]
+        if (rejection === 'finding') r.findings = [major('The contract cannot reject the wrong boundary value.')]
         else if (rejection === 'criterion') r.criteria[0] = { criterion: 'C1', status: 'partial', note: 'No contracted check distinguishes the boundary.' }
         else { r.requiresDesignRevision = true; r.summary = 'Revise the contract to reject the wrong boundary value.' }
       }
@@ -982,7 +985,7 @@ test('the result opens with its summary and names the cleanup command', async ()
 })
 
 test('repeated identical findings retain their identity and do not defeat stall detection', async () => {
-  const { result } = await run({ sameTree: true, review: r => { r.findings = [finding('Resolve the same conflict.')]; return r } })
+  const { result } = await run({ sameTree: true, review: r => { r.findings = [major('Resolve the same conflict.')]; return r } })
   assert.match(result.stopReason, /stalled/)
   assert.equal(result.findings.length, 1)
   assert.equal(result.findings[0].id, 'P1')
@@ -1303,7 +1306,7 @@ test('a reviewer question stops the run for the user at once, with the review re
     quoted: ['C1: "The behavior reads tests/config.json."', 'CLAUDE.md: "Tests never write under tests/."'] }
   for (const native of [false, true]) for (const design of [true, false]) {
     const { result, calls } = await run({ native, args: { design }, review: (r, n) => {
-      if (n === 1) Object.assign(r, { summary: 'C1 and the isolation rule conflict; the user must choose.', findings: [finding('C1 conflicts with the test isolation rule.')], questions: [conflict] })
+      if (n === 1) Object.assign(r, { summary: 'C1 and the isolation rule conflict; the user must choose.', findings: [major('C1 conflicts with the test isolation rule.')], questions: [conflict] })
       return r
     } })
     assert.equal(result.status, 'needs-user')
@@ -1454,7 +1457,7 @@ test('resume: questions carry run-wide IDs, what each is about, and the stop kin
     ;({ result } = await run({ native, setup: { unverifiable: [{ criterion: 'C1', origin: 'supplied', reason: 'Needs the live service.' }] } }))
     assert.deepEqual(result.questions.map(q => [q.id, q.about, q.kind]), [['Q1', 'C1', 'criterion']])
     assert.ok(result.report.markdown.includes('\n- Q1 (about C1): C1 ("The requested behavior works.") cannot be verified inside the run'), result.report.markdown)
-    ;({ result } = await run({ native, author: askAt('pair-design-2', ['P1: keep the flag?']), review: (r, n) => n === 1 ? { ...r, findings: [finding('Cover the flag.')] } : r }))
+    ;({ result } = await run({ native, author: askAt('pair-design-2', ['P1: keep the flag?']), review: (r, n) => n === 1 ? { ...r, findings: [major('Cover the flag.')] } : r }))
     assert.deepEqual(result.questions, [{ id: 'Q1', about: 'P1', kind: 'author', question: 'P1: keep the flag?' }])
     ;({ result } = await run({ native, ...readingRun() }))
     assert.deepEqual(result.questions.map(q => [q.id, q.about, q.kind]), [['Q1', 'R1', 'reviewer']])
@@ -1774,4 +1777,175 @@ test('pair stops when setup drops a supplied criterion, before any author turn',
   // Kept, with a bracketed note: setup goes on to the author.
   const kept = await run({ args: { criteria }, setup: { criteria: [{ id: 'C1', text: criteria[0] }, { id: 'C2', text: `${criteria[1]} [checked by the CLI test]` }] } })
   assert.ok(kept.calls.some(c => c.kind === 'author'))
+})
+
+test('maxDesignReviews defaults to 3 of the budget, leaves code at least one review, and parses as --max-design-reviews', () => {
+  const cap = args => L.parsePairConfig({ task: 'x', ...args }).pairOptions.maxDesignReviews
+  assert.deepEqual([8, 2, 3, 4, 5, 100].map(maxReviews => cap({ maxReviews })), [3, 1, 1, 2, 3, 3])
+  assert.equal(cap({ maxReviews: 4, maxDesignReviews: 3 }), 3)
+  assert.equal(L.parsePairConfig('--max-reviews 10 --max-design-reviews 5 Implement it').pairOptions.maxDesignReviews, 5)
+  for (const [maxReviews, maxDesignReviews] of [[8, 0], [8, 8], [2, 2], [8, 2.5], [8, 'oops']])
+    assert.throws(() => L.parsePairConfig({ task: 'x', maxReviews, maxDesignReviews }), /maxDesignReviews must be an integer from 1 to maxReviews - 1/)
+})
+
+test('minor design findings do not hold the design: they carry into code review and block readiness there until fixed', async () => {
+  for (const native of [false, true]) {
+    const { result, calls } = await run({ native, review: (r, n) => {
+      if (n === 1) r.findings = [finding('Document the timing of the cache.')]
+      if (n === 2) r.resolutions = [{ id: 'P1', status: 'open', evidence: 'The README still has no timings.' }]
+      if (n === 3) r.resolutions = [{ id: 'P1', status: 'fixed', evidence: 'README.md now states the timings.' }]
+      return r
+    } })
+    assert.equal(result.status, 'done')
+    assert.deepEqual(result.reviews.map(r => r.stage), ['design', 'code', 'code'], 'approved at the first design review')
+    assert.deepEqual(result.findings.map(f => [f.id, f.stage, f.severity, f.status]), [['P1', 'design', 'minor', 'fixed']])
+    const authors = calls.filter(c => c.kind === 'author'), reviews = calls.filter(c => c.kind === 'review')
+    const carried = 'Design finding P1 is still open and carried into this implementation: fix each in the code, tests or documentation, or dispute it with evidence; the reviewer checks it against the code.'
+    assert.ok(authors[1].prompt.includes(`Fix all open actionable findings and any failed verification. ${carried} Return design`), authors[1].prompt)
+    assert.ok(reviews[1].prompt.includes(' Design finding P1 is still open and carried into code review: resolve it against the implementation, fixed once the code, tests or documentation address it, open otherwise. Add only'))
+    assert.ok(!authors[0].prompt.includes('carried into') && !reviews[0].prompt.includes('carried into code review:'), 'nothing is carried at design')
+    // The design review says minors don't block it; the code review keeps counting them.
+    assert.ok(reviews[0].prompt.includes('Minor findings do not block design approval: they stay open, and code review checks them against the implementation') &&
+      reviews[0].prompt.includes('leave benchmark, documentation and wording detail to code review unless a criterion depends on it') &&
+      reviews[0].prompt.includes('assess it met when the design satisfies it apart from minor findings') && reviews[0].prompt.includes('do not manufacture findings'))
+    assert.ok(reviews[1].prompt.includes('Actionable minor findings count too.') && !reviews[1].prompt.includes('Minor findings do not block design approval'))
+    const md = result.report.markdown
+    assert.match(md, /\n3\. Design review 1\/8 by [^:]+: approved\. New: P1 \(minor\) Document the timing of the cache\. Criteria all met\. Minor finding P1 stays open for code review\.\n/)
+    assert.match(md, /Code review 2\/8 by [^:]+: changes requested\. Still open: P1\./)
+  }
+  // Left open, the carried minor finding blocks readiness at the end of the budget.
+  const { result } = await run({ args: { maxReviews: 3 }, review: (r, n) => n === 1 ? { ...r, findings: [finding('Document the timing of the cache.')] } : r })
+  assert.equal(result.status, 'blocked')
+  assert.match(result.stopReason, /budget exhausted/)
+  assert.deepEqual(result.final.readiness.blocked, ['P1 (minor): Document the timing of the cache.'])
+})
+
+test('blocker and major design findings still hold the design, and a minor finding cannot stand in for a rejecting check', async () => {
+  for (const severity of ['blocker', 'major']) {
+    const { result } = await run({ review: (r, n) => {
+      if (n === 1) r.findings = [finding('Design omits the boundary.'), { ...finding('The cache can go stale.'), severity }]
+      if (n === 2) r.resolutions = [{ id: 'P2', status: 'fixed', evidence: 'The design rebuilds the cache per request.' }]
+      if (n === 3) r.resolutions = [{ id: 'P1', status: 'fixed', evidence: 'The code covers the boundary.' }]
+      return r
+    } })
+    assert.equal(result.status, 'done')
+    assert.deepEqual(result.reviews.map(r => r.stage), ['design', 'design', 'code'], 'the open minor P1 did not hold the second design review')
+  }
+  // The corrected review cites the rejecting check, and the design passes with the minor finding open.
+  const { result, calls } = await run({ review: (r, n) => {
+    if (n === 1) { r.challenges[0].rejectingCheckIds = []; r.findings = [finding('No check rejects the wrong boundary.')] }
+    return r
+  } })
+  const corrected = calls.find(c => c.kind === 'review' && c.prompt.includes('# Correct the previous structured review'))
+  assert.ok(corrected?.prompt.includes('raise an evidenced blocker or major finding or assess C1 partial or unmet.'), corrected?.prompt.slice(0, 200))
+  assert.deepEqual(result.reviews.map(r => r.stage), ['design', 'code'])
+})
+
+// Every design review files a new major finding, so the design never passes.
+const neverApproved = (r, n, call) => /# Review stage: design/.test(call.prompt) ? { ...r, findings: [major(`Design gap ${n}.`)] } : r
+
+test('a design still unapproved after maxDesignReviews stops for the user with its rounds, open findings and choices', async () => {
+  for (const native of [false, true]) {
+    const { result, calls } = await run({ native, review: neverApproved })
+    assert.equal(result.status, 'needs-user')
+    assert.equal(result.resumable, true)
+    assert.deepEqual(calls.filter(c => ['author', 'review'].includes(c.kind)).map(c => c.label.replace(/^review /, 'r:').replace(' (relay)', '')),
+      ['pair-design-1', 'r:pair-design-1', 'pair-design-2', 'r:pair-design-2', 'pair-design-3', 'r:pair-design-3'], 'no fourth author turn')
+    const reason = 'The design used its review allowance (3 of 3 design reviews) without approval, with 3 design findings open (3 major).'
+    assert.equal(result.stopReason, reason)
+    assert.equal(result.questions.length, 1)
+    const [q] = result.questions
+    assert.deepEqual([q.id, q.about, q.kind], ['Q1', 'none', 'design'])
+    assert.equal(q.question, `${reason} Design rounds: review 1: 1 new finding; open 1 major; design 8 words. review 2: 1 new finding; open 2 major; design 8 words. ` +
+      'review 3: 1 new finding; open 3 major; design 8 words. Open design findings: P1 (major) Design gap 1; P2 (major) Design gap 2; P3 (major) Design gap 3. 5 reviews of 8 remain. ' +
+      'Choose one. (a) Continue the design: answer with a scope decision the author and reviewer then follow, for example narrow the scope, or accept named findings as documented residuals; ' +
+      'the design gets up to 3 more reviews. (b) Start the implementation now: answer with implement: true; the open design findings carry into code review as open items, ' +
+      'and each still blocks readiness until the reviewer closes it. (c) Stop: don\'t continue this run.')
+    assert.equal(result.final.readiness.state, 'blocked')
+    assert.ok(result.final.readiness.blocked.includes('P3 (major): Design gap 3.'))
+    assert.ok(result.final.readiness.incomplete.includes(reason))
+    assert.match(result.resumeSteps, /One to a question of kind design continues the design with the answer as a scope decision, or, with implement: true, starts the implementation/)
+    const md = result.report.markdown
+    assert.ok(md.includes(`\n8. ${reason} The run asked the user Q1: continue the design with a scope decision, start the implementation with the open design findings, or stop.\n9. Stopped after 3 reviews of 8 for the user's answers.`), md)
+    assert.ok(md.includes('\n- The design reached its review allowance in review pair-design-3; the run stopped for the user (Q1).'), md)
+  }
+  // Other stops never mention the design choice; and without a design stage there is no allowance.
+  assert.doesNotMatch((await run({ author: askAt('pair-design-1') })).result.resumeSteps, /kind design/)
+  const direct = await run({ args: { design: false, maxDesignReviews: 1 }, review: (r, n) => n < 5 ? { ...r, findings: [major(`Gap ${n}.`)] }
+    : { ...r, resolutions: [1, 2, 3, 4].map(i => ({ id: `P${i}`, status: 'fixed', evidence: 'Fixed in code.' })) } })
+  assert.equal(direct.result.status, 'done')
+  assert.equal(direct.result.reviews.length, 5)
+})
+
+test('a design stop answered with a scope decision continues the design for another allowance, within the total budget', async () => {
+  const answer = 'Narrow the scope to the parser; accept P3 as a documented residual.'
+  for (const native of [false, true]) {
+    const plain = await run({ native, review: neverApproved })
+    const answered = await run({ native, review: neverApproved, args: { clarifications: [{ id: 'Q1', answer }] } })
+    const n = beforeRetro(plain.calls).length
+    sameCalls(plain, answered, n)
+    const next = answered.calls[n + (native ? 1 : 0)]
+    assert.equal(next.label, 'pair-design-4')
+    assert.ok(next.prompt.includes('\n- Q1 (about none; asked in review pair-design-3): The design used its review allowance (3 of 3 design reviews) without approval') && next.prompt.includes(`Answer: ${answer}\n`))
+    // Still unapproved after three more, it asks again; Q2 continues the numbering.
+    assert.equal(answered.result.status, 'needs-user')
+    assert.deepEqual(answered.result.questions.map(q => [q.id, q.kind]), [['Q2', 'design']])
+    assert.equal(answered.result.stopReason, 'The design used its review allowance (6 of 6 design reviews) without approval, with 6 design findings open (6 major).')
+    assert.deepEqual(answered.result.reviews.map(r => r.stage), Array(6).fill('design'))
+    assert.ok(answered.result.report.markdown.includes(`\n- The design reached its review allowance in review pair-design-3; the user continued the design (Q1): ${answer}`), answered.result.report.markdown)
+    // A design the continued review approves goes on to code as usual.
+    const fixed = await run({ native, args: { clarifications: [{ id: 'Q1', answer }] }, review: (r, n, call) => n <= 3 ? neverApproved(r, n, call)
+      : n === 4 ? { ...r, resolutions: [1, 2, 3].map(i => ({ id: `P${i}`, status: i === 3 ? 'refuted' : 'fixed', evidence: 'Settled by the narrowed scope.' })) } : r })
+    assert.equal(fixed.result.status, 'done')
+    assert.deepEqual(fixed.result.reviews.map(r => r.stage), ['design', 'design', 'design', 'design', 'code'])
+  }
+  // A continued design whose allowance outruns the budget ends on the budget, not another stop.
+  const { result } = await run({ args: { maxReviews: 5, clarifications: [{ id: 'Q1', answer: 'Keep going.' }] }, review: neverApproved })
+  assert.equal(result.status, 'blocked')
+  assert.equal(result.stopReason, 'Review budget exhausted (5); work remains unresolved.')
+  assert.deepEqual(result.questions, [])
+})
+
+test('a design stop answered with implement: true starts the implementation with the open design findings carried as open items', async () => {
+  const clarifications = [{ id: 'Q1', answer: 'Implement it; the findings are implementation detail.', implement: true }]
+  for (const native of [false, true]) {
+    const plain = await run({ native, review: neverApproved })
+    const fix = (r, n, call) => n <= 3 ? neverApproved(r, n, call) : n === 5 ? { ...r, resolutions: [1, 2, 3].map(i => ({ id: `P${i}`, status: 'fixed', evidence: 'The code covers it.' })) } : r
+    const answered = await run({ native, review: fix, args: { clarifications } })
+    const n = beforeRetro(plain.calls).length
+    sameCalls(plain, answered, n)
+    const next = answered.calls[n + (native ? 1 : 0)]
+    assert.equal(next.label, 'pair-code-4')
+    assert.match(next.prompt, /# Stage: implementation/)
+    assert.ok(next.prompt.includes('Design findings P1, P2, P3 are still open and carried into this implementation: fix each in the code, tests or documentation, or dispute it with evidence; the reviewer checks them against the code.'))
+    assert.ok(next.prompt.includes('Answer: Implement it; the findings are implementation detail. The user chose to start the implementation with the open design findings carried into code review as open items.\n'))
+    const codeReview = answered.calls.filter(c => c.kind === 'review')[3]
+    assert.ok(codeReview.prompt.includes('Design findings P1, P2, P3 are still open and carried into code review: resolve each against the implementation'))
+    // The first code review leaves them open, so the run is not ready until the second fixes them.
+    assert.equal(answered.result.status, 'done')
+    assert.deepEqual(answered.result.reviews.map(r => r.stage), ['design', 'design', 'design', 'code', 'code'])
+    assert.equal(answered.result.decisions[0].implement, true)
+    const md = answered.result.report.markdown
+    assert.ok(md.includes('\n- Q1 (about none; asked in review pair-design-3): ') && md.includes('Answer: Implement it; the findings are implementation detail. The implementation started with the open design findings carried into code review.'), md)
+    assert.match(md, /The user answered Q1; the run continues\.\n\d+\. The implementation starts on the user's answer, with P1, P2, P3 open for code review\.\n/)
+    assert.ok(md.includes('\n- The design reached its review allowance in review pair-design-3; the user chose to start the implementation with the open design findings carried into code review (Q1).'), md)
+    // Left open, they block readiness.
+    const open = await run({ native, review: neverApproved, args: { maxReviews: 5, clarifications } })
+    assert.equal(open.result.status, 'blocked')
+    assert.deepEqual(open.result.final.readiness.blocked, ['P1 (major): Design gap 1.', 'P2 (major): Design gap 2.', 'P3 (major): Design gap 3.'])
+  }
+  // implement answers only the design question, and only as true or false.
+  for (const implement of ['yes', null]) {
+    const { result } = await run({ review: neverApproved, args: { clarifications: [{ id: 'Q1', answer: 'Yes.', implement }] } })
+    assert.equal(result.stopReason, 'The answers do not settle this stop (Q1). Missing: Q1. Invalid: Q1 (implement is not true or false). Answer every question at this stop under its ID, and only questions this run asked.')
+  }
+  const { result } = await run({ author: askAt('pair-design-1'), args: { clarifications: [{ id: 'Q1', answer: 'Yes.', implement: true }] } })
+  assert.match(result.stopReason, /Invalid: Q1 \(implement answers only a question about the design review allowance\)/)
+  // implement: false is a plain continue.
+  const cont = await run({ review: neverApproved, args: { clarifications: [{ id: 'Q1', answer: 'Keep designing.', implement: false }] } })
+  assert.equal(cont.result.questions[0]?.id, 'Q2')
+  // An answer without implement keeps the hash it had before the field existed.
+  const S = { pair: {} }
+  assert.equal(L.pairAnswersHash(S, [{ id: 'Q1', answer: 'Yes.' }]), L.promptHash(JSON.stringify([['Q1', 'Yes.', null, null]])))
+  assert.notEqual(L.pairAnswersHash(S, [{ id: 'Q1', answer: 'Yes.', implement: true }]), L.pairAnswersHash(S, [{ id: 'Q1', answer: 'Yes.' }]))
 })

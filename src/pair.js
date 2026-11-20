@@ -82,7 +82,7 @@ async function pairRun() {
     pairBaselineResult(S, base)
   }
   const p = S.pair
-  log(`pair: ${S.pairOptions.author.name} authors; ${S.pairOptions.reviewer.name} reviews; budget ${S.pairOptions.maxReviews} reviews${pairDesigned(S) ? '' : '; no design stage'}`)
+  log(`pair: ${S.pairOptions.author.name} authors; ${S.pairOptions.reviewer.name} reviews; budget ${S.pairOptions.maxReviews} reviews${pairDesigned(S) ? `, the design asking the user after ${S.pairOptions.maxDesignReviews}` : '; no design stage'}`)
   pairMilestone(pairSetupLine(S))
   while (p.reviews.length < S.pairOptions.maxReviews) {
     let label = `pair-${p.stage}-${p.reviews.length + 1}`
@@ -211,6 +211,24 @@ async function pairRun() {
       p.stop = pairOpen(S).length ? 'Review stalled: the artifact and unresolved findings did not change.'
         : 'Review stalled: the artifact and unmet criteria or verification results did not change.'
       return pairResult(S)
+    }
+    // A design still not approved after its allowance stops for the user, who continues it with a
+    // scope decision, starts the implementation with the open design findings carried into code
+    // review (implement: true), or stops. The run never moves on past them without that answer.
+    if (pairDesignCapped(S)) {
+      p.stop = pairDesignStopReason(S)
+      const id = `Q${p.asked.length + 1}`
+      const stopped = await pairStop('design', [{ about: 'none', question: pairDesignQuestion(S) }], `review ${label}`)
+      if (stopped) return stopped
+      if (pairDesignChoice(S, id) === 'implement') {
+        const open = pairOpen(S).filter(f => f.stage === 'design').map(f => f.id)
+        pairMilestone(`The implementation starts on the user's answer${open.length ? `, with ${open.join(', ')} open for code review` : ''}.`)
+        p.approvedDesign = p.design
+        p.approvedContract = JSON.parse(JSON.stringify(p.testContract))
+        p.stage = 'code'
+        p.lastReview = null
+        continue
+      }
     }
     // Without a design stage there is none to return to: the flag blocks readiness like a finding,
     // and the author reworks the approach in the next implementation turn.

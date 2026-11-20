@@ -69,6 +69,8 @@ test('CLI merges full arguments and explicit options without parsing task text a
   assert.equal(pair.workflow, 'pair')
   assert.deepEqual(pair.args, { author: 'opus', reviewer: 'astra', maxReviews: 6, task: 'Build it' })
   assert.throws(() => parseCLI(['--author', 'opus', 'Build it']), /require --workflow pair/)
+  assert.deepEqual(parseCLI(['--workflow', 'pair', '--max-design-reviews', '2', 'Build it']).args, { maxDesignReviews: 2, task: 'Build it' })
+  assert.throws(() => parseCLI(['--max-design-reviews', '2', 'Build it']), /require --workflow pair/)
   const direct = parseCLI(['--workflow', 'pair', '--no-design', 'Write the plan'])
   assert.deepEqual(direct.args, { design: false, task: 'Write the plan' })
   assert.equal(direct.noDesign, undefined)
