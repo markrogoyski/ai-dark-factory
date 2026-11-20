@@ -521,6 +521,35 @@ test('packaged CLI runs a Pair task through stub model CLIs and real delivery', 
   assert.equal(f.git('status', '--porcelain'), '')
 })
 
+// The route Codex reproduced: a Factory task that intake sends to Simple, run through the shipped
+// CLI with stub model CLIs, must be committed, not parked for a missing delivery record.
+test('packaged CLI commits a Factory Simple task through stub model CLIs and real delivery', async t => {
+  const p = plan([task('sum'), task('after', ['sum'])])
+  p.tasks[0].args = { verify: 'node check.cjs' }
+  p.limits = { maxTurns: 12, taskMaxTurns: 8 }
+  const f = fixture(t, p), bin = join(f.temp, 'bin')
+  mkdirSync(bin)
+  for (const name of ['codex', 'claude']) {
+    cpSync(join(root, 'test/fixtures/codex-cli.cjs'), join(bin, name)); chmodSync(join(bin, name), 0o755)
+  }
+  writeFileSync(join(f.repo, 'sum.cjs'), 'module.exports = (a,b) => a-b\n')
+  writeFileSync(join(f.repo, 'check.cjs'), "require('node:assert/strict').equal(require('./sum.cjs')(2,3),5)\n")
+  f.git('add', '.'); f.git('commit', '-qm', 'Add failing sum')
+  const before = f.git('rev-parse', 'HEAD')
+  const log = join(f.temp, 'turns.jsonl')
+  const result = spawnSync(process.execPath, [join(root, 'plugins/dark-factory/bin/dark-factory-codex'), '--workflow', 'run-plan', '--cwd', f.repo, '--plan-file', f.file], {
+    encoding: 'utf8', timeout: 120000, env: { ...process.env, PATH: `${bin}:${process.env.PATH}`, CODEX_HOME: join(f.temp, 'codex-config'), CLAUDE_CONFIG_DIR: join(f.temp, 'claude-config'), FACTORY_TEST_REPO: f.repo,
+      FACTORY_TEST_RUN_PATH: join(f.temp, 'run-path'), FACTORY_TEST_LOG: log, COUNCIL_JOB_POLL: '0.01', COUNCIL_TRANSCRIPT_WAIT: '0' },
+  })
+  const output = JSON.parse(result.stdout)
+  const kinds = readFileSync(log, 'utf8').trim().split('\n').map(l => JSON.parse(l).kind)
+  assert.ok(kinds.includes('intake') && kinds.includes('solve') && !kinds.some(k => k.startsWith('pair')), `ran Factory Simple: ${kinds.join(',')}`)
+  assert.equal(output.tasks?.sum.status, 'done', result.stdout + result.stderr)
+  assert.notEqual(f.git('rev-parse', 'HEAD'), before, 'the ready Simple task was committed')
+  assert.match(f.git('show', 'HEAD:sum.cjs'), /a \+ b/, 'the commit carries the implemented change')
+  assert.notEqual(output.tasks?.after.status, 'waiting', 'the dependent task was released')
+})
+
 test('untracked execution plans and instruction files remain frozen outside delivery commits', async t => {
   const f = fixture(t, plan([task('one')]))
   f.git('rm', '--cached', 'plan.json'); f.git('commit', '-qm', 'Keep plan local')

@@ -325,6 +325,24 @@ class Verification(TmpDirCase):
         self.assertFalse(result['suite']['passed'])
         self.assertNotIn('scratchFailed', result['suite'])
 
+    def test_council_live_pass_is_kept_but_marks_the_snapshot_failure(self):
+        # A standalone council run (no --factory) may rank on the worktree's pass, but the result
+        # must say the snapshot failed, so readiness can refuse to call it passing.
+        run = self.cli('init', '--repo', self.repo, '--seats', 'A', '--run-id', 'council')
+        wt = run['worktrees']['A']
+        council.write(os.path.join(wt, 'local-only'), 'ignored input')
+        council.write(os.path.join(run['runDir'], 'verify.sh'), 'test -f local-only')
+        result = self.cli('measure', '--run-dir', run['runDir'], '--seat', 'A', '--label', 'r0', '--max-wait', '20')
+        self.assertTrue(result['scratch'])
+        self.assertTrue(result['suite']['passed'])
+        self.assertIn('scratchFailed', result['suite'])
+        # Without the ignored input the snapshot and the worktree agree, and nothing is marked.
+        os.remove(os.path.join(wt, 'local-only'))
+        council.write(os.path.join(run['runDir'], 'verify.sh'), 'true')
+        clean = self.cli('measure', '--run-dir', run['runDir'], '--seat', 'A', '--label', 'r1', '--max-wait', '20')
+        self.assertTrue(clean['suite']['passed'])
+        self.assertNotIn('scratchFailed', clean['suite'])
+
     def test_gate_cannot_repair_the_snapshot_and_claim_it_passed(self):
         council.write(os.path.join(self.wt, 'value'), 'broken\n')
         council.write(os.path.join(self.rd, 'verify.sh'), 'printf "fixed\\n" > value; python3 gate.py')
