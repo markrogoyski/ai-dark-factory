@@ -97,8 +97,11 @@ The Feature and Architecture tiers reuse this flow's setup, spec review and deba
    and upheld ones get one fix pass. Judgment objections are reported as dissent.
 9. **Readiness.** The final version is reported as *ready*, *blocked* (an unmet criterion, a
    failing suite or published test, a fabricated verification, an upheld blocker or major) or
-   *incomplete* (no check, an unrun suite, an unjudged criterion, an unresolved or
-   one-adjudicator ruling, a missing review). It never changes which position was chosen.
+   *incomplete* (no check, an unrun suite, a suite that passed only in the seat's worktree and
+   failed in the snapshot's clean checkout, an unjudged criterion, an unresolved or
+   one-adjudicator ruling, a missing review). A partly met criterion is left to the scorecard; in
+   the factory's tiers it blocks. It never changes which position was chosen. Setup must keep the
+   criteria and verification command the user supplied; a run whose setup dropped one stops there.
 10. **Audit** (implement mode; `audit: false` skips it). Earlier reviewers took part in the
     debate or ruled only on claims somebody made, so a problem nobody raised gets past them all.
     Two auditors who never saw the debate review the final version, each through one lens:

@@ -57,7 +57,7 @@ Automatic, upward only, in the same run. Simple hands the work up when:
 | `too-big` | the implementer says it isn't a simple change | its tier (fix or feature) |
 | `over-budget` | the round-0 change exceeds `maxLines` (200) changed lines or `maxFiles` (8) files | feature |
 | `design-finding` | the panel upholds a blocker or major judgment finding about the approach | feature, before any fix |
-| `verify-failed`, `blocked` | after the fix pass, the verification command still fails, or the result is blocked | fix |
+| `verify-failed`, `blocked` | after the fix pass, the verification command still fails, or the result is blocked (including a criterion judged only partly met) | fix |
 
 Feature hands the work to architecture, before anything is built, when its chosen plan lists more
 than 4 increments (`too-many-increments`).

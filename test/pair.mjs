@@ -1763,3 +1763,15 @@ test('resume: check placement records each native stop and checks it just before
   assert.match(r.result.forTheOrchestrator, /This stop cannot continue in place/)
   assert.doesNotMatch(r.result.forTheOrchestrator, resumeWords)
 })
+
+test('pair stops when setup drops a supplied criterion, before any author turn', async () => {
+  const criteria = ['The requested behavior works.', 'The old flag still parses.']
+  const { result, calls } = await run({ args: { criteria } })
+  assert.ok(!calls.some(c => c.kind === 'author'), 'no author turn')
+  assert.notEqual(result.status, 'done')
+  assert.notEqual(result.final.readiness.state, 'ready')
+  assert.ok(result.final.readiness.incomplete.some(x => x.includes('it dropped supplied criterion 2 ("The old flag still parses.")')), JSON.stringify(result.final.readiness))
+  // Kept, with a bracketed note: setup goes on to the author.
+  const kept = await run({ args: { criteria }, setup: { criteria: [{ id: 'C1', text: criteria[0] }, { id: 'C2', text: `${criteria[1]} [checked by the CLI test]` }] } })
+  assert.ok(kept.calls.some(c => c.kind === 'author'))
+})

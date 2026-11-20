@@ -40,6 +40,9 @@ if ('signals' in schema.properties) {
     refs: run.refs.map(({ source, path, inWorktrees }) => ({ source, path, inWorktrees })),
     verify: 'node check.cjs', baselinePasses: baseline.suite.passed, baselineNote: 'Arithmetic test initially fails.',
     criteria: [{ id: 'C1', text: 'sum(2,3) returns 5; node check.cjs passes.' }] })
+  // Criteria the task supplied are kept as given, as the engine checks.
+  const given = prompt.match(/Use exactly these, numbered C1, C2, …:\n((?:- .*\n)+)/)
+  if (given) result.criteria = given[1].trimEnd().split('\n').map((line, i) => ({ id: `C${i + 1}`, text: line.slice(2) }))
   fs.writeFileSync(runPath, run.runDir)
   if ('head' in schema.properties) result.head = run.head
 } else if ('design' in schema.properties) {
@@ -108,7 +111,7 @@ if ('signals' in schema.properties) {
   const measured = helper('measure', '--run-dir', runDir, '--seat', seat, '--label', label, ...(since ? ['--since', since] : []))
   const stat = measured.snapshot
   Object.assign(result, { measured: true, diff: { files: stat.files, added: stat.added, removed: stat.removed, tree: stat.tree },
-    suite: { ran: measured.suite.ran, passed: measured.suite.passed, tail: measured.suite.tail || '' },
+    suite: { ran: measured.suite.ran, passed: measured.suite.passed, tail: measured.suite.tail || '', scratchFailed: 'scratchFailed' in measured.suite },
     postWords: 8, criteria: [{ criterion: 'C1', status: measured.suite.passed ? 'met' : 'unmet', note: 'Ran the verification command on the snapshot.' }] })
 } else if ('findings' in schema.properties) {
   kind = 'audit'

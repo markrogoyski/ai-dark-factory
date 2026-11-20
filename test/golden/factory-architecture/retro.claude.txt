@@ -72,7 +72,7 @@ Don't copy the process notes or run facts into it; the next command attaches the
 
 - **Readiness:** ready: the final version was checked and nothing known stands against it
 - **Nothing was built:** the request asked for the change, and the factory judged it too big for one feature, so the milestones are the next step.
-- **Neutral check of the final plan:** criteria 2 met, 1 partial of 3 · still-standing findings: 1B1
+- **Neutral check of the final plan:** criteria 3 met of 3 · still-standing findings: 1B1
 - **Still open:**
   - standing finding [1B1] from B (Claude Opus) (minor, verified): A never says where the cursor lives
 

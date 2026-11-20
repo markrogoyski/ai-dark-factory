@@ -528,6 +528,22 @@ describe('readiness', () => {
     r.S.pos.A.suite = null
     assert.equal(r.ready().state, 'ready')
   })
+  test('the council leaves a partial criterion to the scorecard: still ready', () => {
+    const r = finished()
+    r.S.pos.A.criteria[1].status = 'partial'
+    assert.equal(r.ready().state, 'ready')
+  })
+  incomplete('the suite passed only in the author\'s worktree, not in the snapshot\'s clean checkout',
+    r => { r.S.pos.A.suite.scratchFailed = true }, /passed only in the author's worktree; the snapshot itself failed it/)
+  test('a scratchFailed suite comes through the check onto the position, and only when set', () => {
+    const r = makeRun()
+    const res = scratch => ({ measured: true, diff: { files: 1, added: 1, removed: 0, tree: '' }, delta: { since: '', files: 0, added: 0, removed: 0 },
+      postWords: 10, suite: { ran: true, passed: true, tail: 'OK', scratchFailed: scratch }, crossTests: [], rulings: [], criteria: [] })
+    r.L.applyCheck(r.S, 'A', 'F', res(true), [])
+    assert.equal(r.S.pos.A.suite.scratchFailed, true)
+    r.L.applyCheck(r.S, 'A', 'F', res(false), [])
+    assert.deepEqual(r.S.pos.A.suite, { ran: true, passed: true, tail: 'OK' })
+  })
 })
 
 describe('rulings', () => {
@@ -1306,6 +1322,36 @@ describe('the factory', () => {
     assert.deepEqual([L.simpleTrigger(S, 'final', {}).trigger, L.simpleTrigger(S, 'final', {}).to], ['verify-failed', 'fix'])
     S.baselineOk = false
     assert.equal(L.simpleTrigger(S, 'final', {}), null, 'failing already at baseline is not this change\'s doing')
+  })
+
+  test('a Simple change with its one criterion partial is blocked, not ready, and goes to the Fix tier', () => {
+    const { L, S } = simpleState()
+    S.pos.A.criteria = [{ criterion: 'C1', status: 'partial', note: 'logs it on the first retry only' }]
+    const ready = L.readiness(S, 'A', 0, [], [])
+    assert.deepEqual([ready.state, ready.blocked], ['blocked', ['criteria partial: C1']])
+    assert.deepEqual([L.simpleTrigger(S, 'final', { ready }).trigger, L.simpleTrigger(S, 'final', { ready }).to], ['blocked', 'fix'])
+    // With the gate unrun on the final version the partial is missing evidence: incomplete, no hand-up.
+    S.pos.A.assessment.measured = false
+    const unmeasured = L.readiness(S, 'A', 0, [], [])
+    assert.deepEqual([unmeasured.state, unmeasured.blocked], ['incomplete', []])
+    assert.ok(unmeasured.incomplete.includes('criteria partial on an unmeasured version: C1'))
+    assert.equal(L.simpleTrigger(S, 'final', { ready: unmeasured }), null)
+  })
+
+  test('setupLosses: a supplied criterion or verification command setup did not keep', () => {
+    const { L, S } = simpleState({ criteria: ['Retries log the attempt count.', 'make lint passes'], verify: 'make test && make lint' })
+    const kept = [{ id: 'C1', text: 'Retries log  the attempt count [a verifier can check the debug log in the test]' }, { id: 'C2', text: 'make lint passes.' }]
+    assert.deepEqual(L.setupLosses(S, kept, 'make test && make lint'), [])
+    assert.deepEqual(L.setupLosses(S, [kept[0]], 'make test && make lint'), ['supplied criterion 2 ("make lint passes")'])
+    assert.deepEqual(L.setupLosses(S, [kept[1], { id: 'C2', text: 'make lint passes' }], ' make test && make lint '), ['supplied criterion 1 ("Retries log the attempt count.")'],
+      'one returned criterion keeps only one supplied one')
+    assert.deepEqual(L.setupLosses(S, kept, ''), ['the verification command `make test && make lint` (setup returned none)'])
+    assert.deepEqual(L.setupLosses(S, kept, 'make test'), ['the verification command `make test && make lint` (setup returned `make test`)'])
+    // Nothing supplied: setup's own criteria and command stand.
+    assert.deepEqual(L.setupLosses(simpleState().S, [], ''), [])
+    // A criterion the user rewrote or dropped through a Pair decision is not setup's loss.
+    S.pair = { decisions: [{ id: 'Q1', about: 'C2', kind: 'criterion', drop: true }] }
+    assert.deepEqual(L.setupLosses(S, [kept[0]], 'make test && make lint'), [])
   })
 
   test('escalationBrief: the evidence, never the earlier change', () => {

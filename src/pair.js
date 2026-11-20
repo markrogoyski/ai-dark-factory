@@ -42,10 +42,10 @@ async function pairRun() {
     if (!S.baselineOk) S.baselineNote = oneLine(setup.baselineNote, 300) || 'no reason given'
   }
   S.refs = (setup.refs || []).filter(r => r.path?.startsWith(`${S.run.runDir}/refs/`))
+  const lost = setupLosses(S, S.criteria, S.verify)
   if (!S.criteria.length || new Set(S.criteria.map(c => c.id)).size !== S.criteria.length || S.criteria.some(c => !c.id || !c.text) ||
-      S.refs.length !== (setup.refs || []).length || S.refs.length < S.plan.length ||
-      (S.raw.verify && S.verify !== String(S.raw.verify).trim())) {
-    S.pair.stop = 'Setup omitted criteria, reference snapshots, or the requested verification command.'
+      S.refs.length !== (setup.refs || []).length || S.refs.length < S.plan.length || lost.length) {
+    S.pair.stop = `Setup omitted criteria, reference snapshots, or the requested verification command${lost.length ? `: it dropped ${lost.join('; ')}` : ''}.`
     return pairResult(S)
   }
   // Checked in the run against a stand-in, and by the user against the real thing before delivery.

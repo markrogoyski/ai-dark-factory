@@ -27,7 +27,7 @@ export async function simulate(workflow, args = {}, behavior = {}) {
       Object.assign(v, { status: 'ok', runId: 'demo', runDir: run, repoRoot: '/repo', ...('head' in v ? { head: 'b'.repeat(40) } : {}), mode: 'implement', dirty: [], verify: 'check', baselinePasses: true, criteria: [{ id: 'C1', text: 'The boundary works.' }] })
       for (const [k, x] of Object.entries(behavior.setup || {})) if (k in v) v[k] = x
     }
-    else if (r.role === 'checker') Object.assign(v, { measured: true, diff: { files: 1, added: 2, removed: 1, tree: tree() }, suite: { ran: true, passed: true, tail: 'pass' }, criteria,
+    else if (r.role === 'checker') Object.assign(v, { measured: true, diff: { files: 1, added: 2, removed: 1, tree: tree() }, suite: { ran: true, passed: true, tail: 'pass', scratchFailed: false }, criteria,
       rulings: [...r.prompt.matchAll(/^- \[([^\]]+)\]/gm)].map(m => ({ claim: m[1], verdict: 'verified', fixed: repairs && !behavior.stall ? 'yes' : 'no', note: 'Reproduced on the named snapshot.' })) })
     else if (r.role === 'panel') Object.assign(v, { rulings: [...r.prompt.matchAll(/^## \[([^\]]+)\]/gm)].map(m => ({ claim: m[1], verdict: 'verified', note: 'Confirmed defect.' })) })
     else if (r.role === 'auditor') {

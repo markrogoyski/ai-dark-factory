@@ -67,7 +67,7 @@ Don't copy the process notes or run facts into it; the next command attaches the
 ### How it turned out
 
 - **Readiness:** ready: the final version was checked and nothing known stands against it
-- **Neutral check of the final change:** suite PASS · criteria 2 met, 1 partial of 3 · still-standing findings: 1B1
+- **Neutral check of the final change:** suite PASS · criteria 3 met of 3 · still-standing findings: 1B1
 - **Still open:**
   - standing finding [1B1] from B (Codex Astra) (minor, verified): A's plan never says where the budget is read
 

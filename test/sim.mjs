@@ -268,6 +268,8 @@ const check = (prompt, verdictFor = () => 'verified', fixedFor = () => 'no', cro
   })),
   criteria: o.criteria || [{ criterion: 'C1', status: 'met', note: '' }, { criterion: 'C2', status: 'met', note: '' }, { criterion: 'C3', status: 'partial', note: '' }],
 })
+// The factory treats a partly met criterion as not delivered, so its runs that should end ready judge all three met.
+const ALL_MET = { criteria: [{ criterion: 'C1', status: 'met', note: '' }, { criterion: 'C2', status: 'met', note: '' }, { criterion: 'C3', status: 'met', note: '' }] }
 const synth = () => ({ summary: 'final version', addressed: [], declined: [], adopted: [], claims: [{ kind: 'verification', statement: 'final suite passes', evidence: 'make test' }], notes: 'notes-final' })
 const ratify = (endorse = true, objections = []) => ({ endorse, objections, note: endorse ? '' : 'disagree' })
 
@@ -1366,10 +1368,16 @@ async function scenarioReadiness() {
   assert.equal(thin.result.final.readiness.state, 'incomplete')
   assert.deepEqual(thin.result.final.readiness.incomplete, ['the verification command did not run on the final version', 'criteria not judged: C3'])
 
+  // The helper's live-worktree fallback: the pass stands for the choice, not for the snapshot.
+  const live = await go('test-scratch', p => check(p, undefined, undefined, undefined, { suite: { ran: true, passed: true, tail: 'OK', scratchFailed: true } }))
+  assert.equal(live.result.status, 'converged')
+  assert.equal(live.result.final.readiness.state, 'incomplete')
+  assert.match(live.result.final.readiness.incomplete.join('; '), /passed only in the author's worktree; the snapshot itself failed it in a clean checkout/)
+
   const none = await go('test-unchecked', () => null)
   assert.ok(none.calls.some(c => c.label === 'check final:A (retry)'), 'a missing check is retried once')
   assert.deepEqual(none.result.final.readiness.incomplete, ['the final version was never checked'])
-  return 'readiness reports ready, blocked (unmet criterion) and incomplete (unrun suite, unjudged criterion, no check) without changing the choice'
+  return 'readiness reports ready, blocked (unmet criterion) and incomplete (unrun suite, unjudged criterion, a suite passing only in the worktree, no check) without changing the choice'
 }
 
 // ---------------------------------------------------------------- vote-timing experiments
@@ -1899,6 +1907,48 @@ async function scenarioFactorySimple() {
   return 'intake → one Sonnet change, the neutral check, one Astra review; facts recorded, no model retro (6 turns)'
 }
 
+// The criteria and the verification command the user supplied are checked against what setup
+// returned: one setup dropped stops the run before any implementer or seat starts, in Simple, in
+// the council-based tiers and in a standalone council. One setup kept, with a bracketed note on
+// what a verifier can check instead, passes.
+async function scenarioSetupKeeps() {
+  const supplied = ['logs the retry count at debug level', 'keeps the existing info line']
+  const simple = criteria => async (role, prompt) => {
+    switch (role.kind) {
+      case 'intake': return INTAKE('simple')
+      case 'setup': return { ...SETUP('test-keep'), criteria }
+      case 'solve': return solve(role.L, NOT_BIG)
+      case 'check': return check(prompt, () => 'verified', () => 'no', () => [], { criteria: criteria.map(c => ({ criterion: c.id, status: 'met', note: '' })) })
+      default: throw new Error(`unexpected role ${role.kind}`)
+    }
+  }
+  const dropped = await factory('setup-keeps', simple([{ id: 'C1', text: supplied[0] }]), { task: LOG_TASK, criteria: supplied })
+  assert.deepEqual([dropped.result.status, dropped.calls.map(c => c.role.kind)], ['failed', ['intake', 'setup']])
+  assert.match(dropped.result.reason, /setup did not keep what was supplied: supplied criterion 2 \("keeps the existing info line"\)/)
+  const kept = await factory('setup-keeps', simple([{ id: 'C1', text: `${supplied[0]} [a verifier can read the debug log the test captures]` }, { id: 'C2', text: supplied[1] }]), { task: LOG_TASK, criteria: supplied })
+  assert.deepEqual([kept.result.status, kept.result.final.readiness.state], ['done', 'ready'], 'a bracketed note keeps the criterion')
+
+  const council = (intake, verify) => async role => {
+    if (role.kind === 'intake') return intake
+    if (role.kind === 'setup') return { ...SETUP('test-keep'), verify }
+    throw new Error(`unexpected role ${role.kind}`)
+  }
+  const texts = SETUP('x').criteria.map(c => c.text)
+  const fix = await factory('setup-keeps', council(INTAKE('fix'), 'make test'), { task: 'Fix the parser', criteria: texts, verify: 'make test && make lint' })
+  assert.deepEqual([fix.result.status, fix.calls.map(c => c.role.kind)], ['failed', ['intake', 'setup']])
+  assert.match(fix.result.reason, /the verification command `make test && make lint` \(setup returned `make test`\)/)
+  const none = await run('setup-keeps', council(null, ''), { task: 'Fix the parser', criteria: texts, verify: 'make test' })
+  assert.deepEqual([none.result.status, none.calls.map(c => c.role.kind)], ['failed', ['setup']])
+  assert.match(none.result.reason, /the verification command `make test` \(setup returned none\)/)
+  const lost = await run('setup-keeps', async role => {
+    if (role.kind === 'setup') return { ...SETUP('test-keep'), criteria: SETUP('x').criteria.slice(0, 2) }
+    throw new Error(`unexpected role ${role.kind}`)
+  }, { task: 'Fix the parser', criteria: texts })
+  assert.deepEqual([lost.result.status, lost.calls.map(c => c.role.kind)], ['failed', ['setup']])
+  assert.match(lost.result.reason, /supplied criterion 3 \("no API change"\)/)
+  return 'a supplied criterion or verification command setup dropped stops Simple, Fix and the council after setup; a bracketed note keeps a criterion'
+}
+
 async function scenarioFactoryFindings() {
   const handler = async (role, prompt) => {
     switch (role.kind) {
@@ -1906,7 +1956,7 @@ async function scenarioFactoryFindings() {
       case 'setup': return SETUP('test-ffind')
       case 'solve': return solve(role.L, NOT_BIG)
       case 'check': return check(prompt, () => 'verified', () => role.tag === 'repair1' ? 'yes' : 'no',
-        () => prompt.includes('TXR1') ? [{ test: 'TXR1', outcome: role.tag === 'repair1' ? 'pass' : 'fail', note: '' }] : [])
+        () => prompt.includes('TXR1') ? [{ test: 'TXR1', outcome: role.tag === 'repair1' ? 'pass' : 'fail', note: '' }] : [], ALL_MET)
       case 'audit': return { summary: 'Logs the wrong counter.', probes: [], tests: [{ id: 'TXR1', purpose: 'logs attempt 2 on the second try', command: 'phpunit TXR1Test.php' }],
         findings: [{ severity: 'major', kind: 'fact', statement: 'logs the attempt index from 0, not the count', evidence: 'TXR1 fails' },
                    { severity: 'minor', kind: 'judgment', statement: 'use the existing debug() helper', evidence: 'src/Log.php:10' }] }
@@ -2025,7 +2075,7 @@ async function scenarioFactoryTier() {
       case 'intake': return INTAKE(tier)
       case 'setup': return setupOut || SETUP('test-ftier')
       case 'solve': return solve(role.L, NOT_BIG)
-      case 'check': return check(prompt)
+      case 'check': return check(prompt, undefined, undefined, undefined, ALL_MET)
       default: throw new Error(`unexpected role ${role.kind}`)
     }
   }
@@ -2127,7 +2177,7 @@ async function scenarioFactoryFeature() {
       case 'intake': return INTAKE('feature')
       case 'setup': return SETUP('test-ffeat')
       case 'solve': return planSolve(role.L)
-      case 'check': return check(prompt)
+      case 'check': return check(prompt, undefined, undefined, undefined, role.tag === 'inc2' ? ALL_MET : {})
       case 'debate': W = W || 'A'
         return debate(role.L, 'A', role.L === 'B' ? { findings: [{ target: 'A', severity: 'minor', kind: 'fact', statement: 'A\'s plan never says where the budget is read', evidence: 'room/r0/A.md' }] } : {})
       case 'synth': return { ...synth(), summary: 'final plan', adopted: [{ from: 'B', idea: 'read the budget from the endpoint config' }],
@@ -2194,7 +2244,7 @@ async function scenarioFactoryFeatureHard() {
       case 'intake': return INTAKE('feature')
       case 'setup': return SETUP('test-ffhard')
       case 'solve': return planSolve(role.L)
-      case 'check': return check(prompt, () => 'verified', () => role.tag === 'final3' ? 'yes' : 'no', () => [], role.tag === 'inc3' ? { suite: FAIL } : {})
+      case 'check': return check(prompt, () => 'verified', () => role.tag === 'final3' ? 'yes' : 'no', () => [], role.tag === 'inc3' ? { suite: FAIL } : /^inc/.test(role.tag) ? {} : ALL_MET)
       case 'debate': return debate(role.L, role.L)
       case 'synth': return { ...synth(), increments: [1, 2, 3, 4].map(n => ({ title: `Step ${n}`, delivers: `does step ${n}` })) }
       case 'build': return role.round === 1 ? null : buildTurn(role.round)
@@ -2250,7 +2300,7 @@ async function scenarioFactoryArchitecture() {
       case 'intake': return INTAKE('architecture', { mode: 'implement', reasons: 'one connected change, too big for one feature' })
       case 'setup': return SETUP('test-farch')
       case 'solve': return designSolve(role.L)
-      case 'check': return check(prompt, () => 'verified', id => role.tag === 'final3' && id === 'XG1' ? 'yes' : 'no')
+      case 'check': return check(prompt, () => 'verified', id => role.tag === 'final3' && id === 'XG1' ? 'yes' : 'no', undefined, role.tag === 'final3' ? ALL_MET : {})
       case 'debate': return debate(role.L, 'A', role.L === 'B' ? { findings: [{ target: 'A', severity: 'minor', kind: 'fact', statement: 'A never says where the cursor lives', evidence: 'room/r0/A.md' }] } : {})
       case 'synth': return { ...synth(), summary: 'final design', adopted: [{ from: 'C', idea: 'keep the cursor behind the Storage interface' }], milestones: MILESTONES }
       case 'audit': return role.tag === 'grounding'
@@ -2417,7 +2467,7 @@ function scenarioHeadlessPrompts() {
 
 const ONLY = process.env.SIM_ONLY ? process.env.SIM_ONLY.split(',') : null    // SIM_ONLY=scenarioAgy,scenarioBallot
 for (const [name, fn] of Object.entries({ scenarioConsensus, scenarioDeadlock, scenarioEscalation, scenarioFailures, scenarioDirty, scenarioFocus, scenarioSandbox, scenarioPlan, scenarioPlanMissing, scenarioRefs, scenarioTranscript, scenarioRetroOff, scenarioRetroSave, scenarioLineup, scenarioAgy, scenarioLateEscalation, scenarioModeAndGuidance, scenarioInitDocs, scenarioRelayErrors, scenarioPreflight, scenarioOpenRouter, scenarioReadiness, scenarioApproval, scenarioBallot, scenarioSeatRunErrors, scenarioMeasure, scenarioPreflightCli, scenarioBlind, scenarioAudit, scenarioSpec,
-  scenarioFactorySimple, scenarioFactoryFindings, scenarioFactoryEscalate, scenarioFactoryHandUp, scenarioFactoryTier, scenarioFactoryRoute, scenarioFactorySplit,
+  scenarioFactorySimple, scenarioSetupKeeps, scenarioFactoryFindings, scenarioFactoryEscalate, scenarioFactoryHandUp, scenarioFactoryTier, scenarioFactoryRoute, scenarioFactorySplit,
   scenarioFactoryFeature, scenarioFactoryFeatureHard, scenarioFactoryArchitecture, scenarioFactoryFeatureToArchitecture, scenarioFactsSave, scenarioHeadlessPrompts })) {
   if (ONLY && !ONLY.includes(name)) continue
   try {

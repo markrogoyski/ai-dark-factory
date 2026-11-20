@@ -84,7 +84,8 @@ const CHECK_SCHEMA = strict({ type: 'object', properties: {
     since: { type: 'string' }, files: { type: 'integer' }, added: { type: 'integer' }, removed: { type: 'integer' },
   } },
   postWords: { type: 'integer', description: 'Word count of the post being checked; 0 if it does not exist.' },
-  suite:    { type: 'object', properties: { ran: { type: 'boolean' }, passed: { type: 'boolean' }, tail: { type: 'string' } } },
+  suite:    { type: 'object', properties: { ran: { type: 'boolean' }, passed: { type: 'boolean' }, tail: { type: 'string' },
+    scratchFailed: { type: 'boolean', description: 'true when the measure output\'s suite has a scratchFailed field (the suite failed in the clean checkout of the snapshot and passed only in the worktree); otherwise false.' } } },
   crossTests: { type: 'array', items: { type: 'object', properties: {
     test: { type: 'string', description: 'The test ID only, e.g. T0A1.' }, outcome: { type: 'string', enum: ['pass', 'fail', 'error', 'conflict'] }, note: { type: 'string' },
   } } },

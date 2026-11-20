@@ -209,6 +209,10 @@ async function councilSetup() {
   if ((setup.refs || []).length !== S.refs.length) S.notes.push('Setup reported reference documents outside the run\'s refs/ directory; they were ignored.')
   if (S.plan.length && S.refs.length < S.plan.length) S.notes.push(`${plural(S.plan.length, 'plan document')} given, but setup snapshotted only ${S.refs.length}.`)
   S.verify = String(setup.verify || '').trim()
+  // The helper runs the verify.sh setup wrote, and TASK.md carries setup's criteria, so a supplied
+  // command or criterion setup dropped can't be put back from here: the run stops before any seat.
+  const lost = setupLosses(S, S.criteria, S.verify)
+  if (lost.length) return failure(S, 'failed', `setup did not keep what was supplied: ${lost.join('; ')}. Rerun; if it recurs, check that the supplied criteria and verification command are usable as given`)
   S.baselineOk = S.mode !== 'implement' || !S.verify || setup.baselinePasses
   // Expected when the task is to fix a failing test, so it is reported as a fact, not a problem.
   if (!S.baselineOk) S.baselineNote = oneLine(setup.baselineNote, 300) || 'no reason given'

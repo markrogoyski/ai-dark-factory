@@ -33,9 +33,20 @@ function readiness(S, L, finalRound, raters, reviews, gaps = []) {
     if (S.baselineOk) blocked.push('the verification command fails on the final version')
     else incomplete.push('the verification command fails, as it already did at baseline')
   }
+  // The helper reran a suite that failed in the clean checkout in the seat's own worktree, and its
+  // pass there stands for ranking; but the snapshot that would be delivered still failed it.
+  if (checked && S.mode === 'implement' && a.measured && p.suite && p.suite.passed && p.suite.scratchFailed) {
+    incomplete.push('the verification command passed only in the author\'s worktree; the snapshot itself failed it in a clean checkout, so it needs an ignored input (a local .env or config file) that must be reproduced before the snapshot can be called passing')
+  }
   if (checked) {
     const unmet = (p.criteria || []).filter(c => c.status === 'unmet').map(c => c.criterion)
     if (unmet.length) blocked.push(`criteria unmet: ${unmet.join(', ')}`)
+    // In the factory a partly met criterion is a requirement not delivered; the council reports it
+    // in the scorecard and leaves readiness to unmet ones. A partial on a final version whose
+    // verification command did not run is missing evidence, not a known defect.
+    const partial = tierProfile(S).factory ? (p.criteria || []).filter(c => c.status === 'partial').map(c => c.criterion) : []
+    if (partial.length && S.mode === 'implement' && S.verify && !a.measured) incomplete.push(`criteria partial on an unmeasured version: ${partial.join(', ')}`)
+    else if (partial.length) blocked.push(`criteria partial: ${partial.join(', ')}`)
   }
   const fab = S.ledger.filter(c => c.author === L && c.round === finalRound && c.kind === 'verification' && c.status === 'fabricated')
   if (fab.length) blocked.push(`fabricated verification claim ${fab.map(c => c.id).join(', ')}`)
@@ -56,6 +67,31 @@ function readiness(S, L, finalRound, raters, reviews, gaps = []) {
   incomplete.push(...gaps)
   const state = blocked.length ? 'blocked' : incomplete.length ? 'incomplete' : 'ready'
   return { state, blocked, incomplete }
+}
+
+// What setup did not keep of what the user supplied: the verification command and the criteria,
+// which the setup prompt says to use exactly. Readiness judges only what setup returned, so a
+// dropped one would never be run or judged. A kept criterion may gain a bracketed note on what a
+// verifier can check instead, so a supplied criterion is kept when some returned criterion
+// contains its text (case, spacing and closing punctuation aside). One the user has since
+// rewritten or dropped through a Pair decision is theirs to change. [] when everything was kept.
+function setupLosses(S, criteria, verify) {
+  const lost = []
+  const want = String(S.raw.verify || '').trim()
+  const got = String(verify || '').trim()
+  if (want && got !== want) lost.push(`the verification command \`${oneLine(want, 200)}\` (setup returned ${got ? `\`${oneLine(got, 200)}\`` : 'none'})`)
+  const supplied = Array.isArray(S.raw.criteria) ? S.raw.criteria : []
+  const norm = s => String(s || '').toLowerCase().replace(/\s+/g, ' ').trim().replace(/[.;:,!]+$/, '')
+  const decided = new Set((S.pair?.decisions || []).filter(d => d.kind === 'criterion').map(d => d.about))
+  const used = new Set()
+  supplied.forEach((c, i) => {
+    const text = norm(c)
+    if (!text || decided.has(`C${i + 1}`)) return
+    const j = (criteria || []).findIndex((x, n) => !used.has(n) && x && norm(x.text).includes(text))
+    if (j >= 0) used.add(j)
+    else lost.push(`supplied criterion ${i + 1} ("${oneLine(c, 200)}")`)
+  })
+  return lost
 }
 
 const readinessText = r => r.state === 'ready'
@@ -230,7 +266,7 @@ function applyCheck(S, Y, k, r, items) {
     p.deltaPath = hasDelta ? `${S.run.room}/${roundTag(k)}/${Y}.delta.diff` : null
     p.deltaRound = k
     p.snapTag = roundTag(k)
-    p.suite = { ran: r.suite.ran, passed: r.suite.passed, tail: r.suite.tail }
+    p.suite = { ran: r.suite.ran, passed: r.suite.passed, tail: r.suite.tail, ...(r.suite.scratchFailed === true ? { scratchFailed: true } : {}) }
     for (const t of r.crossTests || []) {
       const tid = idOf(t.test)
       if (!S.byId[tid]) continue

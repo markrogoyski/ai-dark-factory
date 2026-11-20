@@ -23,6 +23,9 @@ async function simpleRun() {
   S.refs = (setup.refs || []).filter(r => r && typeof r.path === 'string' && r.path.startsWith(`${S.run.runDir}/refs/`))
     .map(r => ({ source: String(r.source || ''), path: r.path, inWorktrees: !!r.inWorktrees }))
   S.verify = String(setup.verify || '').trim()
+  // As in councilSetup: a supplied command or criterion setup dropped stops the run before the implementer.
+  const lost = setupLosses(S, S.criteria, S.verify)
+  if (lost.length) return failure(S, 'failed', `setup did not keep what was supplied: ${lost.join('; ')}. Rerun; if it recurs, check that the supplied criteria and verification command are usable as given`)
   S.baselineOk = !S.verify || setup.baselinePasses
   if (!S.baselineOk) S.baselineNote = oneLine(setup.baselineNote, 300) || 'no reason given'
   S.seats = [{ L: S.letters[0], ...S.lineup[0], wt: `${S.run.runDir}/wt/${S.letters[0]}`, active: true }]
