@@ -59,7 +59,7 @@ function simpleResult(S, o) {
   const { W, ready, audit, report, retro } = o
   const tag = audit.finalTag || (audit.fixPass ? roundTag('I') : S.auditedTag)
   const f = S.factory
-  return {
+  const res = {
     status: 'done', tier: 'simple', mode: S.mode, task: S.task, runDir: S.run.runDir, room: S.run.room, refs: S.refs,
     report,
     factory: { tier: 'simple', chosenBy: f.chosenBy, asked: f.asked, recommended: f.recommended, reasons: f.intake ? f.intake.reasons : '' },
@@ -88,4 +88,5 @@ function simpleResult(S, o) {
       deliveryNote(S, tag, W, 'The change') +
       `When the user is done, \`${S.cli} cleanup --run-dir ${S.run.runDir}\` removes the worktree and keeps the transcript; add --all to delete everything.`,
   }
+  return { ...res, ...deliveryFields(S, res) }
 }

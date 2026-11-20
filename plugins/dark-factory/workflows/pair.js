@@ -3609,6 +3609,17 @@ ${payload}
 =====END PAYLOAD ${hash}=====`
 }
 
+// The delivery record every Factory implement result carries (Simple, routed, handed up), which
+// Run-plan reads before it commits: the snapshot's tree as the final author's measurement left it,
+// and 'pending' only when there is a snapshot and a measured tree to deliver. A result that has its
+// own record, or no snapshot, gets nothing.
+function deliveryFields(S, res) {
+  if (!res || res.delivery || res.mode !== 'implement' || !res.final || !res.final.snapshotRef) return {}
+  const tree = res.final.snapshotTree || S.pos[res.final.author]?.tree?.hash || null
+  return { final: { ...res.final, snapshotTree: tree },
+    delivery: { status: tree ? 'pending' : 'not-ready', record: `${res.runDir}/delivery.json` } }
+}
+
 // A run a lower tier handed up: that tier's own result, opening with why. A run handed up twice
 // (Simple, then Feature) is wrapped once, by the last hand-up, which knows the whole chain.
 function escalatedResult(S, res) {
@@ -3618,7 +3629,7 @@ function escalatedResult(S, res) {
   const f = S.factory
   const as = { simple: 'a simple change', feature: 'a feature' }
   return {
-    ...res, escalated: true,
+    ...res, ...deliveryFields(S, res), escalated: true,
     factory: { tier: e.to, startedAt: chain[0].from, chosenBy: f.chosenBy, asked: f.asked, recommended: f.recommended,
       escalation: { from: e.from, to: e.to, trigger: e.trigger, why: e.why, runDir: e.runDir, ...(chain.length > 1 ? { earlier: chain.slice(0, -1).map(x => ({ from: x.from, to: x.to, trigger: x.trigger, why: x.why, runDir: x.runDir })) } : {}) } },
     report: res.report ? { ...res.report, markdown: `${escalatedSection(S)}${res.report.markdown}` } : res.report,
@@ -3633,10 +3644,7 @@ function routedResult(S, res) {
   if (!res || typeof res !== 'object' || res.escalated) return res
   const f = S.factory
   return { ...res,
-    ...(res.mode === 'implement' && res.final && res.final.snapshotRef ? {
-      final: { ...res.final, snapshotTree: S.pos[res.final.author]?.tree?.hash || null },
-      delivery: { status: 'pending', record: `${res.runDir}/delivery.json` },
-    } : {}),
+    ...deliveryFields(S, res),
     factory: { tier: f.tier, chosenBy: f.chosenBy, asked: f.asked, recommended: f.recommended, reasons: f.intake ? f.intake.reasons : '' },
     forTheOrchestrator: `The factory ran this at the ${f.tier} tier (${f.chosenBy === 'intake' ? 'intake\'s choice' : f.chosenBy === 'pinned' ? 'the user\'s choice, which intake agreed with' : `the user's choice, over intake's ${f.recommended}`}); mention it in a few words. ${res.forTheOrchestrator || ''}` }
 }
@@ -3702,7 +3710,7 @@ function simpleResult(S, o) {
   const { W, ready, audit, report, retro } = o
   const tag = audit.finalTag || (audit.fixPass ? roundTag('I') : S.auditedTag)
   const f = S.factory
-  return {
+  const res = {
     status: 'done', tier: 'simple', mode: S.mode, task: S.task, runDir: S.run.runDir, room: S.run.room, refs: S.refs,
     report,
     factory: { tier: 'simple', chosenBy: f.chosenBy, asked: f.asked, recommended: f.recommended, reasons: f.intake ? f.intake.reasons : '' },
@@ -3731,6 +3739,7 @@ function simpleResult(S, o) {
       deliveryNote(S, tag, W, 'The change') +
       `When the user is done, \`${S.cli} cleanup --run-dir ${S.run.runDir}\` removes the worktree and keeps the transcript; add --all to delete everything.`,
   }
+  return { ...res, ...deliveryFields(S, res) }
 }
 
 // The Feature tier's rules: its increments, when it hands the work up, and its report, facts and

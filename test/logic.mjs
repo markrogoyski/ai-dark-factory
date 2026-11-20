@@ -7,6 +7,11 @@
 import { test, describe } from 'node:test'
 import assert from 'node:assert/strict'
 import { loadLib, makeRun, addItem } from './lib.mjs'
+import { readFileSync } from 'node:fs'
+
+// Run-plan's verdict on one task's result, as it decides whether to commit it (src/lib/run-plan.js).
+const runPlanLib = new Function(readFileSync(new URL('../src/lib/run-plan.js', import.meta.url), 'utf8') + '\nreturn { runPlanOutcome }')()
+const planOutcome = res => runPlanLib.runPlanOutcome({ tasks: { t: { attempts: 1 } }, plan: { limits: { maxAttempts: 2 } } }, { id: 't', criteria: ['works'] }, res)
 
 const vote = (ship, extra = {}) => ({ ship, amendments: [], reason: '', ...extra })
 
@@ -1398,6 +1403,23 @@ describe('the factory', () => {
     S.factory = { tier: 'fix', chosenBy: 'pinned', recommended: 'fix' }
     assert.ok(L.routedResult(S, { status: 'converged', forTheOrchestrator: 'x' }).forTheOrchestrator.startsWith('The factory ran this at the fix tier'))
   })
+  test('Run-plan can commit a ready Simple result, and only a ready one with a measured tree', () => {
+    const { L, S } = simpleState({ mode: 'implement' })
+    const W = S.seats[0]
+    const audit = { ran: true, checked: false, reviews: { review: { summary: 'fine', probes: [] } }, fixPass: false, gaps: [] }
+    S.auditedTag = 'r0'
+    S.pos.A.tree = { hash: 'tree-a' }
+    const ready = L.readiness(S, 'A', 0, [], [])
+    const res = L.simpleResult(S, { W, ready, audit, report: L.simpleReport(S, { W, ready, audit }), retro: null })
+    assert.deepEqual([ready.state, res.final.snapshotTree, res.delivery], ['ready', 'tree-a', { status: 'pending', record: '/r/delivery.json' }])
+    assert.equal(planOutcome(res), 'ready')
+    delete S.pos.A.tree
+    const unmeasured = L.simpleResult(S, { W, ready, audit, report: res.report, retro: null })
+    assert.deepEqual([unmeasured.final.snapshotTree, unmeasured.delivery.status, planOutcome(unmeasured)], [null, 'not-ready', 'parked'])
+    S.pos.A.tree = { hash: 'tree-a' }
+    const blocked = { state: 'blocked', blocked: ['C1 unmet'], incomplete: [] }
+    assert.equal(planOutcome(L.simpleResult(S, { W, ready: blocked, audit, report: res.report, retro: null })), 'parked')
+  })
 })
 
 describe('the Feature tier', () => {
@@ -1494,6 +1516,27 @@ describe('the Feature tier', () => {
       ['done', 'feature', '/r/room/inc2/A.diff', 'refs/council/run-f/A-inc2', '/r/room/final/A.md', 2, 3])
     assert.ok(res.forTheOrchestrator.includes('built it in 2 increments') && res.forTheOrchestrator.includes('(correctness, design and tests)') && !res.forTheOrchestrator.includes('feature tier ('))
     assert.ok(L.routedResult(S, res).forTheOrchestrator.startsWith('The factory ran this at the feature tier (intake\'s choice)'))
+  })
+
+  test('Run-plan can commit a ready Feature result, routed to directly or handed up from Simple', () => {
+    const { L, S } = featureState()
+    const W = S.seats[0], outcome = { kind: 'consensus', W: 'A', voters: ['A', 'B'], via: 'votes', round: 1 }
+    const audit = { ran: true, checked: false, reviews: { correctness: { summary: 'ok', probes: [] }, design: { summary: 'ok', probes: [] }, tests: { summary: 'ok', probes: [] } }, fixPass: false, gaps: [], addressed: [], rereviews: {} }
+    const ready = L.readiness(S, 'A', 'K2', [], [])
+    const built = r => L.featureResult(S, { outcome, W, rows: L.rankPositions(S), table: L.positionTable(S), ready: r, audit, report: { markdown: 'body' }, retro: null })
+    S.pos.A.tree = { hash: 'tree-inc2' }
+    const routed = L.routedResult(S, built(ready))
+    assert.deepEqual([routed.final.snapshotTree, routed.delivery.status, planOutcome(routed)], ['tree-inc2', 'pending', 'ready'])
+    S.factory.escalation = { from: 'simple', to: 'feature', trigger: 'over-budget', why: 'the change is 400 lines', runDir: '/r0', earlier: null }
+    const up = L.escalatedResult(S, built(ready))
+    assert.deepEqual([up.escalated, up.final.snapshotTree, up.delivery.status, planOutcome(up)], [true, 'tree-inc2', 'pending', 'ready'])
+    assert.equal(L.routedResult(S, up), up, 'the route after a hand-up keeps its record')
+    assert.equal(planOutcome(L.escalatedResult(S, built({ state: 'incomplete', blocked: [], incomplete: ['suite not run'] }))), 'parked')
+    delete S.pos.A.tree
+    const unmeasured = L.escalatedResult(S, built(ready))
+    assert.deepEqual([unmeasured.delivery.status, planOutcome(unmeasured)], ['not-ready', 'parked'])
+    S.mode = 'design'
+    assert.equal(L.routedResult(S, built(ready)).delivery, undefined, 'only an implement result has a delivery')
   })
 
   test('prompts: plan mode for the debate, implement mode for the build, the build intro for the fix pass', () => {
