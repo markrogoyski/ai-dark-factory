@@ -8,7 +8,7 @@ const PAIR_LIVE_CHECK = { type: 'object', properties: {
 } }
 const PAIR_SETUP_SCHEMA = strict({ type: 'object', properties: {
   ...SETUP_SCHEMA.properties,
-  status: { type: 'string', enum: ['ok', 'dirty', 'needs-plan', 'needs-user', 'preflight', 'error'] },
+  status: { type: 'string', enum: ['ok', 'dirty', 'needs-plan', 'needs-commit', 'needs-user', 'preflight', 'error'] },
   repositoryNotes: { type: 'string', description: 'Repository observations, proposed interpretations, and actual tool/configuration paths; never replacement requirements.' },
   questions: PAIR_STRINGS,
   head: { type: 'string', description: 'The original full base commit from init.head / run.json; never a later snapshot.' },

@@ -66,7 +66,11 @@ For factory and council, preserve requested
 object as a file rather than interpolating it into a shell command. Pass absolute paths for
 documents in `plan`, including uncommitted plans; seats start from HEAD and cannot otherwise
 see those files. Never silently enable `allowDirty` or commit/stash the user's changes to get
-past a dirty-tree result.
+past a dirty-tree result. When the task builds on uncommitted changes, such as fixing review
+findings in an uncommitted fix, ask the user to commit them first (a WIP commit on their branch
+is fine and can be squashed after delivery). Never stash them and hand the run a patch, diff or
+stash to apply first: setup measures the baseline on HEAD without them, reviewers' checkouts lack
+them, and applying them in the worktree fails in the sandbox. Pair setup stops such a task.
 
 The factory/council Codex profile's default seats are Claude Opus, Codex Astra and Codex Sol, so it needs an
 authenticated `claude` CLI; reviewers and roles default to OpenAI models. Explicit Claude or

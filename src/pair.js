@@ -18,6 +18,7 @@ async function pairRun() {
       model: S.roles.setup.model, effort: 'medium' }, 'setup')
     if (setup?.status === 'needs-plan') return needsPlan(S, setup.planMissing, setup.runDir)
     if (setup?.status === 'preflight') return preflightStop(S, setup.preflight)
+    if (setup?.status === 'needs-commit') { S.pair.stop = pairNeedsCommit(setup.error); return pairResult(S) }
     if (setup?.status !== 'needs-user') break
     S.pair.stop = setup.error || 'Setup found conflicting requirements.'
     const stopped = await pairStop('setup', setup.questions, label)

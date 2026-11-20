@@ -26,8 +26,9 @@ authenticated CLIs. `--author sol --reviewer astra` uses only Codex models.
 
 ```text
   setup (Opus)        criteria, reference snapshots, the gate and its baseline; stops first
-     |                on needs-plan, a dirty tree, conflicting requirements, or a criterion
-     |                nothing in the run can verify (needs-user)
+     |                on needs-plan, a dirty tree, a task built on uncommitted changes,
+     |                conflicting requirements, or a criterion nothing in the run can
+     |                verify (needs-user)
      |
   baseline            natively, setup measured it; on the standalone runtime the runner
      |                measures the base itself (helper), outside setup's sandbox
@@ -71,6 +72,13 @@ Factory's pair strategy follows the same rule.
   The task itself is passed on unchanged; setup adds observations and interpretations beside it,
   and lists only what it has established (a doubt, or a check refused only in setup's sandbox, goes
   into the repository notes).
+- **Work not in HEAD.** When the task, context or a reference document tells the author to apply
+  a patch, diff, stash or saved snapshot first, or says the work to fix is uncommitted, setup
+  stops before creating the run (setup status `needs-commit`; the run ends `blocked`). The
+  baseline would be measured on HEAD without those changes, the reviewers' checkouts would lack
+  them, and applying them in the worktree fails in the sandbox. Commit them first (a WIP commit on
+  your branch is fine; squash it after delivery) and rerun; don't stash them and hand the run a
+  patch. Earlier commits, branches, and reference documents passed in `plan` are fine.
 - **Unverifiable criteria.** A criterion no evidence inside the run can meet (it needs
   post-delivery, production or live-service evidence) stops the run with `needs-user` before any
   author turn, with one question per criterion: rewrite it so the run can check it, or drop it.
@@ -261,7 +269,8 @@ setup's criterion nothing in the run can verify, an author's `needs-user`, a rev
 questions, and a design that used its [review allowance](#design-stage) without approval. Every
 other stop is final and carries no `resumable` flag or resume guidance: blocked, stalled, budget
 exhausted (`maxReviews`, `maxTurns` or `maxRunMin`; including a stop that asked questions but ran
-out of budget), failed, verification infrastructure failure, and a dirty tree.
+out of budget), failed, verification infrastructure failure, a dirty tree, and a task built on
+uncommitted changes.
 
 Question IDs Q1, Q2, … are unique across the run; a second stop continues the numbering.
 `questions` lists the current stop's as `{id, about, kind, question}`, and `report.markdown` lists

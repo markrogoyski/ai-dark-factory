@@ -98,6 +98,16 @@ function pairMeasurementView(S, m, schema) {
   return view
 }
 
+// Setup's stop for a task that builds on changes absent from HEAD. Orchestrators had stashed such
+// changes and told the author to apply them first; the baseline and the reviewers' checkouts then
+// lacked them, so the stop asks for a commit and says not to do that.
+function pairNeedsCommit(detail) {
+  return `The task builds on changes that are not in HEAD${oneLine(detail, 300) ? ` (${oneLine(detail, 300)})` : ''}. ` +
+    'Worktrees, the baseline measurement and every review start from HEAD, so the run cannot see them. ' +
+    'Commit them first (a work-in-progress commit on the branch is fine; it can be squashed after delivery), then rerun. ' +
+    'Don\'t stash them and hand the run a patch, diff or stash to apply.'
+}
+
 // The baseline note on the standalone runtime: the reason and the end of the failing output on one
 // line of at most 300 characters. A reason is capped at 120 characters when a tail follows it, so
 // the tail keeps at least its last 164 characters, where a test runner prints its summary.

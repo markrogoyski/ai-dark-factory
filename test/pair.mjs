@@ -650,6 +650,30 @@ test('dirty trees, absent references and missing criteria stop before author tur
   assert.equal(result.status, 'done')
 })
 
+// A task that tells the author to apply a stashed patch first ran with a baseline measured without
+// it and reviewers whose checkout lacked it. Setup stops instead, and the user commits the changes.
+test('a task that builds on changes absent from HEAD stops at setup and asks for a commit', async () => {
+  const error = 'The task says "BASELINE FIRST: git apply /tmp/fix.patch" before starting.'
+  for (const options of [{}, { native: true }, { factory: true }, { native: true, factory: true }, { args: { allowDirty: true } }]) {
+    const why = JSON.stringify(options)
+    const { result, calls, events } = await run({ ...options, setup: { status: 'needs-commit', error, runDir: '', runId: '', repoRoot: '', head: '', criteria: [], verify: '' } })
+    const setupPrompt = calls.find(c => c.kind === 'setup').prompt
+    assert.ok(setupPrompt.includes('Before step 2 creates the run, check that the work starts from HEAD.'), why)
+    assert.ok(setupPrompt.includes('return status "needs-commit"'), why)
+    assert.equal(result.status, 'blocked', why)
+    assert.ok(result.stopReason.startsWith('The task builds on changes that are not in HEAD (The task says "BASELINE FIRST: git apply /tmp/fix.patch" before starting.).'), why)
+    assert.match(result.stopReason, /Commit them first \(a work-in-progress commit on the branch is fine; it can be squashed after delivery\), then rerun\./, why)
+    assert.match(result.stopReason, /Don't stash them and hand the run a patch, diff or stash to apply\./, why)
+    assert.doesNotMatch(result.stopReason, /Tracked working-tree changes|allowDirty/, why)
+    assert.ok(!('resumable' in result), why)
+    assert.deepEqual(calls.filter(c => !['intake', 'record'].includes(c.kind)).map(c => c.kind), ['setup'], `${why}: nothing runs after setup`)
+    assert.ok(!events.includes('measure:base'), why)
+  }
+  // Without detail the reason still says what to do.
+  const bare = await run({ setup: { status: 'needs-commit', error: '' } })
+  assert.ok(bare.result.stopReason.startsWith('The task builds on changes that are not in HEAD. Worktrees'))
+})
+
 test('author questions and failures return unresolved results without inventing review approval', async () => {
   for (const status of ['needs-user', 'blocked']) {
     const { result } = await run({ author: a => ({ ...a, status, questions: ['Which compatibility behavior is required?'] }) })
