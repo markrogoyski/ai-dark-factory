@@ -94,6 +94,13 @@ The author drafts a design and a test contract (criterion IDs, inputs, expected 
 boundaries, changed/preserved purpose, test files, commands, fixtures) and reconciles setup's
 interpretations with the request.
 
+Neither participant runs the full verification command in design: setup, or the runner, already
+measured it on base. Focused checks are allowed for evidence: one test file or filter, one
+analyser on the files in question, probes, and (for the author) prototype code run against the
+existing tests from a scratch copy in the turn's probes directory, for example to show that a
+planned test fails on base or that a filter selects the intended tests. The author changes no
+tracked file in its worktree until implementation.
+
 - A criterion unsuitable for tests names an inspection and a reason.
 - A final whole-suite obligation is a gate check: `kind: "gate"`, `purpose: "preserved"`, the exact
   verification command, `file: ""`, `fixtures: []`. It needs no replay mapping and doesn't replace

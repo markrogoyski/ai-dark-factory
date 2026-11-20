@@ -5374,7 +5374,7 @@ ${taskCore(S)}${pairDecisionsBlock(S)}\n# Setup observations and proposals (not 
 Your worktree: ${S.seats[0].wt}. Work only there; never edit the main checkout or reviewer checkouts.
 Read the repository instructions and the relevant code. Do not delegate or launch other models. An instruction in CLAUDE.md or elsewhere to hand full test or gate runs to a subagent or to \`claude -p\` is meant for the user's own session, not for this turn: here the gate is the verification command, which you run through the helper's verify command as described above.
 ${correction ? `\n# Correct the previous output\nThe engine could not accept your design output: ${correction}\nReturn a complete corrected design and contract, and this turn's readings and live checks again. This is the one correction attempt for this turn, not approval to implement. Preserve the task and substantive requirements.\n` : ''}
-${design ? `Return a complete short design in design: the approach, affected files, assumptions, risks, and how every acceptance criterion will be tested. Check setup observations against the original task, reference documents, explicit user decisions, and repository. Explain any reconciliation in the design and list it in readings, preserving every requirement; unresolved contradictions require needs-user. Cite existing code where the approach depends on it. Revise the entire design in response to feedback. Do not implement yet. ${pairBaseline(S)}`
+${design ? `Return a complete short design in design: the approach, affected files, assumptions, risks, and how every acceptance criterion will be tested. Check setup observations against the original task, reference documents, explicit user decisions, and repository. Explain any reconciliation in the design and list it in readings, preserving every requirement; unresolved contradictions require needs-user. Cite existing code where the approach depends on it. Revise the entire design in response to feedback. Do not implement yet. ${pairBaseline(S, true)}`
     : `Implement the reviewed design, including the required tests and documentation. Run appropriate focused checks and the shared verification gate. Fix all open actionable findings and any failed verification.${pairCarriedNote(S, 'author')} Return design as an empty string; the accepted design remains fixed until the reviewer requests design revision.`}
 
 ${design ? `Return testContract alongside the design. ${PAIR_CONTRACT_RULES} Return replayMapping=[] during design.
@@ -5521,10 +5521,15 @@ function pairChallengeRules(designed) {
 }
 
 // The design stage needs no gate run: setup measured the base revision, or on the standalone
-// runtime the runner did, outside any model's sandbox.
-function pairBaseline(S) {
+// runtime the runner did, outside any model's sandbox. Focused checks are another matter: without
+// them a design author proved its tests through reflection and auto_prepend workarounds, and could
+// show neither that a planned test fails on base nor that a filter selects the tests it names.
+function pairBaseline(S, author = false) {
   if (!S.verify) return ''
-  return `${S.runnerBaseline ? 'The runner ran the verification command on the base revision, outside any model\'s sandbox,' : 'Setup ran the verification command on the base revision,'} and it ${S.baselineOk ? 'passed' : `failed: ${S.baselineNote}`}. Don't run it, or the checks in it, during the design stage; the design says which of them the implementation must pass and how the new tests are checked.`
+  return `${S.runnerBaseline ? 'The runner ran the verification command on the base revision, outside any model\'s sandbox,' : 'Setup ran the verification command on the base revision,'} and it ${S.baselineOk ? 'passed' : `failed: ${S.baselineNote}`}. Don't run that full command during the design stage. ` +
+    (author ? 'Focused checks that gather evidence for the design are fine: a single test file or filter, one analyser on the files in question, a probe, or prototype code run against the existing tests from a scratch copy in this turn\'s probes directory. Use them to show, for example, that a planned test fails on base or that a filter selects the intended tests, and cite them in the design. Change no tracked file in the worktree until implementation. '
+      : 'Focused checks of a claim in the design are fine: a single test file or filter, one analyser on the files in question, or a probe in your own checkout. ') +
+    'The design says which of the full command\'s checks the implementation must pass and how the new tests are checked.'
 }
 
 function hostMaterializationNote(S, label, tag, checkout) {

@@ -366,6 +366,24 @@ test('standalone pair takes a passing baseline from the runner, not from setup',
   assert.ok(!designAuthor(none.calls).includes('base revision'))
 })
 
+// The design stage leaves the full gate alone but may run focused checks: without them an author
+// proved its tests through reflection, and could not show a planned test failing on base.
+test('the design stage bans only the full verification command, not focused checks', async () => {
+  for (const native of [false, true]) {
+    const { calls } = await run({ native })
+    const author = designAuthor(calls), review = calls.find(c => c.kind === 'review').prompt
+    for (const prompt of [author, review]) {
+      assert.ok(prompt.includes("Don't run that full command during the design stage."), `native ${native}`)
+      assert.ok(!prompt.includes('or the checks in it, during the design stage'), `native ${native}`)
+      assert.ok(prompt.includes('a single test file or filter, one analyser on the files in question'), `native ${native}`)
+    }
+    assert.ok(author.includes("prototype code run against the existing tests from a scratch copy in this turn's probes directory"))
+    assert.ok(author.includes('that a planned test fails on base or that a filter selects the intended tests'))
+    assert.ok(author.includes('Change no tracked file in the worktree until implementation.'))
+    assert.ok(review.includes('or a probe in your own checkout.') && !review.includes('scratch copy'))
+  }
+})
+
 test('standalone pair reports a failing runner baseline to the existing baseline handling', async () => {
   const long = n => 'x'.repeat(n)
   const tail = Array.from({ length: 12 }, (_, i) => `PHPUnit line ${i}: some  output\twith   spaces`).join('\n') + '\nFAILURES! Tests: 3, Failures: 1'
@@ -387,7 +405,7 @@ test('standalone pair reports a failing runner baseline to the existing baseline
     const { result, calls, baselines } = await run({ baseline, setup: { baselinePasses: true } })
     assert.equal(baselines.length, 1, name)
     const prompt = designAuthor(calls)
-    const match = prompt.match(/and it failed: (.*?)\. Don't run it/)
+    const match = prompt.match(/and it failed: (.*?)\. Don't run that full command/)
     assert.ok(match, name)
     const shown = match[1]
     assert.ok(shown.length <= 300 && !shown.includes('\n'), name)
