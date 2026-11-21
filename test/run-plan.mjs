@@ -499,7 +499,8 @@ test('CLI routes run-plan inputs without a task and rejects checkpoint resume', 
 
 test('packaged CLI runs a Pair task through stub model CLIs and real delivery', async t => {
   const p = plan([{ ...task('sum'), workflow: 'pair', args: { author: 'sol', reviewer: 'astra', verify: 'node check.cjs' } }])
-  p.limits = { maxTurns: 5, taskMaxTurns: 5 }
+  // Setup, the spec review, two author turns and two reviews; the retro would be the seventh.
+  p.limits = { maxTurns: 6, taskMaxTurns: 6 }
   const f = fixture(t, p), bin = join(f.temp, 'bin')
   mkdirSync(bin)
   for (const name of ['codex', 'claude']) {
@@ -517,7 +518,7 @@ test('packaged CLI runs a Pair task through stub model CLIs and real delivery', 
   const output = JSON.parse(result.stdout)
   assert.equal(output.tasks?.sum.status, 'done', result.stdout + result.stderr)
   assert.equal(result.status, 2, 'Final acceptance remains pending at the hard turn limit')
-  assert.equal(output.budget.turns, 5)
+  assert.equal(output.budget.turns, 6)
   assert.equal(f.git('status', '--porcelain'), '')
 })
 

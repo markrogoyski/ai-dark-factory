@@ -41,9 +41,10 @@ into code review, where every open finding blocks readiness.
 `--no-design` (`design: false`) skips the design stage when the deliverable is itself a document
 or plan: the author writes it directly and review starts at the measured result. `--no-retro`
 (`retro: false`) skips the closing process retro.
-For Pair, use `--args-file` for `task`, `author`, `reviewer`, `maxReviews`, `maxDesignReviews`, `design`, `effort`, `context`,
-`plan`, `criteria`, `verify`, `repo`, `allowDirty`, `timeoutMin`, and `retro`. Tier, seats, panel, roles,
-spec, audit, and historical-evidence options belong to other workflows.
+For Pair, use `--args-file` for `task`, `author`, `reviewer`, `maxReviews`, `maxDesignReviews`, `design`, `spec`, `effort`, `context`,
+`plan`, `criteria`, `verify`, `repo`, `allowDirty`, `timeoutMin`, and `retro`. Pair's `spec` is `false` (skip the
+spec review of the criteria) or `{model, effort}`. Tier, seats, panel, roles, audit, and historical-evidence
+options belong to other workflows.
 
 Use `--workflow run-plan --plan-file /absolute/path/plan.json` when the user requests
 implementation of an entire plan with local commits. Run-plan owns task scheduling,

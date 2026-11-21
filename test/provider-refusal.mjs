@@ -38,9 +38,12 @@ test('ordinary unpinned headless Claude runs with Codex unavailable', async t =>
     assert.equal(call.args.includes('--disable-slash-commands'), false)
     assert.equal(call.args.includes('--strict-mcp-config'), false)
     assert.ok(call.args.includes('--permission-prompts'))
+    // The spec review reads the repository read-only; every other turn may write.
     const tools = call.args[call.args.indexOf('--tools') + 1]
-    assert.equal(tools, 'Bash,Read,Glob,Grep,Edit,Write')
+    assert.ok(['Bash,Read,Glob,Grep,Edit,Write', 'Read,Glob,Grep'].includes(tools), tools)
+    if (tools === 'Read,Glob,Grep') continue
     const settings = JSON.parse(call.args[call.args.indexOf('--settings') + 1])
     assert.equal(settings.sandbox.failIfUnavailable, true); assert.equal(settings.sandbox.allowUnsandboxedCommands, false)
   }
+  assert.equal(calls.filter(call => call.args[call.args.indexOf('--tools') + 1] === 'Read,Glob,Grep').length, 1, 'only the spec review is read-only')
 })

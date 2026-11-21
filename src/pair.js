@@ -4,87 +4,23 @@ async function pairRun() {
   // On the standalone runtime setup is a sandboxed model turn, so the runner measures the baseline
   // itself after setup returns; the flag tells setup not to (and is set on no other flow).
   S.runnerBaseline = !!hostRuntime
-  phase('Setup')
   // Native Claude workflows need a native transport for measurements. Prefer one of the two
   // selected participants; CLI seats and all Codex-host turns use their adapters. Setup is not a
   // transport: it runs on its role's model (Opus natively), since the run inherits its criteria.
   const native = [S.pairOptions.author, S.pairOptions.reviewer].find(s => s.vendor === 'claude')
   const transportModel = native ? native.model : 'haiku'
-  let setup
+  // Setup, then the spec review of its criteria. A spec stop the user answered runs setup again
+  // with the decisions, so the role that owns the criteria rewrites them, and the spec review
+  // reads the new ones.
   for (;;) {
-    // A conflict the user answered runs setup again, with the decisions, as a run of its own.
-    const label = !S.pair.setupAttempt ? 'setup' : `setup-answered${S.pair.setupAttempt > 1 ? `-${S.pair.setupAttempt}` : ''}`
-    setup = await ask(pairSetupPrompt(S), { label, phase: 'Setup', schema: PAIR_SETUP_SCHEMA,
-      model: S.roles.setup.model, effort: 'medium' }, 'setup')
-    if (setup?.status === 'needs-plan') return needsPlan(S, setup.planMissing, setup.runDir)
-    if (setup?.status === 'preflight') return preflightStop(S, setup.preflight)
-    if (setup?.status === 'needs-commit') { S.pair.stop = pairNeedsCommit(setup.error); return pairResult(S) }
-    if (setup?.status !== 'needs-user') break
-    S.pair.stop = setup.error || 'Setup found conflicting requirements.'
-    const stopped = await pairStop('setup', setup.questions, label)
+    const stopped = await pairSetup()
     if (stopped) return stopped
-    S.pair.setupAttempt++
-  }
-  if (!setup || setup.status === 'error' || !setup.runDir || !setup.runId || !setup.repoRoot || !/^[0-9a-f]{40,64}$/.test(setup.head || '')) {
-    S.pair.stop = setup?.error || 'Setup did not return a run.'
-    return pairResult(S, 'failed')
-  }
-  S.run = { runId: setup.runId, runDir: setup.runDir, repoRoot: setup.repoRoot, head: setup.head, room: `${setup.runDir}/room` }
-  S.seats = [{ L: 'A', ...S.lineup[0], wt: `${S.run.runDir}/wt/A`, active: true }]
-  if (((setup.dirty || []).length && !S.allowDirty) || setup.status === 'dirty') {
-    S.pair.stop = 'Tracked working-tree changes are absent from worktrees based on HEAD. Commit or stash them, or explicitly set allowDirty.'
-    return pairResult(S)
-  }
-  S.criteria = setup.criteria || []
-  S.repositoryNotes = setup.repositoryNotes || ''
-  S.verify = String(setup.verify || '').trim()
-  if (!hostRuntime) {
-    S.baselineOk = !S.verify || !!setup.baselinePasses
-    if (!S.baselineOk) S.baselineNote = oneLine(setup.baselineNote, 300) || 'no reason given'
-  }
-  S.refs = (setup.refs || []).filter(r => r.path?.startsWith(`${S.run.runDir}/refs/`))
-  const lost = setupLosses(S, S.criteria, S.verify)
-  if (!S.criteria.length || new Set(S.criteria.map(c => c.id)).size !== S.criteria.length || S.criteria.some(c => !c.id || !c.text) ||
-      S.refs.length !== (setup.refs || []).length || S.refs.length < S.plan.length || lost.length) {
-    S.pair.stop = `Setup omitted criteria, reference snapshots, or the requested verification command${lost.length ? `: it dropped ${lost.join('; ')}` : ''}.`
-    return pairResult(S)
-  }
-  // Checked in the run against a stand-in, and by the user against the real thing before delivery.
-  pairIngestLiveChecks(S, setup.liveChecks, 'setup')
-  // A supplied criterion no evidence inside the run can meet would block readiness after all the
-  // work, so the user rewrites or drops it before any author turn. Setup owns the criteria it
-  // wrote: one it still lists goes to the author and reviewer to check by inspection, not to the user.
-  const unverifiable = (setup.unverifiable || []).filter(u => String(u?.criterion || '').trim())
-  const supplied = unverifiable.filter(u => u.origin !== 'written')
-  for (const u of unverifiable.filter(u => u.origin === 'written'))
-    S.repositoryNotes = `${S.repositoryNotes ? `${S.repositoryNotes}\n` : ''}Setup could not find a run-time check for ${u.criterion}, which it wrote: ${oneLine(u.reason, 300) || 'no reason given'}. Check it by inspecting the code and the plan, and say so in the ${pairDesigned(S) ? 'design' : 'handoff'}.`
-  if (supplied.length) {
-    const text = id => S.criteria.find(c => c.id === id)?.text
-    S.pair.stop = `Setup found ${supplied.length === 1 ? 'a criterion' : 'criteria'} this run cannot verify: ${supplied.map(u => `${u.criterion} (${oneLine(u.reason, 300) || 'no reason given'})`).join('; ')}.`
-    for (const u of supplied) S.notes.push(`Setup found ${u.criterion} unverifiable inside the run: ${oneLine(u.reason, 300) || 'no reason given'}.`)
-    const stopped = await pairStop('criterion', supplied.map(u => ({ about: u.criterion,
-      question: `${u.criterion}${text(u.criterion) ? ` ("${oneLine(text(u.criterion), 200)}")` : ''} cannot be verified inside the run: ${oneLine(u.reason, 300) || 'no reason given'}. Rewrite it so the run can check it, or drop it?` })), 'setup')
-    if (stopped) return stopped
-    if (!S.criteria.length) { S.pair.stop = 'The user dropped every acceptance criterion, so the run has nothing to check.'; return pairResult(S) }
-  }
-  if (hostRuntime) {
-    // Measured by the runner process, outside any model's sandbox, with no model turn. Setup's
-    // baselinePasses and baselineNote are not used. The record stays out of S.pair.measurement, so
-    // the review tag and version remain at base until the first code measurement.
-    let base = null
-    if (S.verify) {
-      try {
-        base = await hostRuntime.measure({ run: S.run, seat: 'A', label: 'base' })
-      } catch (error) {
-        if (fatalTurnError(error)) throw error
-        base = { status: 'error', error: String(error?.message || error) }
-      }
-    }
-    pairBaselineResult(S, base)
+    const spec = await pairSpecReview()
+    if (spec === null) break
+    if (spec !== true) return spec
   }
   const p = S.pair
   log(`pair: ${S.pairOptions.author.name} authors; ${S.pairOptions.reviewer.name} reviews; budget ${S.pairOptions.maxReviews} reviews${pairDesigned(S) ? `, the design asking the user after ${S.pairOptions.maxDesignReviews}` : '; no design stage'}`)
-  pairMilestone(pairSetupLine(S))
   while (p.reviews.length < S.pairOptions.maxReviews) {
     let label = `pair-${p.stage}-${p.reviews.length + 1}`
     p.label = label
@@ -94,7 +30,7 @@ async function pairRun() {
       if (!pairDesigned(S) && author?.status === 'done') {
         // The author writes the contract with the deliverable; a malformed one, or a mapping that
         // doesn't fit it, gets the same single correction a malformed design contract gets.
-        const error = pairAdoptContract(S, author)
+        const error = pairAdoptContract(S, author) || pairSpecReadingsError(S, author)
         if (error) {
           p.author = author
           S.notes.push(`${label}: ${error} Requested one author correction.`)
@@ -106,7 +42,7 @@ async function pairRun() {
         p.author = author
         p.design = author.design
         p.testContract = author.testContract
-        const error = !author.design?.trim() ? 'The author returned no design.' : pairContractError(S, p.testContract)
+        const error = !author.design?.trim() ? 'The author returned no design.' : pairContractError(S, p.testContract) || pairSpecReadingsError(S, author)
         if (error) {
           S.notes.push(`${label}: ${error} Requested one author correction; no design approval was recorded.`)
           label += '-corrected'
@@ -242,6 +178,117 @@ async function pairRun() {
   }
   p.stop = `Review budget exhausted (${S.pairOptions.maxReviews}); work remains unresolved.`
   return pairResult(S)
+}
+
+// The spec review of setup's criteria (off with spec: false): one fresh reviewer, before any author
+// turn. A failed turn changes nothing but the notes. Findings a reading settles go to the author's
+// readings ledger; a conflict only the user can settle stops the run. Returns null to go on to
+// the author, true when the user answered the stop (setup runs again), or the stop's result.
+async function pairSpecReview() {
+  const r = S.specReviewers[0], p = S.pair
+  if (!r) return null
+  phase('Spec')
+  const label = p.spec.passes.length ? `spec-${p.spec.passes.length + 1}` : 'spec'
+  const prompt = pairSpecPrompt(S)
+  const res = r.vendor === 'claude' && !hostRuntime
+    ? await ask(prompt, { label, phase: 'Spec', schema: PAIR_SPEC_SCHEMA, model: r.model, effort: r.effort }, 'spec', r.name)
+    : await externalTurn({ key: label, threadKey: label, configKey: 'pair-spec', fresh: true, vendor: r.vendor, model: r.model, effort: r.effort,
+        role: 'spec', who: r.name, sandbox: 'read-only', cwd: S.run.repoRoot, writable: [], timeoutKind: 'spec' }, prompt, PAIR_SPEC_SCHEMA, label, 'Spec')
+  const pass = pairIngestSpec(S, res, label)
+  if (!res) S.notes.push(`The spec review (${label}, ${r.name}) returned nothing; the criteria stand as setup wrote them.`)
+  pairMilestone(pairSpecLine(S, pass))
+  const asked = p.spec.findings.filter(f => f.pass === label && f.to === 'user')
+  if (!asked.length) return null
+  pass.stopped = true
+  asked.forEach((f, i) => { f.asked = `Q${p.asked.length + i + 1}` })
+  p.stop = `The spec review found ${asked.length === 1 ? 'a conflict' : 'conflicts'} in the criteria that only the user can settle.`
+  const stopped = await pairStop('spec', asked.map(f => ({ about: pairSpecAbout(S, f), question: pairSpecQuestion(f) })), label)
+  if (stopped) return stopped
+  // Setup runs again in a run of its own; the stopped run's worktree stays until cleanup.
+  S.notes.push(`${label}: setup runs again with the user's answers, in a new run; remove ${S.run.runDir} with dark-factory cleanup --run-dir ${shq(S.run.runDir)} --all once this run is delivered.`)
+  p.setupAttempt++
+  return true
+}
+
+// Setup: the run, the criteria, the gate and its baseline, with setup's own stops. Returns the
+// stop's result, or null to go on. Run again after an answered spec stop, it replaces them all.
+async function pairSetup() {
+  phase('Setup')
+  let setup
+  for (;;) {
+    // A conflict the user answered runs setup again, with the decisions, as a run of its own.
+    const label = !S.pair.setupAttempt ? 'setup' : `setup-answered${S.pair.setupAttempt > 1 ? `-${S.pair.setupAttempt}` : ''}`
+    setup = await ask(pairSetupPrompt(S), { label, phase: 'Setup', schema: PAIR_SETUP_SCHEMA,
+      model: S.roles.setup.model, effort: 'medium' }, 'setup')
+    if (setup?.status === 'needs-plan') return needsPlan(S, setup.planMissing, setup.runDir)
+    if (setup?.status === 'preflight') return preflightStop(S, setup.preflight)
+    if (setup?.status === 'needs-commit') { S.pair.stop = pairNeedsCommit(setup.error); return pairResult(S) }
+    if (setup?.status !== 'needs-user') break
+    S.pair.stop = setup.error || 'Setup found conflicting requirements.'
+    const stopped = await pairStop('setup', setup.questions, label)
+    if (stopped) return stopped
+    S.pair.setupAttempt++
+  }
+  if (!setup || setup.status === 'error' || !setup.runDir || !setup.runId || !setup.repoRoot || !/^[0-9a-f]{40,64}$/.test(setup.head || '')) {
+    S.pair.stop = setup?.error || 'Setup did not return a run.'
+    return pairResult(S, 'failed')
+  }
+  S.run = { runId: setup.runId, runDir: setup.runDir, repoRoot: setup.repoRoot, head: setup.head, room: `${setup.runDir}/room` }
+  S.seats = [{ L: 'A', ...S.lineup[0], wt: `${S.run.runDir}/wt/A`, active: true }]
+  if (((setup.dirty || []).length && !S.allowDirty) || setup.status === 'dirty') {
+    S.pair.stop = 'Tracked working-tree changes are absent from worktrees based on HEAD. Commit or stash them, or explicitly set allowDirty.'
+    return pairResult(S)
+  }
+  S.criteria = setup.criteria || []
+  S.repositoryNotes = setup.repositoryNotes || ''
+  S.verify = String(setup.verify || '').trim()
+  if (!hostRuntime) {
+    S.baselineOk = !S.verify || !!setup.baselinePasses
+    S.baselineNote = S.baselineOk ? '' : oneLine(setup.baselineNote, 300) || 'no reason given'
+  }
+  S.refs = (setup.refs || []).filter(r => r.path?.startsWith(`${S.run.runDir}/refs/`))
+  const lost = setupLosses(S, S.criteria, S.verify)
+  if (!S.criteria.length || new Set(S.criteria.map(c => c.id)).size !== S.criteria.length || S.criteria.some(c => !c.id || !c.text) ||
+      S.refs.length !== (setup.refs || []).length || S.refs.length < S.plan.length || lost.length) {
+    S.pair.stop = `Setup omitted criteria, reference snapshots, or the requested verification command${lost.length ? `: it dropped ${lost.join('; ')}` : ''}.`
+    return pairResult(S)
+  }
+  // Checked in the run against a stand-in, and by the user against the real thing before delivery.
+  S.pair.liveChecks = []
+  pairIngestLiveChecks(S, setup.liveChecks, 'setup')
+  // A supplied criterion no evidence inside the run can meet would block readiness after all the
+  // work, so the user rewrites or drops it before any author turn. Setup owns the criteria it
+  // wrote: one it still lists goes to the author and reviewer to check by inspection, not to the user.
+  const unverifiable = (setup.unverifiable || []).filter(u => String(u?.criterion || '').trim())
+  const supplied = unverifiable.filter(u => u.origin !== 'written')
+  for (const u of unverifiable.filter(u => u.origin === 'written'))
+    S.repositoryNotes = `${S.repositoryNotes ? `${S.repositoryNotes}\n` : ''}Setup could not find a run-time check for ${u.criterion}, which it wrote: ${oneLine(u.reason, 300) || 'no reason given'}. Check it by inspecting the code and the plan, and say so in the ${pairDesigned(S) ? 'design' : 'handoff'}.`
+  if (supplied.length) {
+    const text = id => S.criteria.find(c => c.id === id)?.text
+    S.pair.stop = `Setup found ${supplied.length === 1 ? 'a criterion' : 'criteria'} this run cannot verify: ${supplied.map(u => `${u.criterion} (${oneLine(u.reason, 300) || 'no reason given'})`).join('; ')}.`
+    for (const u of supplied) S.notes.push(`Setup found ${u.criterion} unverifiable inside the run: ${oneLine(u.reason, 300) || 'no reason given'}.`)
+    const stopped = await pairStop('criterion', supplied.map(u => ({ about: u.criterion,
+      question: `${u.criterion}${text(u.criterion) ? ` ("${oneLine(text(u.criterion), 200)}")` : ''} cannot be verified inside the run: ${oneLine(u.reason, 300) || 'no reason given'}. Rewrite it so the run can check it, or drop it?` })), 'setup')
+    if (stopped) return stopped
+    if (!S.criteria.length) { S.pair.stop = 'The user dropped every acceptance criterion, so the run has nothing to check.'; return pairResult(S) }
+  }
+  if (hostRuntime) {
+    // Measured by the runner process, outside any model's sandbox, with no model turn. Setup's
+    // baselinePasses and baselineNote are not used. The record stays out of S.pair.measurement, so
+    // the review tag and version remain at base until the first code measurement.
+    let base = null
+    if (S.verify) {
+      try {
+        base = await hostRuntime.measure({ run: S.run, seat: 'A', label: 'base' })
+      } catch (error) {
+        if (fatalTurnError(error)) throw error
+        base = { status: 'error', error: String(error?.message || error) }
+      }
+    }
+    pairBaselineResult(S, base)
+  }
+  pairMilestone(pairSetupLine(S))
+  return null
 }
 
 // Every stop that asks the user. Returns the stop's result, or null once the answers in

@@ -27,7 +27,7 @@ Return up to 3 things that worked and should be kept, and 3 to 5 changes, the mo
 1. **<change>** <why>. Evidence: <evidence>. Where: <where>.
 ```
 Don't copy the process notes or run facts into it; the next command attaches them exactly.
-2. Run this with the Bash tool, exactly as written: dark-factory retro --run-dir '/repo/.council/pair-test' --expect 1008-da0e5a47
+2. Run this with the Bash tool, exactly as written: dark-factory retro --run-dir '/repo/.council/pair-test' --expect 1002-d0f9eaaa
    The last line it prints is JSON. "ok": set saved to its "path". "sandboxed": run the same command again with the sandbox disabled (dangerouslyDisableSandbox: true). "error", or "sandboxed" again: set saved to "" and error to what it printed.
 
 # The report
@@ -45,19 +45,24 @@ Replay: 4 file/command records; 0 overlay exclusions. Base outcomes require revi
 How the run went:
 
 1. Setup: 1 acceptance criterion (C1); gate `node test.cjs` passing at base.
-2. Claude Opus drafted the design. Proposed reading R1 of C1: Runs on at least Node 20 and 22.
-3. Design review 1/8 by Codex Astra: incomplete (Reading R1 needs a user decision). Reading R1 goes to the user. Criteria all met.
-4. Codex Astra asked the user a question: Q1 (about R1) R1 read C1 as a minimum; keep the list exact, or allow Node 24?
-5. The user answered Q1; the run continues.
-6. Claude Opus revised the design.
-7. Design review 2/8 by Codex Astra: approved. Accepted reading R1. Criteria all met.
-8. Claude Opus implemented the approved design. The gate passed on its snapshot.
-9. Code review 3/8 by Codex Astra: approved. Criteria all met.
-10. Ready after 3 reviews of 8.
+2. Spec review by Codex Astra: no problems in the criteria.
+3. Claude Opus drafted the design. Proposed reading R1 of C1: Runs on at least Node 20 and 22.
+4. Design review 1/8 by Codex Astra: incomplete (Reading R1 needs a user decision). Reading R1 goes to the user. Criteria all met.
+5. Codex Astra asked the user a question: Q1 (about R1) R1 read C1 as a minimum; keep the list exact, or allow Node 24?
+6. The user answered Q1; the run continues.
+7. Claude Opus revised the design.
+8. Design review 2/8 by Codex Astra: approved. Accepted reading R1. Criteria all met.
+9. Claude Opus implemented the approved design. The gate passed on its snapshot.
+10. Code review 3/8 by Codex Astra: approved. Criteria all met.
+11. Ready after 3 reviews of 8.
 
 Points of interest:
 
 - Codex Astra accepted Claude Opus's reading R1 of C1: Runs on at least Node 20 and 22.
+
+Specification review:
+
+- spec by Codex Astra: no problems in the criteria.
 
 User decisions:
 
@@ -67,7 +72,7 @@ R1: reading accepted — C1 read as: Runs on at least Node 20 and 22. (The user 
 
 # Process notes and run facts
 
-=====BEGIN PAYLOAD 1008-da0e5a47=====
+=====BEGIN PAYLOAD 1002-d0f9eaaa=====
 ## Process notes
 
 - None: no turn reported anything in its way.
@@ -77,11 +82,11 @@ R1: reading accepted — C1 read as: Runs on at least Node 20 and 22. (The user 
 - Run pair-test in /repo, implement mode. Task: Implement the behavior
 - Seats: A=Claude Opus (high). Panel: . Checkers: sonnet.
 - Outcome: the pair strategy, Claude Opus authoring and Codex Astra reviewing; 3 of at most 8 reviews (design 2, asking the user after every 3 without approval, code 1), ended at the code stage. Findings: none. Verification command: `node test.cjs`. Questions for the user: Q1 (about R1, asked in review pair-design-1); answered: Q1.
-- Claude agent turns: 10 (setup 1, author 3, relay 3, checker 3). Codex turns: 3 (reviewer 3).
-- Codex and Gemini turn times: median 1s; slowest review-pair-design-1 1s, review-pair-design-2 1s, review-pair-code-3 1s.
+- Claude agent turns: 11 (setup 1, relay 4, author 3, checker 3). Codex turns: 4 (spec 1, reviewer 3).
+- Codex and Gemini turn times: median 1s; slowest spec 1s, review-pair-design-1 1s, review-pair-design-2 1s.
 - Ledger: 0 items (), 0 challenges, 0 ruled by the panel. Questions raised: 0.
 - Ledger by kind: .
 - Votes by round: none.
 - Final readiness: ready: the final version was checked and nothing known stands against it.
 - Problems during the run: none.
-=====END PAYLOAD 1008-da0e5a47=====
+=====END PAYLOAD 1002-d0f9eaaa=====

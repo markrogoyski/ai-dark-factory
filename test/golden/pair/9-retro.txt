@@ -27,7 +27,7 @@ Return up to 3 things that worked and should be kept, and 3 to 5 changes, the mo
 1. **<change>** <why>. Evidence: <evidence>. Where: <where>.
 ```
 Don't copy the process notes or run facts into it; the next command attaches them exactly.
-2. Run this with the Bash tool, exactly as written: dark-factory retro --run-dir '/repo/.council/pair-test' --expect 939-179baf47
+2. Run this with the Bash tool, exactly as written: dark-factory retro --run-dir '/repo/.council/pair-test' --expect 933-92ea2df2
    The last line it prints is JSON. "ok": set saved to its "path". "sandboxed": run the same command again with the sandbox disabled (dangerouslyDisableSandbox: true). "error", or "sandboxed" again: set saved to "" and error to what it printed.
 
 # The report
@@ -45,17 +45,22 @@ Replay: 4 file/command records; 0 overlay exclusions. Base outcomes require revi
 How the run went:
 
 1. Setup: 1 acceptance criterion (C1); gate `node test.cjs` passing at base.
-2. Claude Opus drafted the design. Proposed reading R1 of C1: Runs on at least Node 20 and 22.
-3. Design review 1/8 by Codex Astra: changes requested. New: P1 (major) Cover the boundary case. Accepted reading R1. Criteria all met.
-4. Claude Opus revised the design. No reply to P1.
-5. Design review 2/8 by Codex Astra: approved. Fixed P1. Criteria all met.
-6. Claude Opus implemented the approved design. The gate passed on its snapshot.
-7. Code review 3/8 by Codex Astra: approved. Criteria all met.
-8. Ready after 3 reviews of 8.
+2. Spec review by Codex Astra: no problems in the criteria.
+3. Claude Opus drafted the design. Proposed reading R1 of C1: Runs on at least Node 20 and 22.
+4. Design review 1/8 by Codex Astra: changes requested. New: P1 (major) Cover the boundary case. Accepted reading R1. Criteria all met.
+5. Claude Opus revised the design. No reply to P1.
+6. Design review 2/8 by Codex Astra: approved. Fixed P1. Criteria all met.
+7. Claude Opus implemented the approved design. The gate passed on its snapshot.
+8. Code review 3/8 by Codex Astra: approved. Criteria all met.
+9. Ready after 3 reviews of 8.
 
 Points of interest:
 
 - Codex Astra accepted Claude Opus's reading R1 of C1: Runs on at least Node 20 and 22.
+
+Specification review:
+
+- spec by Codex Astra: no problems in the criteria.
 
 P1: fixed — Cover the boundary case. (The boundary appears in the design.)
 
@@ -63,7 +68,7 @@ R1: reading accepted — C1 read as: Runs on at least Node 20 and 22. (The task 
 
 # Process notes and run facts
 
-=====BEGIN PAYLOAD 939-179baf47=====
+=====BEGIN PAYLOAD 933-92ea2df2=====
 ## Process notes
 
 - None: no turn reported anything in its way.
@@ -73,11 +78,11 @@ R1: reading accepted — C1 read as: Runs on at least Node 20 and 22. (The task 
 - Run pair-test in /repo, implement mode. Task: Implement the behavior
 - Seats: A=Claude Opus (high). Panel: . Checkers: sonnet.
 - Outcome: the pair strategy, Claude Opus authoring and Codex Astra reviewing; 3 of at most 8 reviews (design 2, asking the user after every 3 without approval, code 1), ended at the code stage. Findings: design major fixed 1. Verification command: `node test.cjs`.
-- Claude agent turns: 8 (setup 1, author 3, relay 3, checker 1). Codex turns: 3 (reviewer 3).
-- Codex and Gemini turn times: median 1s; slowest review-pair-design-1 1s, review-pair-design-2 1s, review-pair-code-3 1s.
+- Claude agent turns: 9 (setup 1, relay 4, author 3, checker 1). Codex turns: 4 (spec 1, reviewer 3).
+- Codex and Gemini turn times: median 1s; slowest spec 1s, review-pair-design-1 1s, review-pair-design-2 1s.
 - Ledger: 0 items (), 0 challenges, 0 ruled by the panel. Questions raised: 0.
 - Ledger by kind: .
 - Votes by round: none.
 - Final readiness: ready: the final version was checked and nothing known stands against it.
 - Problems during the run: none.
-=====END PAYLOAD 939-179baf47=====
+=====END PAYLOAD 933-92ea2df2=====

@@ -7,7 +7,9 @@ function newPairState() {
     // The author's reply to each finding it answered (pairIngestReplies).
     replies: [],
     // One entry per design review: new findings, design findings left open, and the design's size.
-    designRounds: [] }
+    designRounds: [],
+    // The spec review after setup (pairIngestSpec): one pass per setup, and its findings S1, S2, …
+    spec: { passes: [], findings: [] } }
 }
 
 // Pair decisions are shared by both hosts. Only the reviewer can close findings.
@@ -27,7 +29,7 @@ function pairDesigned(S) {
 
 function parsePairConfig(args) {
   const raw = parsePairArgs(args)
-  for (const key of ['tier', 'seats', 'simple', 'panel', 'spec', 'audit', 'roles', 'evidence']) {
+  for (const key of ['tier', 'seats', 'simple', 'panel', 'audit', 'roles', 'evidence']) {
     if (raw[key] !== undefined) throw new Error(`pair: ${key} is not a pair option; use author, reviewer, and maxReviews.`)
   }
   if (raw.mode && raw.mode !== 'implement') throw new Error('pair: this workflow delivers an implementation.')
@@ -43,6 +45,7 @@ function parsePairConfig(args) {
   const maxDesignReviews = raw.maxDesignReviews === undefined ? designDefault : Number(raw.maxDesignReviews)
   if (!Number.isSafeInteger(maxDesignReviews) || maxDesignReviews < 1 || maxDesignReviews > designCap)
     throw new Error(`pair: maxDesignReviews must be an integer from 1 to maxReviews - 1 (${designCap}).`)
+  const spec = parsePairSpec(raw.spec, reviewer)
   // The process retro is on unless retro: false (--no-retro in a string task), as in the other workflows.
   const config = parseConfig({ ...raw, mode: 'implement',
     simple: { implementer: author.key, reviewer: reviewer.key } }, { workflow: 'pair', tier: 'simple' })
@@ -59,10 +62,22 @@ function parsePairConfig(args) {
   const retro = !config.roles.retro ? null : used.includes(config.roles.retro.vendor) ? config.roles.retro
     : parseSeat(used.includes('claude') ? 'sonnet' : author.key, ROLE_EFFORT.retro)
   // Reuse setup, transport and the retro, without acquiring council roles or Simple escalation rules.
-  return { ...config, raw, tier: 'pair', simple: null, panel: [], specReviewers: [],
+  return { ...config, raw, tier: 'pair', simple: null, panel: [], specReviewers: spec ? [{ ...hostSeat(config.host, spec), lens: 'criteria' }] : [],
     roles: { ...(retro ? { retro } : {}), setup }, lineup: [hostSeat(config.host, author)],
     auditors: [{ ...hostSeat(config.host, reviewer), lens: 'review', id: 'PR' }],
     pairOptions: { author, reviewer, maxReviews, maxDesignReviews, design, answers: pairAnswersOf(raw.clarifications) } }
+}
+
+// The spec review between setup and the first author turn: one fresh reviewer reads the criteria
+// against the task, its documents, the run's rules and the code. By default it is the pair's
+// reviewer (another vendor than the author) at medium effort, a quick read rather than a design
+// review. spec: false turns it off; {model, effort} swaps either. Returns the seat, or null.
+function parsePairSpec(v, reviewer) {
+  if (v === false) return null
+  if (v !== undefined && v !== true && (!v || typeof v !== 'object' || Array.isArray(v) || Object.keys(v).some(k => !['model', 'effort'].includes(k))))
+    throw new Error('pair: spec must be false, to skip the spec review, or {model, effort}.')
+  const pick = v && typeof v === 'object' ? v : {}
+  return parseSeat(pick.model || reviewer.key, pick.effort || ROLE_EFFORT.spec)
 }
 
 // Without a design stage the contract is the author's to revise with the code, so it is part of
@@ -248,6 +263,104 @@ function pairIngestLiveChecks(S, list, source) {
     added.push(entry)
   }
   return added
+}
+
+// The spec review may stop the run for the user this many times. Each answered stop runs setup
+// and the spec review again; past the limit, a conflict goes to the author like any other finding,
+// and the author's own needs-user covers it.
+const PAIR_SPEC_STOPS = 2
+
+// One spec review pass (res is null when the turn failed). Each finding gets an ID, S1, S2, …
+// across the run, and goes to the user (a conflict no reading settles) or to the author (anything a
+// reading settles). A question the user already answered, word for word, goes to the author, as
+// does every conflict once the run has stopped PAIR_SPEC_STOPS times for the spec review. Returns
+// the pass: {label, reviewer, ok, summary, findings: [IDs], stopped}.
+function pairIngestSpec(S, res, label) {
+  const p = S.pair, sp = p.spec, text = v => String(v ?? '').trim(), same = v => text(v).replace(/\s+/g, ' ')
+  const list = v => (Array.isArray(v) ? v : []).map(text).filter(Boolean)
+  const pass = { label, reviewer: S.specReviewers[0]?.name || '', ok: !!res, summary: text(res?.summary), findings: [], stopped: false }
+  sp.passes.push(pass)
+  const stops = sp.passes.filter(x => x.stopped).length
+  const answered = new Set(sp.findings.filter(f => f.to === 'user').map(f => same(f.question)))
+  for (const f of (Array.isArray(res?.findings) ? res.findings : []).slice(0, 8)) {
+    if (!text(f?.statement)) continue
+    const user = f.settle === 'user'
+    const question = user ? text(f.question) || text(f.statement) : ''
+    const to = user && stops < PAIR_SPEC_STOPS && !answered.has(same(question)) ? 'user' : 'author'
+    const id = `S${sp.findings.length + 1}`
+    sp.findings.push({ id, pass: label, criteria: list(f.criteria), statement: text(f.statement), quoted: list(f.quoted), evidence: text(f.evidence),
+      settle: user ? 'user' : 'reading', reading: text(f.reading), question, to, asked: '' })
+    pass.findings.push(id)
+  }
+  return pass
+}
+
+// The findings the author answers: the latest pass's, since an earlier pass reviewed criteria a
+// later setup replaced.
+function pairSpecFindings(S) {
+  const sp = S.pair.spec, last = sp?.passes.at(-1)
+  return last ? sp.findings.filter(f => f.pass === last.label && f.to === 'author') : []
+}
+
+// A spec finding is answered by a reading that cites its ID.
+const pairCites = (r, id) => new RegExp(`\\b${id}\\b`).test(['requirement', 'literal', 'reading', 'reason'].map(k => String(r?.[k] ?? '')).join(' '))
+
+// The spec findings that neither the ledger nor this author turn's readings answer, as one
+// correction's reason, or null. Checked until the first review; from then on the reviewer files a
+// spec finding no reading answers as a finding.
+function pairSpecReadingsError(S, author) {
+  if (S.pair.reviews.length) return null
+  const readings = [...S.pair.readings, ...(Array.isArray(author?.readings) ? author.readings : [])]
+  const open = pairSpecFindings(S).filter(f => !readings.some(r => pairCites(r, f.id))).map(f => f.id)
+  if (!open.length) return null
+  return `The readings answer no spec ${open.length === 1 ? 'finding' : 'findings'} ${open.join(', ')}. List a reading for each, citing its ID in requirement (for example "${open[0]}, C1"), with what the work does about it.`
+}
+
+// What a spec finding to the user is about: its first criterion that exists, or none.
+function pairSpecAbout(S, f) {
+  return f.criteria.find(id => S.criteria.some(c => c.id === id)) || 'none'
+}
+
+// A spec finding as the user is asked it, with the requirements it quotes.
+function pairSpecQuestion(f) {
+  return `${f.question}${f.quoted.length ? ` Requirements as written: ${f.quoted.join('; ')}` : ''}`
+}
+
+// The story line after a spec review pass.
+function pairSpecLine(S, pass) {
+  const by = `Spec review by ${pass.reviewer}`
+  if (!pass.ok) return `${by} returned nothing; the criteria stand as setup wrote them.`
+  const fs = pass.findings.map(id => S.pair.spec.findings.find(f => f.id === id))
+  if (!fs.length) return `${by}: no problems in the criteria.`
+  const part = (to, words) => {
+    const xs = fs.filter(f => f.to === to)
+    return xs.length ? ` ${words}: ${xs.map(f => `${f.id}${f.criteria.length ? ` (${f.criteria.join(', ')})` : ''} ${pairBrief(f.statement, 140)}`).join('; ')}.` : ''
+  }
+  return `${by}: ${plural(fs.length, 'finding')}.${part('author', 'For the author')}${part('user', 'For the user')}`
+}
+
+// The report's account of the spec review: each pass, each finding and what became of it.
+function pairSpecSection(S) {
+  const sp = S.pair.spec, p = S.pair
+  if (!sp?.passes.length) return ''
+  const latest = sp.passes.at(-1).label
+  const fate = f => {
+    if (f.to === 'user') {
+      const d = p.decisions.find(d => d.id === f.asked)
+      return !f.asked ? 'for the user, not asked' : d ? `asked the user as ${f.asked}, who answered: ${pairBrief(d.answer, 200)}` : `asked the user as ${f.asked}, unanswered`
+    }
+    if (f.pass !== latest) return 'for the author, but setup ran again before any author turn'
+    const rs = p.readings.filter(r => pairCites(r, f.id))
+    return rs.length ? `for the author: ${rs.map(r => `reading ${r.id}, ${r.status}`).join('; ')}` : 'for the author: no reading answers it'
+  }
+  const lines = []
+  for (const pass of sp.passes) {
+    lines.push(`- ${pass.label} by ${pass.reviewer}: ${!pass.ok ? 'returned nothing; the criteria stand as setup wrote them.'
+      : sentence(pairBrief(pass.summary, 400) || (pass.findings.length ? 'no summary' : 'no problems in the criteria'))}`)
+    for (const f of pass.findings.map(id => sp.findings.find(f => f.id === id)))
+      lines.push(`  - ${f.id}${f.criteria.length ? ` (${f.criteria.join(', ')})` : ''}: ${pairBrief(f.statement, 300)} → ${fate(f)}.`)
+  }
+  return `Specification review:\n\n${lines.join('\n')}`
 }
 
 // Every reading still proposed needs exactly one ruling, with evidence, under its ID. needs-user
@@ -821,7 +934,7 @@ function pairReviewLine(S, review, before) {
 
 function pairQuestionsLine(S, kind, questions) {
   if (kind === 'design') return `${pairDesignStopReason(S)} The run asked the user ${questions.map(q => q.id).join(', ')}: continue the design with a scope decision, start the implementation with the open design findings, or stop.`
-  const who = kind === 'reviewer' ? S.pairOptions.reviewer.name : kind === 'author' ? S.pairOptions.author.name : 'Setup'
+  const who = kind === 'reviewer' ? S.pairOptions.reviewer.name : kind === 'author' ? S.pairOptions.author.name : kind === 'spec' ? 'The spec review' : 'Setup'
   return `${who} asked the user ${questions.length === 1 ? 'a question' : `${questions.length} questions`}: ${questions.map(q => `${q.id}${q.about !== 'none' ? ` (about ${q.about})` : ''} ${pairBrief(q.question.split(' Requirements as written:')[0], 200)}`).join('; ')}`.replace(/[^.!?…]$/, '$&.')
 }
 
@@ -896,6 +1009,7 @@ function pairResult(S, status = 'blocked') {
     ...ready.infrastructure, ...ready.blocked, ...ready.incomplete,
     `How the run went:\n\n${[...(S.story || []), pairEndLine(S, status, ready)].map((line, i) => `${i + 1}. ${line}`).join('\n')}`,
     ...(highlights.length ? [`Points of interest:\n\n${highlights.map(h => `- ${h}`).join('\n')}`] : []),
+    ...(pairSpecSection(S) ? [pairSpecSection(S)] : []),
     ...(questions.length ? [`Questions for the user (answer each under its ID):\n\n${questions.map(q => `- ${q.id} (about ${q.about}): ${q.question}`).join('\n')}`] : []),
     ...(p.decisions.length ? [`User decisions:\n\n${p.decisions.map(d => `- ${d.id} (about ${d.about}; asked in ${d.label}): ${d.question} Answer: ${d.answer}` +
       `${typeof d.criterion === 'string' ? ` ${d.about} now reads: ${d.criterion}` : d.drop ? ` ${d.about} was dropped.` : d.implement ? ' The implementation started with the open design findings carried into code review.' : ''}`).join('\n')}`] : []),
@@ -920,7 +1034,7 @@ function pairResult(S, status = 'blocked') {
     room: S.run?.room || null, refs: S.refs, stage: p.stage, stopReason: p.stop,
     design: p.design, testContract: p.approvedContract || p.testContract, replayMapping: p.replayMapping,
     author: S.pairOptions.author.name, reviewer: S.pairOptions.reviewer.name,
-    reviews: p.reviews, findings: p.findings, readings: p.readings, liveChecks: live, questions, decisions: p.decisions, unusedAnswers: unused,
+    reviews: p.reviews, findings: p.findings, readings: p.readings, spec: p.spec, liveChecks: live, questions, decisions: p.decisions, unusedAnswers: unused,
     ...(resumable ? { resumable: true, resumeSteps } : {}), notes: S.notes,
     report: { markdown: report },
     final: { author: 'A', model: S.pairOptions.author.name, summary: p.author?.summary || '',

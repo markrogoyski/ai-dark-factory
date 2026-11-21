@@ -47,7 +47,7 @@ test('launch report blocks on missing CLIs or documents and only warns about tra
   assert.equal(ready.status, 'ready'); assert.match(ready.warnings[0], /a\.js/); assert.equal(ready.authentication, 'unknown')
   const blocked = launchReport({}, requirements, { vendors: { codex: { ok: true } }, missing: ['/abs/plan.md'], dirty: [] })
   assert.equal(blocked.status, 'blocked')
-  assert.ok(blocked.blocking.some(line => /^claude CLI \(review\)/.test(line)))
+  assert.ok(blocked.blocking.some(line => /^claude CLI \(review, spec-review\)/.test(line)))
   assert.ok(blocked.blocking.some(line => line.includes('/abs/plan.md')))
   const allowed = launchRequirements({}, { workflow: 'pair', args: { task: 'x', allowDirty: true } })
   assert.deepEqual(launchReport({}, allowed, { vendors: { codex: { ok: true }, claude: { ok: true } }, dirty: ['a.js'] }).warnings, [])

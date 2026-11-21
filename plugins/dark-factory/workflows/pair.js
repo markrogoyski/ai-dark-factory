@@ -1,9 +1,10 @@
 export const meta = {
   name: 'pair',
   description: 'One author and one independent reviewer take a task from design through implementation, repeating review until the verified result has no open findings',
-  whenToUse: 'Use for a scoped implementation with one author and one reviewer. The author drafts a design, revises it until review passes, implements it, and fixes review findings until the exact measured snapshot passes review and required checks. No council, voting, or automatic escalation. Defaults to Claude Opus author and Codex Astra reviewer in Claude Code; Codex Astra author and Claude Opus reviewer in Codex. Object args: {task, author, reviewer, maxReviews, maxDesignReviews, design, effort, plan, context, criteria, verify, repo, allowDirty, timeoutMin, retro}. String tasks may start with --author opus --reviewer astra --max-reviews 8 --max-design-reviews 3 --no-design --no-retro. Pass design: false (--no-design) when the deliverable is itself a document or plan: the author writes it directly and review starts at the measured result, instead of paying for a design that is the deliverable. maxReviews is the total review budget across design and code (default 8); exhaustion or stalled progress returns unresolved work, never success. A design not approved after maxDesignReviews reviews (default 3) stops for the user: answer to continue the design with a scope decision, or with implement: true to start the implementation with the open design findings carried into code review. Minor design findings do not hold the design; they carry into code review. Pass absolute paths in plan for uncommitted reference documents. When the task builds on uncommitted changes (for example fixing review findings in an uncommitted fix), ask the user to commit them first (a WIP commit is fine); never stash them and tell the run to apply a patch, diff or stash, since the baseline and the reviewers start from HEAD without them. Work takes place in a separate worktree from HEAD; review contexts are fresh. Inspect final.readiness and present remaining findings before delivery. Apply the reviewed snapshot only within the user\'s authorization, then use dark-factory verify-delivery to check the delivered bytes and gate. The run ends with a process retro on the workflow; pass retro: false (--no-retro) to skip it. This workflow does not publish, deploy, or automatically start a council.',
+  whenToUse: 'Use for a scoped implementation with one author and one reviewer. The author drafts a design, revises it until review passes, implements it, and fixes review findings until the exact measured snapshot passes review and required checks. No council, voting, or automatic escalation. Defaults to Claude Opus author and Codex Astra reviewer in Claude Code; Codex Astra author and Claude Opus reviewer in Codex. Object args: {task, author, reviewer, maxReviews, maxDesignReviews, design, spec, effort, plan, context, criteria, verify, repo, allowDirty, timeoutMin, retro}. String tasks may start with --author opus --reviewer astra --max-reviews 8 --max-design-reviews 3 --no-design --no-retro. Pass design: false (--no-design) when the deliverable is itself a document or plan: the author writes it directly and review starts at the measured result, instead of paying for a design that is the deliverable. Before the first author turn, one fresh reviewer (the reviewer\'s model, medium effort) checks setup\'s criteria for conflicts with each other, the task, the documents, the run\'s rules and the code: a conflict only the user can settle stops for the user, and the answer reruns setup; spec: false skips it, spec: {model, effort} swaps it. maxReviews is the total review budget across design and code (default 8); exhaustion or stalled progress returns unresolved work, never success. A design not approved after maxDesignReviews reviews (default 3) stops for the user: answer to continue the design with a scope decision, or with implement: true to start the implementation with the open design findings carried into code review. Minor design findings do not hold the design; they carry into code review. Pass absolute paths in plan for uncommitted reference documents. When the task builds on uncommitted changes (for example fixing review findings in an uncommitted fix), ask the user to commit them first (a WIP commit is fine); never stash them and tell the run to apply a patch, diff or stash, since the baseline and the reviewers start from HEAD without them. Work takes place in a separate worktree from HEAD; review contexts are fresh. Inspect final.readiness and present remaining findings before delivery. Apply the reviewed snapshot only within the user\'s authorization, then use dark-factory verify-delivery to check the delivered bytes and gate. The run ends with a process retro on the workflow; pass retro: false (--no-retro) to skip it. This workflow does not publish, deploy, or automatically start a council.',
   phases: [
     { title: 'Setup', detail: 'author establishes criteria, references, worktree, and verification' },
+    { title: 'Spec', detail: 'a fresh reviewer checks the criteria for conflicts before any author turn' },
     { title: 'Design', detail: 'author drafts or revises the design' },
     { title: 'Review design', detail: 'fresh reviewer checks the design and outstanding findings' },
     { title: 'Implement', detail: 'author implements or fixes the reviewed approach' },
@@ -4137,6 +4138,8 @@ function factoryPairConfig(S) {
   const raw = { ...S.raw, ...S.raw.pair }
   // design: false is a standalone /pair option; the factory's pair strategy always designs first.
   for (const key of ['tier', 'seats', 'simple', 'panel', 'spec', 'audit', 'roles', 'evidence', 'strategy', 'pair', 'design']) delete raw[key]
+  // The factory's spec option configures the council's review; pair: {spec} configures Pair's.
+  if (S.raw.pair?.spec !== undefined) raw.spec = S.raw.pair.spec
   // The factory's retro setting applies, since its facts are what the router is tuned from, and
   // the retro and record turns use the factory's roles in the Codex host.
   const config = parsePairConfig(raw)
@@ -4154,7 +4157,7 @@ function executionPlan(S) {
     requiredCLIs: preflightTargets(S).map(v => v === 'gemini' ? 'agy' : v),
     verification: S.verify || S.raw.verify || 'discovered during setup; not yet run',
     limits: { ...S.controls, repair: S.controls.repair || (S.tier === 'simple' ? { maxPasses: 1, minor: 'block' } : null), maxReviews: S.pairOptions?.maxReviews || null, rounds: S.pairOptions ? null : S.rounds },
-    effort: S.pairOptions ? `Setup, ${S.pairOptions.design === false ? 'no design stage; ' : 'design and '}code turns, up to the review budget; measurements between code revisions.`
+    effort: S.pairOptions ? `Setup${S.specReviewers.length ? ', a spec review' : ''}, ${S.pairOptions.design === false ? 'no design stage; ' : 'design and '}code turns, up to the review budget; measurements between code revisions.`
       : 'Depends on findings, retries and escalation. Limits are caps, not cost forecasts.',
     intake: S.factory?.intake || null,
   }
@@ -4438,7 +4441,9 @@ function newPairState() {
     // The author's reply to each finding it answered (pairIngestReplies).
     replies: [],
     // One entry per design review: new findings, design findings left open, and the design's size.
-    designRounds: [] }
+    designRounds: [],
+    // The spec review after setup (pairIngestSpec): one pass per setup, and its findings S1, S2, …
+    spec: { passes: [], findings: [] } }
 }
 
 // Pair decisions are shared by both hosts. Only the reviewer can close findings.
@@ -4458,7 +4463,7 @@ function pairDesigned(S) {
 
 function parsePairConfig(args) {
   const raw = parsePairArgs(args)
-  for (const key of ['tier', 'seats', 'simple', 'panel', 'spec', 'audit', 'roles', 'evidence']) {
+  for (const key of ['tier', 'seats', 'simple', 'panel', 'audit', 'roles', 'evidence']) {
     if (raw[key] !== undefined) throw new Error(`pair: ${key} is not a pair option; use author, reviewer, and maxReviews.`)
   }
   if (raw.mode && raw.mode !== 'implement') throw new Error('pair: this workflow delivers an implementation.')
@@ -4474,6 +4479,7 @@ function parsePairConfig(args) {
   const maxDesignReviews = raw.maxDesignReviews === undefined ? designDefault : Number(raw.maxDesignReviews)
   if (!Number.isSafeInteger(maxDesignReviews) || maxDesignReviews < 1 || maxDesignReviews > designCap)
     throw new Error(`pair: maxDesignReviews must be an integer from 1 to maxReviews - 1 (${designCap}).`)
+  const spec = parsePairSpec(raw.spec, reviewer)
   // The process retro is on unless retro: false (--no-retro in a string task), as in the other workflows.
   const config = parseConfig({ ...raw, mode: 'implement',
     simple: { implementer: author.key, reviewer: reviewer.key } }, { workflow: 'pair', tier: 'simple' })
@@ -4490,10 +4496,22 @@ function parsePairConfig(args) {
   const retro = !config.roles.retro ? null : used.includes(config.roles.retro.vendor) ? config.roles.retro
     : parseSeat(used.includes('claude') ? 'sonnet' : author.key, ROLE_EFFORT.retro)
   // Reuse setup, transport and the retro, without acquiring council roles or Simple escalation rules.
-  return { ...config, raw, tier: 'pair', simple: null, panel: [], specReviewers: [],
+  return { ...config, raw, tier: 'pair', simple: null, panel: [], specReviewers: spec ? [{ ...hostSeat(config.host, spec), lens: 'criteria' }] : [],
     roles: { ...(retro ? { retro } : {}), setup }, lineup: [hostSeat(config.host, author)],
     auditors: [{ ...hostSeat(config.host, reviewer), lens: 'review', id: 'PR' }],
     pairOptions: { author, reviewer, maxReviews, maxDesignReviews, design, answers: pairAnswersOf(raw.clarifications) } }
+}
+
+// The spec review between setup and the first author turn: one fresh reviewer reads the criteria
+// against the task, its documents, the run's rules and the code. By default it is the pair's
+// reviewer (another vendor than the author) at medium effort, a quick read rather than a design
+// review. spec: false turns it off; {model, effort} swaps either. Returns the seat, or null.
+function parsePairSpec(v, reviewer) {
+  if (v === false) return null
+  if (v !== undefined && v !== true && (!v || typeof v !== 'object' || Array.isArray(v) || Object.keys(v).some(k => !['model', 'effort'].includes(k))))
+    throw new Error('pair: spec must be false, to skip the spec review, or {model, effort}.')
+  const pick = v && typeof v === 'object' ? v : {}
+  return parseSeat(pick.model || reviewer.key, pick.effort || ROLE_EFFORT.spec)
 }
 
 // Without a design stage the contract is the author's to revise with the code, so it is part of
@@ -4679,6 +4697,104 @@ function pairIngestLiveChecks(S, list, source) {
     added.push(entry)
   }
   return added
+}
+
+// The spec review may stop the run for the user this many times. Each answered stop runs setup
+// and the spec review again; past the limit, a conflict goes to the author like any other finding,
+// and the author's own needs-user covers it.
+const PAIR_SPEC_STOPS = 2
+
+// One spec review pass (res is null when the turn failed). Each finding gets an ID, S1, S2, …
+// across the run, and goes to the user (a conflict no reading settles) or to the author (anything a
+// reading settles). A question the user already answered, word for word, goes to the author, as
+// does every conflict once the run has stopped PAIR_SPEC_STOPS times for the spec review. Returns
+// the pass: {label, reviewer, ok, summary, findings: [IDs], stopped}.
+function pairIngestSpec(S, res, label) {
+  const p = S.pair, sp = p.spec, text = v => String(v ?? '').trim(), same = v => text(v).replace(/\s+/g, ' ')
+  const list = v => (Array.isArray(v) ? v : []).map(text).filter(Boolean)
+  const pass = { label, reviewer: S.specReviewers[0]?.name || '', ok: !!res, summary: text(res?.summary), findings: [], stopped: false }
+  sp.passes.push(pass)
+  const stops = sp.passes.filter(x => x.stopped).length
+  const answered = new Set(sp.findings.filter(f => f.to === 'user').map(f => same(f.question)))
+  for (const f of (Array.isArray(res?.findings) ? res.findings : []).slice(0, 8)) {
+    if (!text(f?.statement)) continue
+    const user = f.settle === 'user'
+    const question = user ? text(f.question) || text(f.statement) : ''
+    const to = user && stops < PAIR_SPEC_STOPS && !answered.has(same(question)) ? 'user' : 'author'
+    const id = `S${sp.findings.length + 1}`
+    sp.findings.push({ id, pass: label, criteria: list(f.criteria), statement: text(f.statement), quoted: list(f.quoted), evidence: text(f.evidence),
+      settle: user ? 'user' : 'reading', reading: text(f.reading), question, to, asked: '' })
+    pass.findings.push(id)
+  }
+  return pass
+}
+
+// The findings the author answers: the latest pass's, since an earlier pass reviewed criteria a
+// later setup replaced.
+function pairSpecFindings(S) {
+  const sp = S.pair.spec, last = sp?.passes.at(-1)
+  return last ? sp.findings.filter(f => f.pass === last.label && f.to === 'author') : []
+}
+
+// A spec finding is answered by a reading that cites its ID.
+const pairCites = (r, id) => new RegExp(`\\b${id}\\b`).test(['requirement', 'literal', 'reading', 'reason'].map(k => String(r?.[k] ?? '')).join(' '))
+
+// The spec findings that neither the ledger nor this author turn's readings answer, as one
+// correction's reason, or null. Checked until the first review; from then on the reviewer files a
+// spec finding no reading answers as a finding.
+function pairSpecReadingsError(S, author) {
+  if (S.pair.reviews.length) return null
+  const readings = [...S.pair.readings, ...(Array.isArray(author?.readings) ? author.readings : [])]
+  const open = pairSpecFindings(S).filter(f => !readings.some(r => pairCites(r, f.id))).map(f => f.id)
+  if (!open.length) return null
+  return `The readings answer no spec ${open.length === 1 ? 'finding' : 'findings'} ${open.join(', ')}. List a reading for each, citing its ID in requirement (for example "${open[0]}, C1"), with what the work does about it.`
+}
+
+// What a spec finding to the user is about: its first criterion that exists, or none.
+function pairSpecAbout(S, f) {
+  return f.criteria.find(id => S.criteria.some(c => c.id === id)) || 'none'
+}
+
+// A spec finding as the user is asked it, with the requirements it quotes.
+function pairSpecQuestion(f) {
+  return `${f.question}${f.quoted.length ? ` Requirements as written: ${f.quoted.join('; ')}` : ''}`
+}
+
+// The story line after a spec review pass.
+function pairSpecLine(S, pass) {
+  const by = `Spec review by ${pass.reviewer}`
+  if (!pass.ok) return `${by} returned nothing; the criteria stand as setup wrote them.`
+  const fs = pass.findings.map(id => S.pair.spec.findings.find(f => f.id === id))
+  if (!fs.length) return `${by}: no problems in the criteria.`
+  const part = (to, words) => {
+    const xs = fs.filter(f => f.to === to)
+    return xs.length ? ` ${words}: ${xs.map(f => `${f.id}${f.criteria.length ? ` (${f.criteria.join(', ')})` : ''} ${pairBrief(f.statement, 140)}`).join('; ')}.` : ''
+  }
+  return `${by}: ${plural(fs.length, 'finding')}.${part('author', 'For the author')}${part('user', 'For the user')}`
+}
+
+// The report's account of the spec review: each pass, each finding and what became of it.
+function pairSpecSection(S) {
+  const sp = S.pair.spec, p = S.pair
+  if (!sp?.passes.length) return ''
+  const latest = sp.passes.at(-1).label
+  const fate = f => {
+    if (f.to === 'user') {
+      const d = p.decisions.find(d => d.id === f.asked)
+      return !f.asked ? 'for the user, not asked' : d ? `asked the user as ${f.asked}, who answered: ${pairBrief(d.answer, 200)}` : `asked the user as ${f.asked}, unanswered`
+    }
+    if (f.pass !== latest) return 'for the author, but setup ran again before any author turn'
+    const rs = p.readings.filter(r => pairCites(r, f.id))
+    return rs.length ? `for the author: ${rs.map(r => `reading ${r.id}, ${r.status}`).join('; ')}` : 'for the author: no reading answers it'
+  }
+  const lines = []
+  for (const pass of sp.passes) {
+    lines.push(`- ${pass.label} by ${pass.reviewer}: ${!pass.ok ? 'returned nothing; the criteria stand as setup wrote them.'
+      : sentence(pairBrief(pass.summary, 400) || (pass.findings.length ? 'no summary' : 'no problems in the criteria'))}`)
+    for (const f of pass.findings.map(id => sp.findings.find(f => f.id === id)))
+      lines.push(`  - ${f.id}${f.criteria.length ? ` (${f.criteria.join(', ')})` : ''}: ${pairBrief(f.statement, 300)} → ${fate(f)}.`)
+  }
+  return `Specification review:\n\n${lines.join('\n')}`
 }
 
 // Every reading still proposed needs exactly one ruling, with evidence, under its ID. needs-user
@@ -5252,7 +5368,7 @@ function pairReviewLine(S, review, before) {
 
 function pairQuestionsLine(S, kind, questions) {
   if (kind === 'design') return `${pairDesignStopReason(S)} The run asked the user ${questions.map(q => q.id).join(', ')}: continue the design with a scope decision, start the implementation with the open design findings, or stop.`
-  const who = kind === 'reviewer' ? S.pairOptions.reviewer.name : kind === 'author' ? S.pairOptions.author.name : 'Setup'
+  const who = kind === 'reviewer' ? S.pairOptions.reviewer.name : kind === 'author' ? S.pairOptions.author.name : kind === 'spec' ? 'The spec review' : 'Setup'
   return `${who} asked the user ${questions.length === 1 ? 'a question' : `${questions.length} questions`}: ${questions.map(q => `${q.id}${q.about !== 'none' ? ` (about ${q.about})` : ''} ${pairBrief(q.question.split(' Requirements as written:')[0], 200)}`).join('; ')}`.replace(/[^.!?…]$/, '$&.')
 }
 
@@ -5327,6 +5443,7 @@ function pairResult(S, status = 'blocked') {
     ...ready.infrastructure, ...ready.blocked, ...ready.incomplete,
     `How the run went:\n\n${[...(S.story || []), pairEndLine(S, status, ready)].map((line, i) => `${i + 1}. ${line}`).join('\n')}`,
     ...(highlights.length ? [`Points of interest:\n\n${highlights.map(h => `- ${h}`).join('\n')}`] : []),
+    ...(pairSpecSection(S) ? [pairSpecSection(S)] : []),
     ...(questions.length ? [`Questions for the user (answer each under its ID):\n\n${questions.map(q => `- ${q.id} (about ${q.about}): ${q.question}`).join('\n')}`] : []),
     ...(p.decisions.length ? [`User decisions:\n\n${p.decisions.map(d => `- ${d.id} (about ${d.about}; asked in ${d.label}): ${d.question} Answer: ${d.answer}` +
       `${typeof d.criterion === 'string' ? ` ${d.about} now reads: ${d.criterion}` : d.drop ? ` ${d.about} was dropped.` : d.implement ? ' The implementation started with the open design findings carried into code review.' : ''}`).join('\n')}`] : []),
@@ -5351,7 +5468,7 @@ function pairResult(S, status = 'blocked') {
     room: S.run?.room || null, refs: S.refs, stage: p.stage, stopReason: p.stop,
     design: p.design, testContract: p.approvedContract || p.testContract, replayMapping: p.replayMapping,
     author: S.pairOptions.author.name, reviewer: S.pairOptions.reviewer.name,
-    reviews: p.reviews, findings: p.findings, readings: p.readings, liveChecks: live, questions, decisions: p.decisions, unusedAnswers: unused,
+    reviews: p.reviews, findings: p.findings, readings: p.readings, spec: p.spec, liveChecks: live, questions, decisions: p.decisions, unusedAnswers: unused,
     ...(resumable ? { resumable: true, resumeSteps } : {}), notes: S.notes,
     report: { markdown: report },
     final: { author: 'A', model: S.pairOptions.author.name, summary: p.author?.summary || '',
@@ -5367,7 +5484,7 @@ function pairResult(S, status = 'blocked') {
 const PAIR_FROM_HEAD_RULE = 'Before step 2 creates the run, check that the work starts from HEAD. Stop when the task, the context or a reference document tells the author to apply a patch, diff, stash or saved snapshot before starting, or says the work to fix or extend is uncommitted (for example "fix the review findings in my uncommitted change"): return status "needs-commit", with error naming those changes and quoting the words that show it, and empty values elsewhere. The worktrees, the baseline and every review start from HEAD, so the run would measure and review code without them. When the task only calls the work uncommitted, check `git status --short` first: if it lists no tracked changes and HEAD\'s code already has the work, it was committed after the task was written, so continue and say so in repositoryNotes. Work already in history does not count (a commit, a branch, or an earlier change the task names), nor do reference documents, committed or not, which the author and reviewer read by path, nor a patch or diff given only to read rather than to apply first.'
 
 function pairSetupPrompt(S) {
-  return setupPrompt(S) + '\n\nPair also requires head: copy the full original commit from the helper init output (head), or run.json. Do not use a later author commit or snapshot. This identity will be checked against every baseline replay.\n' + PAIR_FROM_HEAD_RULE + '\nKeep the original task unchanged, including in TASK.md. Return repositoryNotes with observations from HEAD, configuration/tool paths, and proposed interpretations of outdated wording. These are proposals for the author and reviewer to check, not replacement requirements. Explicit user decisions and required plan filenames override the default separate-test-file preference. If substantive requirements conflict, return status needs-user with precise questions immediately. Leave questions=[] when none remain.\nYou own the criteria you write: word each one so evidence inside this run can check it, by a test, the gate, or inspection of the code. A limitation that the task or a reference document explicitly accepts is not a gap: write the criterion to match what it accepts, cite where it says so, and leave it out of unverifiable. List in unverifiable only the criteria that you have established cannot be fully met with evidence available inside this run, with origin supplied when the task, criteria or a reference document states the criterion in substance, and written when you drafted it and no checkable wording keeps its intent: anything that needs downstream, post-delivery, production or live-service evidence, or a capability the author and reviewer lack. Give the criterion ID and the reason. If a tool or capability a criterion needs might be missing, check it with one command first (for example `php -m | grep -i pcov` for a coverage driver, or run the target itself), and list the criterion only when that check shows it is missing, citing the command and its output in the reason. Doubt alone ("may not be runnable") is not a reason: record it in repositoryNotes. The verification gate and the test replays run in the helper\'s measurement, outside your sandbox: a check that fails only inside your own sandbox (a refused port bind, socket or network call, or a denied tool) does not make a criterion unverifiable. Record that in repositoryNotes instead. Return unverifiable=[] when every criterion can be checked here.\nList in liveChecks each criterion that the run can check only against a stand-in for something outside it, where the real thing can behave differently: a network service, credentials, the machine\'s certificate store or another platform-specific resource, an external CLI\'s login. Give the criterion ID, the command or action that checks it against the real thing, and why the stand-in can\'t show it. Don\'t list such a criterion in unverifiable: the run still checks it with the stand-in, and the user runs the live check before delivery. Return liveChecks=[] when there are none.' + (pairDecisionsBlock(S) && `\n${pairDecisionsBlock(S)}`)
+  return setupPrompt(S) + '\n\nPair also requires head: copy the full original commit from the helper init output (head), or run.json. Do not use a later author commit or snapshot. This identity will be checked against every baseline replay.\n' + PAIR_FROM_HEAD_RULE + '\nKeep the original task unchanged, including in TASK.md. Return repositoryNotes with observations from HEAD, configuration/tool paths, and proposed interpretations of outdated wording. These are proposals for the author and reviewer to check, not replacement requirements. Explicit user decisions and required plan filenames override the default separate-test-file preference. If substantive requirements conflict, return status needs-user with precise questions immediately. Leave questions=[] when none remain.\nYou own the criteria you write: word each one so evidence inside this run can check it, by a test, the gate, or inspection of the code. A limitation that the task or a reference document explicitly accepts is not a gap: write the criterion to match what it accepts, cite where it says so, and leave it out of unverifiable. List in unverifiable only the criteria that you have established cannot be fully met with evidence available inside this run, with origin supplied when the task, criteria or a reference document states the criterion in substance, and written when you drafted it and no checkable wording keeps its intent: anything that needs downstream, post-delivery, production or live-service evidence, or a capability the author and reviewer lack. Give the criterion ID and the reason. If a tool or capability a criterion needs might be missing, check it with one command first (for example `php -m | grep -i pcov` for a coverage driver, or run the target itself), and list the criterion only when that check shows it is missing, citing the command and its output in the reason. Doubt alone ("may not be runnable") is not a reason: record it in repositoryNotes. The verification gate and the test replays run in the helper\'s measurement, outside your sandbox: a check that fails only inside your own sandbox (a refused port bind, socket or network call, or a denied tool) does not make a criterion unverifiable. Record that in repositoryNotes instead. Return unverifiable=[] when every criterion can be checked here.\nList in liveChecks each criterion that the run can check only against a stand-in for something outside it, where the real thing can behave differently: a network service, credentials, the machine\'s certificate store or another platform-specific resource, an external CLI\'s login. Give the criterion ID, the command or action that checks it against the real thing, and why the stand-in can\'t show it. Don\'t list such a criterion in unverifiable: the run still checks it with the stand-in, and the user runs the live check before delivery. Return liveChecks=[] when there are none.' + (pairDecisionsBlock(S) && `\nThis setup runs again because the user answered questions the run asked, listed below: write the acceptance criteria so that they follow every answer.\n${pairDecisionsBlock(S)}`)
 }
 
 // The user's answers to the run's questions, from a stop this run continued past. Empty without
@@ -5380,6 +5497,77 @@ function pairDecisionsBlock(S) {
     `The reviewer resolves any finding a decision settles under its existing ID.\n` +
     decisions.map(d => `- ${d.id} (about ${d.about}; asked in ${d.label}): ${d.question} Answer: ${d.answer}` +
       `${typeof d.criterion === 'string' ? ` ${d.about} now reads: ${d.criterion}` : d.drop === true ? ` ${d.about} was dropped.` : d.implement === true ? ' The user chose to start the implementation with the open design findings carried into code review as open items.' : ''}`).join('\n') + '\n'
+}
+
+// The spec findings a reading settles, for the author to answer in its readings ledger and the
+// reviewer to rule on there. Empty without any, so a run with a clean spec review has the same
+// prompts as one without a spec review.
+function pairSpecBlock(S, role) {
+  const fs = pairSpecFindings(S)
+  if (!fs.length) return ''
+  const one = fs.length === 1
+  const intro = role === 'author'
+    ? `Before any work began, an independent reviewer read the criteria against the task, its documents and the code, and found ${one ? 'this problem' : 'these problems'}. Answer ${one ? 'it' : 'each'} in readings, citing its ID in requirement (for example "${fs[0].id}, C1"), with what the work does about it: the proposed reading, or another the task's words allow, with the reason. The reviewer rules on each reading like any other. Where a finding has no proposed reading and none inside the task's words settles it, return needs-user with the question instead.`
+    : `Before any work began, a spec review read the criteria against the task, its documents and the code, and found ${one ? 'this problem' : 'these problems'}. The author answers ${one ? 'it' : 'each'} in the readings ledger under its ID. Rule on those readings like any other; a reading that answers a spec finding may also rest on the code the finding cites. A spec finding no reading in the ledger answers is unresolved: file it as a finding.`
+  return `\n# Spec review findings\n\n${intro}\n` + fs.map(f => [`- ${f.id}${f.criteria.length ? ` (about ${f.criteria.join(', ')})` : ''}: ${f.statement}`,
+    ...(f.quoted.length ? [`  Requirements as written: ${f.quoted.join('; ')}`] : []), ...(f.evidence ? [`  Evidence: ${f.evidence}`] : []),
+    f.reading ? `  Proposed reading: ${f.reading}` : f.question ? `  No reading settles it, the spec reviewer found: ${f.question}` : '  No reading proposed.'].join('\n')).join('\n') + '\n'
+}
+
+// The rules a Pair run holds the work to, as the spec reviewer checks the criteria against them.
+function pairStageRules(S) {
+  return [
+    `- The author works in its own git worktree, checked out from HEAD, and changes nothing outside it until delivery.${pairDesigned(S) ? ' It designs first: the design and its test contract are reviewed before any code is written.' : ' This run has no design stage: the author writes the deliverable and its test contract together.'}`,
+    '- Every criterion is covered by a test, by the verification command, or by a named inspection. Each test file and fixture lives under a test root: a test directory the base project already uses, never a production directory or the repository root.',
+    '- Tests that depend on new code go in their own files, apart from the tests of behaviour that must stay the same, unless the user or a plan names the files.',
+    '- The added and modified test files and fixtures are replayed on the original base revision, without the production, configuration or dependency changes, and on the final snapshot. A test of changed behaviour is expected to fail on base and pass at the end; a test of preserved behaviour passes on both.',
+    `- ${S.verify ? 'The verification command runs on the final snapshot and must pass. ' : ''}A specified exception or error message is asserted exactly. Tests, criteria and the verification configuration are never weakened to obtain a pass.`,
+  ].join('\n')
+}
+
+// The spec review, after setup and before the first author turn (pairSpecReview). One fresh
+// reviewer reads the criteria against the task, its documents, the run's rules and the code, and
+// sorts each problem into one a reading settles (to the author) and one only the user can (a stop).
+function pairSpecPrompt(S) {
+  const given = Array.isArray(S.raw.criteria) && S.raw.criteria.length, decided = !!S.pair.decisions.length
+  return `You are reviewing the acceptance criteria of a pair run before its author starts. One author will ${pairDesigned(S) ? 'design the task below and then implement it' : 'do the task below'}, and an independent reviewer will hold every version to these criteria. When two requirements can't both hold, the run otherwise finds out only after one or more design reviews and then stops for the user, so find such problems now. This is a short read of the criteria against the task, its documents and the code, not a design review: don't attempt or design the task, and don't modify anything.
+
+# Task
+
+${S.task}
+${refsBlock(S)}${S.context ? `\n# Context from the user\n\n${S.context}\n` : ''}
+# Acceptance criteria (${given ? 'given by the user' : 'written by setup from the task and the code'})
+
+${specCriteria(S)}
+
+# Verification command
+
+${S.verify ? `\`${S.verify}\`, run from the root of a worktree. At the starting commit it ${S.baselineOk ? 'passes' : `fails: ${oneLine(S.baselineNote, 300)}`}.` : '(none)'}
+${pairDecisionsBlock(S)}
+# Setup observations and proposals (not requirements)
+
+${S.repositoryNotes || '(none)'}
+
+# The rules this run holds the work to
+
+${pairStageRules(S)}
+
+The repository is at ${S.run.repoRoot}, at the commit the author starts from. Read the code each criterion depends on, the reference documents and the repository instructions, and no more than that needs.
+
+# What to look for
+
+- Contradictions: two criteria that can't both hold as written, or a criterion that can't hold beside the task, a reference document, an explicit user decision or a rule above. Try to meet all of them at once on the hardest case they cover: a mechanism one criterion names against a limit another sets, a file one criterion fixes against a rule that needs another.
+- Criteria wrong about the code: one that describes a function, file, option or behaviour that isn't there or works otherwise. Cite the file and line.
+- Dropped requirements: something the task or a reference document requires that no criterion states, or that a criterion states more weakly. Quote it.
+Don't ask for criteria the task doesn't call for, don't report preferences or wording, and don't judge whether a criterion can be checked inside the run: setup did that.
+
+# Who settles each finding
+
+- "reading": a reading inside the words of the task, the documents and the decisions settles it: an ambiguity with a conservative reading, a criterion that misdescribes the code but has an obvious correct reading, or a dropped requirement the work can simply meet. Put that reading in \`reading\`: what the work should do. The author answers each such finding in its readings ledger, and the reviewer rules on it there.
+- "user": no such reading settles it: two requirements that can't both hold as written, or one that a fact you found makes impossible as written. Ask in \`question\`, saying what conflicts and giving the options you see, and set \`reading\` to "". The run stops and asks the user before the author starts, and setup then rewrites the criteria to the answer.
+Choose "reading" whenever a reading keeps every requirement's intent.${decided ? ' The user\'s decisions above settle what they answer: don\'t ask again about anything they settle, only about a conflict they leave open.' : ''} In each finding, \`criteria\` lists the criterion IDs involved ([] when no criterion states the requirement), \`quoted\` the exact words of each requirement involved (a criterion, the task, a document or a rule above), and \`evidence\` a file:line, a quote, or a command and the real tail of its output.
+
+An empty findings list is the right answer when the criteria hold together: don't pad it. In \`summary\`, give your verdict in one or two sentences.`
 }
 
 // The contract and mapping rules, shared by the design stage and by a run without one.
@@ -5400,7 +5588,7 @@ function pairAuthorPrompt(S, label, correction = '') {
   if (!pairDesigned(S)) return pairDirectAuthorPrompt(S, label, correction)
   return `You are the sole author in a pair workflow. Own the task through completion; an independent reviewer checks each stage.
 
-${taskCore(S)}${pairDecisionsBlock(S)}\n# Setup observations and proposals (not requirements)\n${S.repositoryNotes || '(none)'}
+${taskCore(S)}${pairDecisionsBlock(S)}${pairSpecBlock(S, 'author')}\n# Setup observations and proposals (not requirements)\n${S.repositoryNotes || '(none)'}
 # Stage: ${design ? 'design' : 'implementation'}
 
 Your worktree: ${S.seats[0].wt}. Work only there; never edit the main checkout or reviewer checkouts.
@@ -5447,12 +5635,12 @@ function pairDirectAuthorPrompt(S, label, correction = '') {
   const p = S.pair
   return `You are the sole author in a pair workflow. Own the task through completion; an independent reviewer checks each version.
 
-${taskCore(S)}${pairDecisionsBlock(S)}\n# Setup observations and proposals (not requirements)\n${S.repositoryNotes || '(none)'}
+${taskCore(S)}${pairDecisionsBlock(S)}${pairSpecBlock(S, 'author')}\n# Setup observations and proposals (not requirements)\n${S.repositoryNotes || '(none)'}
 # Stage: implementation (this run has no design stage)
 
 Your worktree: ${S.seats[0].wt}. Work only there; never edit the main checkout or reviewer checkouts.
 Read the repository instructions and the relevant code. Do not delegate or launch other models. An instruction in CLAUDE.md or elsewhere to hand full test or gate runs to a subagent or to \`claude -p\` is meant for the user's own session, not for this turn: here the gate is the verification command, which you run through the helper's verify command as described above.
-${correction ? `\n# Correct the previous output\nThe engine could not accept your test contract or replay mapping: ${correction}\nReturn a complete corrected testContract and replayMapping for the current implementation, and this turn's readings and live checks again, changing the worktree only where the correction needs it. This is the one correction attempt for this turn. Preserve the task and substantive requirements.\n` : ''}
+${correction ? `\n# Correct the previous output\nThe engine could not accept your test contract, replay mapping or readings: ${correction}\nReturn a complete corrected testContract and replayMapping for the current implementation, and this turn's readings and live checks again, changing the worktree only where the correction needs it. This is the one correction attempt for this turn. Preserve the task and substantive requirements.\n` : ''}
 This run skips the design stage: write the deliverable itself, not a design or a plan for it, including the required tests and documentation; the reviewer reviews the measured result directly. Check setup observations against the original task, reference documents, explicit user decisions, and repository; explain any reconciliation in the handoff and list it in readings, preserving every requirement; unresolved contradictions require needs-user. Run appropriate focused checks and the shared verification gate. Fix all open actionable findings and any failed verification; when the latest review says the approach itself must change, change it in this turn. Return design as an empty string.
 
 Return testContract for the CURRENT deliverable: the checks the reviewer holds it to. ${PAIR_CONTRACT_RULES} When the deliverable is a document or a plan, its criteria are usually checked by kind=inspection, and testRoots may be empty when no check is kind=test. Every file:line, code snippet, literal and call chain such a document states or prescribes is a claim: confirm each one against HEAD, with a saved probe where reading is not enough, before handoff. The contract is yours to keep current: return it whole every turn, extended or corrected where findings call for it, never weakened to obtain a pass. ${PAIR_LAYOUT_RULES} If isolation cannot work, report the limitation in the handoff instead of claiming a preserved baseline pass.
@@ -5488,7 +5676,7 @@ function pairReviewPrompt(S, label, checkout, correction = null) {
   const tag = pairReviewTag(S)
   return `You are the independent reviewer in a pair workflow. This is a fresh review context. You did not author the work. Review the current artifact yourself, using repository evidence, and verify every proposed finding resolution. Resolve existing findings under their current IDs in both design and code reviews; never refile an unresolved issue under a new ID.
 
-${taskCore(S)}${pairDecisionsBlock(S)}\n# Setup observations and proposals (not requirements)\n${S.repositoryNotes || '(none)'}
+${taskCore(S)}${pairDecisionsBlock(S)}${pairSpecBlock(S, 'reviewer')}\n# Setup observations and proposals (not requirements)\n${S.repositoryNotes || '(none)'}
 # Review stage: ${p.stage}
 Version: ${pairVersion(S)}
 Return that exact version. Return complete=true only after examining the entire current artifact and every acceptance criterion, including regressions introduced by fixes.
@@ -5981,6 +6169,20 @@ const PAIR_SETUP_SCHEMA = strict({ type: 'object', properties: {
       origin: { type: 'string', enum: ['supplied', 'written'], description: 'supplied: given in the task, criteria or a reference document, in substance; written: drafted by setup.' } } } },
   liveChecks: { type: 'array', description: 'Criteria the run can check only against a stand-in for something outside it that can behave differently (a network service, credentials, a certificate store, an external CLI\'s login); [] when there are none.',
     items: PAIR_LIVE_CHECK },
+} })
+// The spec review between setup and the first author turn: problems in the criteria, each settled
+// by a reading (to the author) or only by the user (a stop).
+const PAIR_SPEC_SCHEMA = strict({ type: 'object', properties: {
+  summary: { type: 'string', description: 'Your verdict on the criteria, in one or two sentences.' },
+  findings: { type: 'array', description: 'Problems in the criteria; [] when they hold together.', items: { type: 'object', properties: {
+    criteria: { ...PAIR_STRINGS, description: 'The bare criterion IDs involved, such as C2; [] when no criterion states the requirement.' },
+    statement: { type: 'string', description: 'What is wrong with the criteria.' },
+    quoted: { ...PAIR_STRINGS, description: 'The exact words of each requirement involved.' },
+    evidence: { type: 'string', description: 'A file:line, a quote from the task or a document, or a command and the real tail of its output.' },
+    settle: { type: 'string', enum: ['reading', 'user'], description: 'reading: a reading inside the words of the task, documents and decisions settles it; user: only the user can.' },
+    reading: { type: 'string', description: 'For settle reading: what the work should do. "" for user.' },
+    question: { type: 'string', description: 'For settle user: the question for the user, saying what conflicts and giving the options you see. "" for reading.' },
+  } } },
 } })
 const PAIR_CONTRACT = { type: 'object', properties: {
   testRoots: { type: 'array', items: { type: 'object', properties: {
@@ -6636,87 +6838,23 @@ async function pairRun() {
   // On the standalone runtime setup is a sandboxed model turn, so the runner measures the baseline
   // itself after setup returns; the flag tells setup not to (and is set on no other flow).
   S.runnerBaseline = !!hostRuntime
-  phase('Setup')
   // Native Claude workflows need a native transport for measurements. Prefer one of the two
   // selected participants; CLI seats and all Codex-host turns use their adapters. Setup is not a
   // transport: it runs on its role's model (Opus natively), since the run inherits its criteria.
   const native = [S.pairOptions.author, S.pairOptions.reviewer].find(s => s.vendor === 'claude')
   const transportModel = native ? native.model : 'haiku'
-  let setup
+  // Setup, then the spec review of its criteria. A spec stop the user answered runs setup again
+  // with the decisions, so the role that owns the criteria rewrites them, and the spec review
+  // reads the new ones.
   for (;;) {
-    // A conflict the user answered runs setup again, with the decisions, as a run of its own.
-    const label = !S.pair.setupAttempt ? 'setup' : `setup-answered${S.pair.setupAttempt > 1 ? `-${S.pair.setupAttempt}` : ''}`
-    setup = await ask(pairSetupPrompt(S), { label, phase: 'Setup', schema: PAIR_SETUP_SCHEMA,
-      model: S.roles.setup.model, effort: 'medium' }, 'setup')
-    if (setup?.status === 'needs-plan') return needsPlan(S, setup.planMissing, setup.runDir)
-    if (setup?.status === 'preflight') return preflightStop(S, setup.preflight)
-    if (setup?.status === 'needs-commit') { S.pair.stop = pairNeedsCommit(setup.error); return pairResult(S) }
-    if (setup?.status !== 'needs-user') break
-    S.pair.stop = setup.error || 'Setup found conflicting requirements.'
-    const stopped = await pairStop('setup', setup.questions, label)
+    const stopped = await pairSetup()
     if (stopped) return stopped
-    S.pair.setupAttempt++
-  }
-  if (!setup || setup.status === 'error' || !setup.runDir || !setup.runId || !setup.repoRoot || !/^[0-9a-f]{40,64}$/.test(setup.head || '')) {
-    S.pair.stop = setup?.error || 'Setup did not return a run.'
-    return pairResult(S, 'failed')
-  }
-  S.run = { runId: setup.runId, runDir: setup.runDir, repoRoot: setup.repoRoot, head: setup.head, room: `${setup.runDir}/room` }
-  S.seats = [{ L: 'A', ...S.lineup[0], wt: `${S.run.runDir}/wt/A`, active: true }]
-  if (((setup.dirty || []).length && !S.allowDirty) || setup.status === 'dirty') {
-    S.pair.stop = 'Tracked working-tree changes are absent from worktrees based on HEAD. Commit or stash them, or explicitly set allowDirty.'
-    return pairResult(S)
-  }
-  S.criteria = setup.criteria || []
-  S.repositoryNotes = setup.repositoryNotes || ''
-  S.verify = String(setup.verify || '').trim()
-  if (!hostRuntime) {
-    S.baselineOk = !S.verify || !!setup.baselinePasses
-    if (!S.baselineOk) S.baselineNote = oneLine(setup.baselineNote, 300) || 'no reason given'
-  }
-  S.refs = (setup.refs || []).filter(r => r.path?.startsWith(`${S.run.runDir}/refs/`))
-  const lost = setupLosses(S, S.criteria, S.verify)
-  if (!S.criteria.length || new Set(S.criteria.map(c => c.id)).size !== S.criteria.length || S.criteria.some(c => !c.id || !c.text) ||
-      S.refs.length !== (setup.refs || []).length || S.refs.length < S.plan.length || lost.length) {
-    S.pair.stop = `Setup omitted criteria, reference snapshots, or the requested verification command${lost.length ? `: it dropped ${lost.join('; ')}` : ''}.`
-    return pairResult(S)
-  }
-  // Checked in the run against a stand-in, and by the user against the real thing before delivery.
-  pairIngestLiveChecks(S, setup.liveChecks, 'setup')
-  // A supplied criterion no evidence inside the run can meet would block readiness after all the
-  // work, so the user rewrites or drops it before any author turn. Setup owns the criteria it
-  // wrote: one it still lists goes to the author and reviewer to check by inspection, not to the user.
-  const unverifiable = (setup.unverifiable || []).filter(u => String(u?.criterion || '').trim())
-  const supplied = unverifiable.filter(u => u.origin !== 'written')
-  for (const u of unverifiable.filter(u => u.origin === 'written'))
-    S.repositoryNotes = `${S.repositoryNotes ? `${S.repositoryNotes}\n` : ''}Setup could not find a run-time check for ${u.criterion}, which it wrote: ${oneLine(u.reason, 300) || 'no reason given'}. Check it by inspecting the code and the plan, and say so in the ${pairDesigned(S) ? 'design' : 'handoff'}.`
-  if (supplied.length) {
-    const text = id => S.criteria.find(c => c.id === id)?.text
-    S.pair.stop = `Setup found ${supplied.length === 1 ? 'a criterion' : 'criteria'} this run cannot verify: ${supplied.map(u => `${u.criterion} (${oneLine(u.reason, 300) || 'no reason given'})`).join('; ')}.`
-    for (const u of supplied) S.notes.push(`Setup found ${u.criterion} unverifiable inside the run: ${oneLine(u.reason, 300) || 'no reason given'}.`)
-    const stopped = await pairStop('criterion', supplied.map(u => ({ about: u.criterion,
-      question: `${u.criterion}${text(u.criterion) ? ` ("${oneLine(text(u.criterion), 200)}")` : ''} cannot be verified inside the run: ${oneLine(u.reason, 300) || 'no reason given'}. Rewrite it so the run can check it, or drop it?` })), 'setup')
-    if (stopped) return stopped
-    if (!S.criteria.length) { S.pair.stop = 'The user dropped every acceptance criterion, so the run has nothing to check.'; return pairResult(S) }
-  }
-  if (hostRuntime) {
-    // Measured by the runner process, outside any model's sandbox, with no model turn. Setup's
-    // baselinePasses and baselineNote are not used. The record stays out of S.pair.measurement, so
-    // the review tag and version remain at base until the first code measurement.
-    let base = null
-    if (S.verify) {
-      try {
-        base = await hostRuntime.measure({ run: S.run, seat: 'A', label: 'base' })
-      } catch (error) {
-        if (fatalTurnError(error)) throw error
-        base = { status: 'error', error: String(error?.message || error) }
-      }
-    }
-    pairBaselineResult(S, base)
+    const spec = await pairSpecReview()
+    if (spec === null) break
+    if (spec !== true) return spec
   }
   const p = S.pair
   log(`pair: ${S.pairOptions.author.name} authors; ${S.pairOptions.reviewer.name} reviews; budget ${S.pairOptions.maxReviews} reviews${pairDesigned(S) ? `, the design asking the user after ${S.pairOptions.maxDesignReviews}` : '; no design stage'}`)
-  pairMilestone(pairSetupLine(S))
   while (p.reviews.length < S.pairOptions.maxReviews) {
     let label = `pair-${p.stage}-${p.reviews.length + 1}`
     p.label = label
@@ -6726,7 +6864,7 @@ async function pairRun() {
       if (!pairDesigned(S) && author?.status === 'done') {
         // The author writes the contract with the deliverable; a malformed one, or a mapping that
         // doesn't fit it, gets the same single correction a malformed design contract gets.
-        const error = pairAdoptContract(S, author)
+        const error = pairAdoptContract(S, author) || pairSpecReadingsError(S, author)
         if (error) {
           p.author = author
           S.notes.push(`${label}: ${error} Requested one author correction.`)
@@ -6738,7 +6876,7 @@ async function pairRun() {
         p.author = author
         p.design = author.design
         p.testContract = author.testContract
-        const error = !author.design?.trim() ? 'The author returned no design.' : pairContractError(S, p.testContract)
+        const error = !author.design?.trim() ? 'The author returned no design.' : pairContractError(S, p.testContract) || pairSpecReadingsError(S, author)
         if (error) {
           S.notes.push(`${label}: ${error} Requested one author correction; no design approval was recorded.`)
           label += '-corrected'
@@ -6874,6 +7012,117 @@ async function pairRun() {
   }
   p.stop = `Review budget exhausted (${S.pairOptions.maxReviews}); work remains unresolved.`
   return pairResult(S)
+}
+
+// The spec review of setup's criteria (off with spec: false): one fresh reviewer, before any author
+// turn. A failed turn changes nothing but the notes. Findings a reading settles go to the author's
+// readings ledger; a conflict only the user can settle stops the run. Returns null to go on to
+// the author, true when the user answered the stop (setup runs again), or the stop's result.
+async function pairSpecReview() {
+  const r = S.specReviewers[0], p = S.pair
+  if (!r) return null
+  phase('Spec')
+  const label = p.spec.passes.length ? `spec-${p.spec.passes.length + 1}` : 'spec'
+  const prompt = pairSpecPrompt(S)
+  const res = r.vendor === 'claude' && !hostRuntime
+    ? await ask(prompt, { label, phase: 'Spec', schema: PAIR_SPEC_SCHEMA, model: r.model, effort: r.effort }, 'spec', r.name)
+    : await externalTurn({ key: label, threadKey: label, configKey: 'pair-spec', fresh: true, vendor: r.vendor, model: r.model, effort: r.effort,
+        role: 'spec', who: r.name, sandbox: 'read-only', cwd: S.run.repoRoot, writable: [], timeoutKind: 'spec' }, prompt, PAIR_SPEC_SCHEMA, label, 'Spec')
+  const pass = pairIngestSpec(S, res, label)
+  if (!res) S.notes.push(`The spec review (${label}, ${r.name}) returned nothing; the criteria stand as setup wrote them.`)
+  pairMilestone(pairSpecLine(S, pass))
+  const asked = p.spec.findings.filter(f => f.pass === label && f.to === 'user')
+  if (!asked.length) return null
+  pass.stopped = true
+  asked.forEach((f, i) => { f.asked = `Q${p.asked.length + i + 1}` })
+  p.stop = `The spec review found ${asked.length === 1 ? 'a conflict' : 'conflicts'} in the criteria that only the user can settle.`
+  const stopped = await pairStop('spec', asked.map(f => ({ about: pairSpecAbout(S, f), question: pairSpecQuestion(f) })), label)
+  if (stopped) return stopped
+  // Setup runs again in a run of its own; the stopped run's worktree stays until cleanup.
+  S.notes.push(`${label}: setup runs again with the user's answers, in a new run; remove ${S.run.runDir} with dark-factory cleanup --run-dir ${shq(S.run.runDir)} --all once this run is delivered.`)
+  p.setupAttempt++
+  return true
+}
+
+// Setup: the run, the criteria, the gate and its baseline, with setup's own stops. Returns the
+// stop's result, or null to go on. Run again after an answered spec stop, it replaces them all.
+async function pairSetup() {
+  phase('Setup')
+  let setup
+  for (;;) {
+    // A conflict the user answered runs setup again, with the decisions, as a run of its own.
+    const label = !S.pair.setupAttempt ? 'setup' : `setup-answered${S.pair.setupAttempt > 1 ? `-${S.pair.setupAttempt}` : ''}`
+    setup = await ask(pairSetupPrompt(S), { label, phase: 'Setup', schema: PAIR_SETUP_SCHEMA,
+      model: S.roles.setup.model, effort: 'medium' }, 'setup')
+    if (setup?.status === 'needs-plan') return needsPlan(S, setup.planMissing, setup.runDir)
+    if (setup?.status === 'preflight') return preflightStop(S, setup.preflight)
+    if (setup?.status === 'needs-commit') { S.pair.stop = pairNeedsCommit(setup.error); return pairResult(S) }
+    if (setup?.status !== 'needs-user') break
+    S.pair.stop = setup.error || 'Setup found conflicting requirements.'
+    const stopped = await pairStop('setup', setup.questions, label)
+    if (stopped) return stopped
+    S.pair.setupAttempt++
+  }
+  if (!setup || setup.status === 'error' || !setup.runDir || !setup.runId || !setup.repoRoot || !/^[0-9a-f]{40,64}$/.test(setup.head || '')) {
+    S.pair.stop = setup?.error || 'Setup did not return a run.'
+    return pairResult(S, 'failed')
+  }
+  S.run = { runId: setup.runId, runDir: setup.runDir, repoRoot: setup.repoRoot, head: setup.head, room: `${setup.runDir}/room` }
+  S.seats = [{ L: 'A', ...S.lineup[0], wt: `${S.run.runDir}/wt/A`, active: true }]
+  if (((setup.dirty || []).length && !S.allowDirty) || setup.status === 'dirty') {
+    S.pair.stop = 'Tracked working-tree changes are absent from worktrees based on HEAD. Commit or stash them, or explicitly set allowDirty.'
+    return pairResult(S)
+  }
+  S.criteria = setup.criteria || []
+  S.repositoryNotes = setup.repositoryNotes || ''
+  S.verify = String(setup.verify || '').trim()
+  if (!hostRuntime) {
+    S.baselineOk = !S.verify || !!setup.baselinePasses
+    S.baselineNote = S.baselineOk ? '' : oneLine(setup.baselineNote, 300) || 'no reason given'
+  }
+  S.refs = (setup.refs || []).filter(r => r.path?.startsWith(`${S.run.runDir}/refs/`))
+  const lost = setupLosses(S, S.criteria, S.verify)
+  if (!S.criteria.length || new Set(S.criteria.map(c => c.id)).size !== S.criteria.length || S.criteria.some(c => !c.id || !c.text) ||
+      S.refs.length !== (setup.refs || []).length || S.refs.length < S.plan.length || lost.length) {
+    S.pair.stop = `Setup omitted criteria, reference snapshots, or the requested verification command${lost.length ? `: it dropped ${lost.join('; ')}` : ''}.`
+    return pairResult(S)
+  }
+  // Checked in the run against a stand-in, and by the user against the real thing before delivery.
+  S.pair.liveChecks = []
+  pairIngestLiveChecks(S, setup.liveChecks, 'setup')
+  // A supplied criterion no evidence inside the run can meet would block readiness after all the
+  // work, so the user rewrites or drops it before any author turn. Setup owns the criteria it
+  // wrote: one it still lists goes to the author and reviewer to check by inspection, not to the user.
+  const unverifiable = (setup.unverifiable || []).filter(u => String(u?.criterion || '').trim())
+  const supplied = unverifiable.filter(u => u.origin !== 'written')
+  for (const u of unverifiable.filter(u => u.origin === 'written'))
+    S.repositoryNotes = `${S.repositoryNotes ? `${S.repositoryNotes}\n` : ''}Setup could not find a run-time check for ${u.criterion}, which it wrote: ${oneLine(u.reason, 300) || 'no reason given'}. Check it by inspecting the code and the plan, and say so in the ${pairDesigned(S) ? 'design' : 'handoff'}.`
+  if (supplied.length) {
+    const text = id => S.criteria.find(c => c.id === id)?.text
+    S.pair.stop = `Setup found ${supplied.length === 1 ? 'a criterion' : 'criteria'} this run cannot verify: ${supplied.map(u => `${u.criterion} (${oneLine(u.reason, 300) || 'no reason given'})`).join('; ')}.`
+    for (const u of supplied) S.notes.push(`Setup found ${u.criterion} unverifiable inside the run: ${oneLine(u.reason, 300) || 'no reason given'}.`)
+    const stopped = await pairStop('criterion', supplied.map(u => ({ about: u.criterion,
+      question: `${u.criterion}${text(u.criterion) ? ` ("${oneLine(text(u.criterion), 200)}")` : ''} cannot be verified inside the run: ${oneLine(u.reason, 300) || 'no reason given'}. Rewrite it so the run can check it, or drop it?` })), 'setup')
+    if (stopped) return stopped
+    if (!S.criteria.length) { S.pair.stop = 'The user dropped every acceptance criterion, so the run has nothing to check.'; return pairResult(S) }
+  }
+  if (hostRuntime) {
+    // Measured by the runner process, outside any model's sandbox, with no model turn. Setup's
+    // baselinePasses and baselineNote are not used. The record stays out of S.pair.measurement, so
+    // the review tag and version remain at base until the first code measurement.
+    let base = null
+    if (S.verify) {
+      try {
+        base = await hostRuntime.measure({ run: S.run, seat: 'A', label: 'base' })
+      } catch (error) {
+        if (fatalTurnError(error)) throw error
+        base = { status: 'error', error: String(error?.message || error) }
+      }
+    }
+    pairBaselineResult(S, base)
+  }
+  pairMilestone(pairSetupLine(S))
+  return null
 }
 
 // Every stop that asks the user. Returns the stop's result, or null once the answers in

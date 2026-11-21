@@ -4,7 +4,7 @@
 const PAIR_FROM_HEAD_RULE = 'Before step 2 creates the run, check that the work starts from HEAD. Stop when the task, the context or a reference document tells the author to apply a patch, diff, stash or saved snapshot before starting, or says the work to fix or extend is uncommitted (for example "fix the review findings in my uncommitted change"): return status "needs-commit", with error naming those changes and quoting the words that show it, and empty values elsewhere. The worktrees, the baseline and every review start from HEAD, so the run would measure and review code without them. When the task only calls the work uncommitted, check `git status --short` first: if it lists no tracked changes and HEAD\'s code already has the work, it was committed after the task was written, so continue and say so in repositoryNotes. Work already in history does not count (a commit, a branch, or an earlier change the task names), nor do reference documents, committed or not, which the author and reviewer read by path, nor a patch or diff given only to read rather than to apply first.'
 
 function pairSetupPrompt(S) {
-  return setupPrompt(S) + '\n\nPair also requires head: copy the full original commit from the helper init output (head), or run.json. Do not use a later author commit or snapshot. This identity will be checked against every baseline replay.\n' + PAIR_FROM_HEAD_RULE + '\nKeep the original task unchanged, including in TASK.md. Return repositoryNotes with observations from HEAD, configuration/tool paths, and proposed interpretations of outdated wording. These are proposals for the author and reviewer to check, not replacement requirements. Explicit user decisions and required plan filenames override the default separate-test-file preference. If substantive requirements conflict, return status needs-user with precise questions immediately. Leave questions=[] when none remain.\nYou own the criteria you write: word each one so evidence inside this run can check it, by a test, the gate, or inspection of the code. A limitation that the task or a reference document explicitly accepts is not a gap: write the criterion to match what it accepts, cite where it says so, and leave it out of unverifiable. List in unverifiable only the criteria that you have established cannot be fully met with evidence available inside this run, with origin supplied when the task, criteria or a reference document states the criterion in substance, and written when you drafted it and no checkable wording keeps its intent: anything that needs downstream, post-delivery, production or live-service evidence, or a capability the author and reviewer lack. Give the criterion ID and the reason. If a tool or capability a criterion needs might be missing, check it with one command first (for example `php -m | grep -i pcov` for a coverage driver, or run the target itself), and list the criterion only when that check shows it is missing, citing the command and its output in the reason. Doubt alone ("may not be runnable") is not a reason: record it in repositoryNotes. The verification gate and the test replays run in the helper\'s measurement, outside your sandbox: a check that fails only inside your own sandbox (a refused port bind, socket or network call, or a denied tool) does not make a criterion unverifiable. Record that in repositoryNotes instead. Return unverifiable=[] when every criterion can be checked here.\nList in liveChecks each criterion that the run can check only against a stand-in for something outside it, where the real thing can behave differently: a network service, credentials, the machine\'s certificate store or another platform-specific resource, an external CLI\'s login. Give the criterion ID, the command or action that checks it against the real thing, and why the stand-in can\'t show it. Don\'t list such a criterion in unverifiable: the run still checks it with the stand-in, and the user runs the live check before delivery. Return liveChecks=[] when there are none.' + (pairDecisionsBlock(S) && `\n${pairDecisionsBlock(S)}`)
+  return setupPrompt(S) + '\n\nPair also requires head: copy the full original commit from the helper init output (head), or run.json. Do not use a later author commit or snapshot. This identity will be checked against every baseline replay.\n' + PAIR_FROM_HEAD_RULE + '\nKeep the original task unchanged, including in TASK.md. Return repositoryNotes with observations from HEAD, configuration/tool paths, and proposed interpretations of outdated wording. These are proposals for the author and reviewer to check, not replacement requirements. Explicit user decisions and required plan filenames override the default separate-test-file preference. If substantive requirements conflict, return status needs-user with precise questions immediately. Leave questions=[] when none remain.\nYou own the criteria you write: word each one so evidence inside this run can check it, by a test, the gate, or inspection of the code. A limitation that the task or a reference document explicitly accepts is not a gap: write the criterion to match what it accepts, cite where it says so, and leave it out of unverifiable. List in unverifiable only the criteria that you have established cannot be fully met with evidence available inside this run, with origin supplied when the task, criteria or a reference document states the criterion in substance, and written when you drafted it and no checkable wording keeps its intent: anything that needs downstream, post-delivery, production or live-service evidence, or a capability the author and reviewer lack. Give the criterion ID and the reason. If a tool or capability a criterion needs might be missing, check it with one command first (for example `php -m | grep -i pcov` for a coverage driver, or run the target itself), and list the criterion only when that check shows it is missing, citing the command and its output in the reason. Doubt alone ("may not be runnable") is not a reason: record it in repositoryNotes. The verification gate and the test replays run in the helper\'s measurement, outside your sandbox: a check that fails only inside your own sandbox (a refused port bind, socket or network call, or a denied tool) does not make a criterion unverifiable. Record that in repositoryNotes instead. Return unverifiable=[] when every criterion can be checked here.\nList in liveChecks each criterion that the run can check only against a stand-in for something outside it, where the real thing can behave differently: a network service, credentials, the machine\'s certificate store or another platform-specific resource, an external CLI\'s login. Give the criterion ID, the command or action that checks it against the real thing, and why the stand-in can\'t show it. Don\'t list such a criterion in unverifiable: the run still checks it with the stand-in, and the user runs the live check before delivery. Return liveChecks=[] when there are none.' + (pairDecisionsBlock(S) && `\nThis setup runs again because the user answered questions the run asked, listed below: write the acceptance criteria so that they follow every answer.\n${pairDecisionsBlock(S)}`)
 }
 
 // The user's answers to the run's questions, from a stop this run continued past. Empty without
@@ -17,6 +17,77 @@ function pairDecisionsBlock(S) {
     `The reviewer resolves any finding a decision settles under its existing ID.\n` +
     decisions.map(d => `- ${d.id} (about ${d.about}; asked in ${d.label}): ${d.question} Answer: ${d.answer}` +
       `${typeof d.criterion === 'string' ? ` ${d.about} now reads: ${d.criterion}` : d.drop === true ? ` ${d.about} was dropped.` : d.implement === true ? ' The user chose to start the implementation with the open design findings carried into code review as open items.' : ''}`).join('\n') + '\n'
+}
+
+// The spec findings a reading settles, for the author to answer in its readings ledger and the
+// reviewer to rule on there. Empty without any, so a run with a clean spec review has the same
+// prompts as one without a spec review.
+function pairSpecBlock(S, role) {
+  const fs = pairSpecFindings(S)
+  if (!fs.length) return ''
+  const one = fs.length === 1
+  const intro = role === 'author'
+    ? `Before any work began, an independent reviewer read the criteria against the task, its documents and the code, and found ${one ? 'this problem' : 'these problems'}. Answer ${one ? 'it' : 'each'} in readings, citing its ID in requirement (for example "${fs[0].id}, C1"), with what the work does about it: the proposed reading, or another the task's words allow, with the reason. The reviewer rules on each reading like any other. Where a finding has no proposed reading and none inside the task's words settles it, return needs-user with the question instead.`
+    : `Before any work began, a spec review read the criteria against the task, its documents and the code, and found ${one ? 'this problem' : 'these problems'}. The author answers ${one ? 'it' : 'each'} in the readings ledger under its ID. Rule on those readings like any other; a reading that answers a spec finding may also rest on the code the finding cites. A spec finding no reading in the ledger answers is unresolved: file it as a finding.`
+  return `\n# Spec review findings\n\n${intro}\n` + fs.map(f => [`- ${f.id}${f.criteria.length ? ` (about ${f.criteria.join(', ')})` : ''}: ${f.statement}`,
+    ...(f.quoted.length ? [`  Requirements as written: ${f.quoted.join('; ')}`] : []), ...(f.evidence ? [`  Evidence: ${f.evidence}`] : []),
+    f.reading ? `  Proposed reading: ${f.reading}` : f.question ? `  No reading settles it, the spec reviewer found: ${f.question}` : '  No reading proposed.'].join('\n')).join('\n') + '\n'
+}
+
+// The rules a Pair run holds the work to, as the spec reviewer checks the criteria against them.
+function pairStageRules(S) {
+  return [
+    `- The author works in its own git worktree, checked out from HEAD, and changes nothing outside it until delivery.${pairDesigned(S) ? ' It designs first: the design and its test contract are reviewed before any code is written.' : ' This run has no design stage: the author writes the deliverable and its test contract together.'}`,
+    '- Every criterion is covered by a test, by the verification command, or by a named inspection. Each test file and fixture lives under a test root: a test directory the base project already uses, never a production directory or the repository root.',
+    '- Tests that depend on new code go in their own files, apart from the tests of behaviour that must stay the same, unless the user or a plan names the files.',
+    '- The added and modified test files and fixtures are replayed on the original base revision, without the production, configuration or dependency changes, and on the final snapshot. A test of changed behaviour is expected to fail on base and pass at the end; a test of preserved behaviour passes on both.',
+    `- ${S.verify ? 'The verification command runs on the final snapshot and must pass. ' : ''}A specified exception or error message is asserted exactly. Tests, criteria and the verification configuration are never weakened to obtain a pass.`,
+  ].join('\n')
+}
+
+// The spec review, after setup and before the first author turn (pairSpecReview). One fresh
+// reviewer reads the criteria against the task, its documents, the run's rules and the code, and
+// sorts each problem into one a reading settles (to the author) and one only the user can (a stop).
+function pairSpecPrompt(S) {
+  const given = Array.isArray(S.raw.criteria) && S.raw.criteria.length, decided = !!S.pair.decisions.length
+  return `You are reviewing the acceptance criteria of a pair run before its author starts. One author will ${pairDesigned(S) ? 'design the task below and then implement it' : 'do the task below'}, and an independent reviewer will hold every version to these criteria. When two requirements can't both hold, the run otherwise finds out only after one or more design reviews and then stops for the user, so find such problems now. This is a short read of the criteria against the task, its documents and the code, not a design review: don't attempt or design the task, and don't modify anything.
+
+# Task
+
+${S.task}
+${refsBlock(S)}${S.context ? `\n# Context from the user\n\n${S.context}\n` : ''}
+# Acceptance criteria (${given ? 'given by the user' : 'written by setup from the task and the code'})
+
+${specCriteria(S)}
+
+# Verification command
+
+${S.verify ? `\`${S.verify}\`, run from the root of a worktree. At the starting commit it ${S.baselineOk ? 'passes' : `fails: ${oneLine(S.baselineNote, 300)}`}.` : '(none)'}
+${pairDecisionsBlock(S)}
+# Setup observations and proposals (not requirements)
+
+${S.repositoryNotes || '(none)'}
+
+# The rules this run holds the work to
+
+${pairStageRules(S)}
+
+The repository is at ${S.run.repoRoot}, at the commit the author starts from. Read the code each criterion depends on, the reference documents and the repository instructions, and no more than that needs.
+
+# What to look for
+
+- Contradictions: two criteria that can't both hold as written, or a criterion that can't hold beside the task, a reference document, an explicit user decision or a rule above. Try to meet all of them at once on the hardest case they cover: a mechanism one criterion names against a limit another sets, a file one criterion fixes against a rule that needs another.
+- Criteria wrong about the code: one that describes a function, file, option or behaviour that isn't there or works otherwise. Cite the file and line.
+- Dropped requirements: something the task or a reference document requires that no criterion states, or that a criterion states more weakly. Quote it.
+Don't ask for criteria the task doesn't call for, don't report preferences or wording, and don't judge whether a criterion can be checked inside the run: setup did that.
+
+# Who settles each finding
+
+- "reading": a reading inside the words of the task, the documents and the decisions settles it: an ambiguity with a conservative reading, a criterion that misdescribes the code but has an obvious correct reading, or a dropped requirement the work can simply meet. Put that reading in \`reading\`: what the work should do. The author answers each such finding in its readings ledger, and the reviewer rules on it there.
+- "user": no such reading settles it: two requirements that can't both hold as written, or one that a fact you found makes impossible as written. Ask in \`question\`, saying what conflicts and giving the options you see, and set \`reading\` to "". The run stops and asks the user before the author starts, and setup then rewrites the criteria to the answer.
+Choose "reading" whenever a reading keeps every requirement's intent.${decided ? ' The user\'s decisions above settle what they answer: don\'t ask again about anything they settle, only about a conflict they leave open.' : ''} In each finding, \`criteria\` lists the criterion IDs involved ([] when no criterion states the requirement), \`quoted\` the exact words of each requirement involved (a criterion, the task, a document or a rule above), and \`evidence\` a file:line, a quote, or a command and the real tail of its output.
+
+An empty findings list is the right answer when the criteria hold together: don't pad it. In \`summary\`, give your verdict in one or two sentences.`
 }
 
 // The contract and mapping rules, shared by the design stage and by a run without one.
@@ -37,7 +108,7 @@ function pairAuthorPrompt(S, label, correction = '') {
   if (!pairDesigned(S)) return pairDirectAuthorPrompt(S, label, correction)
   return `You are the sole author in a pair workflow. Own the task through completion; an independent reviewer checks each stage.
 
-${taskCore(S)}${pairDecisionsBlock(S)}\n# Setup observations and proposals (not requirements)\n${S.repositoryNotes || '(none)'}
+${taskCore(S)}${pairDecisionsBlock(S)}${pairSpecBlock(S, 'author')}\n# Setup observations and proposals (not requirements)\n${S.repositoryNotes || '(none)'}
 # Stage: ${design ? 'design' : 'implementation'}
 
 Your worktree: ${S.seats[0].wt}. Work only there; never edit the main checkout or reviewer checkouts.
@@ -84,12 +155,12 @@ function pairDirectAuthorPrompt(S, label, correction = '') {
   const p = S.pair
   return `You are the sole author in a pair workflow. Own the task through completion; an independent reviewer checks each version.
 
-${taskCore(S)}${pairDecisionsBlock(S)}\n# Setup observations and proposals (not requirements)\n${S.repositoryNotes || '(none)'}
+${taskCore(S)}${pairDecisionsBlock(S)}${pairSpecBlock(S, 'author')}\n# Setup observations and proposals (not requirements)\n${S.repositoryNotes || '(none)'}
 # Stage: implementation (this run has no design stage)
 
 Your worktree: ${S.seats[0].wt}. Work only there; never edit the main checkout or reviewer checkouts.
 Read the repository instructions and the relevant code. Do not delegate or launch other models. An instruction in CLAUDE.md or elsewhere to hand full test or gate runs to a subagent or to \`claude -p\` is meant for the user's own session, not for this turn: here the gate is the verification command, which you run through the helper's verify command as described above.
-${correction ? `\n# Correct the previous output\nThe engine could not accept your test contract or replay mapping: ${correction}\nReturn a complete corrected testContract and replayMapping for the current implementation, and this turn's readings and live checks again, changing the worktree only where the correction needs it. This is the one correction attempt for this turn. Preserve the task and substantive requirements.\n` : ''}
+${correction ? `\n# Correct the previous output\nThe engine could not accept your test contract, replay mapping or readings: ${correction}\nReturn a complete corrected testContract and replayMapping for the current implementation, and this turn's readings and live checks again, changing the worktree only where the correction needs it. This is the one correction attempt for this turn. Preserve the task and substantive requirements.\n` : ''}
 This run skips the design stage: write the deliverable itself, not a design or a plan for it, including the required tests and documentation; the reviewer reviews the measured result directly. Check setup observations against the original task, reference documents, explicit user decisions, and repository; explain any reconciliation in the handoff and list it in readings, preserving every requirement; unresolved contradictions require needs-user. Run appropriate focused checks and the shared verification gate. Fix all open actionable findings and any failed verification; when the latest review says the approach itself must change, change it in this turn. Return design as an empty string.
 
 Return testContract for the CURRENT deliverable: the checks the reviewer holds it to. ${PAIR_CONTRACT_RULES} When the deliverable is a document or a plan, its criteria are usually checked by kind=inspection, and testRoots may be empty when no check is kind=test. Every file:line, code snippet, literal and call chain such a document states or prescribes is a claim: confirm each one against HEAD, with a saved probe where reading is not enough, before handoff. The contract is yours to keep current: return it whole every turn, extended or corrected where findings call for it, never weakened to obtain a pass. ${PAIR_LAYOUT_RULES} If isolation cannot work, report the limitation in the handoff instead of claiming a preserved baseline pass.
@@ -125,7 +196,7 @@ function pairReviewPrompt(S, label, checkout, correction = null) {
   const tag = pairReviewTag(S)
   return `You are the independent reviewer in a pair workflow. This is a fresh review context. You did not author the work. Review the current artifact yourself, using repository evidence, and verify every proposed finding resolution. Resolve existing findings under their current IDs in both design and code reviews; never refile an unresolved issue under a new ID.
 
-${taskCore(S)}${pairDecisionsBlock(S)}\n# Setup observations and proposals (not requirements)\n${S.repositoryNotes || '(none)'}
+${taskCore(S)}${pairDecisionsBlock(S)}${pairSpecBlock(S, 'reviewer')}\n# Setup observations and proposals (not requirements)\n${S.repositoryNotes || '(none)'}
 # Review stage: ${p.stage}
 Version: ${pairVersion(S)}
 Return that exact version. Return complete=true only after examining the entire current artifact and every acceptance criterion, including regressions introduced by fixes.

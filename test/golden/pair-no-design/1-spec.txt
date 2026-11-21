@@ -1,0 +1,48 @@
+You are reviewing the acceptance criteria of a pair run before its author starts. One author will do the task below, and an independent reviewer will hold every version to these criteria. When two requirements can't both hold, the run otherwise finds out only after one or more design reviews and then stops for the user, so find such problems now. This is a short read of the criteria against the task, its documents and the code, not a design review: don't attempt or design the task, and don't modify anything.
+
+# Task
+
+Implement the behavior
+
+# Acceptance criteria (written by setup from the task and the code)
+
+- C1: The requested behavior works.
+
+# Verification command
+
+`node test.cjs`, run from the root of a worktree. At the starting commit it passes.
+
+# Setup observations and proposals (not requirements)
+
+(none)
+
+# The rules this run holds the work to
+
+- The author works in its own git worktree, checked out from HEAD, and changes nothing outside it until delivery. This run has no design stage: the author writes the deliverable and its test contract together.
+- Every criterion is covered by a test, by the verification command, or by a named inspection. Each test file and fixture lives under a test root: a test directory the base project already uses, never a production directory or the repository root.
+- Tests that depend on new code go in their own files, apart from the tests of behaviour that must stay the same, unless the user or a plan names the files.
+- The added and modified test files and fixtures are replayed on the original base revision, without the production, configuration or dependency changes, and on the final snapshot. A test of changed behaviour is expected to fail on base and pass at the end; a test of preserved behaviour passes on both.
+- The verification command runs on the final snapshot and must pass. A specified exception or error message is asserted exactly. Tests, criteria and the verification configuration are never weakened to obtain a pass.
+
+The repository is at /repo, at the commit the author starts from. Read the code each criterion depends on, the reference documents and the repository instructions, and no more than that needs.
+
+# What to look for
+
+- Contradictions: two criteria that can't both hold as written, or a criterion that can't hold beside the task, a reference document, an explicit user decision or a rule above. Try to meet all of them at once on the hardest case they cover: a mechanism one criterion names against a limit another sets, a file one criterion fixes against a rule that needs another.
+- Criteria wrong about the code: one that describes a function, file, option or behaviour that isn't there or works otherwise. Cite the file and line.
+- Dropped requirements: something the task or a reference document requires that no criterion states, or that a criterion states more weakly. Quote it.
+Don't ask for criteria the task doesn't call for, don't report preferences or wording, and don't judge whether a criterion can be checked inside the run: setup did that.
+
+# Who settles each finding
+
+- "reading": a reading inside the words of the task, the documents and the decisions settles it: an ambiguity with a conservative reading, a criterion that misdescribes the code but has an obvious correct reading, or a dropped requirement the work can simply meet. Put that reading in `reading`: what the work should do. The author answers each such finding in its readings ledger, and the reviewer rules on it there.
+- "user": no such reading settles it: two requirements that can't both hold as written, or one that a fact you found makes impossible as written. Ask in `question`, saying what conflicts and giving the options you see, and set `reading` to "". The run stops and asks the user before the author starts, and setup then rewrites the criteria to the answer.
+Choose "reading" whenever a reading keeps every requirement's intent. In each finding, `criteria` lists the criterion IDs involved ([] when no criterion states the requirement), `quoted` the exact words of each requirement involved (a criterion, the task, a document or a rule above), and `evidence` a file:line, a quote, or a command and the real tail of its output.
+
+An empty findings list is the right answer when the criteria hold together: don't pad it. In `summary`, give your verdict in one or two sentences.
+
+Set `turn` in your output to exactly "spec-20033d26".
+
+<<<OUTPUT_SCHEMA
+{"type":"object","properties":{"summary":{"type":"string","description":"Your verdict on the criteria, in one or two sentences."},"findings":{"type":"array","description":"Problems in the criteria; [] when they hold together.","items":{"type":"object","properties":{"criteria":{"type":"array","items":{"type":"string"},"description":"The bare criterion IDs involved, such as C2; [] when no criterion states the requirement."},"statement":{"type":"string","description":"What is wrong with the criteria."},"quoted":{"type":"array","items":{"type":"string"},"description":"The exact words of each requirement involved."},"evidence":{"type":"string","description":"A file:line, a quote from the task or a document, or a command and the real tail of its output."},"settle":{"type":"string","enum":["reading","user"],"description":"reading: a reading inside the words of the task, documents and decisions settles it; user: only the user can."},"reading":{"type":"string","description":"For settle reading: what the work should do. \"\" for user."},"question":{"type":"string","description":"For settle user: the question for the user, saying what conflicts and giving the options you see. \"\" for reading."}},"required":["criteria","statement","quoted","evidence","settle","reading","question"],"additionalProperties":false}},"process":{"type":"string","description":"Feedback on the pair process, not on the task: at most two sentences on anything in this turn's instructions, inputs or tools that got in your way, such as an unclear or conflicting instruction, missing context, wasted effort, a limit that cut you short, or a command that failed. Name the instruction or input. \"\" if nothing did; don't invent feedback."},"turn":{"type":"string","enum":["spec-20033d26"],"description":"Exactly \"spec-20033d26\"."}},"required":["summary","findings","process","turn"],"additionalProperties":false}
+OUTPUT_SCHEMA>>>

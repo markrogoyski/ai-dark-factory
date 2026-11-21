@@ -61,6 +61,7 @@ async function run(options = {}) {
     // A native stop's record turn is 'stop'; the check before a continuation is 'resume'.
     const kind = 'runDir' in schema.properties ? 'setup' : 'design' in schema.properties ? 'author'
       : 'version' in schema.properties ? 'review' : 'snapshot' in schema.properties ? 'measure' : 'worked' in schema.properties ? 'retro'
+      : 'findings' in schema.properties ? 'spec'
       : 'reason' in schema.properties && 'status' in schema.properties ? (String(meta.label).startsWith('stop ') ? 'stop' : 'resume')
       : 'strategy' in schema.properties && 'tier' in schema.properties ? 'intake' : 'saved' in schema.properties ? 'record' : 'unknown'
     const call = { ...meta, kind, prompt, schema }
@@ -79,6 +80,8 @@ async function run(options = {}) {
       value.challenges = /Return exactly one structured challenge per criterion/.test(prompt) ? challenges() : []
       reviewNumber++
       if (options.review) value = await options.review(value, reviewNumber, call)
+    } else if (kind === 'spec') {
+      if (options.spec) value = await options.spec(value, call)
     } else if (kind === 'measure') {
       const label = prompt.match(/--label '([^']+)'/)[1]
       const replay = JSON.parse(prompt.match(/--replay-json '([^']+)'/)[1])
@@ -140,7 +143,8 @@ test('pair selects the author and opposite-vendor reviewer without council roles
   assert.equal(c.auditors[0].key, 'sonnet')
   assert.equal(c.pairOptions.maxReviews, 12)
   assert.deepEqual(c.panel, [])
-  assert.deepEqual(c.specReviewers, [])
+  // The spec review reads the criteria on the reviewer's model, at medium effort.
+  assert.deepEqual(c.specReviewers.map(s => [s.key, s.effort, s.lens]), [['sonnet', 'medium', 'criteria']])
   for (const maxReviews of [0, 1, 101, 2.2, 'oops']) assert.throws(() => L.parsePairConfig({ task: 'x', maxReviews }), /maxReviews/)
   // The retro adds no CLI the pair does not already use.
   const retro = args => L.parsePairConfig({ task: 'x', host: 'codex', ...args }).roles.retro.key
@@ -354,8 +358,8 @@ test('standalone pair takes a passing baseline from the runner, not from setup',
   assert.equal(result.status, 'done')
   assert.deepEqual(baselines, [{ run: { runId: 'pair-test', runDir: '/repo/.council/pair-test', repoRoot: '/repo', head: 'b'.repeat(40), room: '/repo/.council/pair-test/room' }, seat: 'A', label: 'base' }])
   assert.ok(!('replay' in baselines[0]))
-  assert.deepEqual(events.slice(0, 3), ['setup', 'measure:base', 'author'])
-  assert.deepEqual(calls.map(c => c.kind), ['setup', 'author', 'review', 'author', 'review', 'retro'], 'no model turn measures the base')
+  assert.deepEqual(events.slice(0, 4), ['setup', 'measure:base', 'spec', 'author'])
+  assert.deepEqual(calls.map(c => c.kind), ['setup', 'spec', 'author', 'review', 'author', 'review', 'retro'], 'no model turn measures the base')
   assert.ok(designAuthor(calls).includes(RUNNER_PASSED))
   assert.ok(!calls.some(c => c.prompt.includes('setup saw EPERM')))
   assert.deepEqual(measurements.map(m => m.label), ['pair-code-2'])
@@ -442,15 +446,16 @@ test('standalone pair reports a failing runner baseline to the existing baseline
 
 test("native pair keeps setup's baseline and measures only the code", async () => {
   const failed = await run({ native: true, setup: { baselinePasses: false, baselineNote: 'Gate fails at base: 2 failures.' } })
-  assert.equal(failed.calls[1].kind, 'author')
+  assert.equal(failed.calls[2].kind, 'author')
   assert.ok(!failed.calls.some(c => c.kind === 'measure' && /--label 'base'/.test(c.prompt)))
   assert.equal(failed.measurements.length, 1)
   assert.equal(failed.measurements[0].label, 'pair-code-2')
-  assert.ok(failed.calls[1].prompt.includes('Setup ran the verification command on the base revision, and it failed: Gate fails at base: 2 failures.'))
+  assert.ok(failed.calls[2].prompt.includes('Setup ran the verification command on the base revision, and it failed: Gate fails at base: 2 failures.'))
+  assert.ok(failed.calls[1].prompt.includes('`node test.cjs`, run from the root of a worktree. At the starting commit it fails: Gate fails at base: 2 failures.'))
   const passed = await run({ native: true, setup: { baselinePasses: true } })
-  assert.equal(passed.calls[1].kind, 'author')
+  assert.equal(passed.calls[2].kind, 'author')
   assert.equal(passed.measurements.length, 1)
-  assert.ok(passed.calls[1].prompt.includes('Setup ran the verification command on the base revision, and it passed.'))
+  assert.ok(passed.calls[2].prompt.includes('Setup ran the verification command on the base revision, and it passed.'))
 })
 
 test('only the standalone pair setup prompt hands the baseline to the runner', async () => {
@@ -590,7 +595,7 @@ test('without a design stage the author owns the contract: corrected once, kept 
   const corrected = await run({ args: { design: false }, author: a => { if (++authors === 1) a.testContract.checks[0].boundaries = ''; return a } })
   assert.equal(corrected.result.status, 'done')
   assert.deepEqual(corrected.calls.filter(c => c.kind === 'author').map(c => c.label), ['pair-code-1', 'pair-code-1-corrected'])
-  assert.match(corrected.calls.filter(c => c.kind === 'author')[1].prompt, /could not accept your test contract or replay mapping/)
+  assert.match(corrected.calls.filter(c => c.kind === 'author')[1].prompt, /could not accept your test contract, replay mapping or readings/)
   assert.match(corrected.result.notes.join(' '), /one author correction/)
   const refused = await run({ args: { design: false }, author: a => { a.testContract.checks[0].boundaries = ''; return a } })
   assert.equal(refused.result.status, 'blocked')
@@ -725,21 +730,22 @@ test('the report tells the run in order, with the author\'s disputes and how the
   const md = result.report.markdown
   assert.ok(md.includes('\n\nHow the run went:\n\n' + [
     '1. Setup: 1 acceptance criterion (C1); gate `node test.cjs` passing at base.',
-    '2. Claude Opus drafted the design.',
-    '3. Design review 1/8 by Codex Astra: changes requested. New: P1 (minor) Cover the boundary case; P2 (major) The cache can go stale. Criteria all met.',
-    '4. Claude Opus revised the design. Changed P1. Disputed P2: The cache is per request, so it cannot go stale.',
-    '5. Design review 2/8 by Codex Astra: approved. Fixed P1. Refuted P2. Criteria all met.',
-    '6. Claude Opus implemented the approved design. The gate passed on its snapshot.',
-    '7. Code review 3/8 by Codex Astra: changes requested. New: P3 (minor) Name the helper after its result. Criteria: C1 partial.',
-    '8. Claude Opus revised the implementation. No reply to P3. The gate passed on its snapshot.',
-    '9. Code review 4/8 by Codex Astra: changes requested. Still open: P3. Criteria all met.',
-    '10. Claude Opus revised the implementation. No reply to P3. The gate passed on its snapshot.',
-    '11. Code review 5/8 by Codex Astra: approved. Fixed P3. Criteria all met.',
-    '12. Ready after 5 reviews of 8.',
+    '2. Spec review by Codex Astra: no problems in the criteria.',
+    '3. Claude Opus drafted the design.',
+    '4. Design review 1/8 by Codex Astra: changes requested. New: P1 (minor) Cover the boundary case; P2 (major) The cache can go stale. Criteria all met.',
+    '5. Claude Opus revised the design. Changed P1. Disputed P2: The cache is per request, so it cannot go stale.',
+    '6. Design review 2/8 by Codex Astra: approved. Fixed P1. Refuted P2. Criteria all met.',
+    '7. Claude Opus implemented the approved design. The gate passed on its snapshot.',
+    '8. Code review 3/8 by Codex Astra: changes requested. New: P3 (minor) Name the helper after its result. Criteria: C1 partial.',
+    '9. Claude Opus revised the implementation. No reply to P3. The gate passed on its snapshot.',
+    '10. Code review 4/8 by Codex Astra: changes requested. Still open: P3. Criteria all met.',
+    '11. Claude Opus revised the implementation. No reply to P3. The gate passed on its snapshot.',
+    '12. Code review 5/8 by Codex Astra: approved. Fixed P3. Criteria all met.',
+    '13. Ready after 5 reviews of 8.',
   ].join('\n') + '\n\nPoints of interest:\n\n' + [
     '- Claude Opus disputed P2 (major, design), "The cache can go stale": The cache is per request, so it cannot go stale. Codex Astra accepted that and refuted it.',
     '- P3 (minor, code) took 2 revisions before it was fixed: Name the helper after its result.',
-  ].join('\n') + '\n\nP1: fixed'), md)
+  ].join('\n') + '\n\nSpecification review:\n\n- spec by Codex Astra: no problems in the criteria.\n\nP1: fixed'), md)
   assert.match(result.forTheOrchestrator, /Show the "How the run went" and "Points of interest" lists from report\.markdown as they are/)
 })
 
@@ -821,7 +827,7 @@ test('malformed challenges get one fresh correction and remain subject to the tu
       assert.equal(new Set(reviews.map(r => r.threadKey)).size, 3)
     }
   }
-  const { result, calls } = await run({ args: { maxTurns: 2 }, author: a => { a.testContract.checks = []; return a } })
+  const { result, calls } = await run({ args: { maxTurns: 3 }, author: a => { a.testContract.checks = []; return a } })
   assert.notEqual(result.status, 'done')
   assert.match(result.stopReason, /turn budget/)
   assert.equal(calls.filter(c => c.kind === 'author').length, 1)
@@ -1601,7 +1607,7 @@ test('resume: continuation replays every call before the stop and continues from
 test('resume: golden prompts of a native run continued past a reviewer question', async () => {
   const { calls, result } = await run({ native: true, setup: { liveChecks: [liveCheck()] }, ...readingRun(), args: { clarifications: [{ id: 'Q1', answer: 'Allow Node 24 as well.' }] } })
   assert.equal(result.status, 'done')
-  assert.deepEqual(calls.map(c => c.kind), ['setup', 'author', 'review', 'stop', 'resume', 'author', 'review', 'author', 'measure', 'review', 'retro'])
+  assert.deepEqual(calls.map(c => c.kind), ['setup', 'spec', 'author', 'review', 'stop', 'resume', 'author', 'review', 'author', 'measure', 'review', 'retro'])
   const dir = new URL('test/golden/pair-resume/', root)
   if (process.env.UPDATE_GOLDEN) mkdirSync(dir, { recursive: true })
   for (const [i, call] of calls.entries()) {
@@ -1762,15 +1768,16 @@ test('resume: guidance appears only on a needs-user stop that can continue, with
 })
 
 test('resume: check placement records each native stop and checks it just before the run continues', async () => {
-  const labels = r => r.calls.map(c => c.label)
+  // The spec review after setup asks nothing here; it is left out of the labels.
+  const labels = r => r.calls.map(c => c.label).filter(l => !/^spec\b/.test(l))
   const native = { native: true, author: askAt('pair-design-1') }
   let r = await run(native)
   assert.deepEqual(labels(r), ['setup', 'pair-design-1', 'stop Q1', 'retro'])
-  assert.match(r.calls[2].prompt, /\ndark-factory resume-check --run-dir '\/repo\/\.council\/pair-test' --stop Q1 --snapshot 'base' --record\n/)
+  assert.match(r.calls.find(c => c.kind === 'stop').prompt, /\ndark-factory resume-check --run-dir '\/repo\/\.council\/pair-test' --stop Q1 --snapshot 'base' --record\n/)
   const answered = await run({ ...native, args: { clarifications: [{ id: 'Q1', answer: 'Yes.' }] } })
   assert.deepEqual(labels(answered).slice(0, 5), ['setup', 'pair-design-1', 'stop Q1', 'resume-check Q1', 'pair-design-1-answered'])
   const hash = L.pairAnswersHash({}, [{ id: 'Q1', answer: 'Yes.' }])
-  assert.match(answered.calls[3].prompt, new RegExp(`\\ndark-factory resume-check --run-dir '/repo/\\.council/pair-test' --stop Q1 --snapshot 'base' --answers '${hash}'\\n`))
+  assert.match(answered.calls.find(c => c.kind === 'resume').prompt, new RegExp(`\\ndark-factory resume-check --run-dir '/repo/\\.council/pair-test' --stop Q1 --snapshot 'base' --answers '${hash}'\\n`))
   assert.equal(answered.calls.filter(c => ['stop', 'resume'].includes(c.kind)).length, 2)
   // A stop after a code measurement names that snapshot.
   const late = (r, n) => n === 2 ? { ...r, questions: [{ question: 'Keep the flag?', quoted: ['C1: "The requested behavior works."'] }] } : r
@@ -1783,7 +1790,7 @@ test('resume: check placement records each native stop and checks it just before
   assert.equal(one.result.status, 'needs-user')
   const n = beforeRetro(one.calls).length
   sameCalls(one, two, n)
-  assert.deepEqual(labels(one).slice(0, n), ['setup', 'pair-design-1', 'stop Q1', 'resume-check Q1', 'pair-design-1-answered', 'review pair-design-1-answered (relay)', 'stop Q2'])
+  assert.deepEqual(labels({ calls: one.calls.slice(0, n) }), ['setup', 'pair-design-1', 'stop Q1', 'resume-check Q1', 'pair-design-1-answered', 'review pair-design-1-answered (relay)', 'stop Q2'])
   assert.equal(two.calls[n].label, 'resume-check Q2')
   assert.equal(two.result.status, 'done')
   // No record or check: a setup conflict, the Codex host, and an incomplete answer.
@@ -1792,7 +1799,7 @@ test('resume: check placement records each native stop and checks it just before
   assert.deepEqual(labels(r).slice(0, 3), ['setup', 'setup-answered', 'pair-design-1'])
   r = await run({ author: askAt('pair-design-1'), args: { clarifications: [{ id: 'Q1', answer: 'Yes.' }] } })
   assert.ok(!r.calls.some(c => ['stop', 'resume'].includes(c.kind)))
-  assert.equal(r.calls[2].label, 'pair-design-1-answered')
+  assert.equal(labels(r)[2], 'pair-design-1-answered')
   r = await run({ ...native, args: { clarifications: [{ id: 'Q7', answer: 'x' }, { id: 'q1', answer: 'Yes.' }] } })
   assert.deepEqual(labels(r), ['setup', 'pair-design-1', 'stop Q1'])
   // A refused check blocks the run, and a stop that could not be recorded cannot continue.
@@ -1852,7 +1859,7 @@ test('minor design findings do not hold the design: they carry into code review 
       reviews[0].prompt.includes('assess it met when the design satisfies it apart from minor findings') && reviews[0].prompt.includes('do not manufacture findings'))
     assert.ok(reviews[1].prompt.includes('Actionable minor findings count too.') && !reviews[1].prompt.includes('Minor findings do not block design approval'))
     const md = result.report.markdown
-    assert.match(md, /\n3\. Design review 1\/8 by [^:]+: approved\. New: P1 \(minor\) Document the timing of the cache\. Criteria all met\. Minor finding P1 stays open for code review\.\n/)
+    assert.match(md, /\n4\. Design review 1\/8 by [^:]+: approved\. New: P1 \(minor\) Document the timing of the cache\. Criteria all met\. Minor finding P1 stays open for code review\.\n/)
     assert.match(md, /Code review 2\/8 by [^:]+: changes requested\. Still open: P1\./)
   }
   // Left open, the carried minor finding blocks readiness at the end of the budget.
@@ -1908,7 +1915,7 @@ test('a design still unapproved after maxDesignReviews stops for the user with i
     assert.ok(result.final.readiness.incomplete.includes(reason))
     assert.match(result.resumeSteps, /One to a question of kind design continues the design with the answer as a scope decision, or, with implement: true, starts the implementation/)
     const md = result.report.markdown
-    assert.ok(md.includes(`\n8. ${reason} The run asked the user Q1: continue the design with a scope decision, start the implementation with the open design findings, or stop.\n9. Stopped after 3 reviews of 8 for the user's answers.`), md)
+    assert.ok(md.includes(`\n9. ${reason} The run asked the user Q1: continue the design with a scope decision, start the implementation with the open design findings, or stop.\n10. Stopped after 3 reviews of 8 for the user's answers.`), md)
     assert.ok(md.includes('\n- The design reached its review allowance in review pair-design-3; the run stopped for the user (Q1).'), md)
   }
   // Other stops never mention the design choice; and without a design stage there is no allowance.
@@ -1990,4 +1997,228 @@ test('a design stop answered with implement: true starts the implementation with
   const S = { pair: {} }
   assert.equal(L.pairAnswersHash(S, [{ id: 'Q1', answer: 'Yes.' }]), L.promptHash(JSON.stringify([['Q1', 'Yes.', null, null]])))
   assert.notEqual(L.pairAnswersHash(S, [{ id: 'Q1', answer: 'Yes.', implement: true }]), L.pairAnswersHash(S, [{ id: 'Q1', answer: 'Yes.' }]))
+})
+
+// ---------------------------------------------------------------- the spec review
+// One fresh reviewer reads setup's criteria before the first author turn. A finding a reading
+// settles goes to the author's readings ledger; a conflict only the user can settle stops the run,
+// and the answer runs setup again.
+
+// The pass a spec turn belongs to: spec, spec-2, … (natively the label carries the relay's suffix).
+const specPass = call => Number((String(call.label).match(/^spec-(\d+)/) || [])[1] || 1)
+const specFinding = (over = {}) => ({ criteria: ['C1'], statement: 'C1 calls the entry point parse(), but src/a.js has only read().',
+  quoted: ['C1: "The requested behavior works."'], evidence: 'src/a.js:1 defines read() and nothing named parse().', settle: 'reading',
+  reading: 'Read parse() as read(), the entry point src/a.js has.', question: '', ...over })
+const specConflict = (over = {}) => specFinding({ statement: 'C1 fixes tests/config.json, which the new tests may not share.', settle: 'user', reading: '',
+  quoted: ['C1: "The behavior reads tests/config.json."', 'Rule: "Tests that depend on new code go in their own files"'],
+  question: 'C1 fixes tests/config.json, but tests of new code need their own files. Rename the file, or let the new tests share it?', ...over })
+const specReading = (over = {}) => reading({ requirement: 'S1, C1', literal: 'parse()', reading: 'read(), as S1 proposes.', reason: 'src/a.js has no parse().', ...over })
+
+function goldenCalls(name, calls) {
+  const dir = new URL(`test/golden/${name}/`, root)
+  if (process.env.UPDATE_GOLDEN) mkdirSync(dir, { recursive: true })
+  for (const [i, call] of calls.entries()) {
+    const file = new URL(`${i}-${call.kind}.txt`, dir)
+    const value = call.prompt.replace(/\n*$/, '\n')
+    if (process.env.UPDATE_GOLDEN) writeFileSync(file, value)
+    else assert.equal(value, readFileSync(file, 'utf8'), `Prompt changed: ${fileURLToPath(file)}`)
+  }
+}
+
+test('the spec review reads setup\'s criteria in a fresh read-only turn on the reviewer\'s model, before the first author turn', async () => {
+  for (const native of [false, true]) {
+    const { result, calls, events } = await run({ native, spec: v => ({ ...v, summary: 'The criteria hold together.' }) })
+    assert.equal(result.status, 'done')
+    assert.deepEqual(calls.slice(0, 3).map(c => c.kind), ['setup', 'spec', 'author'])
+    const spec = calls[1]
+    assert.equal(spec.label, native ? 'spec (relay)' : 'spec')
+    assert.ok('process' in spec.schema.properties, 'the spec reviewer can leave a process note')
+    if (!native) {
+      assert.deepEqual(events.slice(0, 3), ['setup', 'measure:base', 'spec'], 'after the runner\'s baseline')
+      assert.deepEqual([spec.who, spec.effort, spec.sandbox, spec.fresh, spec.cwd, spec.writable, spec.role], ['Claude Opus', 'medium', 'read-only', true, '/repo', [], 'spec'])
+    }
+    assert.ok(spec.prompt.includes('\n# Verification command\n\n`node test.cjs`, run from the root of a worktree. At the starting commit it passes.\n'))
+    assert.ok(spec.prompt.includes('\n# Acceptance criteria (written by setup from the task and the code)\n\n- C1: The requested behavior works.\n'))
+    assert.ok(spec.prompt.includes('\n# The rules this run holds the work to\n\n- The author works in its own git worktree'))
+    assert.ok(spec.prompt.includes('- Tests that depend on new code go in their own files, apart from the tests of behaviour that must stay the same, unless the user or a plan names the files.'))
+    assert.doesNotMatch(spec.prompt, /Explicit user decisions|don't ask again/)
+    const name = native ? 'Codex Astra' : 'Claude Opus'
+    assert.match(result.report.markdown, new RegExp(`\\n2\\. Spec review by ${name}: no problems in the criteria\\.\\n`))
+    assert.ok(result.report.markdown.includes(`\n\nSpecification review:\n\n- spec by ${name}: The criteria hold together.`), result.report.markdown)
+    assert.deepEqual(result.spec.passes, [{ label: 'spec', reviewer: name, ok: true, summary: 'The criteria hold together.', findings: [], stopped: false }])
+    // No finding reaches either participant.
+    assert.ok(calls.filter(c => ['author', 'review'].includes(c.kind)).every(c => !c.prompt.includes('# Spec review findings')))
+  }
+  // Without a design stage the reviewer is told so.
+  const direct = await run({ native: true, args: { design: false } })
+  assert.match(direct.calls[1].prompt, /One author will do the task below, and an independent reviewer/)
+  assert.match(direct.calls[1].prompt, /This run has no design stage: the author writes the deliverable and its test contract together\./)
+})
+
+test('a spec finding a reading settles goes to the author, who answers it in readings, and the reviewer rules on it', async () => {
+  for (const native of [false, true]) {
+    let authors = 0
+    const { result, calls } = await run({ native, spec: v => ({ ...v, summary: 'C1 misnames the entry point.', findings: [specFinding()] }),
+      author: a => ({ ...a, readings: ++authors === 1 ? [specReading()] : [] }),
+      review: (r, n) => n === 1 ? { ...r, rulings: [{ id: 'R1', ruling: 'accepted', evidence: 'src/a.js:1 has read() only.' }] } : r })
+    assert.equal(result.status, 'done')
+    assert.deepEqual(calls.filter(c => c.kind === 'author').map(c => c.label), ['pair-design-1', 'pair-code-2'], 'no correction')
+    const block = '\n- S1 (about C1): C1 calls the entry point parse(), but src/a.js has only read().\n  Requirements as written: C1: "The requested behavior works."\n' +
+      '  Evidence: src/a.js:1 defines read() and nothing named parse().\n  Proposed reading: Read parse() as read(), the entry point src/a.js has.\n'
+    const [author] = calls.filter(c => c.kind === 'author'), [review] = calls.filter(c => c.kind === 'review')
+    for (const prompt of [author.prompt, review.prompt]) assert.ok(prompt.includes('\n# Spec review findings\n\n') && prompt.includes(block), prompt)
+    assert.match(author.prompt, /Answer it in readings, citing its ID in requirement \(for example "S1, C1"\)/)
+    assert.match(review.prompt, /a reading that answers a spec finding may also rest on the code the finding cites\. A spec finding no reading in the ledger answers is unresolved: file it as a finding\./)
+    assert.deepEqual(result.spec.findings.map(f => [f.id, f.to, f.settle]), [['S1', 'author', 'reading']])
+    const md = result.report.markdown
+    assert.match(md, /\n2\. Spec review by [^:]+: 1 finding\. For the author: S1 \(C1\) C1 calls the entry point parse\(\), but src\/a\.js has only read\(\)\.\n/)
+    assert.ok(md.includes('\n  - S1 (C1): C1 calls the entry point parse(), but src/a.js has only read() → for the author: reading R1, accepted.'), md)
+    // An author whose first turn answers no finding gets one correction; then the reviewer files it.
+    const missed = await run({ native, spec: v => ({ ...v, findings: [specFinding()] }) })
+    assert.equal(missed.result.status, 'done')
+    const turns = missed.calls.filter(c => c.kind === 'author')
+    assert.deepEqual(turns.map(c => c.label), ['pair-design-1', 'pair-design-1-corrected', 'pair-code-2'])
+    assert.ok(turns[1].prompt.includes('The engine could not accept your design output: The readings answer no spec finding S1. List a reading for each, citing its ID in requirement (for example "S1, C1"), with what the work does about it.'))
+    assert.ok(missed.result.report.markdown.includes(' → for the author: no reading answers it.'))
+    // Without a design stage, the same single correction.
+    const direct = await run({ native, args: { design: false }, spec: v => ({ ...v, findings: [specFinding()] }) })
+    const directTurns = direct.calls.filter(c => c.kind === 'author')
+    assert.deepEqual(directTurns.slice(0, 2).map(c => c.label), ['pair-code-1', 'pair-code-1-corrected'])
+    assert.match(directTurns[1].prompt, /could not accept your test contract, replay mapping or readings: The readings answer no spec finding S1\./)
+  }
+  // A reading that names the ID anywhere answers it.
+  const S = { pair: { ...L.newPairState(), spec: { passes: [{ label: 'spec' }], findings: [{ id: 'S1', pass: 'spec', to: 'author' }, { id: 'S12', pass: 'spec', to: 'author' }] } } }
+  assert.equal(L.pairSpecReadingsError(S, { readings: [{ requirement: 'C2', reading: 'As S12 proposes.' }] }), 'The readings answer no spec finding S1. List a reading for each, citing its ID in requirement (for example "S1, C1"), with what the work does about it.')
+  assert.equal(L.pairSpecReadingsError(S, { readings: [{ requirement: 'S1 and S12' }] }), null)
+})
+
+test('a conflict only the user can settle stops before the author; answered, setup runs again and the spec review reads the new criteria', async () => {
+  const spec = (v, call) => specPass(call) === 1 ? { ...v, summary: 'C1 conflicts with the isolation rule.', findings: [specConflict(), specFinding()] }
+    : { ...v, summary: 'The criteria hold together.' }
+  const answer = { id: 'Q1', answer: 'Let the new tests share tests/config.json.' }
+  for (const native of [false, true]) {
+    const args = native ? {} : { hostRunId: 'host-x' }
+    const stopped = await run({ native, spec, args })
+    const r = stopped.result
+    assert.equal(r.status, 'needs-user')
+    assert.equal(r.resumable, true)
+    assert.equal(r.stopReason, 'The spec review found a conflict in the criteria that only the user can settle.')
+    const question = 'C1 fixes tests/config.json, but tests of new code need their own files. Rename the file, or let the new tests share it? ' +
+      'Requirements as written: C1: "The behavior reads tests/config.json."; Rule: "Tests that depend on new code go in their own files"'
+    assert.deepEqual(r.questions, [{ id: 'Q1', about: 'C1', kind: 'spec', question }])
+    assert.ok(!stopped.calls.some(c => c.kind === 'author'), 'no author turn')
+    assert.deepEqual(beforeRetro(stopped.calls).map(c => c.label), native ? ['setup', 'spec (relay)', 'stop Q1'] : ['setup', 'spec'])
+    assert.deepEqual(r.spec.findings.map(f => [f.id, f.to, f.asked]), [['S1', 'user', 'Q1'], ['S2', 'author', '']])
+    const md = r.report.markdown
+    assert.match(md, /\n3\. The spec review asked the user a question: Q1 \(about C1\) C1 fixes tests\/config\.json, but tests of new code need their own files\. Rename the file, or let the new tests share it\?\n/)
+    assert.ok(md.includes(' → asked the user as Q1, unanswered.'), md)
+    assert.ok(md.includes(`\n- Q1 (about C1): ${question}`), md)
+
+    const answered = await run({ native, spec, args: { ...args, clarifications: [answer] } })
+    const n = beforeRetro(stopped.calls).length
+    sameCalls(stopped, answered, n)
+    assert.deepEqual(answered.calls.slice(0, n + (native ? 4 : 3)).map(c => c.label), native
+      ? ['setup', 'spec (relay)', 'stop Q1', 'resume-check Q1', 'setup-answered', 'spec-2 (relay)', 'pair-design-1']
+      : ['setup', 'spec', 'setup-answered', 'spec-2', 'pair-design-1'])
+    const setup2 = answered.calls.find(c => c.label === 'setup-answered').prompt
+    assert.ok(setup2.includes('\nThis setup runs again because the user answered questions the run asked, listed below: write the acceptance criteria so that they follow every answer.\n\n# Explicit user decisions\n'), setup2)
+    assert.ok(setup2.includes(`\n- Q1 (about C1; asked in spec): ${question} Answer: ${answer.answer}\n`))
+    if (!native) assert.match(setup2, /--run-id 'host-x-pair-answered'/)
+    const spec2 = answered.calls.find(c => c.kind === 'spec' && specPass(c) === 2).prompt
+    assert.ok(spec2.includes('\n# Explicit user decisions\n') && spec2.includes(' The user\'s decisions above settle what they answer: don\'t ask again about anything they settle, only about a conflict they leave open.'))
+    // The first pass's settleable finding reviewed criteria setup has since replaced.
+    assert.ok(answered.calls.filter(c => c.kind === 'author').every(c => !c.prompt.includes('# Spec review findings')))
+    assert.equal(answered.result.status, 'done')
+    assert.deepEqual(answered.result.decisions.map(d => [d.id, d.kind, d.about, d.label]), [['Q1', 'spec', 'C1', 'spec']])
+    assert.deepEqual(answered.result.spec.passes.map(p => [p.label, p.stopped]), [['spec', true], ['spec-2', false]])
+    const done = answered.result.report.markdown
+    assert.ok(done.includes(` → asked the user as Q1, who answered: ${answer.answer}`), done)
+    assert.ok(done.includes(' → for the author, but setup ran again before any author turn.'), done)
+    assert.match(done, /\n4\. The user answered Q1; the run continues\.\n5\. Setup: 1 acceptance criterion \(C1\); [^\n]*\n6\. Spec review by [^:]+: no problems in the criteria\.\n/)
+    assert.ok(answered.result.notes.includes('spec: setup runs again with the user\'s answers, in a new run; remove /repo/.council/pair-test with dark-factory cleanup --run-dir \'/repo/.council/pair-test\' --all once this run is delivered.'), JSON.stringify(answered.result.notes))
+    // An answer that doesn't settle the stop stops it again, with no further turn.
+    const bad = await run({ native, spec, args: { ...args, clarifications: [{ ...answer, drop: true }] } })
+    assert.equal(bad.result.status, 'needs-user')
+    assert.match(bad.result.stopReason, /Invalid: Q1 \(criterion and drop answer only a question about a criterion\)/)
+    assert.equal(bad.calls.length, n)
+  }
+})
+
+test('the spec review stops at most twice; a repeated question or a third conflict goes to the author', async () => {
+  for (const native of [false, true]) {
+    // The same question again after its answer: the author gets it, with no reading.
+    const same = await run({ native, spec: v => ({ ...v, findings: [specConflict()] }), args: { clarifications: [{ id: 'Q1', answer: 'Share the file.' }] } })
+    assert.equal(same.result.status, 'done')
+    assert.deepEqual(same.result.spec.findings.map(f => [f.id, f.pass, f.to]), [['S1', 'spec', 'user'], ['S2', 'spec-2', 'author']])
+    const author = same.calls.find(c => c.kind === 'author').prompt
+    assert.ok(author.includes('\n- S2 (about C1): C1 fixes tests/config.json, which the new tests may not share.\n') &&
+      author.includes('\n  No reading settles it, the spec reviewer found: C1 fixes tests/config.json, but tests of new code need their own files. Rename the file, or let the new tests share it?\n'), author)
+    assert.match(author, /Where a finding has no proposed reading and none inside the task's words settles it, return needs-user with the question instead\./)
+    // A fresh conflict on each pass: two stops, then the third goes to the author.
+    const fresh = (v, call) => ({ ...v, findings: [specConflict({ question: `Conflict ${specPass(call)}: rename the file, or share it?` })] })
+    const twice = await run({ native, spec: fresh, args: { clarifications: [{ id: 'Q1', answer: 'Rename it.' }] } })
+    assert.equal(twice.result.status, 'needs-user')
+    assert.deepEqual(twice.result.questions.map(q => [q.id, q.kind]), [['Q2', 'spec']])
+    const thrice = await run({ native, spec: fresh, args: { clarifications: [{ id: 'Q1', answer: 'Rename it.' }, { id: 'Q2', answer: 'Share it.' }] } })
+    assert.equal(thrice.result.status, 'done')
+    assert.deepEqual(thrice.result.spec.findings.map(f => [f.pass, f.to]), [['spec', 'user'], ['spec-2', 'user'], ['spec-3', 'author']])
+    assert.deepEqual(thrice.calls.filter(c => c.kind === 'setup').map(c => c.label), ['setup', 'setup-answered', 'setup-answered-2'])
+  }
+})
+
+test('spec: false skips the spec review; {model, effort} swaps its seat; anything else is refused', async () => {
+  const seat = args => L.parsePairConfig({ task: 'x', ...args }).specReviewers.map(s => [s.key, s.effort])
+  assert.deepEqual(seat({}), [['astra', 'medium']])
+  assert.deepEqual(seat({ effort: 'xhigh' }), [['astra', 'medium']], 'the participants\' effort is not the spec review\'s')
+  assert.deepEqual(seat({ host: 'codex' }), [['opus', 'medium']])
+  assert.deepEqual(seat({ reviewer: 'sol' }), [['sol', 'medium']])
+  assert.deepEqual(seat({ spec: { model: 'sonnet', effort: 'low' } }), [['sonnet', 'low']])
+  assert.deepEqual(seat({ spec: { effort: 'high' } }), [['astra', 'high']])
+  assert.deepEqual(seat({ spec: true }), [['astra', 'medium']])
+  assert.deepEqual(seat({ spec: false }), [])
+  for (const spec of ['ask', 'sonnet', null, [], { model: 'sonnet', ask: true }])
+    assert.throws(() => L.parsePairConfig({ task: 'x', spec }), /pair: spec must be false, to skip the spec review, or \{model, effort\}\./, JSON.stringify(spec))
+  // A spec reviewer of another vendor is a CLI the run needs, and the plan names it.
+  assert.ok(L.externalVendors(L.newState(L.parsePairConfig({ task: 'x', spec: { model: 'gemini' } }))).includes('gemini'))
+  const plan = L.executionPlan(L.newState(L.parsePairConfig('Fix it')))
+  assert.deepEqual(plan.specification, [{ model: 'astra', vendor: 'codex', effort: 'medium' }])
+  assert.match(plan.effort, /^Setup, a spec review, design and code turns/)
+  assert.match(L.executionPlan(L.newState(L.parsePairConfig({ task: 'Fix it', spec: false }))).effort, /^Setup, design and code turns/)
+  for (const native of [false, true]) {
+    const { result, calls } = await run({ native, args: { spec: false } })
+    assert.equal(result.status, 'done')
+    assert.ok(!calls.some(c => c.kind === 'spec'))
+    assert.deepEqual(result.spec.passes, [])
+    assert.doesNotMatch(result.report.markdown, /Spec review|Specification review/)
+  }
+  // Factory's pair strategy reviews the criteria too, unless pair: {spec: false}.
+  assert.ok((await run({ native: true, factory: true })).calls.some(c => c.kind === 'spec'))
+  assert.ok(!(await run({ native: true, factory: true, args: { pair: { spec: false } } })).calls.some(c => c.kind === 'spec'))
+})
+
+test('a failed spec review changes nothing but the record: the run goes on with setup\'s criteria', async () => {
+  for (const native of [false, true]) {
+    const { result, calls } = await run({ native, spec: () => null })
+    assert.equal(result.status, 'done')
+    assert.equal(result.final.readiness.state, 'ready')
+    assert.ok(calls.some(c => c.kind === 'author'))
+    const name = native ? 'Codex Astra' : 'Claude Opus'
+    assert.ok(result.notes.includes(`The spec review (spec, ${name}) returned nothing; the criteria stand as setup wrote them.`), JSON.stringify(result.notes))
+    assert.match(result.report.markdown, new RegExp(`\\n2\\. Spec review by ${name} returned nothing; the criteria stand as setup wrote them\\.\\n`))
+    assert.ok(result.report.markdown.includes(`\n\nSpecification review:\n\n- spec by ${name}: returned nothing; the criteria stand as setup wrote them.`))
+    assert.deepEqual(result.spec.passes.map(p => p.ok), [false])
+  }
+})
+
+test('spec review golden prompts: a conflict answered, setup again, and a finding the author answers', async () => {
+  let authors = 0
+  const { calls, result } = await run({ native: true,
+    spec: (v, call) => specPass(call) === 1 ? { ...v, summary: 'C1 conflicts with the isolation rule.', findings: [specConflict()] }
+      : { ...v, summary: 'C1 misnames the entry point.', findings: [specFinding()] },
+    author: a => ({ ...a, readings: ++authors === 1 ? [specReading({ requirement: 'S2, C1', reading: 'read(), as S2 proposes.' })] : [] }),
+    review: (r, n) => n === 1 ? { ...r, rulings: [{ id: 'R1', ruling: 'accepted', evidence: 'src/a.js:1 has read() only.' }] } : r,
+    args: { clarifications: [{ id: 'Q1', answer: 'Let the new tests share tests/config.json.' }] } })
+  assert.equal(result.status, 'done')
+  assert.deepEqual(calls.map(c => c.kind), ['setup', 'spec', 'stop', 'resume', 'setup', 'spec', 'author', 'review', 'author', 'measure', 'review', 'retro'])
+  goldenCalls('pair-spec', calls)
 })

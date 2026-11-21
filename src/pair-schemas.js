@@ -18,6 +18,20 @@ const PAIR_SETUP_SCHEMA = strict({ type: 'object', properties: {
   liveChecks: { type: 'array', description: 'Criteria the run can check only against a stand-in for something outside it that can behave differently (a network service, credentials, a certificate store, an external CLI\'s login); [] when there are none.',
     items: PAIR_LIVE_CHECK },
 } })
+// The spec review between setup and the first author turn: problems in the criteria, each settled
+// by a reading (to the author) or only by the user (a stop).
+const PAIR_SPEC_SCHEMA = strict({ type: 'object', properties: {
+  summary: { type: 'string', description: 'Your verdict on the criteria, in one or two sentences.' },
+  findings: { type: 'array', description: 'Problems in the criteria; [] when they hold together.', items: { type: 'object', properties: {
+    criteria: { ...PAIR_STRINGS, description: 'The bare criterion IDs involved, such as C2; [] when no criterion states the requirement.' },
+    statement: { type: 'string', description: 'What is wrong with the criteria.' },
+    quoted: { ...PAIR_STRINGS, description: 'The exact words of each requirement involved.' },
+    evidence: { type: 'string', description: 'A file:line, a quote from the task or a document, or a command and the real tail of its output.' },
+    settle: { type: 'string', enum: ['reading', 'user'], description: 'reading: a reading inside the words of the task, documents and decisions settles it; user: only the user can.' },
+    reading: { type: 'string', description: 'For settle reading: what the work should do. "" for user.' },
+    question: { type: 'string', description: 'For settle user: the question for the user, saying what conflicts and giving the options you see. "" for reading.' },
+  } } },
+} })
 const PAIR_CONTRACT = { type: 'object', properties: {
   testRoots: { type: 'array', items: { type: 'object', properties: {
     path: { type: 'string' }, evidence: { type: 'string' },
