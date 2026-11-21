@@ -32,6 +32,11 @@ authenticated CLIs. `--author sol --reviewer astra` uses only Codex models.
      |
   baseline            natively, setup measured it; on the standalone runtime the runner
      |                measures the base itself (helper), outside setup's sandbox
+     |
+  spec review         one fresh reviewer reads the criteria against the task, its documents,
+     |                the run's rules and the code; a conflict only you can settle stops the
+     |                run (needs-user), and your answer runs setup again; anything a reading
+     |                settles goes to the author's readings ledger
      v
   DESIGN STAGE
   author: design + test contract  ----------->  reviewer: design review, with a plausible
@@ -95,6 +100,47 @@ Factory's pair strategy follows the same rule.
   A failing baseline is reported to the author and reviewer as the reason plus the end of the
   failing output, on one line of at most 300 characters; the run continues. Factory's pair
   strategy works the same way.
+
+## Spec review
+
+Setup writes the criteria, so it is not an independent check of them. In the retros, a
+conflict between two criteria, or between a criterion and the rules Pair imposes, was found only
+by a design review, one to three reviews in, and then stopped the run for the user anyway: a test
+file a criterion fixed that the isolation rule ruled out, a named mechanism against a stated
+complexity limit, two criteria no input could meet together. So after setup (and on the
+standalone runtime after the runner's baseline), one fresh reviewer reads the criteria before the
+first author turn, with or without a design stage.
+
+- **Who.** The pair's reviewer model (Codex Astra by default in Claude Code, Claude Opus in
+  Codex) at `medium` effort, in a fresh read-only context in the repository. `spec: false` skips
+  it; `spec: {model: 'sonnet', effort: 'low'}` swaps either. Factory's pair strategy takes it as
+  `pair: {spec: …}`.
+- **What it looks for.** Contradictions between criteria, or between a criterion and the task, a
+  reference document, an explicit user decision or the rules the run holds the work to (its own
+  worktree, test roots, separate files for tests of new code, the base replay, the gate). Criteria
+  that are wrong about how the code works. Requirements the task or a document states that no
+  criterion carries. It doesn't ask for more criteria than the task calls for, report preferences,
+  or recheck whether a criterion can be verified (setup did that).
+- **A finding a reading settles** (an ambiguity with a conservative reading, a criterion that
+  misdescribes the code but has an obvious correct reading) goes to the author as S1, S2, … with
+  the reading the reviewer proposes. Both participants see them under "Spec review findings". The
+  author answers each in its `readings`, citing the ID, and the next review rules on that reading
+  like any other. Before the first review, an author turn whose readings leave one unanswered
+  gets the turn's one correction; after it, the reviewer files an unanswered one as a finding.
+- **A conflict no reading settles** stops the run with `needs-user` before any author turn, with
+  one question of kind `spec` per conflict, quoting each requirement involved. Answered, setup
+  runs again (`setup-answered`, in a new run directory, with its baseline) with the decisions, so
+  the role that owns the criteria rewrites them, and the spec review reads the new criteria
+  (`spec-2`). The decisions are in its prompt, and it asks only about a conflict they leave open.
+  The engine sends a question already answered, word for word, to the author instead, and after
+  two spec stops every later conflict goes to the author too, whose own `needs-user` still covers
+  it. The stopped run's directory stays; the notes name the `dark-factory cleanup` command for it.
+- **A failed turn** changes nothing: the run goes on with setup's criteria, and the notes, the
+  story and the report say the spec review returned nothing. It never blocks readiness.
+
+The log and "How the run went" get a line per pass ("Spec review by Codex Astra: no problems in
+the criteria."), and `report.markdown` has a "Specification review" section with each pass's
+verdict and what became of each finding. `spec` in the result holds the passes and findings.
 
 ## Design stage
 
@@ -264,9 +310,10 @@ the compact `--brief` result: status, stage, readiness, findings, notes, metrics
 
 ## Answering a stop
 
-Five stops ask you questions and can continue once you answer: setup's conflicting requirements,
-setup's criterion nothing in the run can verify, an author's `needs-user`, a reviewer's
-questions, and a design that used its [review allowance](#design-stage) without approval. Every
+Six stops ask you questions and can continue once you answer: setup's conflicting requirements,
+setup's criterion nothing in the run can verify, a [spec review](#spec-review) conflict, an
+author's `needs-user`, a reviewer's questions, and a design that used its
+[review allowance](#design-stage) without approval. Every
 other stop is final and carries no `resumable` flag or resume guidance: blocked, stalled, budget
 exhausted (`maxReviews`, `maxTurns` or `maxRunMin`; including a stop that asked questions but ran
 out of budget), failed, verification infrastructure failure, a dirty tree, and a task built on
@@ -275,8 +322,9 @@ uncommitted changes.
 Question IDs Q1, Q2, … are unique across the run; a second stop continues the numbering.
 `questions` lists the current stop's as `{id, about, kind, question}`, and `report.markdown` lists
 them under "Questions for the user (answer each under its ID)". `kind` is `setup`, `criterion`,
-`author`, `reviewer` or `design`. `about` is the criterion of a criterion question, the first
-finding, criterion or reading ID (P3, C2, R1) a question names, or `none`.
+`spec`, `author`, `reviewer` or `design`. `about` is the criterion of a criterion question, the
+first criterion a spec question involves, the first finding, criterion or reading ID (P3, C2, R1)
+another question names, or `none`.
 
 A resumable result has `resumable: true` and `resumeSteps` (also in `forTheOrchestrator`) saying
 how to continue on its host:
@@ -300,7 +348,8 @@ with the open design findings carried into code review.
 | Stop | On resume |
 |---|---|
 | Setup conflict | Setup runs again (`setup-answered`) with the decisions, in a new run directory, and pays the baseline again. |
-| Unverifiable criterion | The criterion is rewritten or dropped; the run goes on to its first author turn. |
+| Unverifiable criterion | The criterion is rewritten or dropped; the run goes on to the spec review (with `spec: false`, to its first author turn). |
+| Spec review conflict | Setup runs again (`setup-answered`) with the decisions, in a new run directory, and pays the baseline again; then the spec review reads its criteria (`spec-2`). |
 | Author | A fresh author turn (`pair-design-1-answered`, for example), then a review of what it writes. |
 | Reviewer | The rest of that review's pass runs (readiness, stall and design-revision handling), then the next author turn. |
 | Design allowance | A fresh design author turn with the decision and another `maxDesignReviews` reviews; with `implement: true`, the first implementation turn (`pair-code-4`, for example). |
@@ -349,7 +398,8 @@ Just before the run continues, `dark-factory resume-check` refuses, changing not
 
 A refusal stops the run as blocked, and a stop that couldn't be recorded cannot continue; both say
 to start a new run with the answers in `context` and the last handoff in `plan`. The runner's
-checkpoint validation refuses the same changes. A setup conflict has no run yet, so no record.
+checkpoint validation refuses the same changes. A setup conflict has no run yet, so no record; a
+spec review conflict is recorded at `base`.
 
 ## When the run stops
 
@@ -378,8 +428,8 @@ investigation and architecture work.
 ### Retro
 
 Pair ends with a [process retro](process-retro.md) once setup has made a run; a run that stops in
-setup has none. Setup, the author, the reviewer and the relays can each leave a process note (the
-measurement transport leaves none), and one agent turns them with the run facts and report into
+setup has none. Setup, the spec reviewer, the author, the reviewer and the relays can each leave
+a process note (the measurement transport leaves none), and one agent turns them with the run facts and report into
 suggested workflow changes, returned as `retro` and saved outside the run. It counts toward
 `maxTurns`. It runs on Sonnet in Claude Code. On the standalone runtime it runs on the Codex host's
 retro role (Astra) when the pair already uses Codex, otherwise on Sonnet, or on the author's model
@@ -398,6 +448,7 @@ Object arguments, or the Codex runner's `--args-file`:
 | `maxReviews` | 8 | total reviews across design and code, 2–100; `--max-reviews` |
 | `maxDesignReviews` | 3 (`maxReviews` − 2 when that is smaller, at least 1) | design reviews without approval before the run asks you how to go on, 1 to `maxReviews` − 1; `--max-design-reviews`; ignored with `design: false` |
 | `design` | true | `false` (`--no-design`) skips the design stage; see [above](#without-a-design-stage) |
+| `spec` | the reviewer's model, `medium` | `false` skips the [spec review](#spec-review); `{model, effort}` swaps either |
 | `effort` | `high` | for both participants, or per seat: `{astra: 'xhigh'}` |
 | `context` | | extra context for every turn |
 | `plan` | | absolute path or list of paths: reference documents, including uncommitted ones |
@@ -410,7 +461,7 @@ Object arguments, or the Codex runner's `--args-file`:
 | `runtime` | native | `"cli"` (`--runtime cli`) runs on the standalone runner; Claude Code only |
 
 Factory tier, panel, audit and historical-evidence options (`tier`, `seats`, `simple`, `panel`,
-`spec`, `audit`, `roles`, `evidence`) are refused.
+`audit`, `roles`, `evidence`) are refused.
 
 ## Results
 
@@ -419,14 +470,16 @@ cleanup command for after delivery), followed by `design`, `testContract`, `repl
 `reviews`, `findings`, `stopReason`, and:
 
 - `readings`, each with its ruling (also in `report.markdown`).
+- `spec`: the [spec review](#spec-review)'s passes and its findings S1, S2, …, each with whom it
+  went to (the author or the user) and, for a question, its ID.
 - `questions`, `decisions`, `unusedAnswers`, `resumable`, `resumeSteps`: see
   [Answering a stop](#answering-a-stop).
 - `liveChecks`: the [live checks](#live-checks) still to run (also in `final.readiness.liveChecks`).
 - `final.replay`, `final.suite` and `final.readiness`. The first two are the measurement summary;
   the job's `status.json` keeps the output tails.
 
-`report.markdown` tells the run in "How the run went" (setup, each author pass, each review, each
-question and answer, and how the run ended), logging each line as it happens. "Points of interest"
+`report.markdown` tells the run in "How the run went" (setup, the spec review, each author pass,
+each review, each question and answer, and how the run ended), logging each line as it happens. "Points of interest"
 follows: author disputes and how each ended, findings that took more than one revision, blockers,
 readings accepted or rejected, and code reviews that sent the work back to design.
 

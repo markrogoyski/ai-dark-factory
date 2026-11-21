@@ -43,7 +43,7 @@ documented, so a Claude Code release can change them; watch then says what it co
 | `needs-plan` | the task depends on a document the run couldn't find | rerun with the document's absolute path in `plan` |
 | `needs-split` | the task is several independent pieces | run each listed piece on its own, or rerun with `noSplit: true` |
 | `needs-tier` | intake would pick a tier other than the one you pinned | rerun with `tierConfirmed: true`, or with intake's tier |
-| `needs-user` | a question only you can settle (spec review with `spec: 'ask'`, a question most seats raised, a criterion nothing in the run can verify, or a question from a pair author or reviewer) | answer it: `clarifications` for the council; for a pair (or factory pair) result with `resumable: true`, `clarifications` keyed by its question IDs to continue the run, as its `resumeSteps` say ([Pair](pair.md#answering-a-stop)), otherwise `context` for a new pair run; `answers` for run-plan |
+| `needs-user` | a question only you can settle (spec review with `spec: 'ask'`, a question most seats raised, a criterion nothing in the run can verify, a conflict a pair's spec review found in the criteria, or a question from a pair author or reviewer) | answer it: `clarifications` for the council; for a pair (or factory pair) result with `resumable: true`, `clarifications` keyed by its question IDs to continue the run, as its `resumeSteps` say ([Pair](pair.md#answering-a-stop)), otherwise `context` for a new pair run; `answers` for run-plan |
 | `blocked` | the run stopped without a usable result, for example a pair whose review budget ran out or that stalled, or a plan with parked tasks | read the open findings and `stopReason` |
 | `preflight` | a CLI the lineup needs can't run from this session, or (in Claude Code) its settings don't allow `Bash(dark-factory:*)`; nothing was created. In Claude Code, setup's preflight reports this as `blocked`, with the CLI or the permission in `reason` | install or authorize the CLI, or swap its seats ([Choosing the models](models.md)); add the permission ([Installing](install.md#permission-required)) |
 | `explained`, `prepared` | `--explain` or `--prepare`: nothing was implemented | read the plan it reports |
@@ -107,8 +107,9 @@ reviewed snapshot and the gate passes in your checkout. See
   - `decisions`: the answers the run took, each with the question, the answer and the turn that
     asked it. `unusedAnswers`: answers no stop took.
   - `resumable: true` with `resumeSteps`: only on a needs-user stop that can continue (setup's
-    conflict or unverifiable criterion, an author's or a reviewer's questions). Other results,
-    budget stops included, carry neither.
+    conflict or unverifiable criterion, a spec review conflict, an author's or a reviewer's
+    questions, or a design that used its review allowance). Other results, budget stops included,
+    carry neither.
 
   See [Pair](pair.md#answering-a-stop).
 - `retro`: suggested changes to the workflow itself ([Process retro](process-retro.md)).

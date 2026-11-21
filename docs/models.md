@@ -37,6 +37,7 @@ The same workflow picks different defaults depending on the host that launches i
 | intake, setup | `opus` | `astra` |
 | checker | `sonnet` | `astra` |
 | pair (author, reviewer) | `opus`, `astra` | `astra`, `opus` |
+| pair spec review | the pair's reviewer | the pair's reviewer |
 | ensemble (solvers, reviewers, compare) | `sonnet`, Sonnet or Opus per lens, `opus` | `astra`, `astra`, `astra` |
 | run-plan tasks | the Codex column, on both hosts | |
 
@@ -59,6 +60,7 @@ model lacks maps to the nearest one it has, ties going up (Hydrogen and Neon: up
 | pair author and reviewer | `high` | `effort` |
 | ensemble review lenses and compare | `high` | `effort` |
 | spec reviewers | `high` | `spec: {effort}` only; the top-level `effort` doesn't reach them |
+| pair spec reviewer | `medium` | `spec: {effort}` only |
 | auditors, Feature tests lens, Architecture review lenses | `high` | `audit: {effort}` only |
 | council panel | `high` | nothing: fixed |
 | factory Simple reviewer | `high` | nothing: fixed |
