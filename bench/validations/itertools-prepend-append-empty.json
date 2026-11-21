@@ -1,0 +1,35 @@
+{
+  "id": "itertools-prepend-append-empty",
+  "valid": true,
+  "problems": [],
+  "manifestDigest": "sha256:5ff4a2a317f3b3528665626fa2621b5d7df654a74da220a847b2cfc757f1fddf",
+  "fixCommit": "3fe680a3777136756d037e30522bc97207e91ae6",
+  "base": "d4607ca1735c277378e36a260961b39152163737",
+  "validatedAt": "2026-11-21T02:03:45.886Z",
+  "environment": {
+    "platform": "darwin",
+    "node": "v26.0.0"
+  },
+  "dependencies": {
+    "method": "copy",
+    "caveat": "Copied from the source checkout as it is now, not installed at base: dependency versions follow that checkout, not base's lock file."
+  },
+  "atBase": {
+    "commit": "d4607ca1735c277378e36a260961b39152163737",
+    "exitCode": 2,
+    "signal": null,
+    "timedOut": false,
+    "durationMs": 302,
+    "log": "~/.cache/dark-factory-bench/records/validate/itertools-prepend-append-empty/2026-11-21T02-03-40-052Z/base.log",
+    "tail": "<tree>/tests/Stream/StreamPrependAppendTest.php:57\n2) IterTools\\Tests\\Stream\\StreamPrependAppendTest::testAppendEmptyKeepsKeys\nFailed asserting that two arrays are identical.\n--- Expected\n+++ Actual\n@@ @@\n Array &0 [\n-    'a' => 1,\n-    'b' => 2,\n+    0 => 1,\n+    1 => 2,\n ]\n<tree>/tests/Stream/StreamPrependAppendTest.php:69\nERRORS!\nTests: 12, Assertions: 10, Errors: 2, Failures: 2."
+  },
+  "atFix": {
+    "commit": "3fe680a3777136756d037e30522bc97207e91ae6",
+    "exitCode": 0,
+    "signal": null,
+    "timedOut": false,
+    "durationMs": 303,
+    "log": "~/.cache/dark-factory-bench/records/validate/itertools-prepend-append-empty/2026-11-21T02-03-40-052Z/fix.log",
+    "tail": "PHPUnit 10.5.63 by Sebastian Bergmann and contributors.\nRuntime:       PHP 8.5.3\nConfiguration: <tree>/tests/phpunit.xml\n............                                                      12 / 12 (100%)\nTime: 00:00.008, Memory: 10.00 MB\nOK (12 tests, 14 assertions)"
+  }
+}

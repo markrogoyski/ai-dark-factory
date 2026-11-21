@@ -1,0 +1,35 @@
+{
+  "id": "simplelog-logger-hardening",
+  "valid": true,
+  "problems": [],
+  "manifestDigest": "sha256:8bceef1faa70f1146659cc5e28ad9b46127f418b80365cd217b29067ea1cbe28",
+  "fixCommit": "fba4edbd8a8151b09ab06e206e4b159d2ccee6e4",
+  "base": "249f4210ce50f62f6d992ab5aee881943192e30a",
+  "validatedAt": "2026-11-21T02:05:37.976Z",
+  "environment": {
+    "platform": "darwin",
+    "node": "v26.0.0"
+  },
+  "dependencies": {
+    "method": "copy",
+    "caveat": "Copied from the source checkout as it is now, not installed at base: dependency versions follow that checkout, not base's lock file."
+  },
+  "atBase": {
+    "commit": "249f4210ce50f62f6d992ab5aee881943192e30a",
+    "exitCode": 1,
+    "signal": null,
+    "timedOut": false,
+    "durationMs": 569,
+    "log": "~/.cache/dark-factory-bench/records/validate/simplelog-logger-hardening/2026-11-21T02-05-24-633Z/base.log",
+    "tail": "<tree>/tests/LoggerTest.php:1086\n--\n2 tests triggered 2 PHP warnings:\n1) <tree>/tests/LoggerTest.php:917\nUndefined array key \"code\"\nTriggered by:\n* SimpleLog\\Tests\\LoggerTest::exceptionWithUnserializableTraceArgPreservesAllFields\n  <tree>/tests/LoggerTest.php:890\n2) <tree>/src/Logger.php:421\nunexpected NAN value was coerced to string\nTriggered by:\n* SimpleLog\\Tests\\LoggerTest::nonFiniteFloatContextValuesRenderConsistentlyInMessageAndData\n  <tree>/tests/LoggerTest.php:980\nFAILURES!\nTests: 92, Assertions: 140, Failures: 16, Warnings: 2."
+  },
+  "atFix": {
+    "commit": "fba4edbd8a8151b09ab06e206e4b159d2ccee6e4",
+    "exitCode": 0,
+    "signal": null,
+    "timedOut": false,
+    "durationMs": 585,
+    "log": "~/.cache/dark-factory-bench/records/validate/simplelog-logger-hardening/2026-11-21T02-05-24-633Z/fix.log",
+    "tail": "PHPUnit 10.5.63 by Sebastian Bergmann and contributors.\nRuntime:       PHP 8.5.3\nConfiguration: <tree>/tests/phpunit.xml\n................................................................. 65 / 92 ( 70%)\n...........................                                       92 / 92 (100%)\nTime: 00:00.093, Memory: 10.00 MB\nOK (92 tests, 166 assertions)"
+  }
+}

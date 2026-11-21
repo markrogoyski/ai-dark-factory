@@ -1,0 +1,35 @@
+{
+  "id": "ipv4-iprange-relations",
+  "valid": true,
+  "problems": [],
+  "manifestDigest": "sha256:c3f47d0f86c65d4f38ee9f6992837cbe5486d989a3f4b64e9e5ecd9cf2b3dc22",
+  "fixCommit": "8f59af5a14e55403248f90c9b13cab85c1bf852e",
+  "base": "5c9855cb8f29557cba992412a845842dc145f5f9",
+  "validatedAt": "2026-11-21T02:05:19.563Z",
+  "environment": {
+    "platform": "darwin",
+    "node": "v26.0.0"
+  },
+  "dependencies": {
+    "method": "copy",
+    "caveat": "Copied from the source checkout as it is now, not installed at base: dependency versions follow that checkout, not base's lock file."
+  },
+  "atBase": {
+    "commit": "5c9855cb8f29557cba992412a845842dc145f5f9",
+    "exitCode": 2,
+    "signal": null,
+    "timedOut": false,
+    "durationMs": 1104,
+    "log": "~/.cache/dark-factory-bench/records/validate/ipv4-iprange-relations/2026-11-21T02-05-02-272Z/base.log",
+    "tail": "<tree>/src/IPRange.php:35\n<tree>/tests/IPRangeTest.php:973\n.\n6) IPv4\\Tests\\IPRangeTest::testConstructorRejectsInvalidAddressStrings with data set \"both invalid\" ('not-an-ip', '10.0.0.256', 'Invalid IPv4 address: 'not-an-ip'')\nFailed asserting that exception of type \"TypeError\" matches expected exception \"InvalidArgumentException\". Message was: \"IPv4\\IPRange::__construct(): Argument #1 ($start) must be of type IPv4\\IPAddress, string given, called in <tree>/tests/IPRangeTest.php on line 973\" at\n<tree>/src/IPRange.php:35\n<tree>/tests/IPRangeTest.php:973\n.\n7) IPv4\\Tests\\IPRangeTest::testConstructorRejectsReversedStringRange\nFailed asserting that exception of type \"TypeError\" matches expected exception \"InvalidArgumentException\". Message was: \"IPv4\\IPRange::__construct(): Argument #1 ($start) must be of type IPv4\\IPAddress, string given, called in <tree>/tests/IPRangeTest.php on line 1005\" at\n<tree>/src/IPRange.php:35\n<tree>/tests/IPRangeTest.php:1005\n.\nERRORS!\nTests: 447, Assertions: 2449, Errors: 136, Failures: 7."
+  },
+  "atFix": {
+    "commit": "8f59af5a14e55403248f90c9b13cab85c1bf852e",
+    "exitCode": 0,
+    "signal": null,
+    "timedOut": false,
+    "durationMs": 827,
+    "log": "~/.cache/dark-factory-bench/records/validate/ipv4-iprange-relations/2026-11-21T02-05-02-272Z/fix.log",
+    "tail": "PHPUnit 10.5.67 by Sebastian Bergmann and contributors.\nRuntime:       PHP 8.5.3\nConfiguration: <tree>/tests/phpunit.xml\n...............................................................  63 / 447 ( 14%)\n............................................................... 126 / 447 ( 28%)\n............................................................... 189 / 447 ( 42%)\n............................................................... 252 / 447 ( 56%)\n............................................................... 315 / 447 ( 70%)\n............................................................... 378 / 447 ( 84%)\n............................................................... 441 / 447 ( 98%)\n......                                                          447 / 447 (100%)\nTime: 00:00.180, Memory: 12.00 MB\nOK (447 tests, 2599 assertions)"
+  }
+}

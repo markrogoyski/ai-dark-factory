@@ -1,0 +1,35 @@
+{
+  "id": "ipv4-fromcidr-inf-prefix",
+  "valid": true,
+  "problems": [],
+  "manifestDigest": "sha256:9793ded0f43635d61ed453eb526f8fc92309f2fa8b7dcdfaf18c94ef376fc97c",
+  "fixCommit": "540f8ccddefbb87c183b47b2448dc124bdd2a008",
+  "base": "2cfb9fac5ecd28224936118566b1b0859fbe2d29",
+  "validatedAt": "2026-11-21T02:04:29.150Z",
+  "environment": {
+    "platform": "darwin",
+    "node": "v26.0.0"
+  },
+  "dependencies": {
+    "method": "copy",
+    "caveat": "Copied from the source checkout as it is now, not installed at base: dependency versions follow that checkout, not base's lock file."
+  },
+  "atBase": {
+    "commit": "2cfb9fac5ecd28224936118566b1b0859fbe2d29",
+    "exitCode": 1,
+    "signal": null,
+    "timedOut": false,
+    "durationMs": 643,
+    "log": "~/.cache/dark-factory-bench/records/validate/ipv4-fromcidr-inf-prefix/2026-11-21T02-04-14-300Z/base.log",
+    "tail": ")\n.......................................................FF...... 252 / 294 ( 85%)\n.................................FF.......                      294 / 294 (100%)\nTime: 00:00.141, Memory: 12.00 MB\nThere were 4 failures:\n1) IPv4\\Tests\\SubnetBasicTest::testFromNetworkCidrPreservesOutOfRangePrefixDiagnostics with data set \"overflows to INF\" ('192.168.1.0/99999999999999999...999999')\nFailed asserting that exception message 'Invalid network CIDR: host bits are set in '192.168.1.0/999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999'' contains 'Invalid CIDR notation: prefix must be between 0 and 32 in '192.168.1.0/999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999''.\n2) IPv4\\Tests\\SubnetBasicTest::testFromNetworkCidrPreservesOutOfRangePrefixDiagnostics with data set \"overflows to INF at 0.0.0.0\" ('0.0.0.0/999999999999999999999...999999')\nFailed asserting that exception of type \"InvalidArgumentException\" is thrown.\n3) IPv4\\Tests\\SubnetBasicTest::testFromCidrThrowsExceptionReportingInputWhenPrefixIsOutOfRange with data set \"overflows to INF\" ('192.168.1.0/99999999999999999...999999')\nFailed asserting that exception of type \"InvalidArgumentException\" is thrown.\n4) IPv4\\Tests\\SubnetBasicTest::testFromCidrThrowsExceptionReportingInputWhenPrefixIsOutOfRange with data set \"overflows to INF at 0.0.0.0\" ('0.0.0.0/999999999999999999999...999999')\nFailed asserting that exception of type \"InvalidArgumentException\" is thrown.\nFAILURES!\nTests: 294, Assertions: 4632, Failures: 4."
+  },
+  "atFix": {
+    "commit": "540f8ccddefbb87c183b47b2448dc124bdd2a008",
+    "exitCode": 0,
+    "signal": null,
+    "timedOut": false,
+    "durationMs": 990,
+    "log": "~/.cache/dark-factory-bench/records/validate/ipv4-fromcidr-inf-prefix/2026-11-21T02-04-14-300Z/fix.log",
+    "tail": "PHPUnit 10.5.67 by Sebastian Bergmann and contributors.\nRuntime:       PHP 8.5.3\nConfiguration: <tree>/tests/phpunit.xml\n...............................................................  63 / 294 ( 21%)\n............................................................... 126 / 294 ( 42%)\n............................................................... 189 / 294 ( 64%)\n............................................................... 252 / 294 ( 85%)\n..........................................                      294 / 294 (100%)\nTime: 00:00.270, Memory: 12.00 MB\nOK (294 tests, 4635 assertions)"
+  }
+}

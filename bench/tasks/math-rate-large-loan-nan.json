@@ -1,0 +1,23 @@
+{
+  "id": "math-rate-large-loan-nan",
+  "repo": "~/Develop/php/math-php",
+  "fixCommit": "9626706183295d2f6b73cda26edc9bfb90e32f17",
+  "task": "Finance::rate returns NAN for a large loan that is half repaid over 30 years: rate(360, -215454.34705959132, 1e8, -5e7) should return about 0.001 (0.0010000000614038588), and with payments at the beginning of each period, rate(360, -215454.34705959132, 1e8, -5e7, true) should return about 0.0010027678700872376. Other rate results must not change.",
+  "hiddenTests": [
+    "tests/Finance/FinanceAxiomsTest.php"
+  ],
+  "grade": "vendor/bin/phpunit --configuration=tests/phpunit.xml --do-not-cache-result tests/Finance/FinanceAxiomsTest.php",
+  "dependencies": {
+    "install": "composer install --no-interaction --no-progress",
+    "paths": [
+      "vendor"
+    ]
+  },
+  "args": {
+    "workflow": "pair"
+  },
+  "tags": {
+    "kind": "bug",
+    "size": "small"
+  }
+}

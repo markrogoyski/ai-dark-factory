@@ -1,0 +1,23 @@
+{
+  "id": "math-gcd-int-min",
+  "repo": "~/Develop/php/math-php",
+  "fixCommit": "25a3f96a21be97852fc8f8ac91dfe6c56f8fdce5",
+  "task": "Algebra::gcd fails when an argument is PHP_INT_MIN even though the gcd fits in an int. gcd(6, PHP_INT_MIN) throws TypeError instead of returning 2, and gcd(PHP_INT_MIN, 6) returns 2 only through a float-to-int cast that emits a \"not representable as an int\" warning. Every such pair whose gcd is representable should work without warnings, for example gcd(PHP_INT_MIN, 1) = 1, gcd(PHP_INT_MIN, 3298534883328) = 1099511627776 and gcd(4611686018427387904, PHP_INT_MIN) = 4611686018427387904, and extendedGcd and the arbitrary-precision gcd must agree with it.",
+  "hiddenTests": [
+    "tests/Algebra/AlgebraAxiomsTest.php"
+  ],
+  "grade": "vendor/bin/phpunit --configuration=tests/phpunit.xml --do-not-cache-result tests/Algebra/AlgebraAxiomsTest.php",
+  "dependencies": {
+    "install": "composer install --no-interaction --no-progress",
+    "paths": [
+      "vendor"
+    ]
+  },
+  "args": {
+    "workflow": "pair"
+  },
+  "tags": {
+    "kind": "bug",
+    "size": "small"
+  }
+}

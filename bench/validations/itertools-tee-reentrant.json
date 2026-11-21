@@ -1,0 +1,35 @@
+{
+  "id": "itertools-tee-reentrant",
+  "valid": true,
+  "problems": [],
+  "manifestDigest": "sha256:67fcaa80c66b403420337db65771cc20fd0b7b3f1bd78da021863292dc7c4dca",
+  "fixCommit": "16708c46eab16547bbb4a7dde6c2eacb822b6b9d",
+  "base": "6d26e12ec348bc1ddb01de99aeacc7e6be13619e",
+  "validatedAt": "2026-11-21T02:04:02.891Z",
+  "environment": {
+    "platform": "darwin",
+    "node": "v26.0.0"
+  },
+  "dependencies": {
+    "method": "copy",
+    "caveat": "Copied from the source checkout as it is now, not installed at base: dependency versions follow that checkout, not base's lock file."
+  },
+  "atBase": {
+    "commit": "6d26e12ec348bc1ddb01de99aeacc7e6be13619e",
+    "exitCode": 1,
+    "signal": null,
+    "timedOut": false,
+    "durationMs": 327,
+    "log": "~/.cache/dark-factory-bench/records/validate/itertools-tee-reentrant/2026-11-21T02-03-56-961Z/base.log",
+    "tail": "+]\n<tree>/tests/Transform/TeeTest.php:1698\n3) IterTools\\Tests\\Transform\\TeeTest::testReentrantReadCaughtByGeneratorKeepsTheRestOfTheSourceAsMemoizeDoes\nFailed asserting that two arrays are identical.\n--- Expected\n+++ Actual\n@@ @@\n Array &0 [\n     0 => 10,\n-    1 => 20,\n-    2 => 30,\n ]\n<tree>/tests/Transform/TeeTest.php:1762\nFAILURES!\nTests: 163, Assertions: 248, Failures: 3."
+  },
+  "atFix": {
+    "commit": "16708c46eab16547bbb4a7dde6c2eacb822b6b9d",
+    "exitCode": 0,
+    "signal": null,
+    "timedOut": false,
+    "durationMs": 320,
+    "log": "~/.cache/dark-factory-bench/records/validate/itertools-tee-reentrant/2026-11-21T02-03-56-961Z/fix.log",
+    "tail": "PHPUnit 10.5.63 by Sebastian Bergmann and contributors.\nRuntime:       PHP 8.5.3\nConfiguration: <tree>/tests/phpunit.xml\n...............................................................  63 / 163 ( 38%)\n............................................................... 126 / 163 ( 77%)\n.....................................                           163 / 163 (100%)\nTime: 00:00.034, Memory: 10.00 MB\nOK (163 tests, 279 assertions)"
+  }
+}

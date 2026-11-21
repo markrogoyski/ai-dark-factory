@@ -1,0 +1,23 @@
+{
+  "id": "ipv4-fromcidr-inf-prefix",
+  "repo": "~/Develop/php/ipv4-subnet-calculator-php",
+  "fixCommit": "540f8ccddefbb87c183b47b2448dc124bdd2a008",
+  "task": "Subnet::fromCidr() accepts a prefix long enough to overflow to INF: '192.168.1.0/' followed by 309 nines (and the same at 0.0.0.0) is treated as /0 instead of being rejected like any other out-of-range prefix such as /33 or /99999999999999999999.",
+  "hiddenTests": [
+    "tests/SubnetBasicTest.php"
+  ],
+  "grade": "vendor/bin/phpunit --configuration=tests/phpunit.xml --do-not-cache-result tests/SubnetBasicTest.php",
+  "dependencies": {
+    "install": "composer install --no-interaction --no-progress",
+    "paths": [
+      "vendor"
+    ]
+  },
+  "args": {
+    "workflow": "pair"
+  },
+  "tags": {
+    "kind": "bug",
+    "size": "small"
+  }
+}

@@ -1,0 +1,23 @@
+{
+  "id": "math-hypergeometric-negative-z",
+  "repo": "~/Develop/php/math-php",
+  "fixCommit": "1c633cf90c61f8b0b71e4374344c6de657314892",
+  "task": "Special::confluentHypergeometric(a, b, z) returns noise for negative z when b - a is a non-positive integer. M(2, 1, -100) returns about 1.17e28, but the true value is about -3.682875216260628e-42; M(2, 1, -29) returns about 9.18e-5 instead of about -7.1222638126553845e-12; M(3, 1, -20) should be about 3.318457332126078e-07. Results in this family should be accurate to about 12 significant digits across the whole negative-z range, from small |z| to z = -100. Results for z >= 0 and for other parameters must not change.",
+  "hiddenTests": [
+    "tests/Functions/Special/HypergeometricTest.php"
+  ],
+  "grade": "vendor/bin/phpunit --configuration=tests/phpunit.xml --do-not-cache-result tests/Functions/Special/HypergeometricTest.php",
+  "dependencies": {
+    "install": "composer install --no-interaction --no-progress",
+    "paths": [
+      "vendor"
+    ]
+  },
+  "args": {
+    "workflow": "pair"
+  },
+  "tags": {
+    "kind": "bug",
+    "size": "medium"
+  }
+}

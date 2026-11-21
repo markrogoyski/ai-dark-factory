@@ -1,0 +1,24 @@
+{
+  "id": "ipv4-iprange-relations",
+  "repo": "~/Develop/php/ipv4-subnet-calculator-php",
+  "fixCommit": "8f59af5a14e55403248f90c9b13cab85c1bf852e",
+  "task": "IPRange needs a string constructor and range relations for DHCP pools and firewall ranges, which are usually not CIDR-aligned. This is a minor release, so every change must be additive.\n\n- Widen the constructor to string|IPAddress $start, string|IPAddress $end. IPAddress instances passed in are stored as they are (start() returns the same object); invalid strings throw the IPAddress constructor's InvalidArgumentException. new IPRange(start: ..., end: ...) keeps working.\n- containsRange(IPRange $other): bool, true when other lies within this range. Leave contains(string|IPAddress $ip) unchanged, parameter name included ($range->contains(ip: '10.0.0.1') must keep working).\n- overlaps(IPRange $other): bool.\n- intersection(IPRange $other): ?IPRange, the common range, or null when they are disjoint.\n- isAdjacent(IPRange $other): bool, true when the ranges are disjoint and touch (one ends right before the other starts); overlapping ranges are not adjacent, as with Subnet::isAdjacent(). It must work for a range ending at 255.255.255.255.\n- Do not accept Subnet parameters; callers convert with $subnet->addressRange(). Document the new methods and the widened constructor, with the changelog.",
+  "hiddenTests": [
+    "tests/IPRangeTest.php"
+  ],
+  "grade": "vendor/bin/phpunit --configuration=tests/phpunit.xml --do-not-cache-result tests/IPRangeTest.php",
+  "dependencies": {
+    "install": "composer install --no-interaction --no-progress",
+    "paths": [
+      "vendor"
+    ]
+  },
+  "args": {
+    "workflow": "pair"
+  },
+  "tags": {
+    "kind": "feature",
+    "size": "medium"
+  },
+  "notes": "Plan item 2 of the 5.3.0 plan; a 2026-11-08 Pair run on it stopped at the design stage."
+}

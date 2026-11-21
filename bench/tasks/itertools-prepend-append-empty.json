@@ -1,0 +1,23 @@
+{
+  "id": "itertools-prepend-append-empty",
+  "repo": "~/Develop/php/itertools-php",
+  "fixCommit": "3fe680a3777136756d037e30522bc97207e91ae6",
+  "task": "Stream::prepend() and Stream::append() called with no values change the stream: Stream::of(['a' => 1, 'b' => 2])->prepend()->toAssociativeArray() loses the keys (append() too), and a stream over an array becomes single-use, so iterating Stream::of([1, 2])->prepend() a second time gives nothing. With no values both should leave the stream exactly as it was.",
+  "hiddenTests": [
+    "tests/Stream/StreamPrependAppendTest.php"
+  ],
+  "grade": "vendor/bin/phpunit --configuration=tests/phpunit.xml --do-not-cache-result tests/Stream/StreamPrependAppendTest.php",
+  "dependencies": {
+    "install": "composer install --no-interaction --no-progress",
+    "paths": [
+      "vendor"
+    ]
+  },
+  "args": {
+    "workflow": "pair"
+  },
+  "tags": {
+    "kind": "bug",
+    "size": "small"
+  }
+}

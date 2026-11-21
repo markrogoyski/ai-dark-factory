@@ -1,0 +1,24 @@
+{
+  "id": "simplelog-logger-hardening",
+  "repo": "~/Develop/php/simplelog-php",
+  "fixCommit": "fba4edbd8a8151b09ab06e206e4b159d2ccee6e4",
+  "task": "Fix several Logger problems with validation, JSON encoding, sanitization and write errors:\n\n- log() with Logger::LOG_LEVEL_NONE ('none') writes a [none] line; 'none' is a setLogLevel() threshold, not a PSR-3 severity, so log() should throw Psr\\Log\\InvalidArgumentException for it.\n- When a write fails, the RuntimeException reports error_get_last(), which can be a stale, unrelated error; it should report the write's own error, and logging must not change the process-wide last error. Replace the @ suppression of the write with a scoped error handler, so the host application's error handler no longer sees the write warning.\n- Exception data in the context loses fields when the message has malformed UTF-8 or the trace has values JSON cannot encode; it should keep message, code, file, line and trace (malformed UTF-8 replaced with U+FFFD).\n- Context data encodes NAN, INF and -INF as 0; encode them as the strings \"NAN\", \"INF\" and \"-INF\", as message interpolation does, including inside nested arrays and plain stdClass objects, without changing the caller's values and handling array and object cycles. Malformed UTF-8 in context values should become U+FFFD instead of being dropped.\n- Interpolating a NAN context value emits a PHP warning on PHP 8.5; it should not.\n- Log line sanitization should also neutralize NUL, vertical tab, form feed, the file/group/record/unit separators, NEL and the Unicode line and paragraph separators, so each event stays on one physical line.",
+  "hiddenTests": [
+    "tests/LoggerTest.php",
+    "tests/Fixture/SilentFailWriteWrapper.php"
+  ],
+  "grade": "vendor/bin/phpunit --configuration=tests/phpunit.xml --do-not-cache-result tests/LoggerTest.php",
+  "dependencies": {
+    "install": "composer install --no-interaction --no-progress",
+    "paths": [
+      "vendor"
+    ]
+  },
+  "args": {
+    "workflow": "pair"
+  },
+  "tags": {
+    "kind": "bug",
+    "size": "large"
+  }
+}

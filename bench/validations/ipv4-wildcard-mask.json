@@ -1,0 +1,35 @@
+{
+  "id": "ipv4-wildcard-mask",
+  "valid": true,
+  "problems": [],
+  "manifestDigest": "sha256:74789fa970b1170a4a5fb4cff534c55d8011adeddc98ed12092c9a0525630ab4",
+  "fixCommit": "b5060300b563c6bf8d70f178dba3514d3f9ef98b",
+  "base": "e3c1941efa3c60399b26941d0daac2815bfa54e1",
+  "validatedAt": "2026-11-21T02:04:55.399Z",
+  "environment": {
+    "platform": "darwin",
+    "node": "v26.0.0"
+  },
+  "dependencies": {
+    "method": "copy",
+    "caveat": "Copied from the source checkout as it is now, not installed at base: dependency versions follow that checkout, not base's lock file."
+  },
+  "atBase": {
+    "commit": "e3c1941efa3c60399b26941d0daac2815bfa54e1",
+    "exitCode": 2,
+    "signal": null,
+    "timedOut": false,
+    "durationMs": 741,
+    "log": "~/.cache/dark-factory-bench/records/validate/ipv4-wildcard-mask/2026-11-21T02-04-36-469Z/base.log",
+    "tail": ".\n3) IPv4\\Tests\\SubnetParserTest::testFromWildcardMaskThrowsExceptionForInvalidWildcardMask with data set \"too few octets\" ('0.0.0', 'Invalid wildcard mask format: '0.0.0'')\nFailed asserting that exception of type \"Error\" matches expected exception \"InvalidArgumentException\". Message was: \"Call to undefined method IPv4\\SubnetParser::fromWildcardMask()\" at\n<tree>/tests/SubnetParserTest.php:681\n.\n4) IPv4\\Tests\\SubnetParserTest::testFromWildcardMaskThrowsExceptionForInvalidWildcardMask with data set \"leading-zero octet\" ('0.0.0.0255', 'Invalid wildcard mask format:....0255'')\nFailed asserting that exception of type \"Error\" matches expected exception \"InvalidArgumentException\". Message was: \"Call to undefined method IPv4\\SubnetParser::fromWildcardMask()\" at\n<tree>/tests/SubnetParserTest.php:681\n.\n5) IPv4\\Tests\\SubnetParserTest::testFromWildcardMaskThrowsExceptionForInvalidIpAddress\nFailed asserting that exception of type \"Error\" matches expected exception \"InvalidArgumentException\". Message was: \"Call to undefined method IPv4\\SubnetParser::fromWildcardMask()\" at\n<tree>/tests/SubnetParserTest.php:705\n.\nERRORS!\nTests: 147, Assertions: 333, Errors: 12, Failures: 5."
+  },
+  "atFix": {
+    "commit": "b5060300b563c6bf8d70f178dba3514d3f9ef98b",
+    "exitCode": 0,
+    "signal": null,
+    "timedOut": false,
+    "durationMs": 1070,
+    "log": "~/.cache/dark-factory-bench/records/validate/ipv4-wildcard-mask/2026-11-21T02-04-36-469Z/fix.log",
+    "tail": "...............................................................  63 / 147 ( 42%)\n............................................................... 126 / 147 ( 85%)\n.....................                                           147 / 147 (100%)\nTime: 00:00.091, Memory: 12.00 MB\nOK (147 tests, 370 assertions)\nPHPUnit 10.5.67 by Sebastian Bergmann and contributors.\nRuntime:       PHP 8.5.3\nConfiguration: <tree>/tests/phpunit.xml\n...............................................................  63 / 296 ( 21%)\n............................................................... 126 / 296 ( 42%)\n............................................................... 189 / 296 ( 63%)\n............................................................... 252 / 296 ( 85%)\n............................................                    296 / 296 (100%)\nTime: 00:00.172, Memory: 12.00 MB\nOK (296 tests, 549 assertions)"
+  }
+}

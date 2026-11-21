@@ -1,0 +1,35 @@
+{
+  "id": "math-gcd-int-min",
+  "valid": true,
+  "problems": [],
+  "manifestDigest": "sha256:18553e4769a6a859f6732db48167830e0526f4f25e617251079c12647a1c156f",
+  "fixCommit": "25a3f96a21be97852fc8f8ac91dfe6c56f8fdce5",
+  "base": "fae02480ef84005169d9477ad5668311999b0941",
+  "validatedAt": "2026-11-21T02:03:27.833Z",
+  "environment": {
+    "platform": "darwin",
+    "node": "v26.0.0"
+  },
+  "dependencies": {
+    "method": "copy",
+    "caveat": "Copied from the source checkout as it is now, not installed at base: dependency versions follow that checkout, not base's lock file."
+  },
+  "atBase": {
+    "commit": "fae02480ef84005169d9477ad5668311999b0941",
+    "exitCode": 2,
+    "signal": null,
+    "timedOut": false,
+    "durationMs": 444,
+    "log": "~/.cache/dark-factory-bench/records/validate/math-gcd-int-min/2026-11-21T02-03-21-819Z/base.log",
+    "tail": "<tree>/src/Algebra.php:38\n<tree>/src/Algebra.php:53\n<tree>/tests/Algebra/AlgebraAxiomsTest.php:41\n2) MathPHP\\Tests\\Algebra\\AlgebraAxiomsTest::testGcdMatchesOracle with data set \"power of two and min\" (4611686018427387904, -9223372036854775807-1, 4611686018427387904)\nTypeError: MathPHP\\Algebra::gcd(): Argument #1 ($a) must be of type int, float given, called in <tree>/src/Algebra.php on line 53\n<tree>/src/Algebra.php:38\n<tree>/src/Algebra.php:53\n<tree>/tests/Algebra/AlgebraAxiomsTest.php:41\n3) MathPHP\\Tests\\Algebra\\AlgebraAxiomsTest::testGcdMatchesOracle with data set \"max and min\" (9223372036854775807, -9223372036854775807-1, 1)\nTypeError: MathPHP\\Algebra::gcd(): Argument #1 ($a) must be of type int, float given, called in <tree>/src/Algebra.php on line 53\n<tree>/src/Algebra.php:38\n<tree>/src/Algebra.php:53\n<tree>/tests/Algebra/AlgebraAxiomsTest.php:41\nERRORS!\nTests: 361, Assertions: 562, Errors: 3, Warnings: 1."
+  },
+  "atFix": {
+    "commit": "25a3f96a21be97852fc8f8ac91dfe6c56f8fdce5",
+    "exitCode": 0,
+    "signal": null,
+    "timedOut": false,
+    "durationMs": 409,
+    "log": "~/.cache/dark-factory-bench/records/validate/math-gcd-int-min/2026-11-21T02-03-21-819Z/fix.log",
+    "tail": "PHPUnit 10.5.63 by Sebastian Bergmann and contributors.\nRuntime:       PHP 8.5.3\nConfiguration: <tree>/tests/phpunit.xml\n...............................................................  63 / 361 ( 17%)\n............................................................... 126 / 361 ( 34%)\n............................................................... 189 / 361 ( 52%)\n............................................................... 252 / 361 ( 69%)\n............................................................... 315 / 361 ( 87%)\n..............................................                  361 / 361 (100%)\nTime: 00:00.094, Memory: 10.00 MB\nOK (361 tests, 565 assertions)"
+  }
+}

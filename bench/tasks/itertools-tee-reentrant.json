@@ -1,0 +1,23 @@
+{
+  "id": "itertools-tee-reentrant",
+  "repo": "~/Develop/php/itertools-php",
+  "fixCommit": "16708c46eab16547bbb4a7dde6c2eacb822b6b9d",
+  "task": "Transform::tee does not guard against re-entrant reads of its source. If one of the copies is read from inside the source while the source is producing an element (from the aggregate's getIterator(), from one of the source iterator's methods, or from a generator body), tee advances the source again and the copies end up inconsistent. It should behave as Transform::memoize does in the same situation: the nested read throws \\LogicException; if the source lets it propagate, it becomes the source failure that every copy reaching that position gets; if the generator catches it, nothing is lost and every copy still sees the rest of the source. Reading an element that is already buffered from inside the source must keep working.",
+  "hiddenTests": [
+    "tests/Transform/TeeTest.php"
+  ],
+  "grade": "vendor/bin/phpunit --configuration=tests/phpunit.xml --do-not-cache-result tests/Transform/TeeTest.php",
+  "dependencies": {
+    "install": "composer install --no-interaction --no-progress",
+    "paths": [
+      "vendor"
+    ]
+  },
+  "args": {
+    "workflow": "pair"
+  },
+  "tags": {
+    "kind": "bug",
+    "size": "medium"
+  }
+}

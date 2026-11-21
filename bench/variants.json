@@ -1,0 +1,14 @@
+{
+  "default": {
+    "description": "The task's own workflow arguments, unchanged.",
+    "args": {}
+  },
+  "factory-fix": {
+    "description": "Factory at the fix tier (tierConfirmed skips the intake check) instead of the task's workflow.",
+    "args": { "workflow": "factory", "tier": "fix", "tierConfirmed": true }
+  },
+  "pair-4-reviews": {
+    "description": "Pair with a review budget of 4 instead of 8.",
+    "args": { "workflow": "pair", "maxReviews": 4, "maxDesignReviews": 2 }
+  }
+}

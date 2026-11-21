@@ -1,0 +1,35 @@
+{
+  "id": "math-rate-zero-rate",
+  "valid": true,
+  "problems": [],
+  "manifestDigest": "sha256:882b036d54e9f5d99c3736164af08c288f413e0f065afcf0a67cc82144c98a70",
+  "fixCommit": "31faddab4288bc2c6588754b198046320245606f",
+  "base": "157ab0c346acc39c67d7966ebd821e6dd8d9b9a1",
+  "validatedAt": "2026-11-21T02:02:45.892Z",
+  "environment": {
+    "platform": "darwin",
+    "node": "v26.0.0"
+  },
+  "dependencies": {
+    "method": "copy",
+    "caveat": "Copied from the source checkout as it is now, not installed at base: dependency versions follow that checkout, not base's lock file."
+  },
+  "atBase": {
+    "commit": "157ab0c346acc39c67d7966ebd821e6dd8d9b9a1",
+    "exitCode": 2,
+    "signal": null,
+    "timedOut": false,
+    "durationMs": 458,
+    "log": "~/.cache/dark-factory-bench/records/validate/math-rate-zero-rate/2026-11-21T02-02-39-564Z/base.log",
+    "tail": "<tree>/tests/Finance/FinanceTest.php:975\n5) MathPHP\\Tests\\Finance\\FinanceTest::testRateFromZeroInitialGuess with data set \"negative rate: end\" (10, -90.0, 1000.0, 0.0, false, -0.01871166542290473)\nDivisionByZeroError: Division by zero\n<tree>/src/Finance.php:591\n<tree>/src/NumericalAnalysis/RootFinding/NewtonsMethod.php:48\n<tree>/src/Finance.php:594\n<tree>/tests/Finance/FinanceTest.php:975\n6) MathPHP\\Tests\\Finance\\FinanceTest::testRateFromZeroInitialGuess with data set \"negative rate: beginning\" (10, -90.0, 1000.0, 0.0, true, -0.022670692014929033)\nDivisionByZeroError: Division by zero\n<tree>/src/Finance.php:591\n<tree>/src/NumericalAnalysis/RootFinding/NewtonsMethod.php:48\n<tree>/src/Finance.php:594\n<tree>/tests/Finance/FinanceTest.php:975\nERRORS!\nTests: 574, Assertions: 568, Errors: 6."
+  },
+  "atFix": {
+    "commit": "31faddab4288bc2c6588754b198046320245606f",
+    "exitCode": 0,
+    "signal": null,
+    "timedOut": false,
+    "durationMs": 846,
+    "log": "~/.cache/dark-factory-bench/records/validate/math-rate-zero-rate/2026-11-21T02-02-39-564Z/fix.log",
+    "tail": ".............................................................  854 / 1556 ( 54%)\n.............................................................  915 / 1556 ( 58%)\n.............................................................  976 / 1556 ( 62%)\n............................................................. 1037 / 1556 ( 66%)\n............................................................. 1098 / 1556 ( 70%)\n............................................................. 1159 / 1556 ( 74%)\n............................................................. 1220 / 1556 ( 78%)\n............................................................. 1281 / 1556 ( 82%)\n............................................................. 1342 / 1556 ( 86%)\n............................................................. 1403 / 1556 ( 90%)\n............................................................. 1464 / 1556 ( 94%)\n............................................................. 1525 / 1556 ( 98%)\n...............................                               1556 / 1556 (100%)\nTime: 00:00.249, Memory: 16.00 MB\nOK (1556 tests, 1579 assertions)"
+  }
+}

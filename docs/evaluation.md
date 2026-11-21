@@ -78,17 +78,109 @@ unknown revisions are labeled.
   count beside successful ones. Runs with no result, an unreadable one, or no supported metrics
   are listed under `collected[].incomplete` with the reason. Combine it with explicit result
   files if you like.
-- `--outcomes outcomes.json` records failures found after delivery: a map keyed by `hostRunDir`
-  (or `runDir` for native runs), with values like
+- `--outcomes outcomes.json` records what was found after the run: a map keyed by `hostRunDir`
+  (or `runDir` for native runs). A post-delivery observation looks like
   `{"status":"regression","evidence":"integration-log.txt:42"}` or
-  `{"status":"passed","evidence":"acceptance-log.txt"}`. Observed regressions are reported
-  separately from delivery-check failures and unknown outcomes.
+  `{"status":"passed","evidence":"acceptance-log.txt"}`; observed regressions are reported
+  separately from delivery-check failures and unknown outcomes. A hidden-test grade from the
+  [benchmark](#benchmark) looks like `{"kind":"hidden-tests","status":"failed","evidence":"grade.log"}`
+  (`passed`, `failed`, or `ungraded` when there was no snapshot to grade) and covers runs that
+  were never delivered. A key can hold one of each, as an array.
+- Each group's `hiddenTests` sets readiness against the hidden tests: `readyPassed`,
+  `readyFailed` (`escapedDefects`: ready but wrong), `notReadyPassed` (`falseBlocks`: held back
+  but right) and `notReadyFailed`, with `ungraded`, `unknown` (no grade) and three rates
+  (`passRate`, `escapedDefectRate` among ready runs, `falseBlockRate` among the rest).
+  `matchedTasks` cells count `hiddenGraded` and `hiddenPassed`.
 
 The evaluator never runs tasks, changes defaults, contacts providers, or invents prices.
+
+## Benchmark
+
+Readiness is the process grading itself. The benchmark checks the delivered result against
+ground truth: each task reverts a real fix, and the fix's own tests, which the run never sees,
+grade the run's reviewed snapshot. It is development tooling (`tools/bench.mjs`, tasks under
+`bench/`) and doesn't ship with the plugin.
+
+### Tasks
+
+`bench/tasks/<id>.json`:
+
+| field | meaning |
+|---|---|
+| `id` | the file name, lowercase with dashes; the run's `evaluation.taskId` |
+| `repo` | the local source repository, read-only (`~` is expanded) |
+| `fixCommit` | the full hash of the commit that fixed it |
+| `base` | where the run starts; defaults to `fixCommit^` |
+| `task` | the request as a user would make it: the symptom or the wanted behaviour, never the fix, the commit or the hidden test files |
+| `hiddenTests` | test files from `fixCommit`, each added or modified by it; their fixed bytes replace the run's copies when grading |
+| `grade` | the command that runs only those tests (a test file or `--filter`, not the full gate), from the repository root |
+| `gradeTimeoutSec` | optional, default 600 |
+| `dependencies` | optional `{install, paths}`: `paths` are the ignored dependency directories (`vendor`); `install` runs at base, and if it fails or is absent the directories are copied from the source checkout (`cp -c`), whose versions follow that checkout rather than base's lock file (the prepare record says which) |
+| `args` | the workflow arguments: `workflow`, and `tier` or models when they matter; the harness sets `task` and `evaluation` |
+| `tags` | `kind` (bug, feature) and `size` (small, medium, large) |
+
+Good tasks are fixes whose tests exercise existing public API, or a feature whose names the task
+spells out, so a hidden test never depends on names the solver had to invent. A test that
+reaches into private methods grades the design rather than the behaviour.
+
+`bench/variants.json` names the variants a run can use: each is `{description, args}`, merged
+over the task's `args` (a variant can change the workflow), with optional `runnerFlags` for the
+runner's command line, such as `["--concurrency", "2"]`.
+
+### Commands
+
+Clones and records go under `~/.cache/dark-factory-bench` (`--root` or
+`DARK_FACTORY_BENCH_ROOT` to change it; never inside this checkout):
+
+    node tools/bench.mjs list                                   # tasks and whether each validated
+    node tools/bench.mjs prepare math-gcd-int-min               # leak-proof clone at base, with dependencies
+    node tools/bench.mjs validate math-gcd-int-min              # hidden tests fail at base, pass at the fix
+    node tools/bench.mjs run math-gcd-int-min --variant default --rep 1          # prints the plan only
+    node tools/bench.mjs run math-gcd-int-min --variant default --rep 1 --yes    # LIVE MODELS
+    node tools/bench.mjs grade $(node tools/bench.mjs results)  # every recorded run; or name result or record files
+    node plugins/dark-factory/bin/dark-factory-evaluate \
+      --outcomes ~/.cache/dark-factory-bench/records/outcomes.json $(node tools/bench.mjs results)
+
+- **prepare** makes `tasks/<id>/repo`: a fresh repository with only `base` fetched into it, no
+  remote, tags or `FETCH_HEAD`, then checks that the fix commit, the hidden tests' fixed bytes and
+  every source commit outside base's history are missing from it (agents can run
+  `git log --all` and `git cat-file`). The dependency directories must be ignored at base.
+- **validate** runs no models: base with the hidden tests overlaid must fail and the fix commit
+  must pass. The record goes to `bench/validations/<id>.json` with the output tails; only a task
+  whose record is valid and matches its manifest (`manifestDigest`) can be run. Rewording `task`
+  needs no new validation.
+- **run** costs money: it launches the standalone runner, so every model turn is billed to the
+  accounts its CLIs are signed in to (see [Choosing the models](models.md)). Without `--yes` it
+  prints the command and arguments and exits 2. Each repetition gets its own leak-proof clone
+  under `work/<id>/<variant>/rep-<n>/`, so no run can read another's snapshot refs, and its
+  arguments carry `evaluation: {taskId, variant, repetition}`. The record
+  (`records/runs/<id>/<variant>/rep-<n>.json`) names `hostRunDir` and `resultFile`; the
+  runner's progress is in the `.runner.log` beside it. `--replace` discards an earlier clone of
+  the same repetition.
+- **grade** takes result files or run records (`results [ID...]` lists every recorded run's
+  result file). For every result with a snapshot, ready or not,
+  it writes `final.snapshotRef`'s tree (checked against `final.snapshotTree`) into a scratch
+  directory, overwrites the hidden tests with the fix's bytes, copies the dependencies, runs
+  `grade` and deletes the directory. The outcome, with its log as evidence, goes to
+  `records/outcomes.json` (or `--outcomes FILE`), keyed by `hostRunDir`; a result without a
+  snapshot is `ungraded`. Regrading replaces a run's earlier grade and keeps its post-delivery
+  observation.
+
+Grading every snapshot is what makes the 2×2 useful: an escaped defect is a ready result that
+fails the hidden tests, a false block a result the process held back that passes them.
+
+### Limits
+
+The clone can't reach the fix, but the machine can: the source repositories, other clones and
+the grade logs are readable by an agent that goes looking outside its checkout. A hidden test
+checks one fix's reading of the task, so a failure is a lead to read, not a verdict. The tests
+in `test/bench.mjs` run the whole loop against stub CLIs and throwaway repositories, with no
+PHP, network or models.
 
 ## Interpreting results
 
 Use several representative tasks and repetitions per variant (small changes, ambiguous bugs,
 scoped features, architecture work), compare like-for-like inputs, and inspect the actual defects
 found before tuning defaults. Readiness is process evidence, not proof of correctness, and
-duplicate findings aren't independent discoveries.
+duplicate findings aren't independent discoveries; the [benchmark](#benchmark)'s hidden tests are
+the check that doesn't come from the process.
