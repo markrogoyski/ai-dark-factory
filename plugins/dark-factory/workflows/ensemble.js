@@ -904,8 +904,10 @@ function digest(S, forL, upto) {
   const fresh = S.ledger.filter(c => c.round === upto && (c.kind === 'fact' || c.kind === 'verification') && c.status !== 'open' && !isBad(c))
   if (fresh.length) {
     out.push('', `## Other claims checked in round ${upto}`)
-    for (const c of fresh.slice(0, 30)) out.push(ledgerLine(c))
-    if (fresh.length > 30) out.push(`- … ${fresh.length - 30} more`)
+    // The reader's own claims always show, so a seat can cite or withdraw them by ID.
+    const shown = [...fresh.filter(c => c.author === forL), ...fresh.filter(c => c.author !== forL).slice(0, 30)]
+    for (const c of fresh.filter(c => shown.includes(c))) out.push(ledgerLine(c))
+    if (fresh.length > shown.length) out.push(`- … ${fresh.length - shown.length} more`)
   }
 
   if (S.mode === 'implement') {
@@ -949,7 +951,7 @@ function claimsAsk(S) {
 }
 
 function lengthAsk(S) {
-  return `Keep the post under about ${S.postWords} words${S.mode === 'implement' ? ': the diff carries the detail, and the post explains it' : ''}. ${tierProfile(S).simple ? 'The reviewer and the verifier read it' : S.build ? 'The verifier and the auditors read it' : 'Every seat reads it'}, so make each paragraph earn its place. ` +
+  return `Keep the post under about ${S.postWords} words${S.mode === 'implement' ? ': the diff carries the detail, and the post explains it' : ''}. The count is of prose: fenced code blocks and table rows don't count, so use a table wherever it says something best. The limit is a guide for the writing, not a cap: an over-long post is noted, never refused, so aim for it as you write and don't spend the turn trimming a draft that runs a little over.${tierProfile(S).simple ? 'The reviewer and the verifier read it' : S.build ? 'The verifier and the auditors read it' : 'Every seat reads it'}, so make each paragraph earn its place. ` +
   (S.mode === 'design' || S.mode === 'plan'
     ? `The ${S.mode} itself belongs in the post, not in a side file: the post is what is verified, debated and handed on. Only supporting material, such as prototype output, logs or data, goes in separate files in the room next to your post, named with your seat letter first, and pointed to from the post.`
     : 'Only the post file counts toward the limit. Put long material the task asks for, such as exact edits, logs or data, in separate files in the room next to your post, named with your seat letter first, and point to them from the post.')
@@ -1333,6 +1335,7 @@ Find what a wrong result could get past, or a right one fail:
 Find where the criteria fail to say what the task means:
 - Ambiguity: wording two careful engineers would read differently, and build differently.
 - Contradictions: between criteria, or between a criterion and the task, the reference documents or the codebase's conventions.
+- Qualities the task asks for by name that no criterion measures: "as simple as it can be", "fast", "no new dependencies", "backward compatible". Left unmeasured, the results are never judged on them, and arguments about them stay matters of taste nobody rules on. Propose a criterion that makes the quality checkable, such as a count of new components, services or tables, or a named behaviour that must not change.
 - Scope: criteria that ask for more than the task does, and parts of the task no criterion covers. Asking for more is as much a defect as asking for less: an unasked-for feature costs review time and risk.
 - Checkability: criteria nobody could check from a worktree, or that name no evidence where it isn't obvious.`,
 }
@@ -1777,7 +1780,7 @@ It snapshots ${Y}'s worktree, then runs the verification command and each publis
 `
     : `# Step 1 — count the post
 
-This is ${S.mode === 'plan' ? 'the planning stage' : S.mode === 'design' ? 'a design task' : 'an investigation task'}, so there is nothing to measure. Run \`wc -w < ${post}\` and set postWords to the number (0 if the file doesn't exist). ${S.controls.repair ? `Run ${S.cli} hash --file ${shq(post)} and copy its hash to artifactHash. ` : ''}Set measured=false, diff to zeros with tree "", delta to {since: "", files: 0, added: 0, removed: 0}, suite to {ran: false, passed: false, tail: ""}, and crossTests to [].
+This is ${S.mode === 'plan' ? 'the planning stage' : S.mode === 'design' ? 'a design task' : 'an investigation task'}, so there is nothing to measure. Run \`${S.cli} words --file ${shq(post)}\` and set postWords to its words (0 if the file doesn't exist). ${S.controls.repair ? `Run ${S.cli} hash --file ${shq(post)} and copy its hash to artifactHash. ` : ''}Set measured=false, diff to zeros with tree "", delta to {since: "", files: 0, added: 0, removed: 0}, suite to {ran: false, passed: false, tail: ""}, and crossTests to [].
 `
   return `You are a neutral verifier for a council of AI models. You wrote none of this work and have no stake in which position wins. Your job is to establish facts.
 
@@ -1905,7 +1908,7 @@ When the work would end with a change someone commits, choose implement.
 `}
 ## Step 2 — create the run
 Run: ${S.cli} init --repo ${S.raw.repo ? shq(S.raw.repo) : '"$PWD"'} --seats ${letters}${P.factory ? ' --factory' : ''}${setupRunId(S) ? ` --run-id ${shq(setupRunId(S))}` : ''}${startedAt ? ' --started-at <the time you read before you started>' : ''}${S.plan.map(p => ` --ref ${shq(p)}`).join('')} followed by --ref <path> for each other document from step 1
-${S.host !== 'codex' ? 'Make it one Bash call with dangerouslyDisableSandbox: true: init creates git worktrees, and the Bash sandbox refuses to write the repository\'s worktree records (".git/worktrees/…: Operation not permitted").\n' : ''}It prints JSON with runId, runDir, repoRoot, refs (the snapshots it made of those documents) and dirty (tracked files with uncommitted changes).
+${S.host !== 'codex' ? 'Make it one Bash call with timeout 600000 and dangerouslyDisableSandbox: true: init can take several minutes on a large repository, and it creates git worktrees, which the Bash sandbox blocks: it refuses to write the repository\'s worktree records (".git/worktrees/…: Operation not permitted").\n' : ''}It prints JSON with runId, runDir, repoRoot, refs (the snapshots it made of those documents) and dirty (tracked files with uncommitted changes).
 - If it fails, return status "error" with its message, and empty values elsewhere.
 ${S.allowDirty || (S.modeGiven && S.mode !== 'implement') ? '' : `- If ${S.modeGiven ? '' : 'the mode is implement and '}dirty is non-empty, stop and return status "dirty" with that list. The worktrees branch from HEAD, so uncommitted changes would be invisible to every seat.\n`}
 ## Step 3 — the verification command

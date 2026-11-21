@@ -23,6 +23,7 @@ The repository is at /tmp/proj, at the commit every model will start from. Read 
 Find where the criteria fail to say what the task means:
 - Ambiguity: wording two careful engineers would read differently, and build differently.
 - Contradictions: between criteria, or between a criterion and the task, the reference documents or the codebase's conventions.
+- Qualities the task asks for by name that no criterion measures: "as simple as it can be", "fast", "no new dependencies", "backward compatible". Left unmeasured, the results are never judged on them, and arguments about them stay matters of taste nobody rules on. Propose a criterion that makes the quality checkable, such as a count of new components, services or tables, or a named behaviour that must not change.
 - Scope: criteria that ask for more than the task does, and parts of the task no criterion covers. Asking for more is as much a defect as asking for less: an unasked-for feature costs review time and risk.
 - Checkability: criteria nobody could check from a worktree, or that name no evidence where it isn't obvious.
 

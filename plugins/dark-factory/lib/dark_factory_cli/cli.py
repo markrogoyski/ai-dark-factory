@@ -22,6 +22,8 @@ workflow's agents call it. Every subcommand prints one JSON object on its last l
                         (saves <run>/retro.md, plus the run's process notes read from the retro
                         agent's saved transcript, where they outlive the run)
     dark-factory hash        --file F
+    dark-factory words       --file F   (the prose words a post's length limit counts: fenced code,
+                        table rows and tokens without a letter or digit are left out)
     dark-factory resume-check --run-dir D --stop Qn --snapshot LABEL (--record | --answers HASH)
                         (a native Pair stop: --record keeps wt/A and the snapshot ref at the stop; a
                         check refuses a continuation when HEAD, the checkout, wt/A or the ref moved)
@@ -39,7 +41,7 @@ import os
 import sys
 
 from . import common
-from .common import CouncilError, DEFAULT_MAX_WAIT, TRANSCRIPT_WAIT_SEC, fail, prompt_hash, read
+from .common import CouncilError, DEFAULT_MAX_WAIT, TRANSCRIPT_WAIT_SEC, fail, prompt_hash, prose_words, read
 from .delivery import cmd_apply, cmd_verify_delivery
 from .jobs import cmd_job, cmd_jobs, cmd_wait
 from .measure import cmd_measure
@@ -57,6 +59,10 @@ from .watch import cmd_watch
 
 def cmd_hash(a):
     common.emit({'status': 'ok', 'hash': prompt_hash(read(a.file))})
+
+
+def cmd_words(a):
+    common.emit({'status': 'ok', 'words': prose_words(read(a.file)) if os.path.exists(a.file) else 0})
 
 
 def main():
@@ -181,6 +187,9 @@ def main():
     p = sub.add_parser('hash')
     p.add_argument('--file', required=True)
 
+    p = sub.add_parser('words', help="count a post's prose words, as its length limit measures them")
+    p.add_argument('--file', required=True)
+
     p = sub.add_parser('resume-check', help='record a native Pair stop, or check that a continuation finds it unchanged')
     p.add_argument('--run-dir', required=True)
     p.add_argument('--stop', required=True, help='the first question ID of the stop, such as Q1')
@@ -202,7 +211,7 @@ def main():
                 'verify': cmd_verify, 'verify-delivery': cmd_verify_delivery, 'evidence': cmd_evidence,
                 'apply': cmd_apply,
                 'materialize': cmd_materialize, 'usage': cmd_usage, 'jobs': cmd_jobs,
-                'cleanup': cmd_cleanup, 'retro': cmd_retro, 'hash': cmd_hash, 'preflight': cmd_preflight,
+                'cleanup': cmd_cleanup, 'retro': cmd_retro, 'hash': cmd_hash, 'words': cmd_words, 'preflight': cmd_preflight,
                 'resume-check': cmd_resume_check, 'watch': cmd_watch}
     try:
         pin_guard(getattr(a, 'run_dir', None), repo=getattr(a, 'repo', None))

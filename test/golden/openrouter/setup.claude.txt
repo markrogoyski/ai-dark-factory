@@ -24,7 +24,7 @@ When the work would end with a change someone commits, choose implement.
 
 ## Step 2 — create the run
 Run: dark-factory init --repo "$PWD" --seats A,B,C followed by --ref <path> for each other document from step 1
-Make it one Bash call with dangerouslyDisableSandbox: true: init creates git worktrees, and the Bash sandbox refuses to write the repository's worktree records (".git/worktrees/…: Operation not permitted").
+Make it one Bash call with timeout 600000 and dangerouslyDisableSandbox: true: init can take several minutes on a large repository, and it creates git worktrees, which the Bash sandbox blocks: it refuses to write the repository's worktree records (".git/worktrees/…: Operation not permitted").
 It prints JSON with runId, runDir, repoRoot, refs (the snapshots it made of those documents) and dirty (tracked files with uncommitted changes).
 - If it fails, return status "error" with its message, and empty values elsewhere.
 - If the mode is implement and dirty is non-empty, stop and return status "dirty" with that list. The worktrees branch from HEAD, so uncommitted changes would be invisible to every seat.

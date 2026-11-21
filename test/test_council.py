@@ -74,6 +74,16 @@ class PromptHash(unittest.TestCase):
         self.assertEqual(council.normalize('  lead'), '  lead')
 
 
+class ProseWords(unittest.TestCase):
+    def test_counts_prose_only(self):
+        text = ('# Title\n\nOne two → three — four.\n\n| a | b |\n|---|---|\n| x | y |\n\n'
+                '```js\nconst a = 1\n```\n~~~\n``` not a close\n~~~\n- five six\n')
+        self.assertEqual(council.prose_words(text), 7)      # Title, One two three four, five six
+
+    def test_unclosed_fence_hides_the_rest(self):
+        self.assertEqual(council.prose_words('a b\n```\nc d'), 2)
+
+
 class SplitSchema(unittest.TestCase):
     def test_no_block(self):
         self.assertEqual(council.split_schema('just a prompt'), ('just a prompt', None))

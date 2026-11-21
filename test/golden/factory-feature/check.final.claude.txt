@@ -25,7 +25,7 @@ For a focused test or an intended red, put the command in a file and pass --comm
 
 # Step 1 — count the post
 
-This is the planning stage, so there is nothing to measure. Run `wc -w < /tmp/proj/.council/test-ffeat/room/final/A.md` and set postWords to the number (0 if the file doesn't exist). Set measured=false, diff to zeros with tree "", delta to {since: "", files: 0, added: 0, removed: 0}, suite to {ran: false, passed: false, tail: ""}, and crossTests to [].
+This is the planning stage, so there is nothing to measure. Run `dark-factory words --file '/tmp/proj/.council/test-ffeat/room/final/A.md'` and set postWords to its words (0 if the file doesn't exist). Set measured=false, diff to zeros with tree "", delta to {since: "", files: 0, added: 0, removed: 0}, suite to {ran: false, passed: false, tail: ""}, and crossTests to [].
 
 # Step 2 — rule on each item
 

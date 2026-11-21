@@ -110,6 +110,28 @@ def read(path):
         return f.read()
 
 
+_FENCE = re.compile(r'^\s*(```|~~~)')
+_WORD = re.compile(r'\w')
+
+
+def prose_words(text):
+    """Words of a post's prose, the count its length limit is measured on: fenced code blocks
+    and table rows are left out, as are tokens with no letter or digit (arrows, dashes, bullets)."""
+    n, fence = 0, None
+    for line in text.splitlines():
+        m = _FENCE.match(line)
+        if m:
+            if fence is None:
+                fence = m.group(1)
+            elif m.group(1) == fence:
+                fence = None
+            continue
+        if fence is not None or line.lstrip().startswith('|'):
+            continue
+        n += sum(1 for t in line.split() if _WORD.search(t))
+    return n
+
+
 def write(path, text):
     os.makedirs(os.path.dirname(path), exist_ok=True)
     tmp = path + '.tmp'

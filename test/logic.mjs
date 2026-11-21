@@ -907,6 +907,14 @@ describe('config', () => {
     assert.deepEqual(lib.parseConfig({ task: 't', plan: ' /a.md ' }).plan, ['/a.md'])
     assert.deepEqual(lib.parseConfig({ task: 't', plan: ['/a.md', '', '/b.md'] }).plan, ['/a.md', '/b.md'])
   })
+  test('the digest always lists the reader\'s own claims among the round\'s other checked claims', () => {
+    const { L, S } = makeRun()
+    for (let i = 0; i < 35; i++) addItem(L, S, { author: 'B', round: 1, kind: 'fact', status: 'verified', statement: `b fact ${i}` })
+    const own = addItem(L, S, { author: 'A', round: 1, kind: 'fact', status: 'verified', statement: 'a fact' })
+    const forA = L.digest(S, 'A', 1), forC = L.digest(S, 'C', 1)
+    assert.ok(forA.includes(own.id) && forA.includes('… 5 more'))
+    assert.ok(!forC.includes(own.id) && forC.includes('… 6 more'))
+  })
   test('the post word limit follows the mode, and newState starts clean', () => {
     const s = lib.newState(lib.parseConfig({ task: 't', mode: 'design' }))
     assert.deepEqual([s.postWords, s.ledger, s.inContention, s.lastRound, s.run], [4000, [], null, 0, null])

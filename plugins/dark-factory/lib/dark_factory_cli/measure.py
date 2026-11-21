@@ -269,7 +269,7 @@ def run_measure_job(jd, spec):
                 out['crossTests'] = []
                 return out
     post = os.path.join(run['room'], spec['label'], f'{spec["seat"]}.md')
-    out['postWords'] = len(read(post).split()) if os.path.exists(post) else None
+    out['postWords'] = common.prose_words(read(post)) if os.path.exists(post) else None
     try:
         replay = None
         if spec.get('replay') is not None:
