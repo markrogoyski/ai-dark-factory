@@ -127,6 +127,15 @@ reaches into private methods grades the design rather than the behaviour.
 over the task's `args` (a variant can change the workflow), with optional `runnerFlags` for the
 runner's command line, such as `["--concurrency", "2"]`.
 
+`smoke` is for proving the harness, not for measuring: Pair with a Codex Luna author and a Claude
+Haiku reviewer, so both CLI paths run, at `medium` effort, the spec review on Haiku at `low`,
+`maxReviews: 2`, `maxDesignReviews: 1`, `maxTurns: 10` and no retro. Pair refuses `roles`, and
+needs none: on the standalone runner its only orchestration roles are setup, which runs on a Codex
+author's own model (Luna), the spec review (`spec`), and the retro (off). Measurement is the
+helper's, with no model. `test/bench.mjs` checks offline, through `--prepare` and a stub run, that
+the variant reaches Luna and Haiku and nothing else. Its results are not comparable with any
+other variant's.
+
 ### Commands
 
 Clones and records go under `~/.cache/dark-factory-bench` (`--root` or
@@ -138,6 +147,7 @@ Clones and records go under `~/.cache/dark-factory-bench` (`--root` or
     node tools/bench.mjs run math-gcd-int-min --variant default --rep 1          # prints the plan only
     node tools/bench.mjs run math-gcd-int-min --variant default --rep 1 --yes    # LIVE MODELS
     node tools/bench.mjs grade $(node tools/bench.mjs results)  # every recorded run; or name result or record files
+    node tools/bench.mjs scan $(node tools/bench.mjs results)   # the contamination scan alone; writes nothing
     node plugins/dark-factory/bin/dark-factory-evaluate \
       --outcomes ~/.cache/dark-factory-bench/records/outcomes.json $(node tools/bench.mjs results)
 
@@ -164,15 +174,86 @@ Clones and records go under `~/.cache/dark-factory-bench` (`--root` or
   `grade` and deletes the directory. The outcome, with its log as evidence, goes to
   `records/outcomes.json` (or `--outcomes FILE`), keyed by `hostRunDir`; a result without a
   snapshot is `ungraded`. Regrading replaces a run's earlier grade and keeps its post-delivery
-  observation.
+  observation. Each graded run is also scanned for [contamination](#contamination-check).
+- **scan** runs the contamination scan alone and prints each run's report; it exits 0 when
+  every run is clean and 2 otherwise.
 
 Grading every snapshot is what makes the 2×2 useful: an escaped defect is a ready result that
 fails the hidden tests, a false block a result the process held back that passes them.
 
+The first run of a new setup, or after a change to the harness, should be the smoke variant on
+the smallest task:
+
+    node tools/bench.mjs validate math-gcd-int-min                               # no models
+    node tools/bench.mjs run math-gcd-int-min --variant smoke --rep 1            # prints the plan only
+    node tools/bench.mjs run math-gcd-int-min --variant smoke --rep 1 --yes      # LIVE MODELS: Luna and Haiku
+    node tools/bench.mjs grade ~/.cache/dark-factory-bench/records/runs/math-gcd-int-min/smoke/rep-1.json
+    node plugins/dark-factory/bin/dark-factory-evaluate \
+      --outcomes ~/.cache/dark-factory-bench/records/outcomes.json $(node tools/bench.mjs results math-gcd-int-min)
+
+`grade` prints the hidden-test status and the scan's status (`clean`, `partial` or
+`contaminated`); `scan` with the same record file shows what a partial scan missed.
+
+### Contamination check
+
+The clone holds no trace of the fix, but the agents can read the whole disk, and two places on it
+hold the answer: the task's source repository, which has the fix, and the bench records, whose
+validate and grade logs name the hidden tests and show their output. The harness doesn't stop an
+agent from going there; the scan detects it afterwards.
+
+It reads what records the run's agents' tool calls and outputs on the standalone runner, found
+from the run itself:
+
+| record | where | attributed by |
+|---|---|---|
+| host run | `hostRunDir`: `events.jsonl`, `result.json`, `checkpoint.json`'s entries | the result |
+| each model turn | `<runDir>/jobs/<key>/`: `out.json`, `status.json`, `stderr.txt`, and for Codex `events.jsonl` (`codex exec --json`: every command, its output and each file change) | every run directory the host's events name, and the result's `runDir`; `spec.json` gives the vendor |
+| Codex session | `$CODEX_HOME/sessions/YYYY/MM/DD/rollout-<time>-<thread>.jsonl` (or `archived_sessions/`) | the thread ID in the job's `thread.started` event, `status.json` or `seats/<seat>/thread`; only the date directories the run spans are listed |
+| Claude session (`claude -p`) | `$CLAUDE_CONFIG_DIR/projects/<escaped cwd>/<session>.jsonl` (default `~/.claude`), and any files under `<session>/` beside it | the session ID in `status.json`, `out.json` or `seats/<seat>/claude-session`; an OpenRouter seat's under its own `claudeConfigDir` |
+| agy conversation | `~/.gemini/antigravity-cli/conversations/<conversation>.db` (SQLite) | the conversation ID in `out.json` or `seats/<seat>/conversation` |
+
+`run` records the `CODEX_HOME` and `CLAUDE_CONFIG_DIR` the runner had (`homes` in the run
+record); without a record the scan uses the current environment's. Nothing else under
+`~/.codex`, `~/.claude` or `~/.gemini` is read. Worktrees, snapshots and room posts aren't read
+either: what an agent wrote there went through a tool call that is.
+
+A hit is any of these in a tool call, a tool output or an agent's own output:
+
+- the source repository's path, as the manifest gives it, with `~`, or resolved through links;
+- the bench root's `records/` path, in the same spellings;
+- the fix commit's hash, in full or as a prefix of 7 or more characters, as a whole word.
+
+A path must end where a name ends (`math-php-old` is not `math-php`), and paths inside the run's
+own clone (with its worktrees) or the pristine clone under `tasks/<id>/repo` never count, since
+neither holds the fix. What the harness wrote is skipped: the job's `prompt.md`, `schema.json`
+and `spec.json`, `<key>.host.prompt.md`, the result's `task` and `provenance`, a rollout's session
+header, turn context and user or developer messages, and a transcript's prompt, queued prompts,
+request copies, hook attachments and system records. So a task that names a path doesn't make its
+run contaminated.
+
+A run with a hit gets `contaminated: true` and `contamination: [{file, at, match, excerpt}]`
+(the first 20 hits; `at` is a line number with a JSON pointer, or a JSON pointer) in its outcome,
+beside `scan: {status, hits, files, missing, sources}`; it is still graded. A record the scan
+should read but can't find (a rollout or transcript that isn't there, a job with no thread ID,
+missing host events) makes the scan `partial`, with each gap listed in `missing`, so `clean` is
+never claimed on incomplete evidence. An agy conversation always leaves the scan partial: its
+steps are binary records, and only their readable text is searched.
+
+The evaluator validates these fields, counts contaminated runs under `hiddenTests.contaminated`
+(and `hiddenContaminated` per matched task), and leaves them out of the 2×2 and its rates.
+`hiddenTests.scanPartial` counts graded runs whose scan was partial, `unscanned` those graded
+before the scan existed; both stay in the 2×2.
+
 ### Limits
 
 The clone can't reach the fix, but the machine can: the source repositories, other clones and
-the grade logs are readable by an agent that goes looking outside its checkout. A hidden test
+the grade logs are readable by an agent that goes looking outside its checkout. The
+[contamination check](#contamination-check) detects the source repository, the records and the
+fix commit, but not every route to the answer: another task's clone or work directory of the
+same repository at a later base, this checkout's `bench/` (its manifests name the fix commit, so
+reading one is caught, but listing it is not), a copy of the fix elsewhere on disk, or the web. A
+command whose output the CLI didn't record in full is searched only as far as it was recorded. A
+hidden test
 checks one fix's reading of the task, so a failure is a lead to read, not a verdict. The tests
 in `test/bench.mjs` run the whole loop against stub CLIs and throwaway repositories, with no
 PHP, network or models.

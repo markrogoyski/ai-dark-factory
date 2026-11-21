@@ -5,7 +5,8 @@
 //   node tools/bench.mjs prepare ID [--force]                    leak-proof clone at base; no models
 //   node tools/bench.mjs validate ID...                           hidden tests fail at base, pass at the fix; no models
 //   node tools/bench.mjs run ID --variant V --rep N [--yes]       LIVE MODELS, costs money; without --yes, prints the plan
-//   node tools/bench.mjs grade FILE... [--outcomes FILE]         hidden tests on each run's reviewed snapshot
+//   node tools/bench.mjs grade FILE... [--outcomes FILE]         hidden tests on each run's reviewed snapshot, and the contamination scan
+//   node tools/bench.mjs scan FILE...                             the contamination scan alone
 //   node tools/bench.mjs results [ID...]                          result files of the recorded runs, for the evaluator
 // --bench DIR holds tasks/, variants.json and validations/ (default: bench/ in this checkout).
 // --root DIR holds clones and records (default: $DARK_FACTORY_BENCH_ROOT or ~/.cache/dark-factory-bench).
@@ -16,6 +17,7 @@ import { homedir, platform, tmpdir } from 'node:os'
 import { basename, dirname, isAbsolute, join, posix, relative, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { GIT_REPO_ENV } from '../plugins/dark-factory/lib/engine.mjs'
+import { defaultHomes, scanRun } from './bench-scan.mjs'
 
 const checkout = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 export const RUNNER = join(checkout, 'plugins/dark-factory/bin/dark-factory-codex')
@@ -460,7 +462,9 @@ export async function run(paths, id, { variant, rep, yes = false, replace = fals
     clone: plan.clone, base: prepared.base, command: plan.command, startedAt, finishedAt: new Date().toISOString(), exitCode,
     status: brief?.status || 'unknown', readiness: brief?.final?.readiness?.state || null, error: brief?.error || null,
     snapshotRef: brief?.final?.snapshotRef || null, hostRunDir,
-    resultFile: brief?.resultFile || (hostRunDir ? join(hostRunDir, 'result.json') : null), runnerLog: plan.runnerLog, leakCheck }
+    resultFile: brief?.resultFile || (hostRunDir ? join(hostRunDir, 'result.json') : null), runnerLog: plan.runnerLog, leakCheck,
+    // Where the CLIs kept their sessions, for the contamination scan to find this run's transcripts.
+    homes: defaultHomes(env(extraEnv)) }
   writeJson(plan.recordFile, record)
   return record
 }
@@ -480,6 +484,31 @@ function repositoryOf(result) {
   const run = result.runDir && readJson(join(result.runDir, 'run.json'))
   if (run?.repoRoot) return run.repoRoot
   return null
+}
+
+// The run record `run` wrote for this result, if there is one.
+function runRecordFor(paths, identity, result) {
+  if (!identity?.variant || !identity.repetition) return null
+  const record = readJson(join(paths.records, 'runs', identity.taskId, identity.variant, `rep-${identity.repetition}.json`))
+  return record && (!result.hostRunDir || record.hostRunDir === result.hostRunDir) ? record : null
+}
+
+// The contamination scan of one run (tools/bench-scan.mjs): its clone and the pristine clone hold
+// no fix, so paths inside them never count.
+export async function scanResult(paths, result, { record = null } = {}) {
+  const identity = identityOf(result)
+  if (!identity) throw new Error('the result has no evaluation identity (metrics.taskId); runs launched by tools/bench.mjs run have one')
+  const m = loadManifest(paths, identity.taskId)
+  record ||= runRecordFor(paths, identity, result)
+  return scanRun({ hostRunDir: result.hostRunDir || record?.hostRunDir, runDirs: [result.runDir], source: m.repo, records: paths.records,
+    fixCommit: m.fixCommit, allowed: [repositoryOf(result) || record?.clone, join(paths.prepared, m.id, 'repo')],
+    homes: record?.homes || defaultHomes(), startedAt: record?.startedAt || null, finishedAt: record?.finishedAt || null })
+}
+
+// The scan's fields on an outcome: contaminated always, the hits only when there are any.
+function scanFields(scan) {
+  const { status, hits, files, missing, sources, contamination } = scan
+  return { contaminated: status === 'contaminated', ...(status === 'contaminated' ? { contamination } : {}), scan: { status, hits, files, missing, sources } }
 }
 
 // The reviewed snapshot is final.snapshotRef in the run's repository, and final.snapshotTree its
@@ -518,25 +547,43 @@ export function mergeOutcome(outcomes, key, outcome) {
   return outcomes
 }
 
-export function grade(paths, files, { outcomes: outcomesFile = join(paths.records, 'outcomes.json') } = {}) {
+// A result file, or a run record from `run`, which names its result file.
+function loadRun(given) {
+  const value = JSON.parse(readFileSync(given, 'utf8'))
+  if (value.metrics || !('resultFile' in value) || !('taskId' in value)) return { file: given, result: value, record: null }
+  if (!value.resultFile || !existsSync(value.resultFile)) return { file: given, result: null, record: value }
+  return { file: value.resultFile, result: JSON.parse(readFileSync(value.resultFile, 'utf8')), record: value }
+}
+
+// Grades each run and scans it for contamination. A contaminated run is still graded; the
+// evaluator leaves it out of the hidden-test 2x2.
+export async function grade(paths, files, { outcomes: outcomesFile = join(paths.records, 'outcomes.json') } = {}) {
   const outcomes = readJson(outcomesFile) || {}
   const graded = []
   for (const given of files.map(f => resolve(f))) {
-    let file = given, result = JSON.parse(readFileSync(file, 'utf8'))
-    // A run record from `run` names its result file.
-    if (!result.metrics && 'resultFile' in result && 'taskId' in result) {
-      if (!result.resultFile || !existsSync(result.resultFile)) { graded.push({ record: file, status: 'skipped', reason: 'the run recorded no result file' }); continue }
-      file = result.resultFile
-      result = JSON.parse(readFileSync(file, 'utf8'))
-    }
-    const { key, outcome } = gradeResult(paths, file, result)
+    const { file, result, record } = loadRun(given)
+    if (!result) { graded.push({ record: file, status: 'skipped', reason: 'the run recorded no result file' }); continue }
+    const { key, outcome: gradedOutcome } = gradeResult(paths, file, result)
     if (!key) throw new Error(`${file} has neither hostRunDir nor runDir`)
+    const outcome = { ...gradedOutcome, ...scanFields(await scanResult(paths, result, { record })) }
     mergeOutcome(outcomes, key, outcome)
     graded.push({ key, result: file, status: outcome.status, readiness: outcome.readiness, taskId: outcome.taskId, variant: outcome.variant,
-      repetition: outcome.repetition, evidence: outcome.evidence, ...(outcome.reason ? { reason: outcome.reason } : {}) })
+      repetition: outcome.repetition, evidence: outcome.evidence, ...(outcome.reason ? { reason: outcome.reason } : {}),
+      scan: outcome.scan.status, ...(outcome.contaminated ? { contamination: outcome.contamination.slice(0, 3) } : {}) })
   }
   writeJson(outcomesFile, outcomes)
   return { outcomes: outcomesFile, graded }
+}
+
+// The contamination scan alone, for result files or run records; writes nothing.
+export async function scan(paths, files) {
+  const out = []
+  for (const given of files.map(f => resolve(f))) {
+    const { file, result, record } = loadRun(given)
+    if (!result) { out.push({ record: file, status: 'skipped', reason: 'the run recorded no result file' }); continue }
+    out.push({ result: file, hostRunDir: result.hostRunDir || null, ...(await scanResult(paths, result, { record })) })
+  }
+  return out
 }
 
 // The result files of every recorded run, optionally of some tasks only, for the evaluator.
@@ -574,8 +621,10 @@ export const USAGE = `Usage: node tools/bench.mjs COMMAND [options]
   validate ID...                         hidden tests must fail at base and pass at the fix; no models
   run ID --variant V --rep N [--yes]     LIVE MODELS, costs money. Without --yes it prints the command and arguments only.
                                          --replace discards an earlier clone and record of the same repetition
-  grade FILE... [--outcomes F]           hidden tests on each run's reviewed snapshot, into the evaluator's outcomes file;
-                                         FILE is a result.json or a run record
+  grade FILE... [--outcomes F]           hidden tests on each run's reviewed snapshot, and the contamination scan, into the
+                                         evaluator's outcomes file; FILE is a result.json or a run record
+  scan FILE...                           the contamination scan alone: did any agent touch the source repository, the
+                                         records or the fix commit? Exits 0 when every run is clean, 2 otherwise
   results [ID...]                        the result file of every recorded run, one per line
 Options: --bench DIR (tasks/, variants.json, validations/; default bench/), --root DIR (clones and records;
 default $DARK_FACTORY_BENCH_ROOT or ~/.cache/dark-factory-bench). Then:
@@ -605,7 +654,7 @@ export async function main(argv) {
   const print = value => process.stdout.write(JSON.stringify(value, null, 2) + '\n')
   if (command === 'list') { print(listTasks(paths)); return 0 }
   if (command === 'results') { process.stdout.write(resultFiles(paths, rest).map(f => f + '\n').join('')); return 0 }
-  if (!rest.length) throw new Error(`${command} needs ${command === 'grade' ? 'result files' : 'a task ID'}`)
+  if (!rest.length) throw new Error(`${command} needs ${['grade', 'scan'].includes(command) ? 'result files' : 'a task ID'}`)
   if (command === 'prepare') { print(prepare(paths, rest[0], { force: !!flags.force })); return 0 }
   if (command === 'validate') {
     const records = rest.map(id => validate(paths, id))
@@ -619,7 +668,12 @@ export async function main(argv) {
     print(record)
     return record.status === 'dry-run' ? 2 : 0
   }
-  if (command === 'grade') { print(grade(paths, rest, flags.outcomes ? { outcomes: resolve(flags.outcomes) } : {})); return 0 }
+  if (command === 'grade') { print(await grade(paths, rest, flags.outcomes ? { outcomes: resolve(flags.outcomes) } : {})); return 0 }
+  if (command === 'scan') {
+    const scans = await scan(paths, rest)
+    print(scans)
+    return scans.every(s => s.status === 'clean') ? 0 : 2
+  }
   throw new Error(`Unknown command: ${command}`)
 }
 

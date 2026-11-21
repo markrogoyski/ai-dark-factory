@@ -143,6 +143,41 @@ const thread = claude ? get(args.includes('--resume') ? '--resume' : '--session-
   : args.includes('resume') ? args.at(-2) : `fixture-${process.pid}`
 fs.appendFileSync(process.env.FACTORY_TEST_LOG, JSON.stringify({ kind, thread, vendor: claude ? 'claude' : 'codex', cwd: process.cwd(), args,
   ...(prompt.includes('\n# Explicit user decisions\n') ? { decisions: true } : {}) }) + '\n')
+// FACTORY_TEST_TRANSCRIPTS: keep a session record where the real CLI would, in the shape it uses (a
+// Codex rollout by thread, a Claude transcript by session), with the prompt and one tool call. Only
+// under explicit test homes, never the real ~/.codex or ~/.claude.
+if (process.env.FACTORY_TEST_TRANSCRIPTS) {
+  const home = process.env[claude ? 'CLAUDE_CONFIG_DIR' : 'CODEX_HOME']
+  if (!home) throw new Error('FACTORY_TEST_TRANSCRIPTS needs CODEX_HOME and CLAUDE_CONFIG_DIR')
+  const lines = records => records.map(r => JSON.stringify(r) + '\n').join('')
+  const cwd = process.cwd(), now = new Date()
+  if (claude) {
+    const dir = path.join(home, 'projects', cwd.replace(/[^A-Za-z0-9]/g, '-'))
+    fs.mkdirSync(dir, { recursive: true })
+    fs.appendFileSync(path.join(dir, `${thread}.jsonl`), lines([
+      { type: 'queue-operation', operation: 'enqueue', content: prompt, sessionId: thread },
+      { type: 'user', cwd, sessionId: thread, message: { role: 'user', content: prompt } },
+      { type: 'assistant', cwd, sessionId: thread, message: { role: 'assistant', content: [{ type: 'tool_use', id: 'toolu_1', name: 'Bash', input: { command: 'git ls-files' } }] } },
+      { type: 'user', cwd, sessionId: thread, message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: 'toolu_1', content: 'check.cjs\nsum.cjs\n' }] }, toolUseResult: { stdout: 'check.cjs\nsum.cjs\n', stderr: '' } },
+      { type: 'assistant', cwd, sessionId: thread, message: { role: 'assistant', content: [{ type: 'text', text: 'Reviewed.' }] } },
+      { type: 'last-prompt', lastPrompt: prompt, sessionId: thread },
+    ]))
+  } else {
+    const day = path.join(home, 'sessions', String(now.getFullYear()), String(now.getMonth() + 1).padStart(2, '0'), String(now.getDate()).padStart(2, '0'))
+    fs.mkdirSync(day, { recursive: true })
+    const existing = fs.readdirSync(day).find(name => name.endsWith(`-${thread}.jsonl`))
+    const file = path.join(day, existing || `rollout-${now.toISOString().slice(0, 19).replace(/:/g, '-')}-${thread}.jsonl`)
+    fs.appendFileSync(file, lines([
+      ...(existing ? [] : [{ type: 'session_meta', payload: { id: thread, cwd, base_instructions: { text: 'You are Codex.' } } }]),
+      { type: 'turn_context', payload: { cwd, model: get('-m') } },
+      { type: 'response_item', payload: { type: 'message', role: 'user', content: [{ type: 'input_text', text: prompt }] } },
+      { type: 'event_msg', payload: { type: 'user_message', message: prompt } },
+      { type: 'response_item', payload: { type: 'function_call', name: 'exec_command', arguments: JSON.stringify({ cmd: 'git ls-files' }), call_id: 'call_1' } },
+      { type: 'response_item', payload: { type: 'function_call_output', call_id: 'call_1', output: 'check.cjs\nsum.cjs\n' } },
+      { type: 'response_item', payload: { type: 'message', role: 'assistant', content: [{ type: 'output_text', text: JSON.stringify(result) }] } },
+    ]))
+  }
+}
 if (claude) console.log(JSON.stringify({ subtype: 'success', session_id: thread, structured_output: result, usage: { input_tokens: 10, output_tokens: 10 } }))
 else {
   fs.writeFileSync(get('-o'), JSON.stringify(result))

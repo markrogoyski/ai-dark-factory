@@ -10,5 +10,10 @@
   "pair-4-reviews": {
     "description": "Pair with a review budget of 4 instead of 8.",
     "args": { "workflow": "pair", "maxReviews": 4, "maxDesignReviews": 2 }
+  },
+  "smoke": {
+    "description": "For harness smoke tests only: proves prepare, run, grade, scan and evaluate end to end as cheaply as possible. Pair with a Codex Luna author and a Claude Haiku reviewer and spec review (setup follows the author), medium effort, two reviews, ten turns and no retro. Its results are not comparable with other variants.",
+    "args": { "workflow": "pair", "author": "luna", "reviewer": "haiku", "effort": "medium", "spec": { "model": "haiku", "effort": "low" },
+      "maxReviews": 2, "maxDesignReviews": 1, "maxTurns": 10, "retro": false }
   }
 }
