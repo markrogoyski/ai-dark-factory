@@ -271,6 +271,7 @@ Nothing touches your tree until you approve; then the final diff is applied with
 
     dark-factory usage   --run-dir <runDir>   # tokens: Codex, Gemini and OpenRouter per model, Claude agents per model and role
     dark-factory jobs    --run-dir <runDir>   # job status, for debugging
+    dark-factory watch                        # follow the running workflow, a line per agent (Claude Code)
     dark-factory cleanup --run-dir <runDir>   # drop worktrees + refs, keep the room
     dark-factory cleanup --run-dir <runDir> --all
 

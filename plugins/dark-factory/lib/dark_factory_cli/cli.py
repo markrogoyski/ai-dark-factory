@@ -25,6 +25,9 @@ workflow's agents call it. Every subcommand prints one JSON object on its last l
     dark-factory resume-check --run-dir D --stop Qn --snapshot LABEL (--record | --answers HASH)
                         (a native Pair stop: --record keeps wt/A and the snapshot ref at the stop; a
                         check refuses a continuation when HEAD, the checkout, wt/A or the ref moved)
+    dark-factory watch       [--run WF_ID|DIR] [--project DIR] [--once] [--interval SEC]
+                        (follows a Claude Code workflow run: a line on stderr as each agent starts and
+                        ends, then the run's log lines; waits for a run to start when none is going)
 
 Long-running work (Codex and Gemini turns, test runs) executes as a detached job so it survives the 10-minute
 Bash tool timeout: the command waits up to --max-wait seconds, then returns {"status": "running"}
@@ -49,6 +52,7 @@ from .setup import cmd_cleanup, cmd_init
 from .snapshots import cmd_materialize
 from .usage import cmd_usage
 from .verification import cmd_evidence, cmd_verify
+from .watch import cmd_watch
 
 
 def cmd_hash(a):
@@ -185,6 +189,12 @@ def main():
     mode.add_argument('--record', action='store_true', help='record the stop; an existing record is kept')
     mode.add_argument('--answers', help="the hash of the stop's answers; continuing with other answers is refused")
 
+    p = sub.add_parser('watch', help='follow a Claude Code workflow run as each agent starts and ends')
+    p.add_argument('--run', help='a workflow run ID (wf_…) or its transcript directory; default: the newest running one')
+    p.add_argument('--project', help='the directory the workflow was started from (default: this one)')
+    p.add_argument('--once', action='store_true', help='print what has happened so far and exit')
+    p.add_argument('--interval', type=float, default=1.0, help='seconds between checks')
+
     a = ap.parse_args()
     if getattr(a, 'run_dir', None):
         a.run_dir = os.path.abspath(os.path.expanduser(a.run_dir))
@@ -193,7 +203,7 @@ def main():
                 'apply': cmd_apply,
                 'materialize': cmd_materialize, 'usage': cmd_usage, 'jobs': cmd_jobs,
                 'cleanup': cmd_cleanup, 'retro': cmd_retro, 'hash': cmd_hash, 'preflight': cmd_preflight,
-                'resume-check': cmd_resume_check}
+                'resume-check': cmd_resume_check, 'watch': cmd_watch}
     try:
         pin_guard(getattr(a, 'run_dir', None), repo=getattr(a, 'repo', None))
         if a.cmd in TIMELINE_COMMANDS and a.cmd != 'init' and getattr(a, 'run_dir', None) and os.path.isdir(a.run_dir):
