@@ -1,0 +1,25 @@
+{
+  "id": "math-rate-zero-rate",
+  "repo": "~/Develop/php/math-php",
+  "fixCommit": "31faddab4288bc2c6588754b198046320245606f",
+  "task": "Finance::rate breaks when the true rate is zero or the solver starts from a zero guess. rate(10, -100, 1000, 0, false, 0.0) throws DivisionByZeroError instead of returning (very nearly) 0, for payments at the beginning of the period as well as the end, and rate(12, -100, 1200, 0) returns NAN instead of a rate within 1e-6 of 0. A zero initial guess must also still find nonzero rates, positive and negative, and the existing rate results must not change.",
+  "hiddenTests": [
+    "tests/Finance/FinanceTest.php",
+    "tests/Finance/FinanceAxiomsTest.php"
+  ],
+  "grade": "vendor/bin/phpunit --configuration=tests/phpunit.xml --do-not-cache-result tests/Finance/FinanceTest.php && vendor/bin/phpunit --configuration=tests/phpunit.xml --do-not-cache-result tests/Finance/FinanceAxiomsTest.php",
+  "dependencies": {
+    "install": "composer install --no-interaction --no-progress",
+    "paths": [
+      "vendor"
+    ]
+  },
+  "args": {
+    "workflow": "pair"
+  },
+  "tags": {
+    "kind": "bug",
+    "size": "medium"
+  },
+  "notes": "Finance::rate tolerance work; the 2026-11-15/16 Pair runs worked on its neighbours."
+}

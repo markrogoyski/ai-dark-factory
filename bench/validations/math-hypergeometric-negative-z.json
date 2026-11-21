@@ -1,0 +1,35 @@
+{
+  "id": "math-hypergeometric-negative-z",
+  "valid": true,
+  "problems": [],
+  "manifestDigest": "sha256:b39c1ce61adc893b4f6ad970f05cae1bc393fcb829f53f88d779b42fc0186b8b",
+  "fixCommit": "1c633cf90c61f8b0b71e4374344c6de657314892",
+  "base": "ba965793fa81790c92c2b9bfeca53de375238387",
+  "validatedAt": "2026-11-21T02:03:12.857Z",
+  "environment": {
+    "platform": "darwin",
+    "node": "v26.0.0"
+  },
+  "dependencies": {
+    "method": "copy",
+    "caveat": "Copied from the source checkout as it is now, not installed at base: dependency versions follow that checkout, not base's lock file."
+  },
+  "atBase": {
+    "commit": "ba965793fa81790c92c2b9bfeca53de375238387",
+    "exitCode": 1,
+    "signal": null,
+    "timedOut": false,
+    "durationMs": 416,
+    "log": "~/.cache/dark-factory-bench/records/validate/math-hypergeometric-negative-z/2026-11-21T02-03-07-165Z/base.log",
+    "tail": "<tree>/tests/Functions/Special/HypergeometricTest.php:151\n12) MathPHP\\Tests\\Functions\\Special\\HypergeometricTest::testConfluentHypergeometricNegativeZNonPositiveIntegerBMinusA with data set \"b - a = -1, fractional, deep negative z\" (2.5, 1.5, -60.0, -3.415039197451643E-25)\nFailed asserting that 32176724555.218838 matches expected -3.415039197451643E-25.\n<tree>/tests/Functions/Special/HypergeometricTest.php:151\n13) MathPHP\\Tests\\Functions\\Special\\HypergeometricTest::testConfluentHypergeometricNegativeZNonPositiveIntegerBMinusA with data set \"b - a = -2, prefactor polynomial sign change\" (3.0, 1.0, -45.0, 2.643535909137365E-17)\nFailed asserting that -261185.81183039138 matches expected 2.643535909137365E-17.\n<tree>/tests/Functions/Special/HypergeometricTest.php:151\n14) MathPHP\\Tests\\Functions\\Special\\HypergeometricTest::testConfluentHypergeometricNegativeZNonPositiveIntegerBMinusA with data set \"b - a = -3, deep negative z\" (4.0, 1.0, -80.0, -1.3711877125452116E-30)\nFailed asserting that 5.492842953592448E+22 matches expected -1.3711877125452116E-30.\n<tree>/tests/Functions/Special/HypergeometricTest.php:151\n15) MathPHP\\Tests\\Functions\\Special\\HypergeometricTest::testConfluentHypergeometricNegativeZNonPositiveIntegerBMinusA with data set \"b - a = 0, e^z at deep negative z\" (2.0, 2.0, -40.0, 4.248354255291589E-18)\nFailed asserting that 0.31169515654771074 matches expected 4.248354255291589E-18.\n<tree>/tests/Functions/Special/HypergeometricTest.php:151\nFAILURES!\nTests: 464, Assertions: 464, Failures: 15."
+  },
+  "atFix": {
+    "commit": "1c633cf90c61f8b0b71e4374344c6de657314892",
+    "exitCode": 0,
+    "signal": null,
+    "timedOut": false,
+    "durationMs": 404,
+    "log": "~/.cache/dark-factory-bench/records/validate/math-hypergeometric-negative-z/2026-11-21T02-03-07-165Z/fix.log",
+    "tail": "PHPUnit 10.5.63 by Sebastian Bergmann and contributors.\nRuntime:       PHP 8.5.3\nConfiguration: <tree>/tests/phpunit.xml\n...............................................................  63 / 464 ( 13%)\n............................................................... 126 / 464 ( 27%)\n............................................................... 189 / 464 ( 40%)\n............................................................... 252 / 464 ( 54%)\n............................................................... 315 / 464 ( 67%)\n............................................................... 378 / 464 ( 81%)\n............................................................... 441 / 464 ( 95%)\n.......................                                         464 / 464 (100%)\nTime: 00:00.084, Memory: 12.00 MB\nOK (464 tests, 464 assertions)"
+  }
+}

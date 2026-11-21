@@ -1,0 +1,25 @@
+{
+  "id": "ipv4-wildcard-mask",
+  "repo": "~/Develop/php/ipv4-subnet-calculator-php",
+  "fixCommit": "b5060300b563c6bf8d70f178dba3514d3f9ef98b",
+  "task": "Add wildcard mask parsing, the counterpart of SubnetMask::fromString() that Cisco ACL and OSPF configurations need.\n\n- WildcardMask::fromString(string $wildcardMask): self parses a dotted quad through IPAddress. A parse failure throws \\InvalidArgumentException with exactly the message \"Invalid wildcard mask format: '<input>'\" and the original exception chained as the previous exception (so octets with leading zeros are rejected, as IPAddress rejects them). The wildcard bits must be contiguous low bits, otherwise throw \\InvalidArgumentException with exactly \"Invalid wildcard mask: non-contiguous mask '<input>'\". The prefix is 32 minus the number of set bits: 0.0.0.255 is /24, 0.0.0.0 is /32, 0.0.0.1 is /31 and 255.255.255.255 is /0, and every prefix round-trips with asQuads().\n- SubnetParser::fromWildcardMask(string|IPAddress $ipAddress, string|WildcardMask $wildcardMask): Subnet mirrors fromMask(): SubnetParser::fromWildcardMask('192.168.1.0', '0.0.0.255') is 192.168.1.0/24, and an invalid address throws the usual \"Invalid IPv4 address: '<input>'\".\n- Non-contiguous wildcards such as 0.0.255.0 are legal in ACLs but no prefix expresses them, so they are rejected; document why. Update the changelog and the API reference.",
+  "hiddenTests": [
+    "tests/SubnetParserTest.php",
+    "tests/WildcardMaskTest.php"
+  ],
+  "grade": "vendor/bin/phpunit --configuration=tests/phpunit.xml --do-not-cache-result tests/SubnetParserTest.php && vendor/bin/phpunit --configuration=tests/phpunit.xml --do-not-cache-result tests/WildcardMaskTest.php",
+  "dependencies": {
+    "install": "composer install --no-interaction --no-progress",
+    "paths": [
+      "vendor"
+    ]
+  },
+  "args": {
+    "workflow": "pair"
+  },
+  "tags": {
+    "kind": "feature",
+    "size": "medium"
+  },
+  "notes": "Plan item 7 of the 5.3.0 plan; a 2026-11-08 Pair run (simple tier) on it ended incomplete."
+}
