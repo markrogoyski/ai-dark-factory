@@ -792,6 +792,19 @@ test('design challenges must uniquely cover every criterion with substantive val
   assert.match(L.pairContractError(state, state.pair.testContract), /reason/)
 })
 
+test('a rejected contract check is named with the one thing wrong with it', () => {
+  const state = { criteria: [{ id: 'C1' }, { id: 'C2' }] }
+  const reject = mutate => { const c = contract(); mutate(c); return L.pairContractError(state, c) }
+  // A live Luna author left a preserved check's criteria empty and, told only "valid criteria", resent it.
+  assert.equal(reject(c => { c.checks[0].criteria = [] }),
+    `Check ${contract().checks[0].id} names no acceptance criterion. Every check lists the criterion IDs it supports in criteria; a check of preserved behaviour lists the criteria whose change it guards (C1, C2).`)
+  assert.match(reject(c => { c.checks[0].criteria = ['C9'] }), /names C9, which is not an acceptance criterion; use the bare IDs \(C1, C2\)/)
+  assert.match(reject(c => { c.checks[0].criteria = ['C1', 'C1'] }), /lists a criterion more than once/)
+  assert.match(reject(c => { c.checks[0].boundaries = ''; c.checks[0].expected = '' }), /has an empty expected, boundaries:/)
+  assert.match(reject(c => { c.checks[1] = { ...c.checks[1], id: c.checks[0].id } }), /another check already uses this id/)
+  assert.match(reject(c => { c.checks[0].id = '' }), /^Check 1 needs an id/)
+})
+
 test('one invalid author contract gets corrected without spending a review or losing the design', async () => {
   for (const native of [false, true]) for (const mutate of [
     c => { c.testRoots[0].evidence = '' }, c => { c.checks[0].criteria = ['UNKNOWN'] },

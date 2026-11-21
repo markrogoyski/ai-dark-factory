@@ -4638,10 +4638,19 @@ function pairContractError(S, contract) {
   if (new Set(roots).size !== roots.length || contract.testRoots.some(r => !pairRelativePath(S, r.path) || !String(r.evidence || '').trim())) return 'Test roots need distinct relative directories and repository evidence.'
   const inside = path => pairRelativePath(S, path) && roots.some(root => path.startsWith(root + '/'))
   const ids = new Set()
-  for (const c of contract.checks) {
-    if (!/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(c.id || '') || ids.has(c.id) ||
-        !Array.isArray(c.criteria) || !c.criteria.length || new Set(c.criteria).size !== c.criteria.length || c.criteria.some(id => !S.criteria.some(x => x.id === id)) ||
-        !String(c.scenario || '').trim() || !String(c.expected || '').trim() || !String(c.boundaries || '').trim()) return 'Contract checks need unique IDs, valid criteria, concrete scenarios, expected outcomes, and boundaries.'
+  // Each rejection names the check and the one thing wrong with it, so the single correction can fix
+  // it: a live Luna author, told only that checks need "valid criteria", resent the same contract.
+  const known = S.criteria.map(x => x.id).join(', ')
+  for (const [i, c] of contract.checks.entries()) {
+    const name = String(c.id || '').trim() ? `Check ${c.id}` : `Check ${i + 1}`
+    if (!/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(c.id || '')) return `${name} needs an id of letters, digits, '.', '_' or '-', starting with a letter or digit.`
+    if (ids.has(c.id)) return `${name}: another check already uses this id; give each check its own.`
+    if (!Array.isArray(c.criteria) || !c.criteria.length) return `${name} names no acceptance criterion. Every check lists the criterion IDs it supports in criteria; a check of preserved behaviour lists the criteria whose change it guards (${known}).`
+    if (new Set(c.criteria).size !== c.criteria.length) return `${name} lists a criterion more than once in criteria.`
+    const unknown = c.criteria.filter(id => !S.criteria.some(x => x.id === id))
+    if (unknown.length) return `${name} names ${unknown.join(', ')}, which ${unknown.length === 1 ? 'is not an acceptance criterion' : 'are not acceptance criteria'}; use the bare IDs (${known}).`
+    const empty = ['scenario', 'expected', 'boundaries'].filter(k => !String(c[k] || '').trim())
+    if (empty.length) return `${name} has an empty ${empty.join(', ')}: give a concrete scenario (inputs and setup), the expected observable outcome, and its boundaries (or the reason none apply).`
     ids.add(c.id)
     if (c.kind === 'test') {
       if (!['changed', 'preserved'].includes(c.purpose) || !inside(c.file) || !String(c.command || '').trim() ||
