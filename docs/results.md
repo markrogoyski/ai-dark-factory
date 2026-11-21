@@ -20,9 +20,13 @@ later lists under "How the run went". The council's tiers log each spec ruling, 
 audit ruling and fix pass. In Claude Code the launching session hears from the run only when it
 ends; the Codex skill polls the runner and can relay progress as it goes.
 
-To follow a Claude Code run from a terminal, run `dark-factory watch` (`bin/dark-factory` in
-the plugin) in the directory the workflow was started from. It follows the newest running
-workflow, or waits for one to start. It prints a line on stderr as each agent starts and ends,
+To follow a Claude Code run from a terminal, run `dark-factory watch` in the directory the
+workflow was started from. The helper is on the agents' PATH, not your shell's, so give its path:
+
+    ~/.claude/plugins/cache/ai-dark-factory/dark-factory/*/bin/dark-factory watch   # marketplace install
+    plugins/dark-factory/bin/dark-factory watch                                    # in a clone, after ./install.sh
+
+It follows the newest running workflow, or waits for one to start. It prints a line on stderr as each agent starts and ends,
 with a short summary of the result: a relay's findings and criteria, a vote, the gate, the first
 sentence of a summary. When the run ends, it prints the run's log lines. Those lines aren't
 available sooner: Claude Code saves them only at the end. `--run wf_<id>` replays or follows one

@@ -113,6 +113,19 @@ $dark-factory --tier fix Find why the sync drops the last page
 $dark-factory --workflow pair Implement the retry policy
 ```
 
+## During a Run
+
+In Claude Code, `/workflows` shows the running workflow's milestones as they happen. To follow it
+from another terminal, run the helper's `watch` in the directory you started the workflow from. It
+prints a line as each step starts and finishes, with a short summary of its result, and the run's
+milestones when it ends:
+
+    ~/.claude/plugins/cache/ai-dark-factory/dark-factory/*/bin/dark-factory watch
+
+(From a clone installed with `./install.sh`, it's `plugins/dark-factory/bin/dark-factory watch`.)
+In Codex, the runner already prints progress as it goes. See
+[Following a run as it goes](docs/results.md#following-a-run-as-it-goes).
+
 ## After a Run
 
 Each run returns a result with a `final.readiness`. A ready change stays in its worktree until

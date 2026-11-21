@@ -13,7 +13,7 @@
 ## Using them
 
 - [Installing](install.md): requirements, the permission rule and agy settings, Claude-only use, Codex, update and uninstall.
-- [Reading a result](results.md): statuses, readiness, delivery, and what to do next.
+- [Reading a result](results.md): following a run as it goes (`dark-factory watch`), statuses, readiness, delivery, and what to do next.
 - [Choosing the models](models.md): seat names, each host's defaults, swapping a vendor, and rough cost per run.
 - [Running in Codex](codex.md): the Codex skill and the standalone runner.
 - [Process controls, explanation, and resume](process-controls.md): `--explain`, `--prepare`, budgets, repairs, checkpoints.
