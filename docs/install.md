@@ -11,7 +11,7 @@ at least one commit. The default lineups also use other vendors' CLIs, each inst
 
 | CLI | needed for | without it |
 |---|---|---|
-| [`codex`](https://github.com/openai/codex) | Codex seats (`astra`, `sol`, `luna`): the default Pair reviewer, the Simple tier's reviewer, council and audit seats | pick a lineup without Codex seats |
+| [`codex`](https://github.com/openai/codex) | Codex seats (`astra`, `sol`, `luna`, `terra`): the default Pair reviewer, the Simple tier's reviewer, council and audit seats | pick a lineup without Codex seats |
 | `agy` (Antigravity CLI) | Gemini seats (`gemini`, `argon`, `neon`): one default council seat | pick a lineup without Gemini seats |
 
 OpenRouter seats (`openrouter:<model-id>`) need `OPENROUTER_API_KEY`; see

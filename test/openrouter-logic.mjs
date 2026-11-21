@@ -6,7 +6,7 @@ import { loadLib, makeRun } from './lib.mjs'
 
 const L = loadLib()
 const OR = 'openrouter:deepseek/deepseek-v4-pro'
-const KNOWN = "Known: opus, sonnet, fable, haiku, astra, sol, luna, gemini, argon, neon, codex:<model-id>, gemini:<model-id> or openrouter:<model-id>."
+const KNOWN = "Known: opus, sonnet, fable, haiku, astra, sol, luna, terra, gemini, argon, neon, codex:<model-id>, gemini:<model-id> or openrouter:<model-id>."
 const attempt = f => { try { return { value: f() } } catch (e) { return { error: e.message } } }
 
 test('openrouter seat parsing', () => {

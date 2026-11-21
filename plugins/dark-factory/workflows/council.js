@@ -26,7 +26,7 @@ export const meta = {
 //          panel, checkModel, allowDirty, clarifications, narrow, retro, timeoutMin, ballot, approval, spec, audit}
 //   plan:   path(s) of a plan or other document the work follows. Worktrees check out HEAD, so an
 //           uncommitted plan is invisible to seats; `council init --ref` snapshots it into the run.
-//   seats:  default ['opus', 'sonnet', 'astra', 'gemini']; also 'sol', 'luna', 'argon', 'neon', 'fable', 'haiku',
+//   seats:  default ['opus', 'sonnet', 'astra', 'gemini']; also 'sol', 'luna', 'terra', 'argon', 'neon', 'fable', 'haiku',
 //           'codex:<slug>', 'gemini:<slug>'. A list, or a comma-separated string. A string task may
 //           start with `--seats opus,sonnet,astra,sol` instead.
 //   effort: 'high' (default) for every seat, or {astra: 'xhigh', ...}
@@ -204,6 +204,7 @@ const CATALOG = {
   astra:  { vendor: 'codex',  model: 'gpt-6.2-astra', name: 'Codex Astra' },
   sol:    { vendor: 'codex',  model: 'gpt-6.2-sol',   name: 'Codex Sol' },
   luna:   { vendor: 'codex',  model: 'gpt-6-luna',    name: 'Codex Luna' },
+  terra:  { vendor: 'codex',  model: 'gpt-6.1-terra', name: 'Codex Terra' },
   gemini: { vendor: 'gemini', model: 'gemini-4-hydrogen', name: 'Gemini Hydrogen', efforts: ['low', 'medium', 'high', 'xhigh'] },
   argon:  { vendor: 'gemini', model: 'gemini-4-argon',    name: 'Gemini Argon',    efforts: ['low', 'medium', 'high'] },
   neon:   { vendor: 'gemini', model: 'gemini-4-neon',     name: 'Gemini Neon',     efforts: ['low', 'medium', 'high', 'xhigh'] },

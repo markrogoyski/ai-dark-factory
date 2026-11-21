@@ -39,6 +39,7 @@ const CATALOG = {
   astra:  { vendor: 'codex',  model: 'gpt-6.2-astra', name: 'Codex Astra' },
   sol:    { vendor: 'codex',  model: 'gpt-6.2-sol',   name: 'Codex Sol' },
   luna:   { vendor: 'codex',  model: 'gpt-6-luna',    name: 'Codex Luna' },
+  terra:  { vendor: 'codex',  model: 'gpt-6.1-terra', name: 'Codex Terra' },
   gemini: { vendor: 'gemini', model: 'gemini-4-hydrogen', name: 'Gemini Hydrogen', efforts: ['low', 'medium', 'high', 'xhigh'] },
   argon:  { vendor: 'gemini', model: 'gemini-4-argon',    name: 'Gemini Argon',    efforts: ['low', 'medium', 'high'] },
   neon:   { vendor: 'gemini', model: 'gemini-4-neon',     name: 'Gemini Neon',     efforts: ['low', 'medium', 'high', 'xhigh'] },

@@ -26,7 +26,7 @@ export const meta = {
 //          panel, checkModel, allowDirty, clarifications, narrow, retro, timeoutMin, ballot, approval, spec, audit}
 //   plan:   path(s) of a plan or other document the work follows. Worktrees check out HEAD, so an
 //           uncommitted plan is invisible to seats; `council init --ref` snapshots it into the run.
-//   seats:  default ['opus', 'sonnet', 'astra', 'gemini']; also 'sol', 'luna', 'argon', 'neon', 'fable', 'haiku',
+//   seats:  default ['opus', 'sonnet', 'astra', 'gemini']; also 'sol', 'luna', 'terra', 'argon', 'neon', 'fable', 'haiku',
 //           'codex:<slug>', 'gemini:<slug>'. A list, or a comma-separated string. A string task may
 //           start with `--seats opus,sonnet,astra,sol` instead.
 //   effort: 'high' (default) for every seat, or {astra: 'xhigh', ...}

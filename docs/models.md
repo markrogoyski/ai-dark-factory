@@ -7,7 +7,7 @@
 | seat | model | runs through |
 |---|---|---|
 | `opus`, `sonnet`, `fable`, `haiku` | Claude | Claude Code subagents (native), `claude -p` (Codex host) |
-| `astra`, `sol`, `luna` | gpt-6.2-astra, gpt-6.2-sol, gpt-6-luna | Codex CLI |
+| `astra`, `sol`, `luna`, `terra` | gpt-6.2-astra, gpt-6.2-sol, gpt-6-luna, gpt-6.1-terra | Codex CLI |
 | `gemini` | Gemini 4 Hydrogen | Antigravity CLI (`agy`) |
 | `argon` | Gemini 4 Argon (low, medium and high effort only); only when asked for | Antigravity CLI |
 | `neon` | Gemini 4 Neon (low, medium, high and xhigh effort) | Antigravity CLI |
