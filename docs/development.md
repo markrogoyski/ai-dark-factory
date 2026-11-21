@@ -46,6 +46,10 @@ The quick ones run first, then `unit` and `host-test` run side by side. `host-te
     node test/hash-parity.mjs    # the JS and Python prompt hashes agree
     node tools/build.mjs --check # the built workflows and policy.mjs are what src/ builds to
 
+`node tools/bench.mjs` prepares, validates, runs and grades the ground-truth tasks in `bench/`
+([Benchmark](evaluation.md#benchmark)); only its `run --yes` calls models. `test/bench.mjs`
+covers it in `host-test` with stub CLIs.
+
 `test/validation-overhead.mjs` times one pause and resume (about 30 s);
 `VALIDATION_SAMPLES=3 node --test test/validation-overhead.mjs` takes three samples for a median.
 

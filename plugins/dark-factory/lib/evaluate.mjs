@@ -18,6 +18,25 @@ export function tokenUsage(directories) {
   return records ? { records, byModel } : null
 }
 
+// An outcome is a post-delivery observation ({status: passed|regression, evidence}, the original
+// format, with kind omitted or "post-delivery") or a hidden-test grade from tools/bench.mjs
+// ({kind: "hidden-tests", status: passed|failed|ungraded, evidence}), which covers runs that were
+// never delivered. One key may hold one of each, as an array.
+const OUTCOME_STATUSES = { 'post-delivery': ['passed', 'regression'], 'hidden-tests': ['passed', 'failed', 'ungraded'] }
+export function outcomeKinds(observation, source) {
+  const out = { postDelivery: null, hiddenTest: null }
+  for (const o of observation === undefined || observation === null ? [] : Array.isArray(observation) ? observation : [observation]) {
+    const kind = o?.kind ?? 'post-delivery'
+    if (!OUTCOME_STATUSES[kind]) throw new Error(`Unknown outcome kind ${JSON.stringify(kind)} for ${source}`)
+    const label = kind === 'post-delivery' ? 'post-delivery observation' : 'hidden-test outcome'
+    if (!OUTCOME_STATUSES[kind].includes(o.status) || !String(o.evidence || '').trim()) throw new Error(`Invalid ${label} for ${source}`)
+    const field = kind === 'post-delivery' ? 'postDelivery' : 'hiddenTest'
+    if (out[field]) throw new Error(`More than one ${label} for ${source}`)
+    out[field] = o
+  }
+  return out
+}
+
 export function summarize(results) {
   const groups = {}, paired = {}, seen = new Set()
   for (const { result, source, delivery, observation } of results) {
@@ -28,7 +47,8 @@ export function summarize(results) {
     if (!m || m.version !== 1) throw new Error(`Missing supported metrics in ${source}`)
     const key = [m.host, m.workflow, m.tier || '-', m.strategy, m.variant || 'default', m.scope || 'complete'].join('/')
     const group = groups[key] || (groups[key] = { runs: 0, ready: 0, delivered: 0, deliveryFailed: 0, deliveryUnknown: 0, postDeliveryObserved: 0, postDeliveryRegressions: 0, escalated: 0,
-      turns: 0, timedRuns: 0, elapsedMs: 0, elapsedSources: {}, failedTurns: 0, candidates: 0, readyCandidates: 0, runsWithReadyCandidate: 0, findingsByStage: {}, tokensByModel: {}, tokenMeasuredRuns: 0, tokenSources: {}, taskIds: new Set() })
+      turns: 0, timedRuns: 0, elapsedMs: 0, elapsedSources: {}, failedTurns: 0, candidates: 0, readyCandidates: 0, runsWithReadyCandidate: 0, findingsByStage: {}, tokensByModel: {}, tokenMeasuredRuns: 0, tokenSources: {}, taskIds: new Set(),
+      hiddenTests: { graded: 0, ungraded: 0, readyPassed: 0, readyFailed: 0, notReadyPassed: 0, notReadyFailed: 0 } })
     group.runs++; group.ready += m.readiness === 'ready' ? 1 : 0
     group.turns += m.turns || 0; group.failedTurns += m.failedTurns || 0; group.escalated += m.escalated ? 1 : 0
     group.candidates += m.candidates?.total || 0; group.readyCandidates += m.candidates?.ready || 0
@@ -43,17 +63,23 @@ export function summarize(results) {
     if (deliveryState === 'delivered') group.delivered++
     else if (delivery && deliveryState !== 'pending') group.deliveryFailed++
     else group.deliveryUnknown++
-    if (observation) {
-      if (!['passed', 'regression'].includes(observation.status) || !String(observation.evidence || '').trim()) throw new Error(`Invalid post-delivery observation for ${source}`)
+    const { postDelivery, hiddenTest } = outcomeKinds(observation, source)
+    if (postDelivery) {
       group.postDeliveryObserved++
-      if (observation.status === 'regression') group.postDeliveryRegressions++
+      if (postDelivery.status === 'regression') group.postDeliveryRegressions++
+    }
+    if (hiddenTest?.status === 'ungraded') group.hiddenTests.ungraded++
+    else if (hiddenTest) {
+      group.hiddenTests.graded++
+      group.hiddenTests[(m.readiness === 'ready' ? 'ready' : 'notReady') + (hiddenTest.status === 'passed' ? 'Passed' : 'Failed')]++
     }
     if (m.taskId) {
       group.taskIds.add(m.taskId)
       const taskKey = m.taskId + (m.repositoryHead ? '@' + m.repositoryHead : '@revision-unknown')
       const cell = paired[taskKey] || (paired[taskKey] = {})
-      const variant = cell[key] || (cell[key] = { runs: 0, ready: 0, turns: 0 })
+      const variant = cell[key] || (cell[key] = { runs: 0, ready: 0, turns: 0, hiddenGraded: 0, hiddenPassed: 0 })
       variant.runs++; variant.ready += m.readiness === 'ready' ? 1 : 0; variant.turns += m.turns || 0
+      if (hiddenTest && hiddenTest.status !== 'ungraded') { variant.hiddenGraded++; variant.hiddenPassed += hiddenTest.status === 'passed' ? 1 : 0 }
     }
     for (const [stage, values] of Object.entries(m.findingsByStage || {})) {
       const row = group.findingsByStage[stage] || (group.findingsByStage[stage] = {})
@@ -77,9 +103,13 @@ export function summarize(results) {
     group.readyRate = group.ready / group.runs
     group.escalationRate = group.escalated / group.runs
     group.elapsedMsPerReadyResult = group.ready && group.timedRuns === group.runs ? group.elapsedMs / group.ready : null
+    const h = group.hiddenTests, readyGraded = h.readyPassed + h.readyFailed, notReadyGraded = h.notReadyPassed + h.notReadyFailed
+    Object.assign(h, { unknown: group.runs - h.graded - h.ungraded, escapedDefects: h.readyFailed, falseBlocks: h.notReadyPassed,
+      passRate: h.graded ? (h.readyPassed + h.notReadyPassed) / h.graded : null,
+      escapedDefectRate: readyGraded ? h.readyFailed / readyGraded : null, falseBlockRate: notReadyGraded ? h.notReadyPassed / notReadyGraded : null })
   }
   return { version: 1, runs: seen.size, groups, matchedTasks: paired,
-    interpretation: 'Compare repeated runs on the same task IDs and repository revisions. Readiness is process evidence, not proof of correctness. Delivery failures are measured only when delivery.json exists; missing token, time and dollar costs remain unknown, and helper-usage token totals (tokenSources) omit native Claude turns. Findings may overlap across reviewers. No default tuning is performed.' }
+    interpretation: 'Compare repeated runs on the same task IDs and repository revisions. Readiness is process evidence, not proof of correctness. Delivery failures are measured only when delivery.json exists; missing token, time and dollar costs remain unknown, and helper-usage token totals (tokenSources) omit native Claude turns. Findings may overlap across reviewers. hiddenTests grades each run\'s reviewed snapshot, ready or not, against tests the run never saw: readyFailed (escapedDefects) were ready but wrong, notReadyPassed (falseBlocks) were held back but right. No default tuning is performed.' }
 }
 
 // Native results have no exact clock; the helper's timeline gives their active time. Mirrors
@@ -165,7 +195,7 @@ export function collectResults(directory) {
 
 export function evaluationMain(argv) {
   if (argv.includes('--help') || !argv.length) {
-    process.stdout.write('Usage: dark-factory-evaluate [--output summary.json] [--outcomes outcomes.json] [--collect REPO] [result.json ...]\nOffline aggregation of recorded outcomes, turns, tokens, findings and delivery checks. --collect adds every host run under REPO/.council and lists runs without a usable result. Use evaluation: {taskId, variant, repetition} in run arguments for matched comparisons.\n')
+    process.stdout.write('Usage: dark-factory-evaluate [--output summary.json] [--outcomes outcomes.json] [--collect REPO] [result.json ...]\nOffline aggregation of recorded outcomes, turns, tokens, findings and delivery checks. --collect adds every host run under REPO/.council and lists runs without a usable result. --outcomes maps hostRunDir (or runDir) to post-delivery observations and hidden-test grades; hiddenTests compares readiness with them. Use evaluation: {taskId, variant, repetition} in run arguments for matched comparisons.\n')
     return
   }
   const files = [], options = {}, collected = []
