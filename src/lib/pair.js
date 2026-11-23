@@ -235,7 +235,29 @@ function pairCriteriaError(S, review) {
 
 // A review whose structured fields can be fixed without changing its judgement: one correction.
 function pairCorrectableError(S, review) {
-  return ((S.pair.stage === 'design' || pairChallengesDue(S)) && pairChallengeError(S, review)) || pairCriteriaError(S, review) || pairRulingsError(S, review) || pairQuestionsError(S, review)
+  return ((S.pair.stage === 'design' || pairChallengesDue(S)) && pairChallengeError(S, review)) || pairCriteriaError(S, review) || pairRulingsError(S, review) || pairQuestionsError(S, review) || pairResolutionsError(S, review)
+}
+
+// A review resolves only its own findings (P1, P2, …). A spec finding (S1, …) is settled by the
+// ruling on the reading that answers it, so a resolution naming one is left out rather than
+// rejecting the review: a live Opus reviewer marked S1 fixed beside its ruling on that reading.
+function pairReviewResolutions(S, review) {
+  const spec = new Set(pairSpecFindings(S).map(f => f.id))
+  return (Array.isArray(review?.resolutions) ? review.resolutions : []).filter(r => !(spec.has(r?.id) && !S.pair.findings.some(f => f.id === r.id)))
+}
+
+function pairResolutionsError(S, review) {
+  const p = S.pair, seen = new Set()
+  for (const r of pairReviewResolutions(S, review)) {
+    if (!p.findings.some(f => f.id === r.id) || seen.has(r.id) || !['open', 'fixed', 'refuted'].includes(r.status) || !String(r.evidence || '').trim()) {
+      return `The reviewer returned an invalid or unsupported finding resolution${r?.id ? ` (${String(r.id).slice(0, 40)})` : ''}: each resolution names an existing finding ID (${p.findings.map(f => f.id).join(', ') || 'there are none yet'}) once, with status open, fixed or refuted and its evidence.`
+    }
+    if (p.stage === 'design' && r.status === 'fixed' && p.findings.find(f => f.id === r.id).stage === 'code') {
+      return 'Implementation findings must be verified against code, not closed by a revised design.'
+    }
+    seen.add(r.id)
+  }
+  return ''
 }
 
 // An author reads a requirement other than literally only through the readings ledger, R1, R2, …,
@@ -754,22 +776,16 @@ function pairIngestReview(S, review) {
   if (rulingsError) return rulingsError
   const questionsError = pairQuestionsError(S, review)
   if (questionsError) return questionsError
-  const resolutions = review.resolutions || []
-  const seen = new Set()
-  for (const r of resolutions) {
-    if (!p.findings.some(f => f.id === r.id) || seen.has(r.id) || !['open', 'fixed', 'refuted'].includes(r.status) || !String(r.evidence || '').trim()) {
-      return 'The reviewer returned an invalid or unsupported finding resolution.'
-    }
-    if (p.stage === 'design' && r.status === 'fixed' && p.findings.find(f => f.id === r.id).stage === 'code') {
-      return 'Implementation findings must be verified against code, not closed by a revised design.'
-    }
-    seen.add(r.id)
-  }
+  const resolutionsError = pairResolutionsError(S, review)
+  if (resolutionsError) return resolutionsError
+  const resolutions = pairReviewResolutions(S, review)
   for (const f of review.findings || []) {
     if (!String(f.statement || '').trim() || !String(f.evidence || '').trim() || !['blocker', 'major', 'minor'].includes(f.severity)) {
       return 'The reviewer returned a finding without a statement, severity, or evidence.'
     }
   }
+  const skipped = (review.resolutions || []).length - resolutions.length
+  if (skipped) S.notes.push(`review ${p.label}: ignored ${skipped === 1 ? 'a resolution' : `${skipped} resolutions`} of a spec finding, which its reading's ruling settles.`)
   for (const r of resolutions) {
     const f = p.findings.find(f => f.id === r.id)
     f.status = r.status

@@ -1287,6 +1287,22 @@ test('a review with missing, unknown or repeated criterion IDs gets one reviewer
   }
 })
 
+test('a review resolving a finding that does not exist gets one reviewer correction', async () => {
+  for (const native of [false, true]) {
+    const bad = r => ({ ...r, resolutions: [{ id: 'P9', status: 'fixed', evidence: 'Fixed in the design.' }] })
+    const { result, calls } = await run({ native, review: (r, n) => n === 2 ? bad(r) : r })
+    assert.equal(result.status, 'done')
+    const reviews = calls.filter(c => c.kind === 'review')
+    assert.deepEqual(reviews.map(c => c.label.replace(/^review /, '').replace(/ \(relay\)$/, '')), ['pair-design-1', 'pair-code-2', 'pair-code-2-corrected'])
+    assert.match(reviews[2].prompt, /Correct the previous structured review\nThe reviewer returned an invalid or unsupported finding resolution \(P9\): each resolution names an existing finding ID \(there are none yet\) once, with status open, fixed or refuted and its evidence\./)
+    assert.match(result.notes.join(' '), /resolution \(P9\).*Requested one reviewer correction/)
+    const failed = await run({ native, review: (r, n) => n >= 2 ? bad(r) : r })
+    assert.equal(failed.result.status, 'blocked')
+    assert.match(failed.result.stopReason, /^The reviewer returned an invalid or unsupported finding resolution \(P9\)/)
+    assert.equal(failed.calls.filter(c => c.kind === 'review').length, 3, 'one bounded correction before stopping')
+  }
+})
+
 test('a Gemini reviewer is told that git fails in its sandbox; other reviewers are not', async () => {
   const gemini = await run({ args: { reviewer: 'gemini' } })
   const astra = await run({ args: { reviewer: 'astra', author: 'opus' } })
@@ -2073,15 +2089,20 @@ test('a spec finding a reading settles goes to the author, who answers it in rea
     let authors = 0
     const { result, calls } = await run({ native, spec: v => ({ ...v, summary: 'C1 misnames the entry point.', findings: [specFinding()] }),
       author: a => ({ ...a, readings: ++authors === 1 ? [specReading()] : [] }),
-      review: (r, n) => n === 1 ? { ...r, rulings: [{ id: 'R1', ruling: 'accepted', evidence: 'src/a.js:1 has read() only.' }] } : r })
+      // As a live Opus reviewer did, the first review also marks S1 fixed in resolutions: the ruling
+      // settles it, so that resolution is left out and the review stands.
+      review: (r, n) => n === 1 ? { ...r, rulings: [{ id: 'R1', ruling: 'accepted', evidence: 'src/a.js:1 has read() only.' }],
+        resolutions: [{ id: 'S1', status: 'fixed', evidence: 'The design adopts the reading.' }] } : r })
     assert.equal(result.status, 'done')
     assert.deepEqual(calls.filter(c => c.kind === 'author').map(c => c.label), ['pair-design-1', 'pair-code-2'], 'no correction')
+    assert.equal(calls.filter(c => c.kind === 'review').length, 2, 'no reviewer correction')
+    assert.ok(result.notes.includes('review pair-design-1: ignored a resolution of a spec finding, which its reading\'s ruling settles.'), result.notes.join('\n'))
     const block = '\n- S1 (about C1): C1 calls the entry point parse(), but src/a.js has only read().\n  Requirements as written: C1: "The requested behavior works."\n' +
       '  Evidence: src/a.js:1 defines read() and nothing named parse().\n  Proposed reading: Read parse() as read(), the entry point src/a.js has.\n'
     const [author] = calls.filter(c => c.kind === 'author'), [review] = calls.filter(c => c.kind === 'review')
     for (const prompt of [author.prompt, review.prompt]) assert.ok(prompt.includes('\n# Spec review findings\n\n') && prompt.includes(block), prompt)
     assert.match(author.prompt, /Answer it in readings, citing its ID in requirement \(for example "S1, C1"\)/)
-    assert.match(review.prompt, /a reading that answers a spec finding may also rest on the code the finding cites\. A spec finding no reading in the ledger answers is unresolved: file it as a finding\./)
+    assert.match(review.prompt, /a reading that answers a spec finding may also rest on the code the finding cites\. That ruling settles the spec finding: resolutions name only review findings, never a spec finding's ID\. A spec finding no reading in the ledger answers is unresolved: file it as a finding\./)
     assert.deepEqual(result.spec.findings.map(f => [f.id, f.to, f.settle]), [['S1', 'author', 'reading']])
     const md = result.report.markdown
     assert.match(md, /\n2\. Spec review by [^:]+: 1 finding\. For the author: S1 \(C1\) C1 calls the entry point parse\(\), but src\/a\.js has only read\(\)\.\n/)

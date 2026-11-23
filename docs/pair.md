@@ -125,8 +125,10 @@ first author turn, with or without a design stage.
   misdescribes the code but has an obvious correct reading) goes to the author as S1, S2, … with
   the reading the reviewer proposes. Both participants see them under "Spec review findings". The
   author answers each in its `readings`, citing the ID, and the next review rules on that reading
-  like any other. Before the first review, an author turn whose readings leave one unanswered
-  gets the turn's one correction; after it, the reviewer files an unanswered one as a finding.
+  like any other. That ruling settles the spec finding; a review resolution naming an S ID is
+  ignored (and noted), since resolutions close only the review's own findings. Before the first
+  review, an author turn whose readings leave one unanswered gets the turn's one correction; after
+  it, the reviewer files an unanswered one as a finding.
 - **A conflict no reading settles** stops the run with `needs-user` before any author turn, with
   one question of kind `spec` per conflict, quoting each requirement involved. Answered, setup
   runs again (`setup-answered`, in a new run directory, with its baseline) with the decisions, so
@@ -231,7 +233,7 @@ contract check other than literally (an exact list read as a minimum, an open th
 settled, two requirements it reconciled). A reading left only in a handoff or note is not
 reviewed. The engine numbers them R1, R2, … in a ledger both participants see, and the next review
 rules on each, accepted or rejected with evidence (a missing, repeated or unknown ruling gets the
-review's one correction). An accepted reading is settled for the run; a rejected one becomes an
+review's one correction, as does a resolution of a finding that doesn't exist). An accepted reading is settled for the run; a rejected one becomes an
 open major finding, which only the reviewer can close.
 
 ### Questions from the reviewer
