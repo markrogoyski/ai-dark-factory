@@ -11,6 +11,10 @@
     "description": "Pair with a review budget of 4 instead of 8.",
     "args": { "workflow": "pair", "maxReviews": 4, "maxDesignReviews": 2 }
   },
+  "ensemble": {
+    "description": "Ensemble in implement mode with its defaults instead of the task's workflow: on the standalone runner every turn is Codex Astra (setup, four solvers and their checkers, two review lenses each, and the advisory comparison: 18 turns). grade grades every candidate and heads the outcome with the advisor's top-ranked one.",
+    "args": { "workflow": "ensemble", "mode": "implement" }
+  },
   "smoke": {
     "description": "For harness smoke tests only: proves prepare, run, grade, scan and evaluate end to end as cheaply as possible. Pair with a Codex Luna author and a Claude Haiku reviewer and spec review (setup follows the author), medium effort, two reviews, ten turns and no retro. Its results are not comparable with other variants.",
     "args": { "workflow": "pair", "author": "luna", "reviewer": "haiku", "effort": "medium", "spec": { "model": "haiku", "effort": "low" },

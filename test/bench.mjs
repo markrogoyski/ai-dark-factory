@@ -1,12 +1,12 @@
 // tools/bench.mjs against throwaway repositories and the stub provider CLIs: no PHP, network or models.
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { execFileSync } from 'node:child_process'
+import { execFileSync, spawnSync } from 'node:child_process'
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import { homedir, tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { assertLeakProof, benchPaths, grade, leakProblems, leakProofClone, manifestDigest, manifestProblems, mergeOutcome, prepare, resultFiles, run, runPlan, scan, validate } from '../tools/bench.mjs'
+import { assertLeakProof, benchPaths, grade, gradeExitCode, gradeSummaryLine, leakProblems, leakProofClone, manifestDigest, manifestProblems, mergeOutcome, prepare, resultFiles, run, runPlan, scan, validate } from '../tools/bench.mjs'
 import { contaminationNeedles, findHits } from '../tools/bench-scan.mjs'
 import { launchRequirements } from '../plugins/dark-factory/lib/policy.mjs'
 import { evaluateFiles, summarize } from '../plugins/dark-factory/lib/evaluate.mjs'
@@ -170,11 +170,11 @@ test('validate requires the hidden tests to come from the fix, fail at base and 
 })
 
 // A run's snapshot ref in its own clone, as the helper's measure records it.
-function snapshot(clone, runId, label, files) {
+function snapshot(clone, runId, label, files, seat = 'A') {
   git(clone, 'checkout', '-q', '--detach')
   for (const [path, text] of Object.entries(files)) write(join(clone, path), text)
-  const sha = commit(clone, `council ${runId} A ${label}`)
-  const ref = `refs/council/${runId}/A-${label}`
+  const sha = commit(clone, `council ${runId} ${seat} ${label}`)
+  const ref = `refs/council/${runId}/${seat}-${label}`
   git(clone, 'update-ref', ref, sha)
   git(clone, 'checkout', '-q', 'main')
   return { ref, tree: git(clone, 'rev-parse', `${sha}^{tree}`) }
@@ -233,6 +233,127 @@ test('grade checks every snapshot, ready or not, against the hidden tests and ke
   assert.deepEqual(group.hiddenTests, { graded: 2, ungraded: 2, readyPassed: 0, readyFailed: 1, notReadyPassed: 1, notReadyFailed: 0,
     contaminated: 0, scanPartial: 2, unscanned: 0, unknown: 0, escapedDefects: 1, falseBlocks: 1, passRate: 0.5, escapedDefectRate: 1, falseBlockRate: 1 })
   assert.equal(group.postDeliveryRegressions, 1)
+
+  // The command's exit code: 0 when every run passed, 1 when one failed, 3 when one is ungraded,
+  // whatever else happened; each time a summary on stderr.
+  const cli = files => spawnSync(process.execPath, [join(root, 'tools/bench.mjs'), 'grade', ...files, '--bench', paths.bench, '--root', paths.root,
+    '--outcomes', join(dir, 'cli-outcomes.json')], { encoding: 'utf8' })
+  const exits = [[falseBlock], [falseBlock, escaped], [falseBlock, escaped, noSnapshot], [noSnapshot]].map(files => {
+    const r = cli(files)
+    assert.equal(JSON.parse(r.stdout).graded.length, files.length)
+    return [r.status, r.stderr.trim()]
+  })
+  assert.deepEqual(exits, [
+    [0, 'bench: graded 1 run(s): 1 passed, 0 failed, 0 ungraded; 0 contaminated; exit 0'],
+    [1, 'bench: graded 2 run(s): 1 passed, 1 failed, 0 ungraded; 0 contaminated; exit 1'],
+    [3, 'bench: graded 3 run(s): 1 passed, 1 failed, 1 ungraded; 0 contaminated; exit 3'],
+    [3, 'bench: graded 1 run(s): 0 passed, 0 failed, 1 ungraded; 0 contaminated; exit 3']])
+  const broken = cli([join(dir, 'missing.json')])
+  assert.deepEqual([broken.status, broken.stdout], [1, ''], 'an error exits 1 with no JSON')
+  assert.match(broken.stderr, /^bench: /)
+})
+
+test('grade\'s exit code puts incomplete grading ahead of failures, and counts a contaminated run as incomplete', () => {
+  const g = (status, scan = 'partial') => ({ status, scan })
+  assert.equal(gradeExitCode([]), 0)
+  assert.equal(gradeExitCode([g('passed'), g('passed', 'clean')]), 0)
+  assert.equal(gradeExitCode([g('passed'), g('failed')]), 1)
+  assert.equal(gradeExitCode([g('failed'), g('ungraded')]), 3)
+  assert.equal(gradeExitCode([g('passed'), { record: 'r.json', status: 'skipped', reason: 'the run recorded no result file' }]), 3)
+  assert.equal(gradeExitCode([g('passed'), g('passed', 'contaminated')]), 3)
+  assert.equal(gradeExitCode([g('failed', 'contaminated')]), 3)
+  assert.match(gradeSummaryLine([g('passed'), g('failed', 'contaminated'), { status: 'skipped' }]),
+    /^bench: graded 3 run\(s\): 1 passed, 1 failed, 0 ungraded, 1 skipped \(no result file\); 1 contaminated; exit 3\n$/)
+})
+
+// An Ensemble implement-mode result as the workflow returns it: one candidate per seat, each with
+// its own snapshot ref and readiness, the advisory ranking, and an incomplete run readiness.
+function fakeEnsemble(dir, clone, name, { rep, candidates, advisor }) {
+  const hostRunDir = join(clone, '.council', `host-${name}`)
+  write(join(hostRunDir, 'args.json'), JSON.stringify({ repo: clone, evaluation: { taskId: 'sum-adds', variant: 'ensemble', repetition: rep } }))
+  const result = { status: 'advisory', workflow: 'ensemble', mode: 'implement', hostRunDir, runDir: join(clone, '.council', name),
+    candidates: candidates.map(({ snap, readiness }, i) => ({ candidate: i + 1, stance: ['minimal', 'root-cause', 'edge-cases'][i], solution: snap ? { approach: 'x' } : null, reviews: [],
+      final: { author: 'ABC'[i], readiness: { state: readiness }, ...(snap ? { snapshotRef: snap.ref, snapshotTree: snap.tree } : {}) } })),
+    advisor, final: { readiness: { state: 'incomplete' } }, delivery: { status: 'pending-selection' },
+    metrics: { version: 1, host: 'codex', workflow: 'ensemble', tier: 'ensemble', strategy: 'independent', taskId: 'sum-adds', variant: 'ensemble', repetition: rep,
+      readiness: 'incomplete', turns: 9, candidates: { total: candidates.length, ready: candidates.filter(c => c.readiness === 'ready').length } } }
+  const file = join(dir, `${name}.json`)
+  write(file, JSON.stringify(result))
+  return file
+}
+
+test('grade grades every Ensemble candidate and heads the outcome with the advisor\'s pick', async t => {
+  const dir = temporary(t), source = sourceRepo(dir), paths = bench(dir, [manifest(source)])
+  const prepared = prepare(paths, 'sum-adds')
+  const clone = join(dir, 'run-clone')
+  leakProofClone(prepared.clone, prepared.base, clone)
+  const runs = {}
+  for (const [rep, name, ranking] of [[1, 'picks-wrong', [{ candidate: 2, rank: 1 }, { candidate: 1, rank: 2 }]], [2, 'picks-right', [{ candidate: 2, rank: 2 }, { candidate: 1, rank: 1 }]],
+    [3, 'no-advisor', null], [4, 'bad-rank', [{ candidate: 9, rank: 1 }]]]) {
+    const right = snapshot(clone, name, 'r0', { 'sum.cjs': 'module.exports = (a, b) => b + a\n' }, 'A')
+    const wrong = snapshot(clone, name, 'r0', { 'sum.cjs': 'module.exports = (a, b) => a * b + 0\n' }, 'B')
+    runs[name] = fakeEnsemble(dir, clone, name, { rep, candidates: [{ snap: right, readiness: 'blocked' }, { snap: wrong, readiness: 'ready' }, { snap: null, readiness: 'incomplete' }],
+      advisor: ranking && { ranking: ranking.map(r => ({ ...r, why: 'x' })), recommendation: 'adopt-one', mergePlan: '' } })
+  }
+  const outcomesFile = join(dir, 'outcomes.json')
+  const out = await grade(paths, Object.values(runs), { outcomes: outcomesFile })
+  assert.deepEqual(out.graded.map(g => [g.status, g.readiness, g.pick, g.candidates.map(c => c.status)]), [
+    ['failed', 'ready', 2, ['passed', 'failed', 'ungraded']], ['passed', 'blocked', 1, ['passed', 'failed', 'ungraded']],
+    ['ungraded', null, null, ['passed', 'failed', 'ungraded']], ['ungraded', null, null, ['passed', 'failed', 'ungraded']]])
+  assert.equal(out.graded[2].reason, 'the result has no advisory comparison')
+  assert.match(out.graded[3].reason, /ranked candidate 9 first, which the result does not have/)
+  assert.equal(gradeExitCode(out.graded), 3)
+  assert.equal(gradeExitCode(out.graded.slice(0, 2)), 1)
+
+  const outcomes = JSON.parse(readFileSync(outcomesFile, 'utf8'))
+  const key = name => JSON.parse(readFileSync(runs[name], 'utf8')).hostRunDir
+  const wrongPick = outcomes[key('picks-wrong')]
+  // The headline is the pick's grade, with its commit and log; each candidate keeps its own.
+  assert.equal(wrongPick.commit, git(clone, 'rev-parse', 'refs/council/picks-wrong/B-r0'))
+  assert.equal(wrongPick.evidence, wrongPick.ensemble.candidates[1].evidence)
+  assert.match(readFileSync(wrongPick.evidence, 'utf8'), /AssertionError/)
+  assert.notEqual(wrongPick.ensemble.candidates[0].evidence, wrongPick.evidence)
+  assert.deepEqual(wrongPick.ensemble.candidates.map(c => [c.candidate, c.stance, c.readiness, c.status, c.snapshotRef || c.reason]), [
+    [1, 'minimal', 'blocked', 'passed', 'refs/council/picks-wrong/A-r0'], [2, 'root-cause', 'ready', 'failed', 'refs/council/picks-wrong/B-r0'],
+    [3, 'edge-cases', 'incomplete', 'ungraded', 'the candidate has no reviewed snapshot']])
+  assert.deepEqual([wrongPick.ensemble.pick, wrongPick.ensemble.recommendation], [2, 'adopt-one'])
+  assert.equal(git(clone, 'status', '--porcelain', '--ignored'), '!! .council/')
+
+  // The 2x2 sets each pick against its own readiness, not the run's (always incomplete); the
+  // candidates' counts answer whether any passed and whether the advisor picked one that did.
+  const group = Object.values(evaluateFiles(Object.values(runs), outcomes).groups)[0]
+  assert.deepEqual(group.hiddenTests, { graded: 2, ungraded: 2, readyPassed: 0, readyFailed: 1, notReadyPassed: 1, notReadyFailed: 0,
+    contaminated: 0, scanPartial: 2, unscanned: 0, unknown: 0, escapedDefects: 1, falseBlocks: 1, passRate: 0.5, escapedDefectRate: 1, falseBlockRate: 1,
+    candidates: { runs: 4, graded: 8, ungraded: 4, readyPassed: 0, readyFailed: 4, notReadyPassed: 4, notReadyFailed: 0,
+      runsWithPassingCandidate: 4, pickPassed: 1, pickMissedPassing: 3 } })
+  assert.equal(group.ready, 0, 'run readiness is unchanged')
+})
+
+test('the evaluator validates Ensemble candidate grades and leaves Pair and contaminated runs without candidate counts', () => {
+  const metrics = { version: 1, host: 'codex', workflow: 'ensemble', tier: 'ensemble', strategy: 'independent', taskId: 'sum', turns: 2, readiness: 'incomplete' }
+  const row = (id, observation) => ({ source: id, result: { hostRunDir: id, metrics }, observation })
+  const cand = (candidate, status, readiness = 'ready') => ({ candidate, status, readiness, evidence: `c${candidate}.log` })
+  const hidden = (status, readiness, ensemble, extra) => ({ kind: 'hidden-tests', status, readiness, evidence: 'grade.log', ensemble, ...extra })
+  const dirty = { contaminated: true, contamination: [{ file: 'f', at: 'line 1', excerpt: 'x' }], scan: { status: 'contaminated', missing: [] } }
+  const out = summarize([
+    row('1', hidden('passed', 'ready', { pick: 1, recommendation: 'adopt-one', candidates: [cand(1, 'passed'), cand(2, 'failed', 'blocked')] })),
+    row('2', hidden('failed', 'ready', { pick: 2, recommendation: 'merge', candidates: [cand(1, 'failed'), cand(2, 'failed')] })),
+    row('3', hidden('passed', 'ready', { pick: 1, recommendation: 'adopt-one', candidates: [cand(1, 'passed'), cand(2, 'passed')] }, dirty))])
+  const h = Object.values(out.groups)[0].hiddenTests
+  assert.deepEqual([h.graded, h.readyPassed, h.readyFailed, h.contaminated], [2, 1, 1, 1])
+  assert.deepEqual(h.candidates, { runs: 2, graded: 4, ungraded: 0, readyPassed: 1, readyFailed: 2, notReadyPassed: 0, notReadyFailed: 1,
+    runsWithPassingCandidate: 1, pickPassed: 1, pickMissedPassing: 0 })
+  const pair = summarize([{ source: 'p', result: { hostRunDir: 'p', metrics: { ...metrics, workflow: 'pair', strategy: 'pair', readiness: 'ready' } }, observation: { kind: 'hidden-tests', status: 'passed', evidence: 'g' } }])
+  assert.equal('candidates' in Object.values(pair.groups)[0].hiddenTests, false)
+  const bad = ensemble => () => summarize([row('1', hidden('passed', 'ready', ensemble))])
+  assert.throws(bad({ pick: 1, candidates: [] }), /Invalid ensemble candidates in the hidden-test outcome for 1/)
+  assert.throws(bad({ pick: 1, candidates: [cand(1, 'failed')] }), /Invalid ensemble candidates/, 'the headline is the pick\'s status')
+  assert.throws(bad({ pick: 1, candidates: [cand(1, 'passed', 'blocked')] }), /Invalid ensemble candidates/, 'and the pick\'s readiness')
+  assert.throws(bad({ pick: 3, candidates: [cand(1, 'passed')] }), /Invalid ensemble candidates/)
+  assert.throws(bad({ pick: null, candidates: [cand(1, 'passed')] }), /Invalid ensemble candidates/, 'no pick is ungraded')
+  assert.throws(bad({ pick: 1, candidates: [cand(1, 'passed'), cand(1, 'passed')] }), /Invalid ensemble candidates/)
+  assert.throws(bad({ pick: 1, candidates: [{ ...cand(1, 'passed'), evidence: '' }] }), /Invalid ensemble candidates/)
+  assert.doesNotThrow(() => summarize([row('1', hidden('ungraded', null, { pick: null, recommendation: null, candidates: [cand(1, 'passed')] }))]))
 })
 
 test('mergeOutcome keeps one outcome of each kind per run', () => {
@@ -397,6 +518,34 @@ test('the smoke variant needs Codex Luna and Claude Haiku only, offline through 
   const events = readFileSync(join(record.hostRunDir, 'events.jsonl'), 'utf8').trim().split('\n').map(line => JSON.parse(line))
   assert.deepEqual([...new Set(events.filter(e => e.type === 'turn.started').map(e => `${e.vendor}:${e.model}`))].sort(), ['claude:haiku', 'codex:gpt-6-luna'])
   assert.doesNotMatch(JSON.stringify(events.filter(e => e.model || e.vendor)), EXPENSIVE)
+})
+
+test('the ensemble variant runs through the stub CLIs, and grade grades each candidate it returns', async t => {
+  const dir = temporary(t), source = sourceRepo(dir)
+  const variants = JSON.parse(readFileSync(join(root, 'bench/variants.json'), 'utf8'))
+  const paths = bench(dir, [manifest(source)], { ensemble: variants.ensemble })
+  assert.equal(validate(paths, 'sum-adds').valid, true)
+  const { clone, workflow, args } = runPlan(paths, 'sum-adds', { variant: 'ensemble', rep: 1 })
+  assert.deepEqual([workflow, args.mode], ['ensemble', 'implement'])
+  const log = join(dir, 'calls.jsonl')
+  const record = await run(paths, 'sum-adds', { variant: 'ensemble', rep: 1, yes: true, progress: () => {},
+    extraEnv: { FACTORY_TEST_REPO: clone, FACTORY_TEST_RUN_PATH: join(dir, 'run-path'), FACTORY_TEST_LOG: log, COUNCIL_JOB_POLL: '0.01' } })
+  assert.equal(record.status, 'advisory', JSON.stringify(record))
+  assert.equal(record.snapshotRef, null, 'an ensemble has no single snapshot')
+  const calls = readFileSync(log, 'utf8').trim().split('\n').map(line => JSON.parse(line))
+  const model = c => c.vendor === 'claude' ? c.args[c.args.indexOf('--model') + 1] : c.args[c.args.indexOf('-m') + 1]
+  assert.deepEqual([...new Set(calls.map(c => `${c.vendor}:${model(c)}`))], ['codex:gpt-6.2-astra'])
+  assert.deepEqual(calls.reduce((n, c) => ({ ...n, [c.kind]: (n[c.kind] || 0) + 1 }), {}), { setup: 1, 'ensemble-solve': 4, checker: 4, 'ensemble-review': 8, 'ensemble-compare': 1 })
+
+  const graded = await grade(paths, [join(paths.records, 'runs/sum-adds/ensemble/rep-1.json')])
+  // The fixture's comparison ranks candidate 1 first; every candidate adds, so each passes.
+  assert.deepEqual(graded.graded.map(g => [g.status, g.readiness, g.pick, g.candidates.map(c => `${c.candidate}:${c.status}:${c.readiness}`)]),
+    [['passed', 'ready', 1, ['1:passed:ready', '2:passed:ready', '3:passed:ready', '4:passed:ready']]])
+  const outcome = JSON.parse(readFileSync(graded.outcomes, 'utf8'))[record.hostRunDir]
+  const result = JSON.parse(readFileSync(record.resultFile, 'utf8'))
+  assert.deepEqual(outcome.ensemble.candidates.map(c => c.snapshotRef), result.candidates.map(c => c.final.snapshotRef))
+  const group = Object.values(evaluateFiles([record.resultFile], JSON.parse(readFileSync(graded.outcomes, 'utf8'))).groups)[0]
+  assert.deepEqual([group.hiddenTests.readyPassed, group.hiddenTests.candidates.readyPassed, group.hiddenTests.candidates.pickPassed], [1, 4, 1])
 })
 
 // The job directories of a run's vendor turns.

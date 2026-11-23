@@ -23,10 +23,24 @@ export function tokenUsage(directories) {
 // ({kind: "hidden-tests", status: passed|failed|ungraded, evidence}), which covers runs that were
 // never delivered. One key may hold one of each, as an array. A hidden-test grade may carry the
 // bench's contamination scan: contaminated (boolean), contamination ([{file, at, excerpt}], when
-// contaminated) and scan ({status: clean|contaminated|partial, missing}).
+// contaminated) and scan ({status: clean|contaminated|partial, missing}). An Ensemble run's grade
+// also carries ensemble: {pick, recommendation, candidates: [{candidate, readiness, status,
+// evidence}]}; its own status and readiness are then the pick's (the advisor's top-ranked
+// candidate), or ungraded with pick null when there is none.
 const OUTCOME_STATUSES = { 'post-delivery': ['passed', 'regression'], 'hidden-tests': ['passed', 'failed', 'ungraded'] }
 const SCAN_STATUSES = ['clean', 'contaminated', 'partial']
 const text = v => typeof v === 'string' && v.trim() !== ''
+function ensembleValid(o) {
+  const e = o.ensemble
+  if (e === undefined) return true
+  if (!e || typeof e !== 'object' || !Array.isArray(e.candidates) || !e.candidates.length) return false
+  if (!e.candidates.every(c => c && Number.isSafeInteger(c.candidate) && OUTCOME_STATUSES['hidden-tests'].includes(c.status) && text(c.evidence) &&
+    (c.readiness === null || text(c.readiness)))) return false
+  if (new Set(e.candidates.map(c => c.candidate)).size !== e.candidates.length) return false
+  if (e.pick === null) return o.status === 'ungraded'
+  const pick = e.candidates.find(c => c.candidate === e.pick)
+  return !!pick && pick.status === o.status && pick.readiness === (o.readiness ?? null)
+}
 function scanValid(o) {
   if (o.contaminated === undefined && o.scan === undefined && o.contamination === undefined) return true
   if (typeof o.contaminated !== 'boolean' || !o.scan || typeof o.scan !== 'object' || !SCAN_STATUSES.includes(o.scan.status)) return false
@@ -44,6 +58,7 @@ export function outcomeKinds(observation, source) {
     const label = kind === 'post-delivery' ? 'post-delivery observation' : 'hidden-test outcome'
     if (!OUTCOME_STATUSES[kind].includes(o.status) || !String(o.evidence || '').trim()) throw new Error(`Invalid ${label} for ${source}`)
     if (kind === 'hidden-tests' && !scanValid(o)) throw new Error(`Invalid contamination scan in the hidden-test outcome for ${source}`)
+    if (kind === 'hidden-tests' && !ensembleValid(o)) throw new Error(`Invalid ensemble candidates in the hidden-test outcome for ${source}`)
     const field = kind === 'post-delivery' ? 'postDelivery' : 'hiddenTest'
     if (out[field]) throw new Error(`More than one ${label} for ${source}`)
     out[field] = o
@@ -87,10 +102,28 @@ export function summarize(results) {
     if (contaminated) group.hiddenTests.contaminated++
     else if (hiddenTest?.status === 'ungraded') group.hiddenTests.ungraded++
     else if (hiddenTest) {
+      // An Ensemble grade sets the advisor's pick against that candidate's own readiness.
+      const readiness = hiddenTest.ensemble ? hiddenTest.readiness : m.readiness
       group.hiddenTests.graded++
-      group.hiddenTests[(m.readiness === 'ready' ? 'ready' : 'notReady') + (hiddenTest.status === 'passed' ? 'Passed' : 'Failed')]++
+      group.hiddenTests[(readiness === 'ready' ? 'ready' : 'notReady') + (hiddenTest.status === 'passed' ? 'Passed' : 'Failed')]++
       if (hiddenTest.scan?.status === 'partial') group.hiddenTests.scanPartial++
       else if (!hiddenTest.scan) group.hiddenTests.unscanned++
+    }
+    // Every graded candidate of an uncontaminated Ensemble run: did any pass, and did the advisor
+    // pick one that did? Only groups with such runs get hiddenTests.candidates.
+    if (!contaminated && hiddenTest?.ensemble) {
+      const c = group.hiddenTests.candidates || (group.hiddenTests.candidates = { runs: 0, graded: 0, ungraded: 0, readyPassed: 0, readyFailed: 0,
+        notReadyPassed: 0, notReadyFailed: 0, runsWithPassingCandidate: 0, pickPassed: 0, pickMissedPassing: 0 })
+      const all = hiddenTest.ensemble.candidates, anyPassed = all.some(x => x.status === 'passed')
+      c.runs++
+      for (const x of all) {
+        if (x.status === 'ungraded') { c.ungraded++; continue }
+        c.graded++
+        c[(x.readiness === 'ready' ? 'ready' : 'notReady') + (x.status === 'passed' ? 'Passed' : 'Failed')]++
+      }
+      if (anyPassed) c.runsWithPassingCandidate++
+      if (hiddenTest.status === 'passed') c.pickPassed++
+      else if (anyPassed) c.pickMissedPassing++
     }
     if (m.taskId) {
       group.taskIds.add(m.taskId)
@@ -129,7 +162,7 @@ export function summarize(results) {
       escapedDefectRate: readyGraded ? h.readyFailed / readyGraded : null, falseBlockRate: notReadyGraded ? h.notReadyPassed / notReadyGraded : null })
   }
   return { version: 1, runs: seen.size, groups, matchedTasks: paired,
-    interpretation: 'Compare repeated runs on the same task IDs and repository revisions. Readiness is process evidence, not proof of correctness. Delivery failures are measured only when delivery.json exists; missing token, time and dollar costs remain unknown, and helper-usage token totals (tokenSources) omit native Claude turns. Findings may overlap across reviewers. hiddenTests grades each run\'s reviewed snapshot, ready or not, against tests the run never saw: readyFailed (escapedDefects) were ready but wrong, notReadyPassed (falseBlocks) were held back but right. A run whose agents touched the task\'s source repository, the bench records or the fix commit is contaminated: it is counted in hiddenTests.contaminated and left out of the 2x2 and its rates; scanPartial graded runs had a scan that could not read every record, and unscanned ones were graded before the scan existed. No default tuning is performed.' }
+    interpretation: 'Compare repeated runs on the same task IDs and repository revisions. Readiness is process evidence, not proof of correctness. Delivery failures are measured only when delivery.json exists; missing token, time and dollar costs remain unknown, and helper-usage token totals (tokenSources) omit native Claude turns. Findings may overlap across reviewers. hiddenTests grades each run\'s reviewed snapshot, ready or not, against tests the run never saw: readyFailed (escapedDefects) were ready but wrong, notReadyPassed (falseBlocks) were held back but right. A run whose agents touched the task\'s source repository, the bench records or the fix commit is contaminated: it is counted in hiddenTests.contaminated and left out of the 2x2 and its rates; scanPartial graded runs had a scan that could not read every record, and unscanned ones were graded before the scan existed. An Ensemble run is graded per candidate; its 2x2 entry is the advisor\'s top-ranked candidate against that candidate\'s readiness, and hiddenTests.candidates counts every graded candidate, runsWithPassingCandidate, pickPassed and pickMissedPassing (a candidate passed but the pick did not). No default tuning is performed.' }
 }
 
 // Native results have no exact clock; the helper's timeline gives their active time. Mirrors
