@@ -228,12 +228,26 @@ def recently_failed_twice(jd, got):
     return False
 
 
-def record_usage(run_dir, spec, usage, thread_total, started):
-    """Append one vendor turn to the run's usage.jsonl: this turn's share, and the thread's running total."""
+def utc_iso(t):
+    return time.strftime('%Y-%m-%dT%H:%M:%S', time.gmtime(t)) + f'.{int(t % 1 * 1000):03d}Z'
+
+
+def record_usage(run_dir, spec, usage, thread_total, started, thread=None, missing=None):
+    """Append one vendor turn to the run's usage.jsonl: this turn's share, and the thread's running total.
+    Every turn whose CLI ran gets a record. When the CLI reported no usage (a timeout, a missing
+    envelope or event), `missing` says why, and the accountant (lib/usage.mjs) reads the turn from
+    the vendor's own session log by `thread` and the turn's window, or counts it as missing: never
+    as zero."""
+    ended = time.time()
+    rec = {'job': spec['job'], 'seat': spec['seat'], 'model': spec['model'], 'vendor': spec.get('kind'),
+           'usage': usage, 'threadTotal': thread_total, 'seconds': round(ended - started, 1),
+           'startedAt': utc_iso(started), 'endedAt': utc_iso(ended)}
+    if thread:
+        rec['thread'] = thread
+    if missing:
+        rec['missing'] = missing
     with open(os.path.join(run_dir, 'usage.jsonl'), 'a') as f:
-        f.write(json.dumps({'job': spec['job'], 'seat': spec['seat'], 'model': spec['model'],
-                            'usage': usage, 'threadTotal': thread_total,
-                            'seconds': round(time.time() - started, 1)}) + '\n')
+        f.write(json.dumps(rec) + '\n')
 
 
 def turn_usage(seat_dir, thread_id, reported):
@@ -333,7 +347,8 @@ def run_codex_job(jd, spec):
 
     thread_total = usage
     usage = turn_usage(os.path.dirname(thread_file), thread or new_thread, thread_total)
-    record_usage(run_dir, spec, usage, thread_total, started)
+    record_usage(run_dir, spec, usage, thread_total, started, thread=thread or new_thread,
+                 missing=None if usage else ('timed out before turn.completed' if timed_out else 'no turn.completed usage event'))
 
     if timed_out:
         return {'status': 'error', 'thread': thread or new_thread,
@@ -477,13 +492,16 @@ def run_claude_job(jd, spec, env=None, redact=None):
             code, timed_out = run_cli(CLAUDE, jd, cmd, cwd, stdin, so, se, claude_env(spec) if env is None else env, spec['timeout'])
         if timed_out:
             write(session_file, session)
+            record_usage(spec['runDir'], spec, {}, {}, started, thread=session, missing='timed out before its result envelope')
             return {'status': 'error', 'thread': session, 'error': f'claude timed out after {spec["timeout"] // 60} min'}
     stderr = read(err_path)
     try:
         out = json.loads(read(out_path))
     except (ValueError, OSError):
+        record_usage(spec['runDir'], spec, {}, {}, started, thread=session, missing='no valid result envelope')
         return {'status': 'error', 'thread': session, 'error': (tail(stderr, 15) or f'claude exited {code} with no valid JSON')[:2000]}
     if not isinstance(out, dict):
+        record_usage(spec['runDir'], spec, {}, {}, started, thread=session, missing='no valid result envelope')
         return {'status': 'error', 'thread': session, 'error': 'claude returned an invalid result envelope'}
     # Denials describe tool attempts, not the outcome of the entire turn. Keep the raw
     # commands in out.json and carry a compact diagnostic through validation and reporting.
@@ -504,7 +522,8 @@ def run_claude_job(jd, spec, env=None, redact=None):
         write(session_file, new_session)
     usage = numeric_usage(out.get('usage') if isinstance(out.get('usage'), dict) else {}, bools=False)
     total = claude_usage_total(seat_dir, session, usage)
-    record_usage(spec['runDir'], spec, usage, total, started)
+    record_usage(spec['runDir'], spec, usage, total, started, thread=new_session or session,
+                 missing=None if usage else 'the result envelope has no usage')
     if code != 0 or out.get('is_error') or out.get('subtype') not in (None, 'success'):
         errors = out.get('errors') or out.get('result') or stderr or f'claude exited {code}'
         return failed(oneline(errors, 2000))
@@ -812,11 +831,23 @@ def run_gemini_job(jd, spec):
     def fits(result):
         return fits_schema(schema, result)
 
+    def account(answer, thread, missing=None):
+        """Record the turn's usage from agy's last answer (its usage is the conversation's running
+        total), or as missing when no answer came back."""
+        reported = numeric_usage(answer.get('usage')) if answer else {}
+        if answer and answer.get('status') != 'SUCCESS' and not any(reported.values()):
+            reported, missing = {}, missing or f'agy status {answer.get("status")} with zero usage'
+        usage = turn_usage(seat_dir, thread, reported) if reported else {}
+        record_usage(run_dir, spec, usage, reported, started, thread=thread, missing=missing or (None if usage else 'agy reported no usage'))
+        return usage
+
     out, err = call(read(os.path.join(jd, 'prompt.md')), conv)
     if out is None:
+        account(None, conv, f'no answer from agy: {err[:200]}')
         return {'status': 'error', 'thread': conv, 'error': err[:2000]}
     new_conv = out.get('conversation_id') or None
     if new_conv and conv and new_conv != conv:
+        account(out, new_conv)
         return {'status': 'error', 'error': f'agy did not resume conversation {conv} (it started {new_conv}): '
                 f'the seat lost its memory. {tail(read(err_path), 5)}'[:2000]}
     if new_conv and not conv:
@@ -830,22 +861,22 @@ def run_gemini_job(jd, spec):
     if out.get('status') == 'SUCCESS' and out.get('denied_actions') and thread and not spec.get('resumeSession'):
         resumed = ', '.join(d.get('action', '?') for d in out['denied_actions'])
         write(os.path.join(jd, 'out-denied.json'), json.dumps(out))
-        out, err = call(DENIED_NUDGE.format(denied=resumed), thread)
+        first, (out, err) = out, call(DENIED_NUDGE.format(denied=resumed), thread)
         if out is None:
+            account(first, thread, 'the resumed call after a denial returned nothing; only the first call is counted')
             return {'status': 'error', 'error': f'agy denied {resumed}, and resuming after it failed: {err}'[:2000]}
     nudged = False
     if (schema is not None and out.get('status') == 'SUCCESS' and not out.get('denied_actions')
             and not fits(out.get('structured_output')) and thread and not spec.get('resumeSession')):
         nudged = True
         write(os.path.join(jd, 'out-first.json'), json.dumps(out))
-        out, err = call('You answered in text, not as structured output. Return your answer to my previous '
-                        'message now as structured output that matches the JSON schema. Change nothing else.', thread)
+        first, (out, err) = out, call('You answered in text, not as structured output. Return your answer to my previous '
+                                      'message now as structured output that matches the JSON schema. Change nothing else.', thread)
         if out is None:
+            account(first, thread, 'the follow-up call asking for structured output returned nothing; only the first call is counted')
             return {'status': 'error', 'error': err[:2000]}
 
-    reported = numeric_usage(out.get('usage'))
-    usage = turn_usage(seat_dir, thread, reported)
-    record_usage(run_dir, spec, usage, reported, started)
+    usage = account(out, thread)
 
     stderr = read(err_path) if os.path.exists(err_path) else ''
     if out.get('status') != 'SUCCESS':

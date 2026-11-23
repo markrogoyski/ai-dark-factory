@@ -58,8 +58,10 @@ function executionPlan(S) {
   }
 }
 
-function explanation(S) {
-  return { status: 'explained', task: S.task, plan: executionPlan(S), execution: 'not-started', final: { readiness: { state: 'not-assessed', blocked: [], incomplete: ['Explanation only; no implementation or review ran.'] } } }
+// history: the past runs the runtime read (pastRuns() in turns.js), or null where it can read none.
+function explanation(S, history = null) {
+  const plan = executionPlan(S)
+  return { status: 'explained', task: S.task, plan: { ...plan, estimate: historyEstimate(S, plan, history) }, execution: 'not-started', final: { readiness: { state: 'not-assessed', blocked: [], incomplete: ['Explanation only; no implementation or review ran.'] } } }
 }
 
 function repairTodo(S, W) {

@@ -473,6 +473,21 @@ test('installed pair workflow runs both author/reviewer directions and repeated 
     assert.equal(new Set(calls.map(c => c.vendor)).size, 2)
     assert.equal(calls.filter(c => c.kind === 'retro').length, 1, 'a standalone pair run ends with the model retro')
     assert.ok(result.retro.saved && existsSync(result.retro.saved), 'the retro is saved outside the run')
+    // Every model turn's tokens, by role and model, with the per-turn lines beside the result.
+    const tokens = result.metrics.tokens
+    assert.equal(tokens.version, 2); assert.equal(tokens.complete, true, JSON.stringify(tokens.missing))
+    assert.equal(tokens.records, calls.length, 'one counted turn per model CLI call')
+    // The stubs report 10 in / 10 out per call; a resumed Codex session reports its running total,
+    // so its later turns count the difference, which the stub leaves at 0.
+    const lines = JSON.parse(readFileSync(tokens.turnsFile, 'utf8')).turns
+    assert.equal(lines.length, calls.length)
+    assert.ok(lines.every(l => [0, 10].includes(l.input) && l.source === 'helper-usage'), JSON.stringify(lines))
+    assert.deepEqual([tokens.total.input, tokens.total.output], [lines.reduce((n, l) => n + l.input, 0), lines.reduce((n, l) => n + l.output, 0)])
+    assert.ok(tokens.byRole.author.turns >= 2 && tokens.byRole.reviewer.turns === 4, JSON.stringify(tokens.byRole))
+    // The milestones carry the running total; the report has it per model.
+    const logged = readFileSync(result.hostEvents, 'utf8').trim().split('\n').map(JSON.parse).filter(e => e.type === 'log').map(e => e.message)
+    assert.ok(logged.some(m => /^pair: .* · tokens so far: \d+ in \/ \d+ out$/.test(m)), logged.join('\n'))
+    assert.match(result.report.markdown, /### Token use\n\n\| Model \| Turns \| Input \| Cached \| Cache writes \| Output \| Turn time \|/)
     // A crash can leave the last valid checkpoint without a final result file.
     rmSync(join(result.hostRunDir, 'result.json'))
     const resumed = JSON.parse(execFileSync(process.execPath, [cli, '--resume', result.hostRunDir], {
@@ -483,6 +498,7 @@ test('installed pair workflow runs both author/reviewer directions and repeated 
     assert.deepEqual(resumed.final.replay, result.final.replay)
     assert.equal(resumed.metrics.turns, result.metrics.turns)
     assert.deepEqual(resumed.metrics.turnsByRole, result.metrics.turnsByRole)
+    assert.deepEqual(resumed.metrics.tokens.total, tokens.total, 'a replayed run counts the turns it ran once')
     assert.equal(readFileSync(join(dir, 'calls.jsonl'), 'utf8').trim().split('\n').length, calls.length, 'checkpoint replay launches no model CLI')
     execFileSync('git', ['-C', repo, 'apply', result.final.diff])
     const helper = join(root, 'plugins/dark-factory/bin/dark-factory')

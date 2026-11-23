@@ -20,6 +20,16 @@ later lists under "How the run went". The council's tiers log each spec ruling, 
 audit ruling and fix pass. In Claude Code the launching session hears from the run only when it
 ends; the Codex skill polls the runner and can relay progress as it goes.
 
+Outside the council, each milestone line also ends with the run's token use so far, for example
+`pair: Code review 2/8 by Claude Opus: approved. Criteria all met. · tokens so far: 1.2M in (1.1M cached) / 31k out`.
+On the Codex host it counts every turn the helper has recorded (each milestone reads only what
+`usage.jsonl` gained since the last one), and adds `; 1 turn not counted yet` when a turn's CLI
+reported no usage. In Claude Code the workflow can read no files, so the line shows only Claude
+Code's budget meter, the output tokens spent since the workflow started (`Claude output so far ≈
+42k (budget meter)`): it includes anything else the session spent meanwhile, and none of the
+input, Codex or Gemini tokens. The story the report and the retro prompt quote keeps the line
+without it.
+
 To follow a Claude Code run from a terminal, run `dark-factory watch` in the directory the
 workflow was started from. The helper is on the agents' PATH, not your shell's, so give its path:
 
@@ -113,6 +123,47 @@ reviewed snapshot and the gate passes in your checkout. See
 
   See [Pair](pair.md#answering-a-stop).
 - `retro`: suggested changes to the workflow itself ([Process retro](process-retro.md)).
-- `metrics`: turns, findings and tokens ([Evaluating process value](evaluation.md)).
+- `metrics`: turns, findings and tokens ([Evaluating process value](evaluation.md)); see
+  [Token use](#token-use).
 - `runDir` and `hostRunDir`: where the evidence is. Keep them until the work is delivered, and
   for a resume.
+
+## Token use
+
+Outside the council, `report.markdown` ends with a "Token use" table: per model, the turns, input,
+cached input, cache writes, output and the turns' summed wall time, as counted when the run ended.
+On the Codex host `metrics.tokens` then has the complete count, written by the runner after the
+workflow returns, with each turn's line in `<hostRunDir>/tokens.json` (`metrics.tokens.turnsFile`).
+For a native Claude Code run, `dark-factory usage --run-dir RUN` prints the same report, and the
+evaluator fills `metrics.tokens` the same way.
+
+`metrics.tokens` (version 2) has:
+
+- `total`, `byModel`, `byRole` (setup, author, reviewer, seat, checker, relay, intake, …) and
+  `byVendor`, each `{turns, input, cachedInput, cacheCreation, output, seconds}`. `input` is
+  every prompt token the model read: uncached input, cache reads (`cachedInput`) and cache writes
+  (`cacheCreation`) together. Codex reports cached tokens inside its input and Claude and agy
+  beside it; the accountant adds them up the same way for each. `output` includes reasoning.
+  `seconds` is wall time per turn, summed; turns run in parallel, so it can exceed the run's
+  active time (`metrics.elapsedMs`).
+- `sources`: how many turns came from each source:
+  - `helper-usage`: the helper's `usage.jsonl` record of a vendor CLI turn (Codex
+    `turn.completed`, the claude CLI's result envelope, OpenRouter seats, agy's answer).
+  - `codex-rollout`, `claude-transcript`: a turn whose CLI reported no usage (a timeout, a lost
+    envelope), read back from the vendor's own log for the turn's time window. Codex rollouts are
+    under `$CODEX_HOME/sessions` by thread, Claude transcripts under
+    `$CLAUDE_CONFIG_DIR/projects` by session (an OpenRouter seat's own configuration directory).
+  - `native-transcript`: a native workflow's own agents, from Claude Code's transcript
+    directory for the workflow (`projects/<project>/<session>/subagents/workflows/wf_<id>/`),
+    found by an agent that names one of the run's directories. Every agent of that workflow
+    counts, including intake, which runs before the run directory exists, and the relays.
+- `complete` and `missing`: a turn no source covers is listed in `missing` with its job, role,
+  vendor, model and the reason, and `complete` is false. A missing turn is never counted as
+  zero, so a partial total is a lower bound. What stays partial: an agy turn that returned no
+  answer (agy keeps its conversations in binary SQLite records the accountant does not parse), a
+  turn recorded before the helper noted thread and time window, and a native run whose Claude
+  Code transcripts are gone (Claude Code deletes old ones) or were never found.
+
+`dark-factory usage` runs `lib/usage.mjs`, so it needs node; without it, the helper prints its
+older reading (the helper's records and Claude agents found by the run directory), marked
+`complete: false`. No dollar figure is computed anywhere: prices change and are not recorded.

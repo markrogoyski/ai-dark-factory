@@ -6,7 +6,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpath
 import { homedir, tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { assertLeakProof, benchPaths, grade, gradeExitCode, gradeSummaryLine, leakProblems, leakProofClone, manifestDigest, manifestProblems, mergeOutcome, prepare, resultFiles, run, runPlan, scan, validate } from '../tools/bench.mjs'
+import { assertLeakProof, benchPaths, grade, gradeExitCode, gradeSummaryLine, leakProblems, leakProofClone, manifestDigest, manifestProblems, mergeOutcome, prepare, resultFiles, run, runPlan, scan, validate, variantSummary, variantTable } from '../tools/bench.mjs'
 import { contaminationNeedles, findHits } from '../tools/bench-scan.mjs'
 import { launchRequirements } from '../plugins/dark-factory/lib/policy.mjs'
 import { evaluateFiles, summarize } from '../plugins/dark-factory/lib/evaluate.mjs'
@@ -31,6 +31,8 @@ const git = (cwd, ...args) => execFileSync('git', ['-C', cwd, ...args], { encodi
 const write = (path, text) => { mkdirSync(dirname(path), { recursive: true }); writeFileSync(path, text) }
 const commit = (repo, message) => { git(repo, 'add', '-A'); git(repo, 'commit', '-qm', message); return git(repo, 'rev-parse', 'HEAD') }
 const HIDDEN = "require('node:assert/strict').equal(require('../sum.cjs')(2, 3), 5)\n"
+// A matched-task cell's cost fields when its runs recorded no tokens and no time.
+const NO_COST = { tokenRuns: 0, tokenPartialRuns: 0, input: 0, cachedInput: 0, output: 0, timedRuns: 0, elapsedMs: 0 }
 
 // base: sum subtracts. fix: it adds, with tests/hidden.cjs. Then a later commit, a tag and a side
 // branch from the fix, none of which a prepared clone may hold.
@@ -378,7 +380,7 @@ test('the evaluator reports readiness against hidden-test outcomes as a 2x2 and 
     contaminated: 0, scanPartial: 0, unscanned: 5, unknown: 2, escapedDefects: 1, falseBlocks: 1, passRate: 0.6, escapedDefectRate: 1 / 3, falseBlockRate: 0.5 })
   assert.equal(group.postDeliveryObserved, 2)
   assert.equal(group.postDeliveryRegressions, 1)
-  assert.deepEqual(out.matchedTasks['sum@revision-unknown'][Object.keys(out.groups)[0]], { runs: 8, ready: 5, turns: 16, hiddenGraded: 5, hiddenPassed: 3, hiddenContaminated: 0 })
+  assert.deepEqual(out.matchedTasks['sum@revision-unknown'][Object.keys(out.groups)[0]], { runs: 8, ready: 5, turns: 16, hiddenGraded: 5, hiddenPassed: 3, hiddenContaminated: 0, ...NO_COST })
   const empty = Object.values(summarize([row('1', 'ready')]).groups)[0].hiddenTests
   assert.deepEqual([empty.graded, empty.unknown, empty.passRate, empty.escapedDefectRate, empty.falseBlockRate], [0, 1, null, null, null])
   assert.throws(() => summarize([row('1', 'ready', hidden('regression'))]), /Invalid hidden-test outcome for 1/)
@@ -428,6 +430,13 @@ test('run launches the standalone runner on a fresh leak-proof clone, and grade 
   const group = Object.values(evaluateFiles([record.resultFile], outcomes).groups)[0]
   assert.equal(group.hiddenTests.readyPassed, 1)
   assert.equal(group.hiddenTests.escapedDefects, 0)
+  // Per variant: pass rate beside what a run cost (the stub CLIs report 10 tokens in and out a turn).
+  const [row] = variantSummary(paths)
+  assert.deepEqual([row.variant, row.runs, row.ready, row.hiddenPassed, row.hiddenGraded, row.tokenRuns, row.tokenPartialRuns], ['default', 1, 1, 1, 1, 1, 0])
+  assert.ok(row.input.median > 0 && row.output.median > 0 && row.minutes.n === 1, JSON.stringify(row))
+  const table = variantTable([row]).split('\n')
+  assert.match(table[0], /^variant +runs +ready +hidden pass +tokens in, median \(range\) +cached in +out +partial +minutes$/)
+  assert.match(table[1], /^default +1 +1 +1\/1 +\d+ \(\d+-\d+\) +\d+ \(\d+-\d+\) +\d+ \(\d+-\d+\) +0\/1 +\d+ \(\d+-\d+\)$/)
 })
 
 test('the evaluator leaves contaminated runs out of the hidden-test 2x2 and validates the scan fields', () => {
@@ -443,7 +452,7 @@ test('the evaluator leaves contaminated runs out of the hidden-test 2x2 and vali
   const group = Object.values(out.groups)[0]
   assert.deepEqual(group.hiddenTests, { graded: 3, ungraded: 0, readyPassed: 1, readyFailed: 1, notReadyPassed: 0, notReadyFailed: 1,
     contaminated: 2, scanPartial: 1, unscanned: 1, unknown: 0, escapedDefects: 1, falseBlocks: 0, passRate: 1 / 3, escapedDefectRate: 0.5, falseBlockRate: 0 })
-  assert.deepEqual(out.matchedTasks['sum@revision-unknown'][Object.keys(out.groups)[0]], { runs: 5, ready: 4, turns: 10, hiddenGraded: 3, hiddenPassed: 1, hiddenContaminated: 2 })
+  assert.deepEqual(out.matchedTasks['sum@revision-unknown'][Object.keys(out.groups)[0]], { runs: 5, ready: 4, turns: 10, hiddenGraded: 3, hiddenPassed: 1, hiddenContaminated: 2, ...NO_COST })
   const bad = scan => () => summarize([row('1', 'ready', hidden('passed', scan))])
   assert.throws(bad({ contaminated: true, scan: { status: 'contaminated' } }), /Invalid contamination scan/)
   assert.throws(bad({ contaminated: true, contamination: [{ file: 'f', at: '', excerpt: 'x' }], scan: { status: 'contaminated' } }), /Invalid contamination scan/)

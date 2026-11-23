@@ -53,7 +53,7 @@ HOST_TESTS = host-logic codex-runner codex-install checkpoint run-plan delivery-
   provider-policy provider-settings provider-routing live-compatibility engine-imports \
   engine-loader-bindings engine-loader-controls engine-publication validation-overhead \
   pin-diagnostics engine-links engine-descriptors provider-refusal launch-prepare \
-  openrouter-host pinned-openrouter bench
+  openrouter-host pinned-openrouter bench usage
 
 host-test:
 	$(NODE) --test $(HOST_TESTS:%=test/%.mjs)

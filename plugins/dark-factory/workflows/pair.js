@@ -3937,7 +3937,7 @@ function featureResult(S, o) {
       deliveryNote(S, tag, W, 'The final change') +
       `The room (${S.run.room}) holds the full transcript. When the user is done with it, \`${S.cli} cleanup --run-dir ${shp(S.run.runDir)}\` ` +
       'removes the worktrees and snapshot refs and keeps the transcript; add --all to delete everything. ' +
-      `Codex and Gemini token usage: \`${S.cli} usage --run-dir ${shp(S.run.runDir)}\`.`,
+      `Token use of every model, the workflow's own Claude agents included: \`${S.cli} usage --run-dir ${shp(S.run.runDir)}\`.`,
   }
 }
 
@@ -4100,7 +4100,7 @@ function architectureResult(S, o) {
       'Each run starts from HEAD and stops on a dirty tree, so present each result as usual and wait for the user to commit it before the next milestone starts. ' +
       `Keep this run's directory until the milestones are done, since each milestone run reads the design from ${design}: \`${S.cli} cleanup --run-dir ${shp(S.run.runDir)}\` (without --all) removes the worktrees and keeps the room. ` +
       'Run `git status` in the main tree to confirm no seat touched it. ' +
-      `Codex and Gemini token usage: \`${S.cli} usage --run-dir ${shp(S.run.runDir)}\`.`,
+      `Token use of every model, the workflow's own Claude agents included: \`${S.cli} usage --run-dir ${shp(S.run.runDir)}\`.`,
   }
 }
 
@@ -4164,8 +4164,10 @@ function executionPlan(S) {
   }
 }
 
-function explanation(S) {
-  return { status: 'explained', task: S.task, plan: executionPlan(S), execution: 'not-started', final: { readiness: { state: 'not-assessed', blocked: [], incomplete: ['Explanation only; no implementation or review ran.'] } } }
+// history: the past runs the runtime read (pastRuns() in turns.js), or null where it can read none.
+function explanation(S, history = null) {
+  const plan = executionPlan(S)
+  return { status: 'explained', task: S.task, plan: { ...plan, estimate: historyEstimate(S, plan, history) }, execution: 'not-started', final: { readiness: { state: 'not-assessed', blocked: [], incomplete: ['Explanation only; no implementation or review ran.'] } } }
 }
 
 function repairTodo(S, W) {
@@ -4330,6 +4332,105 @@ function evaluationFacts(S, result, elapsedMs, turns) {
     limits: { maxTurns: S.controls.maxTurns, maxRunMin: S.controls.maxRunMin },
     // Pair only: the questions its stops asked, the answers it took, and answers no stop took.
     ...(S.pair ? { userDecisions: { asked: S.pair.asked?.length || 0, answered: S.pair.decisions?.length || 0, unused: (result.unusedAnswers || []).length } } : {}) }
+}
+
+// What a run costs, in tokens and time: the running total on milestone lines, the report's
+// "Token use" section, and --explain's estimate from past runs. The runtime reads the figures (the
+// standalone runner's usage() and history(); Claude Code's budget meter); these functions only
+// format and compare them. No prices: a dollar figure needs a dated price table, which nothing here has.
+
+// 950, 31k, 1.2M.
+function tokenAmount(n) {
+  if (!Number.isFinite(n)) return '?'
+  const short = v => String(v < 10 ? Math.round(v * 10) / 10 : Math.round(v))
+  return n < 1000 ? String(Math.round(n)) : n < 1e6 ? `${short(n / 1e3)}k` : `${short(n / 1e6)}M`
+}
+
+const minutesOf = ms => Math.round(ms / 6e4)
+
+// "1.2M in (1.1M cached) / 31k out"
+function tokenFigures(t) {
+  return `${tokenAmount(t.input)} in${t.cachedInput ? ` (${tokenAmount(t.cachedInput)} cached)` : ''} / ${tokenAmount(t.output)} out`
+}
+
+// The milestone suffix. usage: the runner's running total ({total, missing}), or Claude Code's
+// budget meter ({meter}: output tokens since the workflow started). Empty before anything counted.
+function usageLine(S, usage) {
+  if (!usage) return ''
+  if (usage.meter !== undefined) return usage.meter > 0 ? `Claude output so far ≈ ${tokenAmount(usage.meter)} (budget meter)` : ''
+  const t = usage.total, missing = (usage.missing || []).length
+  if (!t || (!t.turns && !missing)) return ''
+  return `tokens so far: ${tokenFigures(t)}${missing ? `; ${plural(missing, 'turn')} not counted yet` : ''}`
+}
+
+// The report's section, per model. Before the runner's final count (metrics.tokens), which also
+// reads back turns their CLI did not report.
+function usageSection(S, usage) {
+  if (!usage) return ''
+  if (usage.meter !== undefined) {
+    return usage.meter > 0 ? `\n\n### Token use\n\nClaude Code's budget meter counted about ${tokenAmount(usage.meter)} output tokens while this workflow ran (its own agents and anything else in the session). ` +
+      `Input, cache and per-model counts, Codex and Gemini turns included: \`${S.cli} usage --run-dir ${shq(S.run?.runDir || 'RUN')}\`.` : ''
+  }
+  const rows = Object.entries(usage.byModel || {})
+  const missing = usage.missing || []
+  if (!rows.length && !missing.length) return ''
+  const line = (name, r) => `| ${name} | ${r.turns} | ${tokenAmount(r.input)} | ${tokenAmount(r.cachedInput)} | ${tokenAmount(r.cacheCreation)} | ${tokenAmount(r.output)} | ${minutesOf(r.seconds * 1000)} min |`
+  const table = rows.length ? ['| Model | Turns | Input | Cached | Cache writes | Output | Turn time |', '|---|---|---|---|---|---|---|',
+    ...rows.sort((a, b) => b[1].input - a[1].input).map(([model, r]) => line(model, r)), line('**Total**', usage.total)].join('\n') : ''
+  const gap = missing.length ? `\n\n${plural(missing.length, 'turn')} reported no usage (${[...new Set(missing.map(m => m.reason))].slice(0, 3).join('; ')}): the result's metrics.tokens reads them back from the vendors' logs where it can, and lists the rest as missing.` : ''
+  return `\n\n### Token use\n\n${table}${gap}`
+}
+
+// The lineup of a plan as history.mjs records it: participants / reviewers, by model key.
+function planLineup(plan) {
+  return [plan.participants, plan.reviewers].map(xs => (xs || []).map(p => p.model || '?').join('+')).join(' / ')
+}
+
+const ESTIMATE_MIN_SAMPLE = 3
+
+function quantile(xs, q) {
+  const s = [...xs].sort((a, b) => a - b)
+  if (!s.length) return null
+  const i = (s.length - 1) * q, lo = Math.floor(i), hi = Math.ceil(i)
+  return s[lo] + (s[hi] - s[lo]) * (i - lo)
+}
+const spread = xs => xs.length ? { median: quantile(xs, 0.5), low: Math.min(...xs), high: Math.max(...xs) } : null
+
+// The estimate --explain prints: the comparable past runs' median and range of tokens and active
+// time. runs: what the runtime read (history.mjs pastRun), or null where no runtime can read them.
+// The narrowest comparison with enough runs wins: workflow, tier, strategy and lineup; then
+// workflow, tier and strategy; then workflow alone. With fewer than ESTIMATE_MIN_SAMPLE runs at
+// every level, the level with the most runs is used and called a small sample.
+function historyEstimate(S, plan, runs) {
+  if (!Array.isArray(runs)) return { runs: 0, basis: null, text: 'No history here: this runtime cannot read past runs. The standalone runner\'s --explain (dark-factory-codex --explain) reads them from the repository\'s .council.' }
+  const lineup = planLineup(plan)
+  const levels = [
+    ['workflow, tier, strategy and lineup', r => r.tier === plan.tier && r.strategy === plan.strategy && r.lineup === lineup],
+    ['workflow, tier and strategy', r => r.tier === plan.tier && r.strategy === plan.strategy],
+    ['workflow', () => true],
+  ].map(([basis, keep]) => ({ basis, runs: runs.filter(r => r && r.workflow === plan.workflow && keep(r)) }))
+  const chosen = levels.find(l => l.runs.length >= ESTIMATE_MIN_SAMPLE) || levels.reduce((a, b) => b.runs.length > a.runs.length ? b : a)
+  const n = chosen.runs.length
+  if (!n) return { runs: 0, basis: null, text: `No history: no earlier ${plan.workflow} run with a recorded result was found.` }
+  // partial: the count lists turns it missed; older: recorded before every turn was counted, so it
+  // cannot say whether it missed any.
+  const counted = chosen.runs.filter(r => r.tokens)
+  const partial = counted.filter(r => !r.tokens.complete && !r.tokens.legacy).length, older = counted.filter(r => r.tokens.legacy).length
+  const timed = chosen.runs.filter(r => Number.isFinite(r.elapsedMs))
+  const tokens = counted.length ? { runs: counted.length, partial, older,
+    input: spread(counted.map(r => r.tokens.input)), cachedInput: spread(counted.map(r => r.tokens.cachedInput)), output: spread(counted.map(r => r.tokens.output)) } : null
+  const minutes = timed.length ? spread(timed.map(r => r.elapsedMs / 6e4)) : null
+  const range = (s, f, unit) => s.low === s.high ? '' : `, range ${f(s.low)}–${f(s.high)} ${unit}`
+  const small = n < ESTIMATE_MIN_SAMPLE ? ' (a small sample: a rough guide only)' : ''
+  const parts = [
+    tokens ? `median ${tokenFigures({ input: tokens.input.median, cachedInput: tokens.cachedInput.median, output: tokens.output.median })}${range(tokens.input, tokenAmount, 'in')}` +
+      `${tokens.runs < n ? ` (${tokens.runs} of the ${n} have token counts)` : ''}` +
+      `${partial ? `; ${partial} of those ${partial === 1 ? 'misses' : 'miss'} turns, so the true figures are higher` : ''}` +
+      `${older ? `; ${older} of those ${older === 1 ? 'was' : 'were'} counted before every turn was, and may miss some` : ''}` : 'no token counts recorded',
+    minutes ? `median ${Math.round(minutes.median)} min active${range(minutes, v => Math.round(v), 'min')}` : 'no active time recorded',
+  ]
+  return { runs: n, basis: `same ${chosen.basis}`, tokens, minutes,
+    text: `Estimate from ${plural(n, `past ${plan.workflow} run`)} with the same ${chosen.basis}${small}: ${parts.join('; ')}.` }
 }
 
 // Independent candidates share the snapshot and host machinery, but ranking stays advisory.
@@ -6353,9 +6454,31 @@ const PAIR_RESUME_SCHEMA = strict({ type: 'object', properties: {
 // parallel() and log(), and the state object `S` from boot; the decisions they act on are computed
 // in lib/.
 
-// A milestone of the run: logged now, for the live progress view, and kept for the report.
+// A milestone of the run: logged now, for the live progress view, and kept for the report. The
+// logged line also carries the running token total; the story (which prompts quote) does not.
 function milestone(line, prefix = '') {
-  log(`${prefix}${tellStory(S, line)}`)
+  const cost = S.workflowName === 'council' ? '' : usageLine(S, runUsage())
+  log(`${prefix}${tellStory(S, line)}${cost ? ` · ${cost}` : ''}`)
+}
+
+// Claude Code's budget meter when the workflow started: its output tokens spent this turn.
+const meterStart = budgetSpent()
+function budgetSpent() {
+  try { return typeof budget !== 'undefined' && budget && typeof budget.spent === 'function' ? budget.spent() : null } catch { return null }
+}
+
+// The token use so far: the standalone runner's running total, or Claude Code's budget meter
+// (output only). Null when the runtime offers neither.
+function runUsage() {
+  if (hostRuntime?.usage) { try { return hostRuntime.usage() } catch { return null } }
+  const spent = budgetSpent()
+  return spent === null || meterStart === null ? null : { meter: Math.max(0, spent - meterStart) }
+}
+
+// The past runs --explain compares with, from the runtime; null where none can be read.
+function pastRuns() {
+  if (!hostRuntime?.history) return null
+  try { return hostRuntime.history() } catch { return null }
 }
 
 function requestClock() {
@@ -6394,6 +6517,11 @@ async function controlledRun(work) {
   withdrawResume(result)
   result.plan = result.plan || executionPlan(S)
   result.metrics = evaluationFacts(S, result, requestControl.started !== null ? hostRuntime.now() - requestControl.started : null, requestControl.turns)
+  // The run's token use by model, at its end (retro included), in the report; not for the council.
+  if (S.workflowName !== 'council' && result.report && typeof result.report.markdown === 'string') {
+    const section = usageSection(S, runUsage())
+    if (section) result.report = { ...result.report, markdown: `${result.report.markdown}${section}` }
+  }
   if ((S.factory || S.pairOptions) && result.runDir) {
     result.artifactType = 'dark-factory-result'
     result.artifactVersion = 1
@@ -7318,4 +7446,4 @@ async function pairCliRun() {
 // runtime: "cli" (Claude Code only): one transport agent runs the whole Pair on the standalone
 // runner, which resumes the author's CLI session and records exact elapsed time.
 if (!S.raw.explain && transport.cli) return await pairCliRun()
-return await controlledRun(async () => S.raw.explain ? explanation(S) : pairRetro(await pairRun()))
+return await controlledRun(async () => S.raw.explain ? explanation(S, pastRuns()) : pairRetro(await pairRun()))

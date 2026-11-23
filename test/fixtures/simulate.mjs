@@ -47,6 +47,9 @@ export async function simulate(workflow, args = {}, behavior = {}) {
   }
   const runtime = {
     ...(behavior.clock ? { now: behavior.clock } : {}),
+    // The runner's running token total and past runs, when a test supplies them.
+    ...(behavior.usage ? { usage: behavior.usage } : {}),
+    ...(behavior.history ? { history: behavior.history } : {}),
     agent: respond,
     turn: async r => { const result = await respond(r); return result && { status: 'done', result } },
     measure: behavior.measure || (async ({ label }) => {
@@ -62,6 +65,6 @@ export async function simulate(workflow, args = {}, behavior = {}) {
   }
   const result = await execute({ task: 'Fix the boundary', host: behavior.native ? 'claude' : 'codex', retro: false, ...args }, behavior.native ? null : runtime,
     async jobs => { const all = await Promise.allSettled(jobs.map(f => f())); const bad = all.find(x => x.status === 'rejected'); if (bad) throw bad.reason; return all.map(x => x.value) },
-    behavior.native ? nativeAgent : () => { throw new Error('Unexpected native call') }, () => {}, () => {})
+    behavior.native ? nativeAgent : () => { throw new Error('Unexpected native call') }, () => {}, behavior.log || (() => {}))
   return { result, calls, repairs }
 }

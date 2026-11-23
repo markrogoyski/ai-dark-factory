@@ -131,6 +131,10 @@ def fill_metrics(run, facts):
         if elapsed:
             m.update(elapsedMs=elapsed['elapsedMs'], elapsedSource='helper-timeline', elapsedByRole=elapsed['byRole'])
     if m.get('tokens') is None:
+        report = usage.node_usage([run['runDir']], native=True)
+        if report is not None:
+            m['tokens'] = report if report.get('records') or report.get('missing') else None
+            return facts
         by_model, records = {}, 0
         path = os.path.join(run['runDir'], 'usage.jsonl')
         if os.path.exists(path):

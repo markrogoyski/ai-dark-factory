@@ -1580,16 +1580,22 @@ async function scenarioMeasure() {
   assert.equal(sr.status, 'need-file', JSON.stringify(sr))
   assert.ok(existsSync(join(cwd, 'new.txt')), 'seat-run --checkout made the auditor\'s checkout before anything else')
 
-  // Claude agents' usage is read from transcripts that name the run directory; a message logged twice counts once.
-  const cfg = join(repo, 'claude-cfg'), proj = join(cfg, 'projects', 'p', 's', 'subagents', 'workflows', 'wf1')
-  mkdirSync(proj, { recursive: true })
-  const msg = (id, out) => JSON.stringify({ message: { id, role: 'assistant', model: 'claude-sonnet-5-5', usage: { input_tokens: 5, output_tokens: out } } })
-  writeFileSync(join(proj, 'agent-1.jsonl'), [JSON.stringify({ message: { role: 'user', content: `check ${rd}` } }), msg('m1', 10), msg('m1', 10), msg('m2', 7)].join('\n'))
-  writeFileSync(join(proj, 'agent-1.meta.json'), JSON.stringify({ description: 'check r1:A' }))
-  writeFileSync(join(proj, 'agent-2.jsonl'), [JSON.stringify({ message: { role: 'user', content: 'another run' } }), msg('m3', 99)].join('\n'))
+  // The workflow's own Claude agents are read from the workflow transcript directory one of its agents
+  // names the run directory in: every agent there counts (intake names no run yet), another workflow's
+  // do not, and a message logged twice counts once.
+  const cfg = join(repo, 'claude-cfg'), wf = name => join(cfg, 'projects', 'p', 's', 'subagents', 'workflows', name)
+  mkdirSync(wf('wf_1'), { recursive: true }); mkdirSync(wf('wf_2'), { recursive: true })
+  const msg = (id, out) => JSON.stringify({ message: { id, role: 'assistant', model: 'claude-sonnet-5-5', usage: { input_tokens: 5, cache_read_input_tokens: 100, output_tokens: out } } })
+  writeFileSync(join(wf('wf_1'), 'agent-1.jsonl'), [JSON.stringify({ message: { role: 'user', content: `check ${rd}` } }), msg('m1', 10), msg('m1', 10), msg('m2', 7)].join('\n'))
+  writeFileSync(join(wf('wf_1'), 'agent-1.meta.json'), JSON.stringify({ description: 'check r1:A' }))
+  writeFileSync(join(wf('wf_1'), 'agent-3.jsonl'), [JSON.stringify({ message: { role: 'user', content: 'pick a tier' } }), msg('m4', 3)].join('\n'))
+  writeFileSync(join(wf('wf_1'), 'agent-3.meta.json'), JSON.stringify({ description: 'intake' }))
+  writeFileSync(join(wf('wf_2'), 'agent-2.jsonl'), [JSON.stringify({ message: { role: 'user', content: 'another run' } }), msg('m3', 99)].join('\n'))
   const u = JSON.parse(execFileSync(join(here, '..', 'plugins', 'dark-factory', 'bin', 'dark-factory'), ['usage', '--run-dir', rd], { env: { ...env, CLAUDE_CONFIG_DIR: cfg } }).toString().trim().split('\n').pop())
-  assert.deepEqual(u.claude, { agents: 1, byModel: { 'claude-sonnet-5-5': { messages: 2, input_tokens: 10, output_tokens: 17 } },
-    byRole: { checker: { messages: 2, input_tokens: 10, output_tokens: 17 } } }, JSON.stringify(u.claude))
+  const row = (turns, input, cachedInput, output) => ({ turns, input, cachedInput, cacheCreation: 0, output, seconds: 0 })
+  assert.deepEqual([u.byModel['claude-sonnet-5-5'], u.byRole.checker, u.byRole.intake, u.sources['native-transcript']],
+    [row(2, 315, 300, 20), row(1, 210, 200, 17), row(1, 105, 100, 3), 2], JSON.stringify(u))
+  assert.equal(u.complete, true, JSON.stringify(u.missing))
   // A suite that needs an ignored file the scratch checkout lacks: the live tree's pass stands, and the mismatch is reported.
   writeFileSync(join(repo, '.git', 'info', 'exclude'), '/.council/\n.env\n')
   writeFileSync(join(wt, '.env'), 'X=1\n')

@@ -2,7 +2,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { loadLib, makeRun, addItem } from './lib.mjs'
 import { summarize, evaluateFiles, fillNativeMetrics } from '../plugins/dark-factory/lib/evaluate.mjs'
-import { mkdtempSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { simulate } from './fixtures/simulate.mjs'
@@ -55,6 +55,75 @@ test('explain performs only intake for Factory and no turns for explicit Pair or
     assert.ok(result.plan.requiredCLIs.includes('codex'))
     assert.equal(result.final.readiness.state, 'not-assessed')
   }
+})
+
+// The running total the runner's usage() reports, in lib/usage.mjs's shape.
+const usageSoFar = (input, cachedInput, output, missing = []) => ({ records: 3, complete: !missing.length, missing,
+  total: { turns: 3, input, cachedInput, cacheCreation: 0, output, seconds: 95 },
+  byModel: { 'gpt-6.2-sol': { turns: 2, input: input - 1000, cachedInput, cacheCreation: 0, output: output - 200, seconds: 80 }, opus: { turns: 1, input: 1000, cachedInput: 0, cacheCreation: 0, output: 200, seconds: 15 } } })
+
+test('token figures: the milestone suffix, the report section, nothing before a turn is counted', () => {
+  assert.deepEqual([0, 950, 1500, 31_234, 999_999, 1_234_567, 12_345_678].map(L.tokenAmount), ['0', '950', '1.5k', '31k', '1000k', '1.2M', '12M'])
+  assert.equal(L.usageLine(null, usageSoFar(1_234_567, 1_100_000, 31_000)), 'tokens so far: 1.2M in (1.1M cached) / 31k out')
+  assert.equal(L.usageLine(null, usageSoFar(5000, 0, 900, [{ reason: 'timed out before turn.completed' }])), 'tokens so far: 5k in / 900 out; 1 turn not counted yet')
+  assert.equal(L.usageLine(null, { records: 0, total: { turns: 0, input: 0, cachedInput: 0, output: 0 }, missing: [] }), '')
+  assert.equal(L.usageLine(null, null), '')
+  assert.equal(L.usageLine(null, { meter: 0 }), '')
+  assert.equal(L.usageLine(null, { meter: 42_000 }), 'Claude output so far ≈ 42k (budget meter)')
+  const S = L.newState(L.parseConfig({ task: 'Fix it' }))
+  const section = L.usageSection(S, usageSoFar(1_234_567, 1_100_000, 31_000, [{ reason: 'timed out before its result envelope' }]))
+  assert.match(section, /^\n\n### Token use\n\n\| Model \| Turns \| Input \| Cached \| Cache writes \| Output \| Turn time \|\n\|---/)
+  assert.match(section, /\| gpt-6.2-sol \| 2 \| 1.2M \| 1.1M \| 0 \| 31k \| 1 min \|\n\| opus \| 1 \| 1k \| 0 \| 0 \| 200 \| 0 min \|\n\| \*\*Total\*\* \| 3 \| 1.2M/)
+  assert.match(section, /1 turn reported no usage \(timed out before its result envelope\)/)
+  assert.equal(L.usageSection(S, null), '')
+  assert.match(L.usageSection({ ...S, cli: 'dark-factory', run: { runDir: '/r' } }, { meter: 9000 }), /about 9k output tokens.*`dark-factory usage --run-dir '\/r'`/s)
+})
+
+test('the explain estimate: no history, a small sample, and the narrowest comparison with enough runs', () => {
+  const plan = { workflow: 'pair', tier: 'pair', strategy: 'pair', participants: [{ model: 'sol' }], reviewers: [{ model: 'opus' }] }
+  const past = (lineup, input, output, minutes, complete = true, over = {}) => ({ workflow: 'pair', tier: 'pair', strategy: 'pair', lineup, elapsedMs: minutes * 6e4,
+    tokens: input === null ? null : { complete, input, cachedInput: input * 0.9, cacheCreation: 0, output }, ...over })
+  assert.match(L.historyEstimate(null, plan, null).text, /^No history here: this runtime cannot read past runs/)
+  assert.deepEqual(L.historyEstimate(null, plan, []), { runs: 0, basis: null, text: 'No history: no earlier pair run with a recorded result was found.' })
+  assert.equal(L.historyEstimate(null, plan, [past('sol / opus', 1, 1, 1, true, { workflow: 'factory' })]).runs, 0, 'another workflow is not comparable')
+  // Two runs with another lineup: the broader comparison, called a small sample.
+  let e = L.historyEstimate(null, plan, [past('luna / haiku', 2e6, 40_000, 30), past('luna / haiku', 3e6, 50_000, 40, false)])
+  assert.equal(e.runs, 2); assert.equal(e.basis, 'same workflow, tier and strategy')
+  assert.equal(e.text, 'Estimate from 2 past pair runs with the same workflow, tier and strategy (a small sample: a rough guide only): ' +
+    'median 2.5M in (2.3M cached) / 45k out, range 2M–3M in; 1 of those misses turns, so the true figures are higher; median 35 min active, range 30–40 min.')
+  // A count from before the accountant cannot say whether it missed turns, and is called that.
+  e = L.historyEstimate(null, plan, [past('sol / opus', 2e6, 40_000, 30, false, { tokens: { complete: false, legacy: true, input: 2e6, cachedInput: 0, cacheCreation: 0, output: 40_000 } })])
+  assert.match(e.text, /\(a small sample: a rough guide only\): median 2M in \/ 40k out; 1 of those was counted before every turn was, and may miss some; median 30 min active\.$/)
+  // Three with this lineup: the narrowest comparison wins over five broader ones; a run without tokens still gives its time.
+  const runs = [past('sol / opus', 1e6, 20_000, 20), past('sol / opus', 1.2e6, 22_000, 25), past('sol / opus', null, 0, 50),
+    ...Array.from({ length: 5 }, () => past('luna / haiku', 9e6, 1e5, 90))]
+  e = L.historyEstimate(null, plan, runs)
+  assert.deepEqual([e.runs, e.basis, e.tokens.runs, e.tokens.input.median, e.minutes.median, e.minutes.high], [3, 'same workflow, tier, strategy and lineup', 2, 1.1e6, 25, 50])
+  assert.match(e.text, /^Estimate from 3 past pair runs with the same workflow, tier, strategy and lineup: median 1.1M in \(990k cached\) \/ 21k out, range 1M–1.2M in \(2 of the 3 have token counts\); median 25 min active, range 20–50 min\.$/)
+})
+
+test('explain carries the estimate from the runtime\'s history, and says where none can be read', async () => {
+  const history = () => [{ workflow: 'pair', tier: 'pair', strategy: 'pair', lineup: 'x', elapsedMs: 6e5, tokens: { complete: true, input: 5e5, cachedInput: 4e5, cacheCreation: 0, output: 9000 } }]
+  const hosted = await simulate('pair', { explain: true }, { history })
+  assert.match(hosted.result.plan.estimate.text, /^Estimate from 1 past pair run with the same workflow, tier and strategy \(a small sample/)
+  const native = await simulate('pair', { explain: true }, { native: true })
+  assert.match(native.result.plan.estimate.text, /^No history here/)
+})
+
+test('milestones carry the running token total, the story and the prompts do not, and the report has it per model', async () => {
+  const logs = []
+  const { result, calls } = await simulate('pair', {}, { usage: () => usageSoFar(1_234_567, 1_100_000, 31_000), log: line => logs.push(line) })
+  // Each stage's milestone (setup, spec review, each author pass and review) has it; plain log lines do not.
+  const milestones = logs.filter(line => line.endsWith(' · tokens so far: 1.2M in (1.1M cached) / 31k out'))
+  assert.ok(milestones.length >= 6 && milestones.some(line => /^pair: Code review 2\/8 /.test(line)), logs.join('\n'))
+  assert.ok(logs.some(line => /^pair: .* authors; .* reviews; budget/.test(line) && !line.includes('tokens')), logs.join('\n'))
+  assert.ok(!calls.some(c => c.prompt.includes('tokens so far')), 'no prompt quotes the running total')
+  assert.match(result.report.markdown, /### Token use\n\n\| Model \|/)
+  // The council's lines and report stay as they were.
+  const council = []
+  const plain = await simulate('council', {}, { usage: () => usageSoFar(1, 0, 1), log: line => council.push(line) })
+  assert.ok(!council.some(line => line.includes('tokens so far')))
+  assert.ok(!(plain.result.report?.markdown || '').includes('### Token use'))
 })
 
 test('bounded repairs review every revision freshly and report the exact final snapshot', async () => {
@@ -241,7 +310,10 @@ test('evaluation reads both native token formats and excludes legacy idle-inclus
   const group = Object.values(summarize(rows).groups)[0]
   assert.equal(group.timedRuns, 0)
   assert.equal(group.tokenMeasuredRuns, 2)
-  assert.deepEqual(group.tokensByModel, { model: { input_tokens: 30, output_tokens: 6 } })
+  // Older shapes are read as the accountant's fields, and counted as partial: they could not list missing turns.
+  assert.deepEqual(group.tokensByModel, { model: { turns: 3, input: 30, cachedInput: 0, cacheCreation: 0, output: 6 } })
+  assert.equal(group.tokenPartialRuns, 2)
+  assert.deepEqual([group.perRun.input.median, group.perRun.output.low, group.perRun.output.high, group.perRun.elapsedMs], [15, 3, 3, null])
 })
 
 test('offline evaluation distinguishes missing evidence, failed delivery and matched tasks', () => {
@@ -345,30 +417,57 @@ test('evaluation times a native result from its helper timeline and prefers a re
   assert.deepEqual(group.elapsedSources, { recorded: 1 })
 })
 
-// Native results record tokens: null; the helper's usage.jsonl holds the external CLI turns only.
-test('evaluation reads a native result\'s helper usage, labelled as excluding native Claude turns', () => {
-  const dir = mkdtempSync(join(tmpdir(), 'df-eval-'))
-  writeFileSync(join(dir, 'usage.jsonl'), [
-    { job: 'review-pair-design-1', seat: 'PR', model: 'gpt-6-astra', usage: { input_tokens: 100, cached_input_tokens: 40, output_tokens: 10 }, seconds: 30 },
-    { job: 'review-pair-code-2', seat: 'PR', model: 'gpt-6-astra', usage: { input_tokens: 50, cached_input_tokens: 20, output_tokens: 5 }, seconds: 20 },
-  ].map(r => JSON.stringify(r)).join('\n') + '\n')
-  const base = { version: 1, workflow: 'pair', strategy: 'pair', turns: 4, readiness: 'ready', elapsedMs: 1000 }
-  const write = (name, result) => { const file = join(dir, name); writeFileSync(file, JSON.stringify({ runDir: dir, ...result })); return file }
-  const native = fillNativeMetrics({ runDir: dir, metrics: { ...base, host: 'claude', tokens: null } }).metrics
-  assert.deepEqual(native.tokens, { records: 2, byModel: { 'gpt-6-astra': { input_tokens: 150, cached_input_tokens: 60, output_tokens: 15 } } })
-  assert.equal(native.tokenSource, 'helper-usage')
-  assert.equal(native.nativeClaudeTurnsIncluded, false)
-  let group = Object.values(evaluateFiles([write('native.json', { metrics: { ...base, host: 'claude', tokens: null } })]).groups)[0]
-  assert.equal(group.tokenMeasuredRuns, 1)
-  assert.deepEqual(group.tokenSources, { 'helper-usage': 1 })
-  assert.deepEqual(group.tokensByModel, { 'gpt-6-astra': { input_tokens: 150, cached_input_tokens: 60, output_tokens: 15 } })
-  // Recorded totals (the Codex host and runtime "cli", or native facts already filled by retro) stay as recorded.
-  const recordedTokens = { records: 3, byModel: { opus: { input_tokens: 7, output_tokens: 2 } } }
-  for (const host of ['codex', 'claude']) {
-    group = Object.values(evaluateFiles([write(`${host}.json`, { metrics: { ...base, host, tokens: recordedTokens } })]).groups)[0]
-    assert.deepEqual(group.tokensByModel, recordedTokens.byModel, host)
-    assert.deepEqual(group.tokenSources, { recorded: 1 }, host)
-  }
+// Native results record tokens: null. The accountant fills them from the helper's usage.jsonl (the
+// external CLI turns) and the workflow's Claude Code transcripts; without the transcripts it is partial.
+test('evaluation fills a native result\'s tokens, partial without the workflow transcripts', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'df-eval-')), config = join(dir, 'claude-config')
+  const saved = process.env.CLAUDE_CONFIG_DIR
+  process.env.CLAUDE_CONFIG_DIR = config
+  try {
+    writeFileSync(join(dir, 'usage.jsonl'), [
+      { job: 'review-pair-design-1', seat: 'PR', model: 'gpt-6-astra', usage: { input_tokens: 100, cached_input_tokens: 40, output_tokens: 10 }, seconds: 30 },
+      { job: 'review-pair-code-2', seat: 'PR', model: 'gpt-6-astra', usage: { input_tokens: 50, cached_input_tokens: 20, output_tokens: 5 }, seconds: 20 },
+    ].map(r => JSON.stringify(r)).join('\n') + '\n')
+    const base = { version: 1, workflow: 'pair', strategy: 'pair', turns: 4, readiness: 'ready', elapsedMs: 1000 }
+    const write = (name, result) => { const file = join(dir, name); writeFileSync(file, JSON.stringify({ runDir: dir, ...result })); return file }
+    const native = fillNativeMetrics({ runDir: dir, metrics: { ...base, host: 'claude', tokens: null } }).metrics
+    assert.deepEqual(native.tokens.byModel, { 'gpt-6-astra': { turns: 2, input: 150, cachedInput: 60, cacheCreation: 0, output: 15, seconds: 50 } })
+    assert.deepEqual(native.tokens.byRole.reviewer.turns, 2)
+    assert.equal(native.tokens.complete, false)
+    assert.match(native.tokens.missing[0].reason, /no Claude Code workflow transcript/)
+    assert.equal(native.tokenSource, 'accountant')
+    assert.equal(native.nativeClaudeTurnsIncluded, false)
+    let group = Object.values(evaluateFiles([write('native.json', { metrics: { ...base, host: 'claude', tokens: null } })]).groups)[0]
+    assert.equal(group.tokenMeasuredRuns, 1)
+    assert.equal(group.tokenPartialRuns, 1)
+    assert.deepEqual(group.tokenSources, { accountant: 1 })
+    assert.deepEqual(group.tokensByModel, { 'gpt-6-astra': { turns: 2, input: 150, cachedInput: 60, cacheCreation: 0, output: 15 } })
+    // With the workflow's transcript the Claude turns count, and the total is complete.
+    const wf = join(config, 'projects', 'p', 's', 'subagents', 'workflows', 'wf_1')
+    mkdirSync(wf, { recursive: true })
+    writeFileSync(join(wf, 'agent-a1.jsonl'), [{ timestamp: '2026-11-20T10:00:00.000Z', message: { role: 'user', content: `setup ${dir}` } },
+      { timestamp: '2026-11-20T10:00:30.000Z', message: { id: 'm1', role: 'assistant', model: 'claude-opus-5-5', usage: { input_tokens: 3, cache_read_input_tokens: 70, cache_creation_input_tokens: 30, output_tokens: 9 } } }]
+      .map(r => JSON.stringify(r)).join('\n') + '\n')
+    writeFileSync(join(wf, 'agent-a1.meta.json'), JSON.stringify({ description: 'setup' }))
+    const whole = fillNativeMetrics({ runDir: dir, metrics: { ...base, host: 'claude', tokens: null } }).metrics
+    assert.equal(whole.tokens.complete, true, JSON.stringify(whole.tokens.missing))
+    assert.deepEqual(whole.tokens.byModel['claude-opus-5-5'], { turns: 1, input: 103, cachedInput: 70, cacheCreation: 30, output: 9, seconds: 30 })
+    assert.equal(whole.tokens.byRole.setup.turns, 1)
+    assert.equal(whole.nativeClaudeTurnsIncluded, true)
+    rmSync(join(config, 'projects'), { recursive: true })
+    // Recorded totals (the Codex host and runtime "cli", or native facts already filled by retro) stay as recorded.
+    const recordedTokens = { records: 3, byModel: { opus: { input_tokens: 7, output_tokens: 2 } } }
+    for (const host of ['codex', 'claude']) {
+      group = Object.values(evaluateFiles([write(`${host}.json`, { metrics: { ...base, host, tokens: recordedTokens } })]).groups)[0]
+      assert.deepEqual(group.tokensByModel, { opus: { turns: 0, input: 7, cachedInput: 0, cacheCreation: 0, output: 2 } }, host)
+      assert.deepEqual(group.tokenSources, { recorded: 1 }, host)
+    }
+    testRest(dir, base, write)
+  } finally { if (saved === undefined) delete process.env.CLAUDE_CONFIG_DIR; else process.env.CLAUDE_CONFIG_DIR = saved }
+})
+
+function testRest(dir, base, write) {
+  let group
   // A Codex result without tokens is not filled from the run directory.
   group = Object.values(evaluateFiles([write('codex-null.json', { metrics: { ...base, host: 'codex', tokens: null } })]).groups)[0]
   assert.equal(group.tokenMeasuredRuns, 0)
@@ -378,7 +477,7 @@ test('evaluation reads a native result\'s helper usage, labelled as excluding na
   const broken = fillNativeMetrics({ runDir: dir, metrics: { ...base, host: 'claude', tokens: null } }).metrics
   assert.equal(broken.tokens, null)
   assert.match(broken.tokenError, /JSON/)
-})
+}
 
 const freshState = () => L.newState(L.parseConfig({ task: 'Fix the parser' }))
 
