@@ -307,9 +307,16 @@ class OpenRouterKeyNeverLeaks(Rig):
             jobs.run_job_spec(jd, spec)
         timed = json.loads(council.read(os.path.join(jd, 'status.json')))
         self.assertEqual((timed['status'], timed.get('errorClass')), ('error', 'timeout'), timed)
+        # The timed-out turn still gets a usage record: no usage, why, and the session to read it back by.
+        last = json.loads(council.read(os.path.join(self.run_dir, 'usage.jsonl')).strip().split('\n')[-1])
+        self.assertEqual((last['job'], last['usage'], last['missing'], last['thread'], last['vendor']),
+                         ('r2-A', {}, 'timed out before its result envelope', timed['thread'], 'openrouter'), last)
+        self.assertTrue(last['startedAt'] <= last['endedAt'])
         usage = self.cli('usage', '--run-dir', self.run_dir, '--no-claude')
-        metrics = retro.fill_metrics(council.load_run(self.run_dir), {'metrics': {'tokens': None, 'elapsedMs': 1}})
-        texts = [json.dumps(results), json.dumps(usage), json.dumps(metrics), json.dumps(timed), *self.outputs]
+        self.assertFalse(usage['complete'], usage)
+        with mock.patch.dict(os.environ, {'CLAUDE_CONFIG_DIR': os.path.join(self.root, 'no-claude-config')}):
+            metrics = retro.fill_metrics(council.load_run(self.run_dir), {'metrics': {'tokens': None, 'elapsedMs': 1}})
+        texts =[json.dumps(results), json.dumps(usage), json.dumps(metrics), json.dumps(timed), *self.outputs]
         for c in calls:
             texts.append(json.dumps(c['argv']))
         for text in texts:
@@ -850,9 +857,13 @@ class OpenRouterUsage(Rig):
         self.assertIn('threadTotal', rec)
         self.assertIn('seconds', rec)
         usage = self.cli('usage', '--run-dir', self.run_dir, '--no-claude')
-        self.assertEqual(usage['byModel'][MODEL]['input_tokens'], 120)
-        metrics = retro.fill_metrics(council.load_run(self.run_dir), {'metrics': {'tokens': None, 'elapsedMs': 1}})
-        self.assertEqual(metrics['metrics']['tokens']['byModel'][MODEL]['output_tokens'], 30)
+        self.assertEqual((usage['byModel'][MODEL]['input'], usage['byVendor']['openrouter']['output'], usage['complete']), (120, 30, True), usage)
+        with mock.patch.dict(os.environ, {'CLAUDE_CONFIG_DIR': os.path.join(self.root, 'no-claude-config')}):
+            metrics = retro.fill_metrics(council.load_run(self.run_dir), {'metrics': {'tokens': None, 'elapsedMs': 1}})
+        tokens = metrics['metrics']['tokens']
+        self.assertEqual(tokens['byModel'][MODEL]['output'], 30)
+        # A native run's facts also count the workflow's own agents; none were found here, so it is partial.
+        self.assertEqual((tokens['complete'], tokens['missing'][0]['role']), (False, 'native'), tokens)
         for text in (council.read(os.path.join(self.run_dir, 'usage.jsonl')), json.dumps(result), json.dumps(usage), json.dumps(metrics)):
             for word in ('cost', 'total_cost_usd', '0.35'):
                 self.assertNotIn(word, text)

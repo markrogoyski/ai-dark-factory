@@ -41,20 +41,33 @@ it. Native workflows have no exact clock, so the helper appends `{at, event, job
 
 ## Tokens
 
-Both hosts use the same `records`/`byModel` format; older native facts are also accepted.
+Both hosts record tokens in one shape, the accountant's (`plugins/dark-factory/lib/usage.mjs`;
+[the fields](results.md#token-use)): per model, role and vendor, `{turns, input, cachedInput,
+cacheCreation, output, seconds}`, with `complete` and the `missing` turns.
 
-- **Codex host** (including runtime `"cli"`): records every turn, Claude CLI turns included.
+- **Codex host** (including runtime `"cli"`): every turn goes through the helper, which records
+  each one in `usage.jsonl`, Claude CLI turns included. A turn whose CLI reported no usage
+  (a Codex or Claude timeout, a lost envelope) is recorded with `missing` and its thread and time
+  window; the runner reads it back from the Codex rollout or the Claude transcript, or lists it
+  as missing. Before this, such a Codex turn was counted as zero and such a Claude turn was not
+  recorded at all.
 - **Native**: the result records `tokens: null`, since the workflow can't read files. The
-  evaluator reads `<runDir>/usage.jsonl`, which the helper writes only for external CLI turns
-  (Codex, Gemini, OpenRouter), and labels the metrics `tokenSource: "helper-usage"` and
-  `nativeClaudeTurnsIncluded: false`. That total omits every native Claude turn (author, setup,
-  relays, measurement transports), so it isn't comparable with a recorded one.
-  `dark-factory retro` adds those turns to Factory facts from Claude Code's saved transcripts;
-  facts that already carry tokens are kept as recorded.
+  evaluator fills it from `<runDir>/usage.jsonl` (the Codex, Gemini and OpenRouter turns the
+  relays ran) and from the workflow's Claude Code transcripts, which hold every native agent:
+  setup, author, reviewers, checkers, relays, intake (`tokenSource: "accountant"`,
+  `nativeClaudeTurnsIncluded: true` when they were found). Without the transcripts the total is
+  marked partial. `dark-factory retro` fills Factory facts the same way; facts that already
+  carry tokens are kept as recorded.
 
-Each group counts its `tokenSources`. Run-plan reports aggregate budget accounting separately;
-its child results keep these metrics and can be evaluated individually. Interrupted reservations
-are conservative limits, not measured usage or spend.
+Older results carry `{records, byModel}` of raw vendor counters, or `{external, claude}`; the
+evaluator reads them in the same shape and counts them as partial, since they could not say
+which turns they missed. Each group counts `tokenMeasuredRuns`, `tokenPartialRuns` and its
+`tokenSources`, and `perRun` gives the median and range (`{n, median, low, high}`) of each run's
+`input`, `cachedInput`, `output` and `elapsedMs`. `matchedTasks` cells sum the same per variant
+(`tokenRuns`, `tokenPartialRuns`, `input`, `cachedInput`, `output`, `timedRuns`, `elapsedMs`).
+Run-plan reports aggregate budget accounting separately; its child results keep these metrics
+and can be evaluated individually. Interrupted reservations are conservative limits, not
+measured usage or spend.
 
 ## Running the evaluator
 
@@ -150,6 +163,15 @@ Clones and records go under `~/.cache/dark-factory-bench` (`--root` or
     node tools/bench.mjs scan $(node tools/bench.mjs results)   # the contamination scan alone; writes nothing
     node plugins/dark-factory/bin/dark-factory-evaluate \
       --outcomes ~/.cache/dark-factory-bench/records/outcomes.json $(node tools/bench.mjs results)
+    node tools/bench.mjs results --summary                      # per variant: pass rates beside tokens and minutes
+
+- **results --summary** reads the same results and outcomes through the evaluator and prints one
+  row per variant: runs, ready, hidden-test passes of the graded runs, and per run the median and
+  range of tokens in, cached in, out and active minutes. `partial` is how many of the runs with a
+  token count miss turns (or predate the accountant), so their figures are lower bounds:
+
+      variant  runs  ready  hidden pass  tokens in, median (range)  cached in         out            partial  minutes
+      smoke    2     1      1/1          1.4M (500k-2.4M)           1.2M (372k-2.1M)  30k (14k-46k)  2/2      18 (6-30)
 
 - **prepare** makes `tasks/<id>/repo`: a fresh repository with only `base` fetched into it, no
   remote, tags or `FETCH_HEAD`, then checks that the fix commit, the hidden tests' fixed bytes and

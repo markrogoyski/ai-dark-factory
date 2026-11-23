@@ -157,6 +157,6 @@ function architectureResult(S, o) {
       'Each run starts from HEAD and stops on a dirty tree, so present each result as usual and wait for the user to commit it before the next milestone starts. ' +
       `Keep this run's directory until the milestones are done, since each milestone run reads the design from ${design}: \`${S.cli} cleanup --run-dir ${shp(S.run.runDir)}\` (without --all) removes the worktrees and keeps the room. ` +
       'Run `git status` in the main tree to confirm no seat touched it. ' +
-      `Codex and Gemini token usage: \`${S.cli} usage --run-dir ${shp(S.run.runDir)}\`.`,
+      `Token use of every model, the workflow's own Claude agents included: \`${S.cli} usage --run-dir ${shp(S.run.runDir)}\`.`,
   }
 }

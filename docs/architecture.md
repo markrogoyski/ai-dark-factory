@@ -98,6 +98,9 @@ relative to its real installed path, so prompts never depend on an install path.
 | `run-plan-runner.mjs` | run-plan's process, filesystem and Git adapter: delivery, commits, the journal |
 | `checkpoint.mjs` | resume |
 | `evaluate.mjs` | behind `bin/dark-factory-evaluate` |
+| `usage.mjs` | the token accountant: every turn's tokens by role and model, read back from the vendors' logs when a CLI reported none; behind `dark-factory usage` ([Token use](results.md#token-use)) |
+| `sessions.mjs` | where each CLI keeps its session logs (Codex rollouts, Claude transcripts, workflow transcript directories), shared with the benchmark's contamination scan |
+| `history.mjs` | past runs for `--explain`'s estimate ([Process controls](process-controls.md#explain-and-prepare)) |
 | `engine.mjs`, `engine-observations.mjs` | engine pinning and provider observations |
 | `policy.mjs` | generated from `src/lib/` by `make build` |
 

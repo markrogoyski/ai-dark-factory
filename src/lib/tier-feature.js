@@ -135,6 +135,6 @@ function featureResult(S, o) {
       deliveryNote(S, tag, W, 'The final change') +
       `The room (${S.run.room}) holds the full transcript. When the user is done with it, \`${S.cli} cleanup --run-dir ${shp(S.run.runDir)}\` ` +
       'removes the worktrees and snapshot refs and keeps the transcript; add --all to delete everything. ' +
-      `Codex and Gemini token usage: \`${S.cli} usage --run-dir ${shp(S.run.runDir)}\`.`,
+      `Token use of every model, the workflow's own Claude agents included: \`${S.cli} usage --run-dir ${shp(S.run.runDir)}\`.`,
   }
 }

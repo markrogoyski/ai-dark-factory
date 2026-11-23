@@ -8,6 +8,7 @@
 //   node tools/bench.mjs grade FILE... [--outcomes FILE]         hidden tests on each run's reviewed snapshot, and the contamination scan
 //   node tools/bench.mjs scan FILE...                             the contamination scan alone
 //   node tools/bench.mjs results [ID...]                          result files of the recorded runs, for the evaluator
+//   node tools/bench.mjs results --summary [ID...]                per variant: pass rates, and tokens and minutes per run
 // --bench DIR holds tasks/, variants.json and validations/ (default: bench/ in this checkout).
 // --root DIR holds clones and records (default: $DARK_FACTORY_BENCH_ROOT or ~/.cache/dark-factory-bench).
 import { createHash } from 'node:crypto'
@@ -17,6 +18,7 @@ import { homedir, platform, tmpdir } from 'node:os'
 import { basename, dirname, isAbsolute, join, posix, relative, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { GIT_REPO_ENV } from '../plugins/dark-factory/lib/engine.mjs'
+import { evaluateFiles } from '../plugins/dark-factory/lib/evaluate.mjs'
 import { defaultHomes, scanRun } from './bench-scan.mjs'
 
 const checkout = resolve(dirname(fileURLToPath(import.meta.url)), '..')
@@ -603,6 +605,29 @@ export function resultFiles(paths, ids = []) {
   return files
 }
 
+// One row per variant (the evaluator's group: host, workflow, tier, strategy, variant): how often it
+// was ready and passed the hidden tests, and what a run cost, so variants compare on both.
+export function variantSummary(paths, ids = []) {
+  const files = resultFiles(paths, ids)
+  if (!files.length) return []
+  const outcomesFile = join(paths.records, 'outcomes.json')
+  const groups = evaluateFiles(files, existsSync(outcomesFile) ? readJson(outcomesFile) : {}).groups
+  return Object.entries(groups).map(([group, g]) => ({ group, variant: group.split('/')[4], runs: g.runs, ready: g.ready,
+    hiddenPassed: g.hiddenTests.readyPassed + g.hiddenTests.notReadyPassed, hiddenGraded: g.hiddenTests.graded, contaminated: g.hiddenTests.contaminated,
+    tokenRuns: g.tokenMeasuredRuns, tokenPartialRuns: g.tokenPartialRuns, input: g.perRun.input, cachedInput: g.perRun.cachedInput, output: g.perRun.output,
+    minutes: g.perRun.elapsedMs && Object.fromEntries(Object.entries(g.perRun.elapsedMs).map(([k, v]) => [k, k === 'n' ? v : Math.round(v / 6e4)])) }))
+}
+
+export function variantTable(rows) {
+  const amount = n => n === null || n === undefined ? '-' : n < 1000 ? String(Math.round(n)) : n < 1e6 ? `${Math.round(n / 1e3)}k` : `${Math.round(n / 1e5) / 10}M`
+  const cell = (s, f) => s ? `${f(s.median)} (${f(s.low)}-${f(s.high)})` : '-'
+  const head = ['variant', 'runs', 'ready', 'hidden pass', 'tokens in, median (range)', 'cached in', 'out', 'partial', 'minutes']
+  const body = rows.map(r => [r.variant, r.runs, r.ready, r.hiddenGraded ? `${r.hiddenPassed}/${r.hiddenGraded}` : '-', cell(r.input, amount), cell(r.cachedInput, amount),
+    cell(r.output, amount), `${r.tokenPartialRuns}/${r.tokenRuns}`, cell(r.minutes, String)].map(String))
+  const widths = head.map((h, i) => Math.max(h.length, ...body.map(b => b[i].length)))
+  return [head, ...body].map(cols => cols.map((c, i) => c.padEnd(widths[i])).join('  ').trimEnd()).join('\n') + '\n'
+}
+
 // ---------------------------------------------------------------- command line
 
 function listTasks(paths) {
@@ -626,6 +651,9 @@ export const USAGE = `Usage: node tools/bench.mjs COMMAND [options]
   scan FILE...                           the contamination scan alone: did any agent touch the source repository, the
                                          records or the fix commit? Exits 0 when every run is clean, 2 otherwise
   results [ID...]                        the result file of every recorded run, one per line
+  results --summary [ID...]              one row per variant: runs, ready, hidden-test passes, and per run the median
+                                         and range of tokens in, cached and out (partial: runs whose count misses
+                                         turns) and of active minutes
 Options: --bench DIR (tasks/, variants.json, validations/; default bench/), --root DIR (clones and records;
 default $DARK_FACTORY_BENCH_ROOT or ~/.cache/dark-factory-bench). Then:
   dark-factory-evaluate --outcomes ROOT/records/outcomes.json $(node tools/bench.mjs results)
@@ -641,7 +669,7 @@ export function parseArgs(argv) {
     if (values.includes(name)) {
       if (argv[i + 1] === undefined || argv[i + 1].startsWith('--')) throw new Error(`${arg} needs a value`)
       out.flags[name] = argv[++i]
-    } else if (['force', 'yes', 'replace', 'help'].includes(name)) out.flags[name] = true
+    } else if (['force', 'yes', 'replace', 'help', 'summary'].includes(name)) out.flags[name] = true
     else throw new Error(`Unknown option: ${arg}`)
   }
   return out
@@ -653,6 +681,7 @@ export async function main(argv) {
   const paths = benchPaths({ bench: flags.bench, root: flags.root })
   const print = value => process.stdout.write(JSON.stringify(value, null, 2) + '\n')
   if (command === 'list') { print(listTasks(paths)); return 0 }
+  if (command === 'results' && flags.summary) { process.stdout.write(variantTable(variantSummary(paths, rest))); return 0 }
   if (command === 'results') { process.stdout.write(resultFiles(paths, rest).map(f => f + '\n').join('')); return 0 }
   if (!rest.length) throw new Error(`${command} needs ${['grade', 'scan'].includes(command) ? 'result files' : 'a task ID'}`)
   if (command === 'prepare') { print(prepare(paths, rest[0], { force: !!flags.force })); return 0 }

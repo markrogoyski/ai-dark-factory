@@ -19,6 +19,37 @@ $dark-factory --strategy pair Implement the retry policy
 - **Explicit Pair, Council or Ensemble** runs no model turns, setup, preflight or verification, and
   claims no readiness.
 
+The plan's `estimate` says what comparable past runs spent: the median and range of their tokens
+(in, cached, out) and active minutes, with the number of runs it rests on:
+
+```text
+Estimate from 4 past pair runs with the same workflow, tier, strategy and lineup: median 2.1M in
+(1.9M cached) / 44k out, range 1.4M–3.1M in; median 27 min active, range 18–41 min.
+```
+
+- **Source**: the standalone runner's own records, `<repo>/.council/host-*/result.json` (a
+  directory with `host.json`), whose metrics hold the exact active time and the accountant's
+  token count, and whose plan names the lineup. `DARK_FACTORY_HISTORY` adds directories
+  (colon-separated) searched for the same files: other repositories, or a tree of them such as
+  the benchmark's `~/.cache/dark-factory-bench/work`. Native Claude Code runs write no result file,
+  and their active time is rebuilt from the helper's timeline, so they are not used; explanations,
+  `--prepare` and preflight stops ran nothing and are skipped.
+- **Comparable**: the same workflow, tier, strategy and lineup (participants / reviewers by model);
+  with fewer than three such runs, the same workflow, tier and strategy; then the same workflow.
+  The narrowest comparison with three runs is used; with fewer at every level, the one with the
+  most runs, called a small sample.
+- **Partial counts**: a run whose token count lists turns it missed is still included, and the
+  estimate says how many there are ("misses turns, so the true figures are higher"); so is one
+  counted before the accountant, which cannot say whether it missed any ("counted before every
+  turn was, and may miss some").
+- **No history**: `No history: no earlier pair run with a recorded result was found.` In Claude
+  Code the workflow can't read files, so the estimate says so and points at the standalone
+  runner's `--explain`.
+
+The history is read by the runner (`lib/history.mjs`) only when a run explains, and the estimate is
+computed by the engine (`src/lib/cost.js`). It is not a forecast: retries, findings and escalation
+move the cost, and nothing is priced.
+
 `--prepare` is the checking counterpart: no model turn, no run directory, no account change. It:
 
 - lists each vendor reachable from the request with the roles it could fill (an OpenRouter seat

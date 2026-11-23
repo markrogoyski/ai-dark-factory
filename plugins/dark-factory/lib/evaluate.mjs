@@ -2,20 +2,14 @@
 import { readFileSync, existsSync, writeFileSync, readdirSync, statSync } from 'node:fs'
 import { resolve, join } from 'node:path'
 import { guardEngine, environmentPin } from './engine.mjs'
+import { accountRun, tokenTotals, USAGE_FIELDS } from './usage.mjs'
 
-export function tokenUsage(directories) {
-  const byModel = {}
-  let records = 0
-  for (const dir of new Set(directories)) {
-    const path = join(dir, 'usage.jsonl')
-    if (!existsSync(path)) continue
-    for (const line of readFileSync(path, 'utf8').split('\n').filter(Boolean)) {
-      const r = JSON.parse(line), row = byModel[r.model] || (byModel[r.model] = {})
-      for (const [key, value] of Object.entries(r.usage || {})) if (Number.isFinite(value) && value >= 0) row[key] = (row[key] || 0) + value
-      records++
-    }
-  }
-  return records ? { records, byModel } : null
+// Median and range of a list of numbers, or null for none.
+export function spread(values) {
+  const xs = values.filter(Number.isFinite).sort((a, b) => a - b)
+  if (!xs.length) return null
+  const mid = (xs.length - 1) / 2
+  return { n: xs.length, median: (xs[Math.floor(mid)] + xs[Math.ceil(mid)]) / 2, low: xs[0], high: xs.at(-1) }
 }
 
 // An outcome is a post-delivery observation ({status: passed|regression, evidence}, the original
@@ -61,7 +55,8 @@ export function summarize(results) {
     if (!m || m.version !== 1) throw new Error(`Missing supported metrics in ${source}`)
     const key = [m.host, m.workflow, m.tier || '-', m.strategy, m.variant || 'default', m.scope || 'complete'].join('/')
     const group = groups[key] || (groups[key] = { runs: 0, ready: 0, delivered: 0, deliveryFailed: 0, deliveryUnknown: 0, postDeliveryObserved: 0, postDeliveryRegressions: 0, escalated: 0,
-      turns: 0, timedRuns: 0, elapsedMs: 0, elapsedSources: {}, failedTurns: 0, candidates: 0, readyCandidates: 0, runsWithReadyCandidate: 0, findingsByStage: {}, tokensByModel: {}, tokenMeasuredRuns: 0, tokenSources: {}, taskIds: new Set(),
+      turns: 0, timedRuns: 0, elapsedMs: 0, elapsedSources: {}, failedTurns: 0, candidates: 0, readyCandidates: 0, runsWithReadyCandidate: 0, findingsByStage: {}, tokensByModel: {}, tokenMeasuredRuns: 0, tokenPartialRuns: 0, tokenSources: {}, taskIds: new Set(),
+      perRunValues: { input: [], cachedInput: [], output: [], elapsedMs: [] },
       hiddenTests: { graded: 0, ungraded: 0, readyPassed: 0, readyFailed: 0, notReadyPassed: 0, notReadyFailed: 0, contaminated: 0, scanPartial: 0, unscanned: 0 } })
     group.runs++; group.ready += m.readiness === 'ready' ? 1 : 0
     group.turns += m.turns || 0; group.failedTurns += m.failedTurns || 0; group.escalated += m.escalated ? 1 : 0
@@ -70,6 +65,7 @@ export function summarize(results) {
     // Older native facts estimated wall time from run.json mtime, including idle resumes.
     if (m.elapsedFrom !== 'setup' && m.elapsedMs !== null && Number.isFinite(m.elapsedMs)) {
       group.timedRuns++; group.elapsedMs += m.elapsedMs
+      group.perRunValues.elapsedMs.push(m.elapsedMs)
       const source = m.elapsedSource || 'recorded'
       group.elapsedSources[source] = (group.elapsedSources[source] || 0) + 1
     }
@@ -96,8 +92,15 @@ export function summarize(results) {
       group.taskIds.add(m.taskId)
       const taskKey = m.taskId + (m.repositoryHead ? '@' + m.repositoryHead : '@revision-unknown')
       const cell = paired[taskKey] || (paired[taskKey] = {})
-      const variant = cell[key] || (cell[key] = { runs: 0, ready: 0, turns: 0, hiddenGraded: 0, hiddenPassed: 0, hiddenContaminated: 0 })
+      const variant = cell[key] || (cell[key] = { runs: 0, ready: 0, turns: 0, hiddenGraded: 0, hiddenPassed: 0, hiddenContaminated: 0,
+        tokenRuns: 0, tokenPartialRuns: 0, input: 0, cachedInput: 0, output: 0, timedRuns: 0, elapsedMs: 0 })
       variant.runs++; variant.ready += m.readiness === 'ready' ? 1 : 0; variant.turns += m.turns || 0
+      const counted = tokenTotals(m.tokens, m)
+      if (counted) {
+        variant.tokenRuns++; if (!counted.complete) variant.tokenPartialRuns++
+        for (const field of ['input', 'cachedInput', 'output']) variant[field] += counted.total[field]
+      }
+      if (m.elapsedFrom !== 'setup' && Number.isFinite(m.elapsedMs)) { variant.timedRuns++; variant.elapsedMs += m.elapsedMs }
       if (contaminated) variant.hiddenContaminated++
       else if (hiddenTest && hiddenTest.status !== 'ungraded') { variant.hiddenGraded++; variant.hiddenPassed += hiddenTest.status === 'passed' ? 1 : 0 }
     }
@@ -105,19 +108,28 @@ export function summarize(results) {
       const row = group.findingsByStage[stage] || (group.findingsByStage[stage] = {})
       for (const [field, value] of Object.entries(values)) row[field] = (row[field] || 0) + value
     }
-    const tokenGroups = m.tokens?.byModel ? [m.tokens.byModel] : [m.tokens?.external, m.tokens?.claude].filter(Boolean)
-    if (tokenGroups.some(models => Object.keys(models).length)) {
+    // Every recorded shape is read as {input, cachedInput, cacheCreation, output} per model; a total
+    // the accountant could not complete, or an older one that could not say, counts as partial.
+    const counted = tokenTotals(m.tokens, m)
+    if (counted) {
       group.tokenMeasuredRuns++
-      const source = m.tokenSource || 'recorded'
+      if (!counted.complete) group.tokenPartialRuns++
+      const source = m.tokenSource || (m.tokens?.version === 2 ? 'accountant' : 'recorded')
       group.tokenSources[source] = (group.tokenSources[source] || 0) + 1
-      for (const models of tokenGroups) for (const [model, usage] of Object.entries(models)) {
-        const row = group.tokensByModel[model] || (group.tokensByModel[model] = {})
-        for (const [field, value] of Object.entries(usage)) if (!['turns', 'messages'].includes(field) && Number.isFinite(value) && value >= 0) row[field] = (row[field] || 0) + value
+      for (const [model, usage] of Object.entries(counted.byModel)) {
+        const row = group.tokensByModel[model] || (group.tokensByModel[model] = { turns: 0, ...Object.fromEntries(USAGE_FIELDS.map(f => [f, 0])) })
+        row.turns += usage.turns || 0
+        for (const field of USAGE_FIELDS) row[field] += usage[field] || 0
       }
+      for (const field of ['input', 'cachedInput', 'output']) group.perRunValues[field].push(counted.total[field])
     }
   }
   for (const group of Object.values(groups)) {
     group.taskIds = [...group.taskIds].sort()
+    // Cost per run, to compare variants on what they spend: median and range of each run's tokens
+    // (partial totals included, and counted in tokenPartialRuns) and active time.
+    group.perRun = Object.fromEntries(Object.entries(group.perRunValues).map(([field, values]) => [field, spread(values)]))
+    delete group.perRunValues
     group.turnsPerReadyResult = group.ready ? group.turns / group.ready : null
     group.turnsPerReadyCandidate = group.readyCandidates ? group.turns / group.readyCandidates : null
     group.readyRate = group.ready / group.runs
@@ -129,7 +141,7 @@ export function summarize(results) {
       escapedDefectRate: readyGraded ? h.readyFailed / readyGraded : null, falseBlockRate: notReadyGraded ? h.notReadyPassed / notReadyGraded : null })
   }
   return { version: 1, runs: seen.size, groups, matchedTasks: paired,
-    interpretation: 'Compare repeated runs on the same task IDs and repository revisions. Readiness is process evidence, not proof of correctness. Delivery failures are measured only when delivery.json exists; missing token, time and dollar costs remain unknown, and helper-usage token totals (tokenSources) omit native Claude turns. Findings may overlap across reviewers. hiddenTests grades each run\'s reviewed snapshot, ready or not, against tests the run never saw: readyFailed (escapedDefects) were ready but wrong, notReadyPassed (falseBlocks) were held back but right. A run whose agents touched the task\'s source repository, the bench records or the fix commit is contaminated: it is counted in hiddenTests.contaminated and left out of the 2x2 and its rates; scanPartial graded runs had a scan that could not read every record, and unscanned ones were graded before the scan existed. No default tuning is performed.' }
+    interpretation: 'Compare repeated runs on the same task IDs and repository revisions. Readiness is process evidence, not proof of correctness. Delivery failures are measured only when delivery.json exists; missing token, time and dollar costs remain unknown. Token totals are {input, cachedInput, cacheCreation, output} per model (input includes cached reads and cache writes); tokenPartialRuns counts runs whose total misses turns (tokens.missing names them) or predates the accountant, so their true use is higher. perRun gives the median and range of each run of tokens and active time, for comparing variants on cost. Findings may overlap across reviewers. hiddenTests grades each run\'s reviewed snapshot, ready or not, against tests the run never saw: readyFailed (escapedDefects) were ready but wrong, notReadyPassed (falseBlocks) were held back but right. A run whose agents touched the task\'s source repository, the bench records or the fix commit is contaminated: it is counted in hiddenTests.contaminated and left out of the 2x2 and its rates; scanPartial graded runs had a scan that could not read every record, and unscanned ones were graded before the scan existed. No default tuning is performed.' }
 }
 
 // Native results have no exact clock; the helper's timeline gives their active time. Mirrors
@@ -159,10 +171,10 @@ export function timelineElapsed(runDir) {
 }
 
 // A native workflow can read no files, so its result has no clock and tokens: null. Fill both from
-// what the helper wrote to the run directory. The Codex host's recorded values always win. The
-// helper's usage.jsonl holds only the external CLI turns (Codex, Gemini), not the native Claude
-// turns, so those totals are labelled and must not be read as the run's complete usage.
-export function fillNativeMetrics(result) {
+// what the helper wrote to the run directory and, for the workflow's own Claude turns, from its
+// Claude Code transcripts (lib/usage.mjs). The Codex host's recorded values always win. A total
+// without those transcripts is marked partial (tokens.complete false, tokens.missing says why).
+export function fillNativeMetrics(result, { homes } = {}) {
   const m = result?.metrics
   if (!m || m.host === 'codex') return result
   if (m.elapsedMs === null || m.elapsedMs === undefined || m.elapsedFrom === 'setup') {
@@ -171,8 +183,9 @@ export function fillNativeMetrics(result) {
   }
   if ((m.tokens === null || m.tokens === undefined) && result.runDir) {
     try {
-      const tokens = tokenUsage([result.runDir])
-      if (tokens) Object.assign(m, { tokens, tokenSource: 'helper-usage', nativeClaudeTurnsIncluded: false })
+      const { turns, ...tokens } = accountRun({ runDirs: [result.runDir], native: true, ...(homes ? { homes } : {}) })
+      if (tokens.problems?.length && !tokens.records) m.tokenError = tokens.problems.join('; ')
+      else if (tokens.records) Object.assign(m, { tokens, tokenSource: 'accountant', nativeClaudeTurnsIncluded: !!tokens.workflowDirs?.length })
     } catch (error) { m.tokenError = error.message }
   }
   return result

@@ -3,9 +3,31 @@
 // parallel() and log(), and the state object `S` from boot; the decisions they act on are computed
 // in lib/.
 
-// A milestone of the run: logged now, for the live progress view, and kept for the report.
+// A milestone of the run: logged now, for the live progress view, and kept for the report. The
+// logged line also carries the running token total; the story (which prompts quote) does not.
 function milestone(line, prefix = '') {
-  log(`${prefix}${tellStory(S, line)}`)
+  const cost = S.workflowName === 'council' ? '' : usageLine(S, runUsage())
+  log(`${prefix}${tellStory(S, line)}${cost ? ` · ${cost}` : ''}`)
+}
+
+// Claude Code's budget meter when the workflow started: its output tokens spent this turn.
+const meterStart = budgetSpent()
+function budgetSpent() {
+  try { return typeof budget !== 'undefined' && budget && typeof budget.spent === 'function' ? budget.spent() : null } catch { return null }
+}
+
+// The token use so far: the standalone runner's running total, or Claude Code's budget meter
+// (output only). Null when the runtime offers neither.
+function runUsage() {
+  if (hostRuntime?.usage) { try { return hostRuntime.usage() } catch { return null } }
+  const spent = budgetSpent()
+  return spent === null || meterStart === null ? null : { meter: Math.max(0, spent - meterStart) }
+}
+
+// The past runs --explain compares with, from the runtime; null where none can be read.
+function pastRuns() {
+  if (!hostRuntime?.history) return null
+  try { return hostRuntime.history() } catch { return null }
 }
 
 function requestClock() {
@@ -44,6 +66,11 @@ async function controlledRun(work) {
   withdrawResume(result)
   result.plan = result.plan || executionPlan(S)
   result.metrics = evaluationFacts(S, result, requestControl.started !== null ? hostRuntime.now() - requestControl.started : null, requestControl.turns)
+  // The run's token use by model, at its end (retro included), in the report; not for the council.
+  if (S.workflowName !== 'council' && result.report && typeof result.report.markdown === 'string') {
+    const section = usageSection(S, runUsage())
+    if (section) result.report = { ...result.report, markdown: `${result.report.markdown}${section}` }
+  }
   if ((S.factory || S.pairOptions) && result.runDir) {
     result.artifactType = 'dark-factory-result'
     result.artifactVersion = 1

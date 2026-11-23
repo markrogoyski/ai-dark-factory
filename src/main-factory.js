@@ -32,11 +32,11 @@ async function factoryRun() {
     const carried = { ...carriedState(S), factory: S.factory }
     S = newState(factoryPairConfig(S))
     Object.assign(S, carried, { pair: newPairState() })
-    if (S.raw.explain) return explanation(S)
+    if (S.raw.explain) return explanation(S, pastRuns())
     const result = await pairRetro(await pairRun())
     return { ...result, workflow: 'factory', tier, strategy: 'pair', factory: carried.factory, retro: result.retro || null }
   }
-  if (S.raw.explain) return explanation(S)
+  if (S.raw.explain) return explanation(S, pastRuns())
   if (tier === 'simple') return await simpleRun()
   return routedResult(S, await tierRun(tier))
 }

@@ -277,7 +277,9 @@ sys.exit(int(os.environ.get('CLAUDE_TEST_EXIT', '0')))
         out_dir = os.path.join(self.root, 'retros2')
         args = argparse.Namespace(summary=False, run_dir=self.root, facts_only=True, payload_file=payload_file,
                                   expect=council.prompt_hash(payload), transcript_wait=10, out_dir=out_dir)
-        with patch_cli('claude_usage', return_value={'byModel': {'claude-opus': {'messages': 3}}}), \
+        # Without node the helper reads usage.jsonl and the transcripts itself, in the older shape.
+        with patch_cli('node_usage', return_value=None), \
+                patch_cli('claude_usage', return_value={'byModel': {'claude-opus': {'messages': 3}}}), \
                 patch_cli('emit'):
             council.cmd_retro(args)
         saved = json.loads(council.read(os.path.join(out_dir, 'run-2-' + os.path.basename(self.cwd) + '.facts.json')))['metrics']

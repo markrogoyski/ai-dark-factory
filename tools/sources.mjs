@@ -17,6 +17,7 @@ export const LIB = [
   'src/lib/controls.js',
   'src/lib/repair-prompts.js',
   'src/lib/evaluation.js',
+  'src/lib/cost.js',
   'src/lib/ensemble.js',
 ]
 // The runtime files a target is assembled from. Boot differs per workflow; the rest is shared.

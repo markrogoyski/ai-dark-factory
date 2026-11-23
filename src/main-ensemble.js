@@ -1,4 +1,4 @@
-return await controlledRun(async () => S.raw.explain ? explanation(S) : ensembleRun())
+return await controlledRun(async () => S.raw.explain ? explanation(S, pastRuns()) : ensembleRun())
 
 async function ensembleRun() {
   const stop = await councilSetup()

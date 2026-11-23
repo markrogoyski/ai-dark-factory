@@ -1,14 +1,38 @@
-"""Token-usage accounting (usage)."""
+"""Token-usage accounting (usage). The accountant is lib/usage.mjs, which also reads the vendors'
+own session logs for turns their CLI reported no usage for, and a native workflow's own agents;
+this module runs it, and keeps the older reading for a machine without node (marked partial)."""
 
 import json
 import os
 import re
+import shutil
+import subprocess
 
 from . import common
-from .common import load_run, read
+from .common import SELF, load_run, read
+
+ACCOUNTANT = os.path.join(os.path.dirname(SELF), '..', 'lib', 'usage.mjs')
+
+
+def node_usage(run_dirs, native=True, turns=False):
+    """lib/usage.mjs's report for these run directories, or None when node can't run it."""
+    node = shutil.which('node')
+    if not node or not os.path.isfile(ACCOUNTANT):
+        return None
+    argv = [node, ACCOUNTANT] + [x for d in run_dirs for x in ('--run-dir', d)] + (['--native'] if native else []) + ([] if turns else ['--no-turns'])
+    try:
+        r = subprocess.run(argv, capture_output=True, text=True, timeout=300, close_fds=True)
+        out = json.loads(r.stdout.strip().splitlines()[-1])
+    except (OSError, ValueError, IndexError, subprocess.SubprocessError):
+        return None
+    return out if isinstance(out, dict) and out.get('version') == 2 else None
 
 
 def cmd_usage(a):
+    report = node_usage([a.run_dir], native=not a.no_claude, turns=True)
+    if report is not None:
+        common.emit({'status': 'ok', **report})
+        return
     path = os.path.join(a.run_dir, 'usage.jsonl')
     by_model = {}
     if os.path.exists(path):
@@ -21,7 +45,10 @@ def cmd_usage(a):
             m['seconds'] = round(m['seconds'] + rec.get('seconds', 0), 1)
             for k, v in rec.get('usage', {}).items():
                 m[k] = m.get(k, 0) + v
-    out = {'status': 'ok', 'byModel': by_model}
+    # Without node: the helper's records as they are, and Claude agents found by the run directory
+    # in their transcripts. Turns whose CLI reported no usage are not read back, so it is partial.
+    out = {'status': 'ok', 'complete': False, 'missing': [{'reason': 'node is not available to run lib/usage.mjs; turns without recorded usage are not read back from their session logs'}],
+           'byModel': by_model}
     if not a.no_claude:
         out['claude'] = claude_usage(load_run(a.run_dir))
     common.emit(out)

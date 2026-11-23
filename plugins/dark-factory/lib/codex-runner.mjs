@@ -1,5 +1,6 @@
 // The same generated workflow runs in Claude's harness or here. Only the runtime changes.
-import { tokenUsage } from './evaluate.mjs'
+import { accountRun, liveUsage } from './usage.mjs'
+import { runHistory } from './history.mjs'
 import { digest, fingerprint, loadCheckpoint, journalRuntime, readEventLog, writeJsonAtomic } from './checkpoint.mjs'
 import { spawn, execFileSync } from 'node:child_process'
 import { appendFileSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync, realpathSync, existsSync, readdirSync, lstatSync, openSync, closeSync, unlinkSync } from 'node:fs'
@@ -462,7 +463,10 @@ export async function runWorkflow(options, dependencies = {}) {
 
   async function executeHost() {
     const events = join(hostRunDir, 'events.jsonl')
+    // Each turn's role by job key, for the running token total (earlier attempts' turns included).
+    const roles = new Map(readEventLog(events).filter(e => e.type === 'turn.started' && e.job).map(e => [e.job, e.role]))
     const emit = event => {
+      if (event.type === 'turn.started' && event.job) roles.set(event.job, event.role)
       const record = { at: new Date().toISOString(), ...event }
       appendFileSync(events, JSON.stringify(record) + '\n')
       ;(dependencies.progress || (line => process.stderr.write(line + '\n')))(JSON.stringify(record))
@@ -536,6 +540,13 @@ export async function runWorkflow(options, dependencies = {}) {
     const rawRuntime = createRuntime({ repo, hostRunDir, ...runtimeOptions, admission,
       initialSequence: saved?.runtime.sequence || 0, attempt, elapsedBefore, spentBefore, maxTurns: args.maxTurns, gitDirs: [...new Set([commonGit, worktreeGit])], emit, signal: controller.signal, ...dependencies.runtime })
     const runtime = journalRuntime(rawRuntime, { repo, hostRunDir, args, engine, executor, saved, emit })
+    // The running token total for the workflow's milestones: each turn's helper record, read as it
+    // is appended (a resumed run starts from the earlier attempts' records).
+    const live = liveUsage({ roles: job => roles.get(job) || null })
+    runtime.usage = () => live(runtime.runDirectories())
+    // --explain: the comparable past runs this repository's .council (and DARK_FACTORY_HISTORY) holds.
+    // Read only when the workflow asks (an explanation), so a run that does not explain pays nothing.
+    runtime.history = () => (dependencies.history || runHistory)({ repo, env: process.env, exclude: hostRunDir })
     let timedOut = false
     const interrupt = () => { runtime.cancel(); controller.abort() }
     const timer = args.maxRunMin ? setTimeout(() => { timedOut = true; interrupt() }, Math.max(1, positiveInteger(args.maxRunMin, 'maxRunMin') * 60000 - elapsedBefore)) : null
@@ -574,7 +585,14 @@ export async function runWorkflow(options, dependencies = {}) {
       strategy: options.workflow === 'pair' ? 'pair' : args.strategy || 'unknown',
       readiness: result.final?.readiness?.state || 'incomplete', findingsByStage: null, escalated: null,
       detailIncomplete: true, tokens: null, cost: null, limits: { maxTurns: args.maxTurns || null, maxRunMin: args.maxRunMin || null } }
-    try { result.metrics.tokens = tokenUsage(runtime.runDirectories()) } catch (error) { result.metrics.tokenError = error.message }
+    // Every turn of every run directory, with turns whose CLI reported no usage read back from the
+    // vendor's session log, or listed in tokens.missing (tokens.complete false).
+    try {
+      const { turns, ...tokens } = accountRun({ runDirs: runtime.runDirectories(), hostRunDir, roles, homes: dependencies.homes })
+      // Each turn's line (role, seat, model, tokens, seconds, source) goes beside the result.
+      writeJsonAtomic(join(hostRunDir, 'tokens.json'), { ...tokens, turns }, 2)
+      result.metrics.tokens = tokens.records || tokens.missing.length ? { ...tokens, turnsFile: join(hostRunDir, 'tokens.json') } : null
+    } catch (error) { result.metrics.tokenError = error.message }
     const history = readEventLog(events)
     result.metrics.turnsByRole = history.filter(e => e.type === 'turn.started').reduce((roles, e) => { roles[e.role || 'agent'] = (roles[e.role || 'agent'] || 0) + 1; return roles }, {})
     result.metrics.failedTurns = history.filter(e => e.type === 'turn.failed' || (e.type === 'turn.completed' && e.status !== 'done')).length
