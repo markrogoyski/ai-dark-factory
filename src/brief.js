@@ -1,6 +1,7 @@
 // Factory's pre-intake turns. Decisions stay in the workflow. The file helper
 // snapshots the document before any implementation worktree exists.
 const BRIEF_TEXT = { type: 'string' }
+const BRIEF_DELEGATED = ['testing', 'implementation', 'internal design']
 const BRIEF_CONTENT = { type: 'object', properties: {
   outcome: BRIEF_TEXT, purpose: BRIEF_TEXT, scope: BRIEF_TEXT, nonGoals: BRIEF_TEXT,
   acceptanceExamples: { type: 'array', items: BRIEF_TEXT }, verification: BRIEF_TEXT,
@@ -42,7 +43,7 @@ function acceptBrief(saved, state) {
       doc?.version !== 1 || doc.state !== state ||
       !Array.isArray(doc.decisions) || !doc.decisions.every(d => d && [d.id, d.question, d.answer].every(nonemptyBriefText)) ||
       !validBriefContent(doc.brief)) return failure(S, 'failed', saved?.error || 'Factory could not read or save a valid goal brief.')
-  S.factory.brief = doc
+  S.factory.brief = { ...doc, brief: { ...doc.brief, delegated: delegatedWithPolicy(doc.brief.delegated) } }
   S.factory.briefFile = saved.briefFile
   return null
 }
@@ -54,7 +55,15 @@ function nonemptyBriefText(value) {
 function validBriefContent(b) {
   return b && ['outcome', 'purpose', 'scope', 'nonGoals', 'verification'].every(key => nonemptyBriefText(b[key])) &&
     Array.isArray(b.acceptanceExamples) && b.acceptanceExamples.length && b.acceptanceExamples.every(nonemptyBriefText) &&
-    Array.isArray(b.delegated) && b.delegated.every(nonemptyBriefText) && ['testing', 'implementation', 'internal design'].every(item => b.delegated.includes(item))
+    Array.isArray(b.delegated) && b.delegated.every(nonemptyBriefText)
+}
+
+// Delegating testing, implementation and internal design is the factory's policy, not something
+// a model must recite: an entry that opens with one ("testing — write the regression first")
+// counts, and a missing one is added rather than failing the run.
+function delegatedWithPolicy(list) {
+  const missing = BRIEF_DELEGATED.filter(d => !list.some(item => item.trim().toLowerCase().startsWith(d)))
+  return [...list, ...missing]
 }
 
 async function shapeBrief() {

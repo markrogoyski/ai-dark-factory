@@ -7,6 +7,15 @@ const task = 'Show the retry count in the debug log.'
 const outcome = 'Log one entry per retry.'
 const purpose = 'Help an operator diagnose repeated requests.'
 
+test('brief accepts elaborated delegations and adds a missing one', async () => {
+  const elaborated = ['testing — write the regression first', 'Implementation: follow the prototype']
+  const { result, calls } = await simulate('factory', { task }, { modify(v, r) {
+    if (r.label === 'brief shape' || r.label === 'brief challenge') v.brief.delegated = elaborated
+  } })
+  assert.deepEqual(calls.slice(0, 3).map(r => r.label), ['brief shape', 'brief challenge', 'intake'])
+  assert.deepEqual(result.brief.brief.delegated, [...elaborated, 'internal design'])
+})
+
 test('brief clear goal reaches independent and Pair judgments', async () => {
   for (const pair of [false, true]) {
     const { result, calls } = await simulate('factory', { task }, { pair, modify(v, r) {

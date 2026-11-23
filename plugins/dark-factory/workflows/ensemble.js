@@ -2086,7 +2086,7 @@ function readiness(S, L, finalRound, raters, reviews, gaps = []) {
 // rewritten or dropped through a Pair decision is theirs to change. [] when everything was kept.
 function setupLosses(S, criteria, verify) {
   const lost = []
-  if (S.factory?.briefFile && !S.refs.some(r => r.source === S.factory.briefFile)) lost.push('the goal brief snapshot')
+  if (S.factory?.briefFile && !S.refs.some(r => isBriefRef(S, r))) lost.push('the goal brief snapshot')
   const want = String(S.raw.verify || '').trim()
   const got = String(verify || '').trim()
   if (want && got !== want) lost.push(`the verification command \`${oneLine(want, 200)}\` (setup returned ${got ? `\`${oneLine(got, 200)}\`` : 'none'})`)
@@ -3722,14 +3722,23 @@ function goalBriefBlock(S, full = false) {
   return '\n# Goal brief\n\n' + lines.join('\n') + '\n'
 }
 
+// Setup copies each snapshot's source path back by hand, and a long path can come back altered
+// (host-x/BRIEF.json returned as host-x-fix/BRIEF.json), so the brief's snapshot is also
+// recognised by the path init gives it in the run's refs/.
+function isBriefRef(S, r) {
+  const file = S.factory?.briefFile
+  if (!file || !r) return false
+  return r.source === file || (!!S.run?.runDir && r.path === `${S.run.runDir}/refs/${file.slice(file.lastIndexOf('/') + 1)}`)
+}
+
 // The generated brief snapshot is additional to the user's plan documents.
 function planReferenceCount(S) {
-  return S.factory?.briefFile ? S.refs.filter(r => r.source !== S.factory.briefFile).length : S.refs.length
+  return S.factory?.briefFile ? S.refs.filter(r => !isBriefRef(S, r)).length : S.refs.length
 }
 
 function withGoalBrief(S, result) {
   if (!S.factory?.brief) return result
-  const snapshot = S.refs.find(r => r.source === S.factory.briefFile)
+  const snapshot = S.refs.find(r => isBriefRef(S, r))
   const briefFile = snapshot?.path || S.factory.briefFile
   const entry = goalBriefBlock(S, true).replace('\n# Goal brief\n\n', '').trimEnd() + '\nBrief file: ' + briefFile
   let markdown = result.report?.markdown || ''

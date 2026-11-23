@@ -1373,6 +1373,20 @@ describe('the factory', () => {
     assert.deepEqual(L.setupLosses(S, [kept[0]], 'make test && make lint'), [])
   })
 
+  test('the brief snapshot is recognised by its refs/ path when setup misquotes its source', () => {
+    const { L, S } = simpleState()
+    S.run = { ...S.run, runDir: '/r/.council/host-x-fix' }
+    S.factory = { briefFile: '/r/.council/host-x/BRIEF.json' }
+    const plan = { source: '/docs/PLAN.md', path: '/r/.council/host-x-fix/refs/PLAN.md' }
+    const misquoted = { source: '/r/.council/host-x-fix/BRIEF.json', path: '/r/.council/host-x-fix/refs/BRIEF.json' }
+    S.refs = [plan, misquoted]
+    assert.deepEqual(L.setupLosses(S, [], ''), [])
+    assert.equal(L.planReferenceCount(S), 1)
+    S.refs = [plan]
+    assert.deepEqual(L.setupLosses(S, [], ''), ['the goal brief snapshot'])
+    assert.equal(L.isBriefRef(S, { source: '/elsewhere/BRIEF.json', path: '/other/refs/BRIEF.json' }), false)
+  })
+
   test('escalationBrief: the evidence, never the earlier change', () => {
     const { L, S } = simpleState()
     addItem(L, S, { round: 'H', author: 'XR', kind: 'finding', target: 'A', severity: 'major', status: 'verified', statement: 'counts from 0', evidence: 'TXR1' })

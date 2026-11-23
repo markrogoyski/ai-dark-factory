@@ -2120,7 +2120,7 @@ function readiness(S, L, finalRound, raters, reviews, gaps = []) {
 // rewritten or dropped through a Pair decision is theirs to change. [] when everything was kept.
 function setupLosses(S, criteria, verify) {
   const lost = []
-  if (S.factory?.briefFile && !S.refs.some(r => r.source === S.factory.briefFile)) lost.push('the goal brief snapshot')
+  if (S.factory?.briefFile && !S.refs.some(r => isBriefRef(S, r))) lost.push('the goal brief snapshot')
   const want = String(S.raw.verify || '').trim()
   const got = String(verify || '').trim()
   if (want && got !== want) lost.push(`the verification command \`${oneLine(want, 200)}\` (setup returned ${got ? `\`${oneLine(got, 200)}\`` : 'none'})`)
@@ -3756,14 +3756,23 @@ function goalBriefBlock(S, full = false) {
   return '\n# Goal brief\n\n' + lines.join('\n') + '\n'
 }
 
+// Setup copies each snapshot's source path back by hand, and a long path can come back altered
+// (host-x/BRIEF.json returned as host-x-fix/BRIEF.json), so the brief's snapshot is also
+// recognised by the path init gives it in the run's refs/.
+function isBriefRef(S, r) {
+  const file = S.factory?.briefFile
+  if (!file || !r) return false
+  return r.source === file || (!!S.run?.runDir && r.path === `${S.run.runDir}/refs/${file.slice(file.lastIndexOf('/') + 1)}`)
+}
+
 // The generated brief snapshot is additional to the user's plan documents.
 function planReferenceCount(S) {
-  return S.factory?.briefFile ? S.refs.filter(r => r.source !== S.factory.briefFile).length : S.refs.length
+  return S.factory?.briefFile ? S.refs.filter(r => !isBriefRef(S, r)).length : S.refs.length
 }
 
 function withGoalBrief(S, result) {
   if (!S.factory?.brief) return result
-  const snapshot = S.refs.find(r => r.source === S.factory.briefFile)
+  const snapshot = S.refs.find(r => isBriefRef(S, r))
   const briefFile = snapshot?.path || S.factory.briefFile
   const entry = goalBriefBlock(S, true).replace('\n# Goal brief\n\n', '').trimEnd() + '\nBrief file: ' + briefFile
   let markdown = result.report?.markdown || ''
@@ -8069,6 +8078,7 @@ async function architectureRun() {
 // Factory's pre-intake turns. Decisions stay in the workflow. The file helper
 // snapshots the document before any implementation worktree exists.
 const BRIEF_TEXT = { type: 'string' }
+const BRIEF_DELEGATED = ['testing', 'implementation', 'internal design']
 const BRIEF_CONTENT = { type: 'object', properties: {
   outcome: BRIEF_TEXT, purpose: BRIEF_TEXT, scope: BRIEF_TEXT, nonGoals: BRIEF_TEXT,
   acceptanceExamples: { type: 'array', items: BRIEF_TEXT }, verification: BRIEF_TEXT,
@@ -8110,7 +8120,7 @@ function acceptBrief(saved, state) {
       doc?.version !== 1 || doc.state !== state ||
       !Array.isArray(doc.decisions) || !doc.decisions.every(d => d && [d.id, d.question, d.answer].every(nonemptyBriefText)) ||
       !validBriefContent(doc.brief)) return failure(S, 'failed', saved?.error || 'Factory could not read or save a valid goal brief.')
-  S.factory.brief = doc
+  S.factory.brief = { ...doc, brief: { ...doc.brief, delegated: delegatedWithPolicy(doc.brief.delegated) } }
   S.factory.briefFile = saved.briefFile
   return null
 }
@@ -8122,7 +8132,15 @@ function nonemptyBriefText(value) {
 function validBriefContent(b) {
   return b && ['outcome', 'purpose', 'scope', 'nonGoals', 'verification'].every(key => nonemptyBriefText(b[key])) &&
     Array.isArray(b.acceptanceExamples) && b.acceptanceExamples.length && b.acceptanceExamples.every(nonemptyBriefText) &&
-    Array.isArray(b.delegated) && b.delegated.every(nonemptyBriefText) && ['testing', 'implementation', 'internal design'].every(item => b.delegated.includes(item))
+    Array.isArray(b.delegated) && b.delegated.every(nonemptyBriefText)
+}
+
+// Delegating testing, implementation and internal design is the factory's policy, not something
+// a model must recite: an entry that opens with one ("testing — write the regression first")
+// counts, and a missing one is added rather than failing the run.
+function delegatedWithPolicy(list) {
+  const missing = BRIEF_DELEGATED.filter(d => !list.some(item => item.trim().toLowerCase().startsWith(d)))
+  return [...list, ...missing]
 }
 
 async function shapeBrief() {
