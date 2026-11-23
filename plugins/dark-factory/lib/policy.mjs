@@ -3139,6 +3139,7 @@ function pairOutcomeFacts(S) {
   const byStage = stage => p.reviews.filter(r => r.stage === stage).length
   return `- Outcome: the pair strategy, ${o.author.name} authoring and ${o.reviewer.name} reviewing; ` +
     `${p.reviews.length} of at most ${o.maxReviews} reviews (design ${byStage('design')}${o.design !== false && o.maxDesignReviews ? `, asking the user after every ${o.maxDesignReviews} without approval` : ''}, code ${byStage('code')}), ended at the ${p.stage} stage` +
+    `${p.polish ? `; a polish pass on minor ${p.polish.minors.join(', ')}, ${p.polish.discarded ? `set aside (${oneLine(p.polish.discarded, 160)})` : 'kept'}` : ''}` +
     `${p.stop ? ` (${oneLine(p.stop, 200)})` : ''}. Findings: ${p.findings.length ? countsOf(p.findings, f => `${f.stage} ${f.severity} ${f.status}`) : 'none'}. ` +
     `Verification command: ${S.verify ? `\`${oneLine(S.verify, 200)}\`` : 'none'}.` +
     (p.asked?.length ? ` Questions for the user: ${p.asked.map(q => `${q.id} (about ${q.about}, asked in ${q.label})`).join(', ')}; ` +
@@ -4734,6 +4735,12 @@ function pairOpen(S) {
   return S.pair.findings.filter(f => f.status === 'open')
 }
 
+// The open findings that hold the work: blocker and major ones, and at the design stage only those
+// the design review filed.
+function pairBlocking(S) {
+  return pairOpen(S).filter(f => f.severity !== 'minor' && (S.pair.stage === 'code' || f.stage === 'design'))
+}
+
 function pairRelativePath(S, path) {
   return typeof path === 'string' && !!path && !path.includes('\\') && !path.includes('\0') &&
     !/^[A-Za-z]:/.test(path) && path.split('/').every(p => p && p !== '.' && p !== '..')
@@ -4803,7 +4810,33 @@ function pairCriteriaError(S, review) {
 
 // A review whose structured fields can be fixed without changing its judgement: one correction.
 function pairCorrectableError(S, review) {
-  return ((S.pair.stage === 'design' || pairChallengesDue(S)) && pairChallengeError(S, review)) || pairCriteriaError(S, review) || pairRulingsError(S, review) || pairQuestionsError(S, review) || pairResolutionsError(S, review)
+  return ((S.pair.stage === 'design' || pairChallengesDue(S)) && pairChallengeError(S, review)) || pairCriteriaError(S, review) || pairRulingsError(S, review) || pairQuestionsError(S, review) || pairResolutionsError(S, review) || pairCriterionSupportError(S, review)
+}
+
+// A criterion held partial or unmet keeps the work from readiness, so it needs what a blocker or
+// major finding needs: something that actually fails. A criterion with only minor findings against
+// it is met; without this, reviewers held criteria partial over wording until the budget ran out.
+// A failing or missing required check, a challenge with no rejecting check, a design revision, a
+// rejected reading or a question to the user shows a criterion short on its own. Returns why the review can't stand, or null.
+function pairCriterionSupportError(S, review) {
+  const p = S.pair
+  // A challenge citing no rejecting check shows its criterion short: no check would catch a wrong result.
+  const unchecked = new Set((Array.isArray(review?.challenges) ? review.challenges : []).filter(c => Array.isArray(c?.rejectingCheckIds) && !c.rejectingCheckIds.length).map(c => c.criterion))
+  const short = (Array.isArray(review?.criteria) ? review.criteria : []).filter(a => ['partial', 'unmet'].includes(a?.status) && !unchecked.has(a.criterion))
+  if (!short.length || review.requiresDesignRevision === true) return null
+  if ((review.rulings || []).some(r => r?.ruling !== 'accepted') || (review.questions || []).length) return null
+  if (p.stage === 'code') {
+    const m = p.measurement, blocked = [], incomplete = []
+    if (pairInfrastructure(S).length || (S.verify && !(m?.suite?.ran && m.suite.passed))) return null
+    pairReplayReadiness(S, blocked, incomplete)
+    if (blocked.length || incomplete.length) return null
+  }
+  const settled = new Set(pairReviewResolutions(S, review).filter(r => r?.status !== 'open').map(r => r.id))
+  if (pairBlocking(S).some(f => !settled.has(f.id))) return null
+  if ((review.findings || []).some(f => f?.severity !== 'minor' && String(f?.failure || '').trim())) return null
+  const them = short.length === 1 ? 'it' : 'them'
+  return `${short.map(a => `${a.criterion} is assessed ${a.status}`).join('; ')}, but no blocker or major finding, open or new in this review, shows what fails ${them}. ` +
+    `File the defect as a blocker or major finding with its failure, or assess ${them} met and file what remains as a minor finding.`
 }
 
 // A review resolves only its own findings (P1, P2, …). A spec finding (S1, …) is settled by the
@@ -5245,9 +5278,9 @@ function pairChallengeError(S, review) {
     return `${S.pair.stage === 'code' ? 'This code review' : 'Design review'} needs exactly one challenge for each acceptance criterion (${S.criteria.map(c => c.id).join(', ')}).` +
       `${missing.length ? ` Missing: ${missing.join(', ')}.` : ''}${repeated.length ? ` Repeated: ${[...new Set(repeated)].join(', ')}.` : ''}`
   }
-  // A minor design finding does not hold the design (pairReadiness), so at design it cannot stand
-  // in for the missing rejecting check either.
-  const rejecting = S.pair.stage === 'design' ? ['blocker', 'major'] : ['blocker', 'major', 'minor']
+  // A minor finding does not hold the work (pairReadiness), so it cannot stand in for the missing
+  // rejecting check either.
+  const rejecting = ['blocker', 'major']
   for (const c of challenges) {
     const rejectsDesign = review.requiresDesignRevision === true ||
       (review.findings || []).some(f => String(f.statement || '').trim() && String(f.evidence || '').trim() && rejecting.includes(f.severity)) ||
@@ -5256,7 +5289,7 @@ function pairChallengeError(S, review) {
     if (!S.criteria.some(x => x.id === c.criterion)) return `Challenge ${c.criterion} names no acceptance criterion.`
     if (!String(c.wrongImplementation || '').trim()) return `Challenge ${c.criterion} needs a plausible wrong implementation.`
     if (!Array.isArray(c.rejectingCheckIds) || new Set(c.rejectingCheckIds).size !== c.rejectingCheckIds.length) return `Challenge ${c.criterion} needs distinct rejectingCheckIds.`
-    if (!c.rejectingCheckIds.length && !rejectsDesign) return `Challenge ${c.criterion} cites no rejecting check. Cite a contract check whose criteria include ${c.criterion}, or, if none rejects the wrong implementation, raise an evidenced ${S.pair.stage === 'design' ? 'blocker or major ' : ''}finding or assess ${c.criterion} partial or unmet.`
+    if (!c.rejectingCheckIds.length && !rejectsDesign) return `Challenge ${c.criterion} cites no rejecting check. Cite a contract check whose criteria include ${c.criterion}, or, if none rejects the wrong implementation, raise an evidenced blocker or major finding or assess ${c.criterion} partial or unmet.`
     const stray = c.rejectingCheckIds.filter(id => !covers(id))
     if (stray.length) {
       const owner = id => contract.checks.find(check => check.id === id)
@@ -5346,6 +5379,8 @@ function pairIngestReview(S, review) {
   if (questionsError) return questionsError
   const resolutionsError = pairResolutionsError(S, review)
   if (resolutionsError) return resolutionsError
+  const supportError = pairCriterionSupportError(S, review)
+  if (supportError) return supportError
   const resolutions = pairReviewResolutions(S, review)
   for (const f of review.findings || []) {
     if (!String(f.statement || '').trim() || !String(f.evidence || '').trim() || !['blocker', 'major', 'minor'].includes(f.severity)) {
@@ -5360,7 +5395,13 @@ function pairIngestReview(S, review) {
     f.resolution = r.evidence
     f.history.push({ review: p.reviews.length + 1, ...r })
   }
-  for (const f of review.findings || []) {
+  const polish = !!p.polish?.active
+  for (const raw of review.findings || []) {
+    // A blocker or major finding names the failure it causes; one that names none is filed as minor.
+    const f = raw.severity !== 'minor' && !String(raw.failure || '').trim() ? { ...raw, severity: 'minor' } : raw
+    if (f !== raw) S.notes.push(`review ${p.label}: filed "${oneLine(f.statement, 120)}" as minor, not ${raw.severity}: it names no failure.`)
+    // The polish check ends the run: it files only what the polish broke.
+    if (polish && f.severity === 'minor') { S.notes.push(`review ${p.label}: left out a new minor finding, which the polish check does not file: ${oneLine(f.statement, 200)}`); continue }
     // Suppress literal repeats only. Reworded issues retain identity through resolutions,
     // never by fuzzy matching that could merge distinct defects.
     const same = p.findings.find(old => old.stage === p.stage && old.status === 'open' && old.statement.trim().replace(/\s+/g, ' ') === f.statement.trim().replace(/\s+/g, ' '))
@@ -5383,7 +5424,9 @@ function pairIngestReview(S, review) {
   // The process note is for the retro (S.processNotes), not for the author's next turn.
   const { process: note, ...kept } = review
   p.lastReview = kept
-  p.reviews.push({ stage: p.stage, label: p.label, ...kept })
+  // The polish check is not one of the run's reviews: it spends none of the budget.
+  if (polish) p.polish.review = { label: p.label, ...kept }
+  else p.reviews.push({ stage: p.stage, label: p.label, ...kept })
   if (p.stage === 'design') {
     ;(p.designRounds ||= []).push({ review: p.reviews.length, label: p.label, fresh: p.findings.length - before,
       ...pairSeverityCounts(pairOpen(S).filter(f => f.stage === 'design')), words: String(p.design || '').split(/\s+/).filter(Boolean).length })
@@ -5407,9 +5450,9 @@ function pairReadiness(S) {
   const blocked = [], incomplete = [], infrastructure = pairInfrastructure(S)
   if (p.stop) incomplete.push(p.stop)
   if (!r || r.version !== pairVersion(S) || !r.complete) incomplete.push('The current version has no completed review.')
-  // At the design stage a minor design finding does not hold the design: it stays open into the
-  // code stage, where every open finding blocks.
-  for (const f of pairOpen(S).filter(f => p.stage === 'code' || (f.stage === 'design' && f.severity !== 'minor'))) blocked.push(`${f.id} (${f.severity}): ${f.statement}`)
+  // A minor finding never blocks: at the design stage it stays open into the code stage, and at the
+  // code stage the polish pass (pairPolishDue) deals with the ones still open, then reports them.
+  for (const f of pairBlocking(S)) blocked.push(`${f.id} (${f.severity}): ${f.statement}`)
   for (const r of p.readings.filter(r => r.status === 'proposed')) incomplete.push(`Reading ${r.id} has no ruling.`)
   for (const r of p.readings.filter(r => r.status === 'needs-user')) incomplete.push(`Reading ${r.id} needs a user decision.`)
   if (!S.criteria.length) incomplete.push('No acceptance criteria were established.')
@@ -5452,8 +5495,88 @@ function pairStalled(S) {
 
 function pairReviewClean(S) {
   const r = S.pair.lastReview
-  return r?.complete && r.version === pairVersion(S) && !r.requiresDesignRevision && !pairOpen(S).length &&
+  return r?.complete && r.version === pairVersion(S) && !r.requiresDesignRevision && !pairBlocking(S).length &&
     S.criteria.every(c => r.criteria.filter(a => a.criterion === c.id).length === 1 && r.criteria.some(a => a.criterion === c.id && a.status === 'met' && a.note?.trim()))
+}
+
+// The polish pass: a code review left only minor findings open, and the work is otherwise ready.
+// The author gets one turn to fix or decline them and a short check confirms it, once per run.
+function pairPolishDue(S) {
+  const p = S.pair
+  return p.stage === 'code' && !p.polish && pairOpen(S).some(f => f.severity === 'minor') && pairReadiness(S).state === 'ready'
+}
+
+// What the polish pass may change, kept so a polish that breaks anything is set aside and the run
+// delivers the snapshot reviewed before it.
+const PAIR_POLISH_KEPT = ['label', 'author', 'measurement', 'lastReview', 'findings']
+
+function pairPolishStart(S) {
+  const p = S.pair, m = p.measurement.snapshot
+  p.polish = { active: true, from: { label: p.label, ref: m.ref, tree: m.tree, diff: m.diff },
+    minors: pairOpen(S).filter(f => f.severity === 'minor').map(f => f.id), review: null, discarded: '',
+    saved: JSON.parse(JSON.stringify(Object.fromEntries(PAIR_POLISH_KEPT.map(k => [k, p[k] ?? null])))) }
+}
+
+// Ends the polish pass: kept when `reason` is empty, otherwise set aside, restoring the reviewed
+// snapshot's state. The author's replies stay on record either way.
+function pairPolishEnd(S, reason) {
+  const p = S.pair
+  if (reason) {
+    for (const k of PAIR_POLISH_KEPT) p[k] = p.polish.saved[k]
+    p.polish.discarded = reason
+  }
+  p.polish.active = false
+  delete p.polish.saved
+}
+
+// After the polish turn and its measurement.
+function pairPolishAuthorLine(S) {
+  const mine = S.pair.replies.filter(r => r.turn === S.pair.label)
+  const out = [`${S.pairOptions.author.name} made the polish pass.`]
+  const changed = mine.filter(r => r.action === 'changed').map(r => r.id)
+  if (changed.length) out.push(`Changed ${changed.join(', ')}.`)
+  for (const r of mine.filter(r => r.action === 'disputed')) out.push(`Declined ${r.id}: ${sentence(pairBrief(r.response, 200) || 'no reason given')}`)
+  const gate = pairGateLine(S)
+  if (gate) out.push(gate)
+  return out.join(' ')
+}
+
+// After the polish check is recorded; `before` is how many findings there were before it.
+function pairPolishReviewLine(S, review, before) {
+  const p = S.pair, ready = pairReadiness(S)
+  const out = [`Polish check by ${S.pairOptions.reviewer.name}: ${ready.state === 'ready' ? 'confirmed' : 'the polish broke something'}.`]
+  for (const [status, word] of [['fixed', 'Fixed'], ['refuted', 'Refuted']]) {
+    const ids = (review.resolutions || []).filter(r => r.status === status).map(r => r.id)
+    if (ids.length) out.push(`${word} ${ids.join(', ')}.`)
+  }
+  const open = p.polish.minors.filter(id => p.findings.find(f => f.id === id)?.status === 'open')
+  if (open.length) out.push(`Still open: ${open.join(', ')}.`)
+  const fresh = p.findings.slice(before)
+  if (fresh.length) out.push(`New: ${fresh.map(f => `${f.id} (${f.severity}) ${pairBrief(f.statement, 140)}`).join('; ')}.`)
+  const short = (review.criteria || []).filter(c => c.status !== 'met').map(c => `${c.criterion} ${c.status}`)
+  if (short.length) out.push(`Criteria: ${short.join(', ')}.`)
+  return out.join(' ')
+}
+
+// The minor findings the run ends with, and what became of each in the polish pass: none of them
+// blocks readiness, so the user decides on any the author declined or left open.
+function pairMinorSection(S) {
+  const p = S.pair, polish = p.polish
+  const minors = p.findings.filter(f => f.severity === 'minor' && (f.status === 'open' || polish?.minors.includes(f.id)))
+  if (!minors.length) return ''
+  const declined = id => p.replies.find(r => r.id === id && r.turn === 'pair-polish' && r.action === 'disputed')
+  const fate = f => {
+    if (!polish || !polish.minors.includes(f.id)) return f.status === 'open' ? 'open' : f.status
+    if (polish.discarded) return 'open; the polish pass was set aside'
+    if (f.status === 'fixed') return 'fixed in the polish pass'
+    if (f.status === 'refuted') return 'refuted in the polish check'
+    const d = declined(f.id)
+    return d ? `declined by ${S.pairOptions.author.name}: ${sentence(pairBrief(d.response, 240) || 'no reason given')}` : 'still open after the polish pass'
+  }
+  const head = polish?.discarded
+    ? `The polish pass was set aside (${pairBrief(polish.discarded, 240)}), so the result is the snapshot reviewed in ${polish.from.label}. final.worktree still holds the polish; dark-factory apply stages final.snapshotRef, not the worktree.\n\n`
+    : ''
+  return `Minor findings (they never block readiness; the user decides on any left open):\n\n${head}${minors.map(f => `- ${f.id}: ${fate(f).replace(/\.$/, '')}. ${sentence(pairBrief(f.statement, 240))}`).join('\n')}`
 }
 
 // The design reviews the run may spend before it stops for the user: maxDesignReviews, and as many
@@ -5492,7 +5615,7 @@ function pairDesignQuestion(S) {
     `Open design findings: ${open.map(f => `${f.id} (${f.severity}) ${pairBrief(f.statement, 160)}`).join('; ') || 'none'}${open.length ? '.' : ''} ` +
     `${plural(left, 'review')} of ${o.maxReviews} remain. Choose one. (a) Continue the design: answer with a scope decision the author and reviewer then follow, ` +
     `for example narrow the scope, or accept named findings as documented residuals; the design gets up to ${plural(o.maxDesignReviews, 'more review')}. ` +
-    '(b) Start the implementation now: answer with implement: true; the open design findings carry into code review as open items, and each still blocks readiness until the reviewer closes it. ' +
+    '(b) Start the implementation now: answer with implement: true; the open design findings carry into code review as open items, and each blocker or major one still blocks readiness until the reviewer closes it. ' +
     '(c) Stop: don\'t continue this run.'
 }
 
@@ -5644,7 +5767,7 @@ function pairResult(S, status = 'blocked') {
   const hostRunDir = S.host === 'codex' && S.raw.repo && S.raw.hostRunId ? `${S.raw.repo}/.council/${S.raw.hostRunId}` : '<hostRunDir>'
   const resumeSteps = resumable ? pairResumeSteps(S, S.host === 'codex' ? 'codex' : 'native', hostRunDir) : ''
   const live = ready.liveChecks, pending = [...new Set(live.map(c => c.criterion))]
-  const highlights = pairHighlights(S)
+  const highlights = pairHighlights(S), minors = pairMinorSection(S)
   const report = [`Pair: ${S.pairOptions.author.name} authors; ${S.pairOptions.reviewer.name} reviews.`,
     `Readiness: ${ready.state}${pending.length ? `; live checks pending: ${pending.join(', ')}` : ''}. Reviews: ${p.reviews.length}/${S.pairOptions.maxReviews}.`,
     ...live.map(c => `Live check for ${c.criterion}: ${c.check}${c.reason ? ` (${c.reason})` : ''}`),
@@ -5654,6 +5777,7 @@ function pairResult(S, status = 'blocked') {
     ...ready.infrastructure, ...ready.blocked, ...ready.incomplete,
     `How the run went:\n\n${[...(S.story || []), pairEndLine(S, status, ready)].map((line, i) => `${i + 1}. ${line}`).join('\n')}`,
     ...(highlights.length ? [`Points of interest:\n\n${highlights.map(h => `- ${h}`).join('\n')}`] : []),
+    ...(minors ? [minors] : []),
     ...(pairSpecSection(S) ? [pairSpecSection(S)] : []),
     ...(questions.length ? [`Questions for the user (answer each under its ID):\n\n${questions.map(q => `- ${q.id} (about ${q.about}): ${q.question}`).join('\n')}`] : []),
     ...(p.decisions.length ? [`User decisions:\n\n${p.decisions.map(d => `- ${d.id} (about ${d.about}; asked in ${d.label}): ${d.question} Answer: ${d.answer}` +
@@ -5665,7 +5789,9 @@ function pairResult(S, status = 'blocked') {
     forTheOrchestrator: 'Read final.readiness first. Report unresolved findings or missing evidence before any success summary. ' +
       (p.readings.some(r => r.status === 'accepted') ? 'Report the accepted readings (readings with status accepted): requirements the reviewer agreed the work may read other than literally. ' : '') +
       (live.length ? 'Before delivery, run each live check (final.readiness.liveChecks) against the real service or resource it names and report its outcome: a ready run with live checks pending is not done until they pass. ' : '') +
-      'Spot-check the reviewed snapshot. Show the "How the run went" and "Points of interest" lists from report.markdown as they are: they give the design and implementation reviews in order, from the run\'s record. The change stays in final.worktree. ' +
+      'Spot-check the reviewed snapshot. Show the "How the run went" and "Points of interest" lists from report.markdown as they are: they give the design and implementation reviews in order, from the run\'s record. ' +
+      (minors ? 'Show the "Minor findings" list too: minor findings never block readiness, so the user decides on any the author declined or left open. ' : '') +
+      (p.polish?.discarded ? 'The polish pass was set aside: final.snapshotRef is the snapshot reviewed before it, and final.worktree still holds the polish, so deliver with dark-factory apply, never from the worktree. ' : 'The change stays in final.worktree. ') +
       'Readiness unverified means no review finding is open but the run could not measure the snapshot (final.readiness.infrastructure says why): run the gate on the delivered bytes before calling it done. ' +
       'Deliver only within the user\'s authorization, preserving unrelated edits. With HEAD at the original base, nothing staged, and no local edits other than those recorded at setup (run.json deliveryBaseline: unstaged tracked edits and untracked files, none on a path the reviewed change touches), ' +
       `dark-factory apply --run-dir ${S.run?.runDir ? shq(S.run.runDir) : '<runDir>'} --result <file> stages the reviewed snapshot and checks its tree hash, leaving those recorded edits in place; it refuses any other checkout. ` +
@@ -5679,7 +5805,7 @@ function pairResult(S, status = 'blocked') {
     room: S.run?.room || null, refs: S.refs, stage: p.stage, stopReason: p.stop,
     design: p.design, testContract: p.approvedContract || p.testContract, replayMapping: p.replayMapping,
     author: S.pairOptions.author.name, reviewer: S.pairOptions.reviewer.name,
-    reviews: p.reviews, findings: p.findings, readings: p.readings, spec: p.spec, liveChecks: live, questions, decisions: p.decisions, unusedAnswers: unused,
+    reviews: p.reviews, ...(p.polish ? { polish: p.polish } : {}), findings: p.findings, readings: p.readings, spec: p.spec, liveChecks: live, questions, decisions: p.decisions, unusedAnswers: unused,
     ...(resumable ? { resumable: true, resumeSteps } : {}), notes: S.notes,
     report: { markdown: report },
     final: { author: 'A', model: S.pairOptions.author.name, summary: p.author?.summary || '',
@@ -5695,7 +5821,7 @@ function pairResult(S, status = 'blocked') {
 const PAIR_FROM_HEAD_RULE = 'Before step 2 creates the run, check that the work starts from HEAD. Stop when the task, the context or a reference document tells the author to apply a patch, diff, stash or saved snapshot before starting, or says the work to fix or extend is uncommitted (for example "fix the review findings in my uncommitted change"): return status "needs-commit", with error naming those changes and quoting the words that show it, and empty values elsewhere. The worktrees, the baseline and every review start from HEAD, so the run would measure and review code without them. When the task only calls the work uncommitted, check `git status --short` first: if it lists no tracked changes and HEAD\'s code already has the work, it was committed after the task was written, so continue and say so in repositoryNotes. Work already in history does not count (a commit, a branch, or an earlier change the task names), nor do reference documents, committed or not, which the author and reviewer read by path, nor a patch or diff given only to read rather than to apply first.'
 
 function pairSetupPrompt(S) {
-  return setupPrompt(S) + '\n\nPair also requires head: copy the full original commit from the helper init output (head), or run.json. Do not use a later author commit or snapshot. This identity will be checked against every baseline replay.\n' + PAIR_FROM_HEAD_RULE + '\nKeep the original task unchanged, including in TASK.md. Return repositoryNotes with observations from HEAD, configuration/tool paths, and proposed interpretations of outdated wording. These are proposals for the author and reviewer to check, not replacement requirements. Explicit user decisions and required plan filenames override the default separate-test-file preference. If substantive requirements conflict, return status needs-user with precise questions immediately. Leave questions=[] when none remain.\nYou own the criteria you write: word each one so evidence inside this run can check it, by a test, the gate, or inspection of the code. A limitation that the task or a reference document explicitly accepts is not a gap: write the criterion to match what it accepts, cite where it says so, and leave it out of unverifiable. List in unverifiable only the criteria that you have established cannot be fully met with evidence available inside this run, with origin supplied when the task, criteria or a reference document states the criterion in substance, and written when you drafted it and no checkable wording keeps its intent: anything that needs downstream, post-delivery, production or live-service evidence, or a capability the author and reviewer lack. Give the criterion ID and the reason. If a tool or capability a criterion needs might be missing, check it with one command first (for example `php -m | grep -i pcov` for a coverage driver, or run the target itself), and list the criterion only when that check shows it is missing, citing the command and its output in the reason. Doubt alone ("may not be runnable") is not a reason: record it in repositoryNotes. The verification gate and the test replays run in the helper\'s measurement, outside your sandbox: a check that fails only inside your own sandbox (a refused port bind, socket or network call, or a denied tool) does not make a criterion unverifiable. Record that in repositoryNotes instead. Return unverifiable=[] when every criterion can be checked here.\nList in liveChecks each criterion that the run can check only against a stand-in for something outside it, where the real thing can behave differently: a network service, credentials, the machine\'s certificate store or another platform-specific resource, an external CLI\'s login. Give the criterion ID, the command or action that checks it against the real thing, and why the stand-in can\'t show it. Don\'t list such a criterion in unverifiable: the run still checks it with the stand-in, and the user runs the live check before delivery. Return liveChecks=[] when there are none.' + (pairDecisionsBlock(S) && `\nThis setup runs again because the user answered questions the run asked, listed below: write the acceptance criteria so that they follow every answer.\n${pairDecisionsBlock(S)}`)
+  return setupPrompt(S) + '\n\nPair also requires head: copy the full original commit from the helper init output (head), or run.json. Do not use a later author commit or snapshot. This identity will be checked against every baseline replay.\n' + PAIR_FROM_HEAD_RULE + '\nKeep the original task unchanged, including in TASK.md. Return repositoryNotes with observations from HEAD, configuration/tool paths, and proposed interpretations of outdated wording. These are proposals for the author and reviewer to check, not replacement requirements. Explicit user decisions and required plan filenames override the default separate-test-file preference. If substantive requirements conflict, return status needs-user with precise questions immediately. Leave questions=[] when none remain.\nYou own the criteria you write: word each one so evidence inside this run can check it, by a test, the gate, or inspection of the code. When the deliverable is text bound for a system with a hard size or format limit that the task names or implies (a Jira field holds at most 32,767 characters; a GitHub issue or pull request body, 65,536), write that limit as a criterion with its number and the check for it (for example `wc -c` on the file), so the author meets it from the first draft instead of finding it late. A limitation that the task or a reference document explicitly accepts is not a gap: write the criterion to match what it accepts, cite where it says so, and leave it out of unverifiable. List in unverifiable only the criteria that you have established cannot be fully met with evidence available inside this run, with origin supplied when the task, criteria or a reference document states the criterion in substance, and written when you drafted it and no checkable wording keeps its intent: anything that needs downstream, post-delivery, production or live-service evidence, or a capability the author and reviewer lack. Give the criterion ID and the reason. If a tool or capability a criterion needs might be missing, check it with one command first (for example `php -m | grep -i pcov` for a coverage driver, or run the target itself), and list the criterion only when that check shows it is missing, citing the command and its output in the reason. Doubt alone ("may not be runnable") is not a reason: record it in repositoryNotes. The verification gate and the test replays run in the helper\'s measurement, outside your sandbox: a check that fails only inside your own sandbox (a refused port bind, socket or network call, or a denied tool) does not make a criterion unverifiable. Record that in repositoryNotes instead. Return unverifiable=[] when every criterion can be checked here.\nList in liveChecks each criterion that the run can check only against a stand-in for something outside it, where the real thing can behave differently: a network service, credentials, the machine\'s certificate store or another platform-specific resource, an external CLI\'s login. Give the criterion ID, the command or action that checks it against the real thing, and why the stand-in can\'t show it. Don\'t list such a criterion in unverifiable: the run still checks it with the stand-in, and the user runs the live check before delivery. Return liveChecks=[] when there are none.' + (pairDecisionsBlock(S) && `\nThis setup runs again because the user answered questions the run asked, listed below: write the acceptance criteria so that they follow every answer.\n${pairDecisionsBlock(S)}`)
 }
 
 // The user's answers to the run's questions, from a stop this run continued past. Empty without
@@ -5787,6 +5913,9 @@ const PAIR_CONTRACT_RULES = `testRoots are repository-relative test directories,
 const PAIR_LAYOUT_RULES = 'Prefer separate files for tests depending on a new API so load-time failures cannot erase preserved evidence. Explicit user decisions or required plan filenames override this layout preference. In shared files, give distinct focused commands for changed and preserved checks and verify that the preserved selection can load on base; a designated-gate check can cover the final whole-suite obligation.'
 const pairMappingRules = (checks, roots) => `one entry per test file/focused command, with file, command, checkIds from ${checks} executable checks, and fixtures. Isolate commands at least by file; never group multiple test files into a command. Include every kind=test check, including preserved behavior; omit kind=gate and inspection checks from replayMapping. Never use a directory as file. Validate every mapping against ${roots} test roots before returning. Omissions do not remove obligations.`
 const PAIR_REPLAY_NOTE = 'The helper replays added/modified test files and fixtures from the snapshot onto the ORIGINAL base; production/config/dependency changes are excluded.'
+// A claim corrected in one place and restated in another kept findings open for several rounds:
+// the author fixes every place with the defect in the same pass.
+const PAIR_EVERY_PLACE = 'Before you answer a finding, search the whole deliverable for every other place with the same defect: each restatement of a claim it corrects, each copy of the pattern or call it names. Fix them all and name the places in your response: a fix in one place while a restatement elsewhere stays wrong leaves the finding open.'
 // A reading the author settles alone, in a handoff or a note, was never ruled on: every author turn
 // lists its readings, and the next review accepts or rejects each one by ID.
 const PAIR_READING_RULES = 'List in readings every place this turn\'s work reads a requirement, criterion or approved contract check other than literally: an exact list treated as a minimum, an ambiguity or open threshold you settled, two requirements you reconciled, or a contract setup you cannot build as written and check another way. Give the requirement (its criterion ID, or its words in quotes), what it literally says, your reading, and the reason. List only readings not already in the readings ledger; return readings=[] when the work follows everything literally. A reading only in your notes or the handoff is not reviewed: the reviewer rules on each listed reading in the next review. An accepted reading binds the rest of the run; a rejected one comes back as an open finding. Propose a reading only where the requirement\'s words allow it: when two requirements cannot both hold as written, or a fact you found makes one impossible as written, and no reading inside the task\'s words settles it, return needs-user now with the question, quoting each requirement and giving the options you see, rather than a reading the reviewer could only send to the user.'
@@ -5797,6 +5926,7 @@ const PAIR_LIVE_CHECK_RULES = 'When this turn\'s design or implementation makes 
 
 function pairAuthorPrompt(S, label, correction = '') {
   const p = S.pair, design = p.stage === 'design'
+  if (p.polish?.active) return pairPolishAuthorPrompt(S, label)
   if (!pairDesigned(S)) return pairDirectAuthorPrompt(S, label, correction)
   return `You are the sole author in a pair workflow. Own the task through completion; an independent reviewer checks each stage.
 
@@ -5834,10 +5964,10 @@ ${pairMeasurementRecord(S) ? `The measurement leaves out what each execution pri
 # Author continuity
 ${p.author?.notes || '(first author turn)'}
 
-For each open finding, return one entry in addressed: its ID, with action changed and the change made in response, or action disputed and an evidence-backed disagreement. You cannot close a finding yourself. If a finding needs a user decision, return needs-user now with its existing ID and question; do not spend another author turn restating the conflict. Do not weaken tests, criteria, or the verification configuration to obtain a pass. If the task requires a user decision, return status needs-user and specific questions; if execution is blocked, return blocked with the reason in summary. Otherwise return done.
+For each open finding, return one entry in addressed: its ID, with action changed and the change made in response, or action disputed and an evidence-backed disagreement. You cannot close a finding yourself. ${PAIR_EVERY_PLACE} If a finding needs a user decision, return needs-user now with its existing ID and question; do not spend another author turn restating the conflict. Do not weaken tests, criteria, or the verification configuration to obtain a pass. If the task requires a user decision, return status needs-user and specific questions; if execution is blocked, return blocked with the reason in summary. Otherwise return done.
 ${PAIR_READING_RULES}
 ${PAIR_LIVE_CHECK_RULES}
-Save each script or command file whose output supports a claim (a probe, a coverage or equivalence check) under ${S.run.room}/${label}/probes/, not in /tmp or $TMPDIR, which are cleared after the run, and cite it by that path. Start each probe file's name with \`probe-\` so it cannot shadow a standard-library or project module, and run Python probes with \`python3 -I\`.
+Save each script or command file whose output supports a claim (a probe, a coverage or equivalence check) under ${S.run.room}/${label}/probes/, not in /tmp or $TMPDIR, which are cleared after the run, and cite it by that path. Have each probe take the checkout it inspects as an argument instead of naming your worktree, so the reviewer can rerun it on its own checkout. Start each probe file's name with \`probe-\` so it cannot shadow a standard-library or project module, and run Python probes with \`python3 -I\`.
 Write a concise handoff at ${S.run.room}/${label}/A.md (create the directory). Include the ${design ? 'full design' : 'change summary and actual checks'}, responses to findings, and important remaining work. Return private notes sufficient for a fresh author context to continue. Keep implementation and design artifacts inside this run until delivery.`
 }
 
@@ -5855,7 +5985,7 @@ Read the repository instructions and the relevant code. Do not delegate or launc
 ${correction ? `\n# Correct the previous output\nThe engine could not accept your test contract, replay mapping or readings: ${correction}\nReturn a complete corrected testContract and replayMapping for the current implementation, and this turn's readings and live checks again, changing the worktree only where the correction needs it. This is the one correction attempt for this turn. Preserve the task and substantive requirements.\n` : ''}
 This run skips the design stage: write the deliverable itself, not a design or a plan for it, including the required tests and documentation; the reviewer reviews the measured result directly. Check setup observations against the original task, reference documents, explicit user decisions, and repository; explain any reconciliation in the handoff and list it in readings, preserving every requirement; unresolved contradictions require needs-user. Run appropriate focused checks and the shared verification gate. Fix all open actionable findings and any failed verification; when the latest review says the approach itself must change, change it in this turn. Return design as an empty string.
 
-Return testContract for the CURRENT deliverable: the checks the reviewer holds it to. ${PAIR_CONTRACT_RULES} When the deliverable is a document or a plan, its criteria are usually checked by kind=inspection, and testRoots may be empty when no check is kind=test. Every file:line, code snippet, literal and call chain such a document states or prescribes is a claim: confirm each one against HEAD, with a saved probe where reading is not enough, before handoff. The contract is yours to keep current: return it whole every turn, extended or corrected where findings call for it, never weakened to obtain a pass. ${PAIR_LAYOUT_RULES} If isolation cannot work, report the limitation in the handoff instead of claiming a preserved baseline pass.
+Return testContract for the CURRENT deliverable: the checks the reviewer holds it to. ${PAIR_CONTRACT_RULES} When the deliverable is a document or a plan, its criteria are usually checked by kind=inspection, and testRoots may be empty when no check is kind=test. Every file:line, code snippet, literal and call chain such a document states or prescribes is a claim: confirm each one against HEAD, with a saved probe where reading is not enough, before handoff. Keep that evidence (claim checks, traces, probe output) in the handoff and probes, not in the deliverable, unless the task asks for it there: the reviewer reviews the deliverable, and analysis inside it is more text to review. The contract is yours to keep current: return it whole every turn, extended or corrected where findings call for it, never weakened to obtain a pass. ${PAIR_LAYOUT_RULES} If isolation cannot work, report the limitation in the handoff instead of claiming a preserved baseline pass.
 Return replayMapping for the CURRENT implementation: ${pairMappingRules("your contract's", "your contract's")} ${PAIR_REPLAY_NOTE} Report unsupported replay dependencies in the handoff.
 
 # Test contract
@@ -5876,14 +6006,15 @@ ${pairMeasurementRecord(S) ? `The measurement leaves out what each execution pri
 # Author continuity
 ${p.author?.notes || '(first author turn)'}
 
-For each open finding, return one entry in addressed: its ID, with action changed and the change made in response, or action disputed and an evidence-backed disagreement. You cannot close a finding yourself. If a finding needs a user decision, return needs-user now with its existing ID and question; do not spend another author turn restating the conflict. Do not weaken tests, criteria, or the verification configuration to obtain a pass. If the task requires a user decision, return status needs-user and specific questions; if execution is blocked, return blocked with the reason in summary. Otherwise return done.
+For each open finding, return one entry in addressed: its ID, with action changed and the change made in response, or action disputed and an evidence-backed disagreement. You cannot close a finding yourself. ${PAIR_EVERY_PLACE} If a finding needs a user decision, return needs-user now with its existing ID and question; do not spend another author turn restating the conflict. Do not weaken tests, criteria, or the verification configuration to obtain a pass. If the task requires a user decision, return status needs-user and specific questions; if execution is blocked, return blocked with the reason in summary. Otherwise return done.
 ${PAIR_READING_RULES}
 ${PAIR_LIVE_CHECK_RULES}
-Save each script or command file whose output supports a claim (a probe, a coverage or equivalence check) under ${S.run.room}/${label}/probes/, not in /tmp or $TMPDIR, which are cleared after the run, and cite it by that path. Start each probe file's name with \`probe-\` so it cannot shadow a standard-library or project module, and run Python probes with \`python3 -I\`.
+Save each script or command file whose output supports a claim (a probe, a coverage or equivalence check) under ${S.run.room}/${label}/probes/, not in /tmp or $TMPDIR, which are cleared after the run, and cite it by that path. Have each probe take the checkout it inspects as an argument instead of naming your worktree, so the reviewer can rerun it on its own checkout. Start each probe file's name with \`probe-\` so it cannot shadow a standard-library or project module, and run Python probes with \`python3 -I\`.
 Write a concise handoff at ${S.run.room}/${label}/A.md (create the directory). Include the change summary and actual checks, responses to findings, and important remaining work. Return private notes sufficient for a fresh author context to continue. Keep implementation artifacts inside this run until delivery.`
 }
 
 function pairReviewPrompt(S, label, checkout, correction = null) {
+  if (S.pair.polish?.active) return pairPolishReviewPrompt(S, label, checkout, correction)
   const p = S.pair, design = p.stage === 'design', designed = pairDesigned(S), challenged = pairChallengesDue(S)
   const tag = pairReviewTag(S)
   return `You are the independent reviewer in a pair workflow. This is a fresh review context. You did not author the work. Review the current artifact yourself, using repository evidence, and verify every proposed finding resolution. Resolve existing findings under their current IDs in both design and code reviews; never refile an unresolved issue under a new ID.
@@ -5903,12 +6034,14 @@ ${JSON.stringify(p.approvedContract || p.testContract)}
 
 ${design ? `Independently check proposed reconciliations against the original task, reference documents, and explicit user decisions; setup notes cannot waive requirements. Check that the criteria cover the entire original request. Check the approach against the task and existing code: correctness, missing requirements, assumptions, alternatives that materially affect the outcome, scope, and planned test coverage. Where the change copies or mirrors behaviour from another function, require a side-by-side check that the two agree. Verify every proposed test root against the BASE repository configuration/layout and its cited evidence; naming a directory does not make it a test root. Reject production roots and missing concrete outcomes/boundaries. Check that every planned test and fixture is a regular file under an accepted root and each focused command is executable by the replay helper. Shared files are allowed when required by the user or plan: inspect focused selection and base loadability. Prefer separate files otherwise. Whole-suite preservation must use kind=gate with the exact designated command, never a directory in a file mapping. Gate evidence establishes final-suite success, not a changed-behavior baseline failure. Each criterion is met only if the design explains how it will be satisfied and checked; assess it met when the design satisfies it apart from minor findings.
 ${pairChallengeRules(true)} ${pairBaseline(S)}`
-    : `${designed ? 'Review the implementation and tests against the task and approved design.' : `Review the implementation and tests against the task. This run has no design stage, so no one has reviewed the test contract above: review it here as part of the artifact. Verify every test root against the BASE repository configuration/layout and its cited evidence, check that the contract covers the entire original request and every criterion, and ${challenged ? `file a finding for each gap. No review has challenged this contract yet. ${pairChallengeRules(false)}` : 'judge for each criterion whether its checks would reject a plausible wrong implementation; file a finding for each gap.'} Inspection checks must name a concrete inspection; perform each one yourself.`} Inspect the whole diff at ${p.measurement.snapshot.diff}, not only the latest fixes. Look for incorrect behavior, regressions, missing requirements, and tests that would miss the defect. The neutral helper measured this exact snapshot. This summary leaves out what each execution printed: read that in the helper's full record, ${pairMeasurementRecord(S)}, where every replay record and the suite carry the tail of their output, and in the logs they name:
+    : `${designed ? 'Review the implementation and tests against the task and approved design.' : `Review the implementation and tests against the task. This run has no design stage, so no one has reviewed the test contract above: review it here as part of the artifact. Verify every test root against the BASE repository configuration/layout and its cited evidence, check that the contract covers the entire original request and every criterion, and ${challenged ? `file a finding for each gap. No review has challenged this contract yet. ${pairChallengeRules(false)}` : 'judge for each criterion whether its checks would reject a plausible wrong implementation; file a finding for each gap.'} Inspection checks must name a concrete inspection; perform each one yourself.`} Inspect the whole diff at ${p.measurement.snapshot.diff}, not only the latest fixes. ${pairReviewScope(S)} Look for incorrect behavior, regressions, missing requirements, and tests that would miss the defect. The neutral helper measured this exact snapshot. This summary leaves out what each execution printed: read that in the helper's full record, ${pairMeasurementRecord(S)}, where every replay record and the suite carry the tail of their output, and in the logs they name:
 ${JSON.stringify(p.measurement)}
 Passing tests do not replace code review. Treat a failing or missing required check as unresolved.${pairInfrastructure(S).length ? ` This measurement could not run because of the environment, not the snapshot (${pairInfrastructure(S).join(' ')}). Readiness already reports that, and neither the author nor you can fix it: don't file a finding for it or reopen one about it. Assess a criterion that needs the missing results partial, with that reason in its note, and review the code on its merits.` : ''}
 Interpret the raw replay records for each check from their output in that record, reading the logs when the tail is not enough. A base fatal at file level (including a missing new API), pass, timeout, or tool error is evidence to interpret, not an automatic red/green verdict. Records cover files/commands and associated check IDs; an aborted file does not prove individual assertions ran. Preserved behavior should pass on base; changed behavior passing there needs investigation. Distinguish the intended missing behavior from infrastructure failure using actual output. If inconclusive, reflect that in criterion assessments/findings rather than approving solely because a record exists. A base record with reused=true is the same execution as an earlier measurement's, carried over because its inputs were identical (base commit, command, test and fixture bytes, timeout and settings); it is not a new run.
 Inspect every overlay exclusion and missing preserved-behavior signal. Compare actual assertions and coverage with the ${designed ? 'approved ' : ''}contract and report omissions or weakening through findings. Check that each mapped command really isolates its named file and executes its claimed checks. Attack the whole implementation for uncovered requirements, regressions, races, numeric mistakes, and defects introduced by fixes: the contract is a floor, not the review checklist. Where the change copies or mirrors behaviour from another function, run both on the same inputs beyond the listed cases, including combinations of arguments, and file any difference.${challenged ? '' : ' Return challenges=[] during code review.'}
 That measurement is the gate result for this snapshot: don't rerun the verification command or the checks in it. Run only targeted probes, such as one test or one analyser on the changed files. Sandboxes can block the sockets that parallel workers use: if a probe fails that way, run the tool single-process.`}
+
+${PAIR_SEVERITY}
 
 # Findings and proposed responses
 ${JSON.stringify({ findings: p.findings, addressed: p.author.addressed })}
@@ -5916,15 +6049,34 @@ ${JSON.stringify({ findings: p.findings, addressed: p.author.addressed })}
 # Readings ledger
 ${JSON.stringify(p.readings)}
 ${pairLiveChecksNote(S)}
-Use resolutions to update existing IDs: open if still actionable, fixed only after inspecting the correction, refuted only with evidence that the finding was mistaken. Give concrete evidence for every resolution. Reopen an old ID when its defect recurs. Missing resolutions leave findings open.${designed ? ' In design review, leave code findings open until the implementation is fixed; check that the revised design explains their correction.' : ''}${pairCarriedNote(S, 'reviewer')} Add only genuinely new defects in findings; the engine assigns their IDs. ${design ? PAIR_DESIGN_SEVERITY : 'Actionable minor findings count too.'} Put optional preferences and unrelated improvements in suggestions; do not manufacture findings to fill a quota.
+Use resolutions to update existing IDs: open if still actionable, fixed only after inspecting the correction, refuted only with evidence that the finding was mistaken. Give concrete evidence for every resolution. Reopen an old ID when its defect recurs. Missing resolutions leave findings open.${designed ? ' In design review, leave code findings open until the implementation is fixed; check that the revised design explains their correction.' : ''}${pairCarriedNote(S, 'reviewer')} Add only genuinely new defects in findings; the engine assigns their IDs. When the same defect appears in more than one place (a claim restated, a pattern repeated, a call copied), file it once and list every place; resolve it fixed only after checking each one.${design ? ` ${PAIR_DESIGN_SEVERITY}` : ''} Put optional preferences and unrelated improvements in suggestions; do not manufacture findings to fill a quota.
 In rulings, rule on every reading the ledger lists as proposed, exactly one ruling each, with evidence. Accept a reading only when it keeps the requirement's intent and the original task, reference documents or explicit user decisions support it; setup observations alone cannot. Reject it when the requirement can and must be met as written, citing what shows that; the engine files each rejected reading as a major finding. Rule needs-user only on a reading that one of your questions cites. Accepted readings are settled: hold the work to them and do not reopen them. Return rulings=[] when no reading is proposed.
 Return a question in questions when a finding, new or existing, or a reading can be settled only by the user: two requirements that cannot both hold as written, or a requirement that a fact your evidence shows makes impossible as written, with no reading inside the task's words that settles it. Put the exact words of each requirement involved in quoted; in question, cite the finding or reading ID and give the options you see; say in summary what the user must decide. Keep any finding it concerns open as usual. A question stops the run and goes to the user at once, so ask it in the first review that can show the conflict, not after another round. Ordinary defects, missing evidence, unclear code and preferences are findings, never questions. Otherwise return questions=[].
 Return an evidenced met/partial/unmet assessment for every acceptance criterion, exactly one each, with criterion set to its bare ID (C1, not the criterion's text); challenges name their criterion the same way. ${designed ? 'In code review, set requiresDesignRevision=true only if the implementation needs a materially different design; explain it in a finding. The engine will return the author to design review. In design review, keep that field false and express needed revisions as findings.' : 'This run has no design stage to return to: keep requiresDesignRevision false, and when the approach itself must change, say so in a finding; the author reworks it in the next implementation turn.'} Return complete=false if you cannot finish the review; an empty findings list is not approval in that case.`
 }
 
-// At design, minor findings don't hold the design: they stay open into the code stage, where every
-// open finding blocks readiness. So design review spends its findings on what the design decides.
-const PAIR_DESIGN_SEVERITY = 'Minor findings do not block design approval: they stay open, and code review checks them against the implementation, where every open finding blocks readiness. Blocker and major findings block design approval. At design, raise a new finding for a defect that affects an acceptance criterion, correctness or scope; leave benchmark, documentation and wording detail to code review unless a criterion depends on it.'
+// What a finding's severity means. Without it, imprecise wording was filed as major and a run's
+// budget ran out on polish. A blocker or major names the failure it causes, or the engine files it
+// as minor; minor findings never hold the work for a review round of their own (pairPolishDue).
+const PAIR_SEVERITY = `# Severity
+
+Rate a finding by what goes wrong if it stays, not by how sure you are or how easy it is to fix. Ask whether someone using or building on this work would hit a real problem.
+- blocker: the work does the wrong thing on the task's main path, breaks behaviour that worked before, loses data or opens a security hole; for a document or plan, it states something false that work built from it would rely on.
+- major: the same on a plausible input or case; a requirement or criterion the work does not meet; changed behaviour that no check would catch.
+- minor: anything else worth the author's time: wording, naming, style, a rare case, a check that could be tighter, polish.
+Give every blocker and major finding a failure: the concrete input or situation, and what goes wrong in it. A finding that cannot name one is minor, and the engine files it as minor. Leave failure empty for a minor finding.
+Minor findings never hold the work for a review round of their own: once only minor ones are open, every criterion is met and verification passes, the author gets one pass to fix or decline them, a short check confirms that pass, and what is left goes to the user. So assess a criterion partial or unmet only when a blocker or major finding, open or new in this review, or a failing required check shows what fails it; a criterion with only minor findings against it is met.
+A problem the work neither introduced nor touched is out of scope unless the task requires fixing it. Preferences without a reason are suggestions, not findings. Finding nothing is a good outcome when it is true: an empty list from a careful review is worth more than a padded one.`
+
+// The author's evidence is not the deliverable: findings about a probe script or the analysis
+// around a document kept two document runs reviewing for their whole budget.
+function pairReviewScope(S) {
+  return `The author's handoff, notes and probes under ${S.run.room} are evidence, not the deliverable: use and spot-check them, but a flaw in them is a finding only when it hides a defect in the deliverable or weakens a check the contract relies on. When the deliverable is a document or a plan, hold it to what its reader needs: a false claim, a missing requirement, or a step the reader would have to guess at. Analysis it carries is checked for the claims the rest relies on, not polished.`
+}
+
+// At design, minor findings don't hold the design: they stay open into the code stage. So design
+// review spends its findings on what the design decides.
+const PAIR_DESIGN_SEVERITY = 'Minor findings do not block design approval: they stay open, and code review checks them against the implementation. Blocker and major findings block design approval. At design, raise a new finding for a defect that affects an acceptance criterion, correctness or scope; leave benchmark, documentation and wording detail to code review unless a criterion depends on it.'
 
 // Design findings still open at the code stage: minor ones the design was approved with, and any
 // the user chose to carry into the implementation. Both participants hold them as code-stage items.
@@ -5949,7 +6101,7 @@ function pairLiveChecksNote(S) {
 // returns whenever the contract is new to review: for each criterion a plausible wrong
 // implementation and the checks that reject it.
 function pairChallengeRules(designed) {
-  return `Return exactly one structured challenge per criterion in challenges: criterion, a substantive wrongImplementation, and rejectingCheckIds that resolve to contract checks covering that criterion: each cited check's criteria must include the challenged criterion (a check covering only C5 cannot reject a wrong implementation of C3). If no check rejects a plausible wrong implementation, return rejectingCheckIds=[] and raise an evidenced ${designed ? 'blocker or major finding, assess that criterion partial/unmet, or request design revision with the reason in summary' : 'finding, or assess that criterion partial/unmet'}. Never cite a check you believe is ineffective just to fill the array. Approval requires a rejecting check for every challenge. Describe a plausible incorrect result and its rejecting inspection for non-code criteria. Judge whether the checks actually reject that implementation; valid IDs alone are insufficient.`
+  return `Return exactly one structured challenge per criterion in challenges: criterion, a substantive wrongImplementation, and rejectingCheckIds that resolve to contract checks covering that criterion: each cited check's criteria must include the challenged criterion (a check covering only C5 cannot reject a wrong implementation of C3). If no check rejects a plausible wrong implementation, return rejectingCheckIds=[] and raise an evidenced ${designed ? 'blocker or major finding, assess that criterion partial/unmet, or request design revision with the reason in summary' : 'blocker or major finding, or assess that criterion partial/unmet'}. Never cite a check you believe is ineffective just to fill the array. Approval requires a rejecting check for every challenge. Describe a plausible incorrect result and its rejecting inspection for non-code criteria. Judge whether the checks actually reject that implementation; valid IDs alone are insufficient.`
 }
 
 // The design stage needs no gate run: setup measured the base revision, or on the standalone
@@ -5994,6 +6146,65 @@ function pairResumeCommandPrompt(S, cmd) {
   return `You are transporting a deterministic check for the pair workflow. Do not review, change, or judge anything. Make one Bash call, exactly as written:
 ${cmd}
 It prints one line of JSON with status and reason. Return status and reason exactly as printed. If the command fails without printing that JSON, return status error with the actual message in reason.`
+}
+
+// The polish pass: the last review found only minor findings, with every criterion met and
+// verification passing. The author gets one turn to fix or decline them, without a review round
+// of their own; a short check of that turn follows, and the run ends.
+function pairPolishAuthorPrompt(S, label) {
+  const p = S.pair, from = p.polish.from
+  const minors = pairOpen(S).filter(f => p.polish.minors.includes(f.id)).map(({ id, statement, evidence }) => ({ id, statement, evidence }))
+  return `You are the sole author in a pair workflow. The last review (${from.label}) found no blocker or major defect in your work: every acceptance criterion is met and verification passes. Only minor findings are open. This is the polish pass: one turn to deal with them. A short check of this turn follows, and then the run ends.
+
+${taskCore(S)}${pairDecisionsBlock(S)}
+# Polish pass
+
+Your worktree: ${S.seats[0].wt}. Work only there; never edit the main checkout or reviewer checkouts. Do not delegate or launch other models.
+For each minor finding below, fix it if you agree, or decline it with a reason. A minor finding is advice: declining one is fine, and the user sees your reason. Return each in addressed: its ID, with action changed and what you changed, or action disputed and why you leave it. ${PAIR_EVERY_PLACE}
+Change only what these findings need, and start no other work. Keep the test contract, the replay mapping, the test file layout and the verification configuration as they are. Decline a fix that needs more than a small change, and say so. Run focused checks on what you change and the shared verification gate.
+The polished snapshot ships only if the check confirms it. If the polish breaks anything, the run delivers the snapshot reviewed before it, and this turn's work is set aside, so a risky fix is worth declining.
+
+# Minor findings
+${JSON.stringify(minors)}
+
+# Test contract
+${JSON.stringify(p.approvedContract || p.testContract)}
+
+# Latest review and measurement
+${JSON.stringify({ review: p.lastReview, measurement: p.measurement })}
+${pairMeasurementRecord(S) ? `The measurement leaves out what each execution printed: read it in ${pairMeasurementRecord(S)}, or in the logs it names.\n` : ''}
+# Author continuity
+${p.author?.notes || '(none)'}
+
+Return status done, or blocked with the reason in summary if you cannot work. Return design as an empty string, testContract with empty testRoots and checks, replayMapping exactly as the current one: ${JSON.stringify(p.replayMapping)}, and readings=[], liveChecks=[], questions=[].
+Save any probe under ${S.run.room}/${label}/probes/, starting its name with \`probe-\`. Write a short handoff at ${S.run.room}/${label}/A.md (create the directory): what you changed and declined, and the checks you ran. Return private notes sufficient for a fresh author context to continue.`
+}
+
+function pairPolishReviewPrompt(S, label, checkout, correction = null) {
+  const p = S.pair, from = p.polish.from, tag = pairReviewTag(S)
+  const minors = p.findings.filter(f => p.polish.minors.includes(f.id))
+  return `You are the independent reviewer in a pair workflow, checking its polish pass. This is a fresh review context. You did not author the work.
+
+${taskCore(S)}${pairDecisionsBlock(S)}
+# Polish check
+Version: ${pairVersion(S)}
+Return that exact version. Return complete=true only after checking every change the polish made and every acceptance criterion.
+${correction ? `\n# Correct the previous structured review\n${correction.error}\nThis is one correction attempt. Preserve substantive findings and resolutions; correct the invalid structured fields. The prior submission was:\n${JSON.stringify(correction.review)}\n` : ''}
+Repository checkout to inspect: ${checkout}
+${hostMaterializationNote(S, label, tag, checkout)}
+Do not edit the author's worktree, main checkout, criteria, or verification configuration. Save any probe under ${S.run.room}/review-${label}/probes/, starting its name with \`probe-\`, and run Python probes with \`python3 -I\`. Do not delegate or launch models. Do not read the author's private notes or session history.${S.auditors[0]?.vendor === 'gemini' ? `\n${GEMINI_REVIEWER}` : ''}
+
+Review ${from.label} approved the snapshot ${from.ref}: every criterion met, verification passing, and only the minor findings below open. The author then made one polish pass on them. Check that pass, not the whole work again: the polish is the difference between ${from.diff} (the approved snapshot's diff from base) and ${p.measurement.snapshot.diff} (the polished one's)${S.auditors[0]?.vendor === 'gemini' ? '' : `, or git diff ${from.ref} ${p.measurement.snapshot.ref}`}.
+- Resolve every minor finding below: fixed once the change addresses it in every place it names, open otherwise. Where the author declined one, leave it open, unless the reason shows the finding was mistaken: then refuted.
+- File a new finding only for a blocker or major defect the polish itself introduced: something that worked in the approved snapshot and no longer does, with the failure it causes. Don't file minor findings, or anything the polish did not touch: this check ends the run. If the polish broke something, the run delivers the approved snapshot instead.
+- Assess every acceptance criterion against the polished snapshot, exactly one each, under its bare ID, met unless a blocker or major defect the polish introduced, or a failing required check, shows it is not.
+The neutral helper measured the polished snapshot; don't rerun the verification command. Its summary leaves out what each execution printed: read that in ${pairMeasurementRecord(S)}.
+${JSON.stringify(p.measurement)}
+
+# Minor findings and the author's responses
+${JSON.stringify({ findings: minors, addressed: p.author.addressed })}
+
+Return challenges=[], rulings=[], questions=[], requiresDesignRevision=false, and suggestions for anything else you noticed.`
 }
 
 // Effective capabilities only; adapters supply parsed sources and physical path observations.

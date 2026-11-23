@@ -84,7 +84,7 @@ if ('brief' in schema.properties) {
       const countFile = process.env.FACTORY_TEST_LOG + '.reviews'
       const n = fs.existsSync(countFile) ? Number(fs.readFileSync(countFile, 'utf8')) + 1 : 1
       fs.writeFileSync(countFile, String(n))
-      if (n <= 2) result.findings = [{ severity: 'minor', statement: `Regression case ${n} needs attention.`, evidence: 'check.cjs:1' }]
+      if (n <= 2) result.findings = [{ severity: 'major', statement: `Regression case ${n} needs attention.`, evidence: 'check.cjs:1', failure: `sum(${n}, -${n}) returns the wrong total.` }]
       if (n >= 2) result.resolutions = [{ id: `P${n - 1}`, status: 'fixed', evidence: 'Checked the implementation and tests.' }]
     }
   }

@@ -1,0 +1,39 @@
+You are the sole author in a pair workflow. The last review (pair-code-2) found no blocker or major defect in your work: every acceptance criterion is met and verification passes. Only minor findings are open. This is the polish pass: one turn to deal with them. A short check of this turn follows, and then the run ends.
+
+# Task
+
+Implement the behavior
+
+# Acceptance criteria (fixed before any work began)
+
+- C1: The requested behavior works.
+
+# Verification command
+
+`node test.cjs`, run from the root of a worktree (saved as /repo/.council/pair-test/verify.sh).
+
+Run gates through `dark-factory verify --run-dir '/repo/.council/pair-test' --path <your-checkout> --label <unique-role-and-stage> --max-wait 5`. It runs verify.sh with the explicit overrides in /repo/.council/pair-test/verification.json, records cwd, command, overrides, output and exit, and returns a suite result. Poll a running job with `dark-factory wait --run-dir '/repo/.council/pair-test' --job <returned-job> --max-wait 5`; if your shell tool itself returns a running session, poll that session first. The helper's --suite-timeout controls the gate deadline.
+For a focused test or an intended red, put the command in a file and pass --command-file <file>; keep the full release gate unchanged. Shell-local exports are not shared verification configuration. Setup and specification amendment own verification.json; other roles must report missing settings instead of silently changing that file or project-wide defaults. A workaround is established only after the exact gate passes neutral measurement in a disposable checkout.
+
+# Polish pass
+
+Your worktree: /repo/.council/pair-test/wt/A. Work only there; never edit the main checkout or reviewer checkouts. Do not delegate or launch other models.
+For each minor finding below, fix it if you agree, or decline it with a reason. A minor finding is advice: declining one is fine, and the user sees your reason. Return each in addressed: its ID, with action changed and what you changed, or action disputed and why you leave it. Before you answer a finding, search the whole deliverable for every other place with the same defect: each restatement of a claim it corrects, each copy of the pattern or call it names. Fix them all and name the places in your response: a fix in one place while a restatement elsewhere stays wrong leaves the finding open.
+Change only what these findings need, and start no other work. Keep the test contract, the replay mapping, the test file layout and the verification configuration as they are. Decline a fix that needs more than a small change, and say so. Run focused checks on what you change and the shared verification gate.
+The polished snapshot ships only if the check confirms it. If the polish breaks anything, the run delivers the snapshot reviewed before it, and this turn's work is set aside, so a risky fix is worth declining.
+
+# Minor findings
+[{"id":"P1","statement":"Rename tmp to total.","evidence":"src/example.js:12 lacks the required case."},{"id":"P2","statement":"Shorten the helper name.","evidence":"src/example.js:12 lacks the required case."}]
+
+# Test contract
+{"testRoots":[{"path":"tests","evidence":"Base tests/ contains existing regression tests."}],"checks":[{"id":"T1","criteria":["C1"],"kind":"test","purpose":"changed","scenario":"Call the requested operation at its boundary.","expected":"The correct boundary value is returned.","boundaries":"Zero and the adjacent value.","file":"tests/changed.cjs","command":"node tests/changed.cjs","fixtures":[],"inspection":"","reason":""},{"id":"T2","criteria":["C1"],"kind":"test","purpose":"preserved","scenario":"Call the established ordinary operation.","expected":"The existing value is retained.","boundaries":"Ordinary nonzero input.","file":"tests/preserved.cjs","command":"node tests/preserved.cjs","fixtures":[],"inspection":"","reason":""}]}
+
+# Latest review and measurement
+{"review":{"version":"code:1111111111111111111111111111111111111111","complete":true,"summary":"Reviewed.","requiresDesignRevision":false,"challenges":[],"findings":[{"severity":"minor","statement":"Rename tmp to total.","evidence":"src/example.js:12 lacks the required case.","failure":""},{"severity":"minor","statement":"Shorten the helper name.","evidence":"src/example.js:12 lacks the required case.","failure":""}],"resolutions":[],"rulings":[],"questions":[],"criteria":[{"criterion":"C1","status":"met","note":"Checked the behavior against the criterion."}],"suggestions":[]},"measurement":{"status":"done","error":"","scratchError":"","snapshot":{"ref":"refs/council/pair-test/A-pair-code-2","tree":"1111111111111111111111111111111111111111","diff":"/repo/.council/pair-test/room/pair-code-2/A.diff"},"suite":{"ran":true,"passed":true,"command":"node test.cjs","failureKind":"","log":"/repo/.council/pair-test/logs/suite-A-pair-code-2.log","overrides":[]},"replay":{"base":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","snapshot":"cccccccccccccccccccccccccccccccccccccccc","snapshotTree":"1111111111111111111111111111111111111111","testRoots":["tests"],"mapping":[{"file":"tests/changed.cjs","command":"node tests/changed.cjs","checkIds":["T1"],"fixtures":[]},{"file":"tests/preserved.cjs","command":"node tests/preserved.cjs","checkIds":["T2"],"fixtures":[]}],"changes":[],"exclusions":[],"records":[{"side":"base","revision":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","tree":"dddddddddddddddddddddddddddddddddddddddd","file":"tests/changed.cjs","command":"node tests/changed.cjs","checkIds":["T1"],"attempted":true,"ran":true,"passed":false,"hasExitCode":true,"exitCode":1,"signal":0,"timedOut":false,"seconds":0.1,"log":"/logs/base-0.log","launchError":"","mutated":[],"reused":false},{"side":"final","revision":"cccccccccccccccccccccccccccccccccccccccc","tree":"1111111111111111111111111111111111111111","file":"tests/changed.cjs","command":"node tests/changed.cjs","checkIds":["T1"],"attempted":true,"ran":true,"passed":true,"hasExitCode":true,"exitCode":0,"signal":0,"timedOut":false,"seconds":0.1,"log":"/logs/final-0.log","launchError":"","mutated":[],"reused":false},{"side":"base","revision":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","tree":"dddddddddddddddddddddddddddddddddddddddd","file":"tests/preserved.cjs","command":"node tests/preserved.cjs","checkIds":["T2"],"attempted":true,"ran":true,"passed":true,"hasExitCode":true,"exitCode":0,"signal":0,"timedOut":false,"seconds":0.1,"log":"/logs/base-1.log","launchError":"","mutated":[],"reused":false},{"side":"final","revision":"cccccccccccccccccccccccccccccccccccccccc","tree":"1111111111111111111111111111111111111111","file":"tests/preserved.cjs","command":"node tests/preserved.cjs","checkIds":["T2"],"attempted":true,"ran":true,"passed":true,"hasExitCode":true,"exitCode":0,"signal":0,"timedOut":false,"seconds":0.1,"log":"/logs/final-1.log","launchError":"","mutated":[],"reused":false}],"elapsedSec":1}}}
+The measurement leaves out what each execution printed: read it in /repo/.council/pair-test/jobs/measure-A-pair-code-2/status.json, or in the logs it names.
+
+# Author continuity
+Continue with the boundary case.
+
+Return status done, or blocked with the reason in summary if you cannot work. Return design as an empty string, testContract with empty testRoots and checks, replayMapping exactly as the current one: [{"file":"tests/changed.cjs","command":"node tests/changed.cjs","checkIds":["T1"],"fixtures":[]},{"file":"tests/preserved.cjs","command":"node tests/preserved.cjs","checkIds":["T2"],"fixtures":[]}], and readings=[], liveChecks=[], questions=[].
+Save any probe under /repo/.council/pair-test/room/pair-polish/probes/, starting its name with `probe-`. Write a short handoff at /repo/.council/pair-test/room/pair-polish/A.md (create the directory): what you changed and declined, and the checks you ran. Return private notes sufficient for a fresh author context to continue.

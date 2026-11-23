@@ -72,7 +72,7 @@ Code, not a model, sets readiness from the checks, and it never changes which re
 | `ready` | every criterion met, the verification gate and published tests pass on the exact reviewed snapshot, no upheld blocker or major finding |
 | `blocked` | something is wrong: an unmet criterion, a failing gate or test, a fabricated verification, an upheld blocker or major finding |
 | `incomplete` | something wasn't checked: no measurement, an unrun suite, an unjudged criterion, a missing review, an unresolved ruling |
-| `unverified` | pair: no open findings, but the measurement itself failed for environmental reasons; the cause is in `final.readiness.infrastructure` |
+| `unverified` | pair: no open blocker or major findings, but the measurement itself failed for environmental reasons; the cause is in `final.readiness.infrastructure` |
 | `not-assessed` | an explanation run: nothing was reviewed |
 
 `final.readiness.blocked` and `final.readiness.incomplete` list the reasons. Ensemble reports a

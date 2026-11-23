@@ -98,6 +98,7 @@ const PAIR_REVIEW_SCHEMA = strict({ type: 'object', properties: {
   } } },
   findings: { type: 'array', items: { type: 'object', properties: {
     severity: SEVERITY, statement: { type: 'string' }, evidence: { type: 'string' },
+    failure: { type: 'string', description: 'For a blocker or major finding: the concrete input or situation, and what goes wrong in it. Empty for a minor finding.' },
   } } },
   resolutions: { type: 'array', items: { type: 'object', properties: {
     id: { type: 'string' }, status: { type: 'string', enum: ['open', 'fixed', 'refuted'] }, evidence: { type: 'string' },

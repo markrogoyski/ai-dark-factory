@@ -80,39 +80,13 @@ async function pairRun() {
       p.replayMapping = author.replayMapping || []
       const mappingError = pairMappingError(S)
       if (mappingError) { p.stop = mappingError; return pairResult(S) }
-      phase('Verify')
-      try {
-        p.measurement = pairMeasurementView(S, hostRuntime ? await hostRuntime.measure({ run: S.run, seat: 'A', label, replay: pairReplayRequest(S) })
-          : await ask(pairMeasurePrompt(S, label), { label: `measure ${label}`, phase: 'Verify', schema: PAIR_MEASURE_SCHEMA,
-            model: transportModel, effort: 'low', copies: true }, 'checker'), PAIR_MEASURE_SCHEMA)
-      } catch (error) {
-        if (fatalTurnError(error)) throw error
-        p.measurement = { status: 'error', error: String(error?.message || error) }
-      }
-      const m = p.measurement
-      if (!m || m.status !== 'done' || !/^[0-9a-f]{40,64}$/.test(m.snapshot?.tree || '') ||
-          m.snapshot.ref !== `refs/council/${S.run.runId}/A-${label}` || m.snapshot.diff !== `${S.run.room}/${label}/A.diff` ||
-          (m.suite?.ran && String(m.suite.command || '').trim() !== S.verify)) {
-        p.stop = m?.error || 'Snapshot verification failed to produce evidence.'
-        return pairResult(S, 'failed')
-      }
+      const measureError = await pairMeasure(label, transportModel)
+      if (measureError) { p.stop = measureError; return pairResult(S, 'failed') }
       pairMilestone(pairAuthorLine(S))
     }
     phase(p.stage === 'design' ? 'Review design' : 'Review code')
-    const trim = (review, at) => {
-      pairNormalizeReview(S, review)
-      const dropped = p.stage === 'design' || pairChallengesDue(S) ? pairTrimChallenges(S, review) : []
-      if (dropped.length) S.notes.push(`review ${at}: dropped rejecting checks that do not cover the challenged criterion (${dropped.join('; ')}).`)
-      return review
-    }
     const before = p.findings.length
-    let review = trim(await pairReviewTurn(label), label)
-    let error = pairIngestReview(S, review)
-    if (error && review?.complete === true && review.version === pairVersion(S) && pairCorrectableError(S, review)) {
-      S.notes.push(`review ${label}: ${error} Requested one reviewer correction; the invalid review changed no findings.`)
-      review = trim(await pairReviewTurn(`${label}-corrected`, { error, review }), `${label}-corrected`)
-      error = pairIngestReview(S, review)
-    }
+    const { review, error } = await pairReview(label)
     if (error) { p.stop = error; return pairResult(S, review ? 'blocked' : 'failed') }
     pairMilestone(pairReviewLine(S, review, before))
     // A conflict only the user can settle stops the run now, as an author's needs-user does: the
@@ -127,7 +101,7 @@ async function pairRun() {
     }
     const ready = pairReadiness(S)
     if (ready.state === 'ready') {
-      if (p.stage === 'code') return pairResult(S, 'done')
+      if (p.stage === 'code') return pairPolishDue(S) ? pairPolish(transportModel) : pairResult(S, 'done')
       p.approvedDesign = p.design
       p.approvedContract = JSON.parse(JSON.stringify(p.testContract))
       p.stage = 'code'
@@ -178,6 +152,78 @@ async function pairRun() {
   }
   p.stop = `Review budget exhausted (${S.pairOptions.maxReviews}); work remains unresolved.`
   return pairResult(S)
+}
+
+// Measures the author's snapshot at `label` with the neutral helper: the runner's own measurement,
+// or a native transport copying it. Returns why it produced no usable evidence, or null.
+async function pairMeasure(label, transportModel) {
+  const p = S.pair
+  phase('Verify')
+  try {
+    p.measurement = pairMeasurementView(S, hostRuntime ? await hostRuntime.measure({ run: S.run, seat: 'A', label, replay: pairReplayRequest(S) })
+      : await ask(pairMeasurePrompt(S, label), { label: `measure ${label}`, phase: 'Verify', schema: PAIR_MEASURE_SCHEMA,
+        model: transportModel, effort: 'low', copies: true }, 'checker'), PAIR_MEASURE_SCHEMA)
+  } catch (error) {
+    if (fatalTurnError(error)) throw error
+    p.measurement = { status: 'error', error: String(error?.message || error) }
+  }
+  const m = p.measurement
+  if (!m || m.status !== 'done' || !/^[0-9a-f]{40,64}$/.test(m.snapshot?.tree || '') ||
+      m.snapshot.ref !== `refs/council/${S.run.runId}/A-${label}` || m.snapshot.diff !== `${S.run.room}/${label}/A.diff` ||
+      (m.suite?.ran && String(m.suite.command || '').trim() !== S.verify)) return m?.error || 'Snapshot verification failed to produce evidence.'
+  return null
+}
+
+// One review of the current version, with one correction for a review whose structured fields
+// can be fixed without changing its judgement. Returns the review and why it can't count, if so.
+async function pairReview(label) {
+  const p = S.pair
+  const trim = (review, at) => {
+    pairNormalizeReview(S, review)
+    const dropped = p.stage === 'design' || pairChallengesDue(S) ? pairTrimChallenges(S, review) : []
+    if (dropped.length) S.notes.push(`review ${at}: dropped rejecting checks that do not cover the challenged criterion (${dropped.join('; ')}).`)
+    return review
+  }
+  let review = trim(await pairReviewTurn(label), label)
+  let error = pairIngestReview(S, review)
+  if (error && review?.complete === true && review.version === pairVersion(S) && pairCorrectableError(S, review)) {
+    S.notes.push(`review ${label}: ${error} Requested one reviewer correction; the invalid review changed no findings.`)
+    review = trim(await pairReviewTurn(`${label}-corrected`, { error, review }), `${label}-corrected`)
+    error = pairIngestReview(S, review)
+  }
+  return { review, error }
+}
+
+// The polish pass (pairPolishDue): the code review left only minor findings open, with the work
+// otherwise ready. The author gets one turn to fix or decline them, the helper measures it, and a
+// short check confirms it. Anything short of a confirmed, ready snapshot sets the polish aside, and
+// the run delivers the snapshot reviewed before it, which was ready. Spends none of the budget.
+async function pairPolish(transportModel) {
+  const p = S.pair, label = 'pair-polish'
+  pairPolishStart(S)
+  pairMilestone(`Only minor findings are open (${p.polish.minors.join(', ')}), so ${S.pairOptions.author.name} gets one polish pass.`)
+  const end = reason => {
+    pairPolishEnd(S, reason)
+    if (reason) pairMilestone(`The polish pass was set aside (${pairBrief(reason, 240)}); the result is the snapshot reviewed in ${p.polish.from.label}.`)
+    return pairResult(S, 'done')
+  }
+  p.label = label
+  phase('Polish')
+  const author = await pairAuthorTurn(label)
+  if (!author) return end('the author turn failed')
+  if (author.status !== 'done') return end(`the author returned ${author.status}: ${oneLine(author.summary, 200) || 'no reason given'}`)
+  p.author = author
+  pairIngestReplies(S, author)
+  const measureError = await pairMeasure(label, transportModel)
+  if (measureError) return end(`its measurement failed: ${oneLine(measureError, 200)}`)
+  pairMilestone(pairPolishAuthorLine(S))
+  phase('Review code')
+  const before = p.findings.length
+  const { review, error } = await pairReview(label)
+  if (error) return end(`its check did not count: ${oneLine(error, 200)}`)
+  pairMilestone(pairPolishReviewLine(S, review, before))
+  const ready = pairReadiness(S)
+  return end(ready.state === 'ready' ? '' : oneLine([...ready.blocked, ...ready.incomplete, ...ready.infrastructure][0] || `readiness ${ready.state}`, 240))
 }
 
 // The spec review of setup's criteria (off with spec: false): one fresh reviewer, before any author

@@ -166,6 +166,12 @@ function pairOpen(S) {
   return S.pair.findings.filter(f => f.status === 'open')
 }
 
+// The open findings that hold the work: blocker and major ones, and at the design stage only those
+// the design review filed.
+function pairBlocking(S) {
+  return pairOpen(S).filter(f => f.severity !== 'minor' && (S.pair.stage === 'code' || f.stage === 'design'))
+}
+
 function pairRelativePath(S, path) {
   return typeof path === 'string' && !!path && !path.includes('\\') && !path.includes('\0') &&
     !/^[A-Za-z]:/.test(path) && path.split('/').every(p => p && p !== '.' && p !== '..')
@@ -235,7 +241,33 @@ function pairCriteriaError(S, review) {
 
 // A review whose structured fields can be fixed without changing its judgement: one correction.
 function pairCorrectableError(S, review) {
-  return ((S.pair.stage === 'design' || pairChallengesDue(S)) && pairChallengeError(S, review)) || pairCriteriaError(S, review) || pairRulingsError(S, review) || pairQuestionsError(S, review) || pairResolutionsError(S, review)
+  return ((S.pair.stage === 'design' || pairChallengesDue(S)) && pairChallengeError(S, review)) || pairCriteriaError(S, review) || pairRulingsError(S, review) || pairQuestionsError(S, review) || pairResolutionsError(S, review) || pairCriterionSupportError(S, review)
+}
+
+// A criterion held partial or unmet keeps the work from readiness, so it needs what a blocker or
+// major finding needs: something that actually fails. A criterion with only minor findings against
+// it is met; without this, reviewers held criteria partial over wording until the budget ran out.
+// A failing or missing required check, a challenge with no rejecting check, a design revision, a
+// rejected reading or a question to the user shows a criterion short on its own. Returns why the review can't stand, or null.
+function pairCriterionSupportError(S, review) {
+  const p = S.pair
+  // A challenge citing no rejecting check shows its criterion short: no check would catch a wrong result.
+  const unchecked = new Set((Array.isArray(review?.challenges) ? review.challenges : []).filter(c => Array.isArray(c?.rejectingCheckIds) && !c.rejectingCheckIds.length).map(c => c.criterion))
+  const short = (Array.isArray(review?.criteria) ? review.criteria : []).filter(a => ['partial', 'unmet'].includes(a?.status) && !unchecked.has(a.criterion))
+  if (!short.length || review.requiresDesignRevision === true) return null
+  if ((review.rulings || []).some(r => r?.ruling !== 'accepted') || (review.questions || []).length) return null
+  if (p.stage === 'code') {
+    const m = p.measurement, blocked = [], incomplete = []
+    if (pairInfrastructure(S).length || (S.verify && !(m?.suite?.ran && m.suite.passed))) return null
+    pairReplayReadiness(S, blocked, incomplete)
+    if (blocked.length || incomplete.length) return null
+  }
+  const settled = new Set(pairReviewResolutions(S, review).filter(r => r?.status !== 'open').map(r => r.id))
+  if (pairBlocking(S).some(f => !settled.has(f.id))) return null
+  if ((review.findings || []).some(f => f?.severity !== 'minor' && String(f?.failure || '').trim())) return null
+  const them = short.length === 1 ? 'it' : 'them'
+  return `${short.map(a => `${a.criterion} is assessed ${a.status}`).join('; ')}, but no blocker or major finding, open or new in this review, shows what fails ${them}. ` +
+    `File the defect as a blocker or major finding with its failure, or assess ${them} met and file what remains as a minor finding.`
 }
 
 // A review resolves only its own findings (P1, P2, …). A spec finding (S1, …) is settled by the
@@ -677,9 +709,9 @@ function pairChallengeError(S, review) {
     return `${S.pair.stage === 'code' ? 'This code review' : 'Design review'} needs exactly one challenge for each acceptance criterion (${S.criteria.map(c => c.id).join(', ')}).` +
       `${missing.length ? ` Missing: ${missing.join(', ')}.` : ''}${repeated.length ? ` Repeated: ${[...new Set(repeated)].join(', ')}.` : ''}`
   }
-  // A minor design finding does not hold the design (pairReadiness), so at design it cannot stand
-  // in for the missing rejecting check either.
-  const rejecting = S.pair.stage === 'design' ? ['blocker', 'major'] : ['blocker', 'major', 'minor']
+  // A minor finding does not hold the work (pairReadiness), so it cannot stand in for the missing
+  // rejecting check either.
+  const rejecting = ['blocker', 'major']
   for (const c of challenges) {
     const rejectsDesign = review.requiresDesignRevision === true ||
       (review.findings || []).some(f => String(f.statement || '').trim() && String(f.evidence || '').trim() && rejecting.includes(f.severity)) ||
@@ -688,7 +720,7 @@ function pairChallengeError(S, review) {
     if (!S.criteria.some(x => x.id === c.criterion)) return `Challenge ${c.criterion} names no acceptance criterion.`
     if (!String(c.wrongImplementation || '').trim()) return `Challenge ${c.criterion} needs a plausible wrong implementation.`
     if (!Array.isArray(c.rejectingCheckIds) || new Set(c.rejectingCheckIds).size !== c.rejectingCheckIds.length) return `Challenge ${c.criterion} needs distinct rejectingCheckIds.`
-    if (!c.rejectingCheckIds.length && !rejectsDesign) return `Challenge ${c.criterion} cites no rejecting check. Cite a contract check whose criteria include ${c.criterion}, or, if none rejects the wrong implementation, raise an evidenced ${S.pair.stage === 'design' ? 'blocker or major ' : ''}finding or assess ${c.criterion} partial or unmet.`
+    if (!c.rejectingCheckIds.length && !rejectsDesign) return `Challenge ${c.criterion} cites no rejecting check. Cite a contract check whose criteria include ${c.criterion}, or, if none rejects the wrong implementation, raise an evidenced blocker or major finding or assess ${c.criterion} partial or unmet.`
     const stray = c.rejectingCheckIds.filter(id => !covers(id))
     if (stray.length) {
       const owner = id => contract.checks.find(check => check.id === id)
@@ -778,6 +810,8 @@ function pairIngestReview(S, review) {
   if (questionsError) return questionsError
   const resolutionsError = pairResolutionsError(S, review)
   if (resolutionsError) return resolutionsError
+  const supportError = pairCriterionSupportError(S, review)
+  if (supportError) return supportError
   const resolutions = pairReviewResolutions(S, review)
   for (const f of review.findings || []) {
     if (!String(f.statement || '').trim() || !String(f.evidence || '').trim() || !['blocker', 'major', 'minor'].includes(f.severity)) {
@@ -792,7 +826,13 @@ function pairIngestReview(S, review) {
     f.resolution = r.evidence
     f.history.push({ review: p.reviews.length + 1, ...r })
   }
-  for (const f of review.findings || []) {
+  const polish = !!p.polish?.active
+  for (const raw of review.findings || []) {
+    // A blocker or major finding names the failure it causes; one that names none is filed as minor.
+    const f = raw.severity !== 'minor' && !String(raw.failure || '').trim() ? { ...raw, severity: 'minor' } : raw
+    if (f !== raw) S.notes.push(`review ${p.label}: filed "${oneLine(f.statement, 120)}" as minor, not ${raw.severity}: it names no failure.`)
+    // The polish check ends the run: it files only what the polish broke.
+    if (polish && f.severity === 'minor') { S.notes.push(`review ${p.label}: left out a new minor finding, which the polish check does not file: ${oneLine(f.statement, 200)}`); continue }
     // Suppress literal repeats only. Reworded issues retain identity through resolutions,
     // never by fuzzy matching that could merge distinct defects.
     const same = p.findings.find(old => old.stage === p.stage && old.status === 'open' && old.statement.trim().replace(/\s+/g, ' ') === f.statement.trim().replace(/\s+/g, ' '))
@@ -815,7 +855,9 @@ function pairIngestReview(S, review) {
   // The process note is for the retro (S.processNotes), not for the author's next turn.
   const { process: note, ...kept } = review
   p.lastReview = kept
-  p.reviews.push({ stage: p.stage, label: p.label, ...kept })
+  // The polish check is not one of the run's reviews: it spends none of the budget.
+  if (polish) p.polish.review = { label: p.label, ...kept }
+  else p.reviews.push({ stage: p.stage, label: p.label, ...kept })
   if (p.stage === 'design') {
     ;(p.designRounds ||= []).push({ review: p.reviews.length, label: p.label, fresh: p.findings.length - before,
       ...pairSeverityCounts(pairOpen(S).filter(f => f.stage === 'design')), words: String(p.design || '').split(/\s+/).filter(Boolean).length })
@@ -839,9 +881,9 @@ function pairReadiness(S) {
   const blocked = [], incomplete = [], infrastructure = pairInfrastructure(S)
   if (p.stop) incomplete.push(p.stop)
   if (!r || r.version !== pairVersion(S) || !r.complete) incomplete.push('The current version has no completed review.')
-  // At the design stage a minor design finding does not hold the design: it stays open into the
-  // code stage, where every open finding blocks.
-  for (const f of pairOpen(S).filter(f => p.stage === 'code' || (f.stage === 'design' && f.severity !== 'minor'))) blocked.push(`${f.id} (${f.severity}): ${f.statement}`)
+  // A minor finding never blocks: at the design stage it stays open into the code stage, and at the
+  // code stage the polish pass (pairPolishDue) deals with the ones still open, then reports them.
+  for (const f of pairBlocking(S)) blocked.push(`${f.id} (${f.severity}): ${f.statement}`)
   for (const r of p.readings.filter(r => r.status === 'proposed')) incomplete.push(`Reading ${r.id} has no ruling.`)
   for (const r of p.readings.filter(r => r.status === 'needs-user')) incomplete.push(`Reading ${r.id} needs a user decision.`)
   if (!S.criteria.length) incomplete.push('No acceptance criteria were established.')
@@ -884,8 +926,88 @@ function pairStalled(S) {
 
 function pairReviewClean(S) {
   const r = S.pair.lastReview
-  return r?.complete && r.version === pairVersion(S) && !r.requiresDesignRevision && !pairOpen(S).length &&
+  return r?.complete && r.version === pairVersion(S) && !r.requiresDesignRevision && !pairBlocking(S).length &&
     S.criteria.every(c => r.criteria.filter(a => a.criterion === c.id).length === 1 && r.criteria.some(a => a.criterion === c.id && a.status === 'met' && a.note?.trim()))
+}
+
+// The polish pass: a code review left only minor findings open, and the work is otherwise ready.
+// The author gets one turn to fix or decline them and a short check confirms it, once per run.
+function pairPolishDue(S) {
+  const p = S.pair
+  return p.stage === 'code' && !p.polish && pairOpen(S).some(f => f.severity === 'minor') && pairReadiness(S).state === 'ready'
+}
+
+// What the polish pass may change, kept so a polish that breaks anything is set aside and the run
+// delivers the snapshot reviewed before it.
+const PAIR_POLISH_KEPT = ['label', 'author', 'measurement', 'lastReview', 'findings']
+
+function pairPolishStart(S) {
+  const p = S.pair, m = p.measurement.snapshot
+  p.polish = { active: true, from: { label: p.label, ref: m.ref, tree: m.tree, diff: m.diff },
+    minors: pairOpen(S).filter(f => f.severity === 'minor').map(f => f.id), review: null, discarded: '',
+    saved: JSON.parse(JSON.stringify(Object.fromEntries(PAIR_POLISH_KEPT.map(k => [k, p[k] ?? null])))) }
+}
+
+// Ends the polish pass: kept when `reason` is empty, otherwise set aside, restoring the reviewed
+// snapshot's state. The author's replies stay on record either way.
+function pairPolishEnd(S, reason) {
+  const p = S.pair
+  if (reason) {
+    for (const k of PAIR_POLISH_KEPT) p[k] = p.polish.saved[k]
+    p.polish.discarded = reason
+  }
+  p.polish.active = false
+  delete p.polish.saved
+}
+
+// After the polish turn and its measurement.
+function pairPolishAuthorLine(S) {
+  const mine = S.pair.replies.filter(r => r.turn === S.pair.label)
+  const out = [`${S.pairOptions.author.name} made the polish pass.`]
+  const changed = mine.filter(r => r.action === 'changed').map(r => r.id)
+  if (changed.length) out.push(`Changed ${changed.join(', ')}.`)
+  for (const r of mine.filter(r => r.action === 'disputed')) out.push(`Declined ${r.id}: ${sentence(pairBrief(r.response, 200) || 'no reason given')}`)
+  const gate = pairGateLine(S)
+  if (gate) out.push(gate)
+  return out.join(' ')
+}
+
+// After the polish check is recorded; `before` is how many findings there were before it.
+function pairPolishReviewLine(S, review, before) {
+  const p = S.pair, ready = pairReadiness(S)
+  const out = [`Polish check by ${S.pairOptions.reviewer.name}: ${ready.state === 'ready' ? 'confirmed' : 'the polish broke something'}.`]
+  for (const [status, word] of [['fixed', 'Fixed'], ['refuted', 'Refuted']]) {
+    const ids = (review.resolutions || []).filter(r => r.status === status).map(r => r.id)
+    if (ids.length) out.push(`${word} ${ids.join(', ')}.`)
+  }
+  const open = p.polish.minors.filter(id => p.findings.find(f => f.id === id)?.status === 'open')
+  if (open.length) out.push(`Still open: ${open.join(', ')}.`)
+  const fresh = p.findings.slice(before)
+  if (fresh.length) out.push(`New: ${fresh.map(f => `${f.id} (${f.severity}) ${pairBrief(f.statement, 140)}`).join('; ')}.`)
+  const short = (review.criteria || []).filter(c => c.status !== 'met').map(c => `${c.criterion} ${c.status}`)
+  if (short.length) out.push(`Criteria: ${short.join(', ')}.`)
+  return out.join(' ')
+}
+
+// The minor findings the run ends with, and what became of each in the polish pass: none of them
+// blocks readiness, so the user decides on any the author declined or left open.
+function pairMinorSection(S) {
+  const p = S.pair, polish = p.polish
+  const minors = p.findings.filter(f => f.severity === 'minor' && (f.status === 'open' || polish?.minors.includes(f.id)))
+  if (!minors.length) return ''
+  const declined = id => p.replies.find(r => r.id === id && r.turn === 'pair-polish' && r.action === 'disputed')
+  const fate = f => {
+    if (!polish || !polish.minors.includes(f.id)) return f.status === 'open' ? 'open' : f.status
+    if (polish.discarded) return 'open; the polish pass was set aside'
+    if (f.status === 'fixed') return 'fixed in the polish pass'
+    if (f.status === 'refuted') return 'refuted in the polish check'
+    const d = declined(f.id)
+    return d ? `declined by ${S.pairOptions.author.name}: ${sentence(pairBrief(d.response, 240) || 'no reason given')}` : 'still open after the polish pass'
+  }
+  const head = polish?.discarded
+    ? `The polish pass was set aside (${pairBrief(polish.discarded, 240)}), so the result is the snapshot reviewed in ${polish.from.label}. final.worktree still holds the polish; dark-factory apply stages final.snapshotRef, not the worktree.\n\n`
+    : ''
+  return `Minor findings (they never block readiness; the user decides on any left open):\n\n${head}${minors.map(f => `- ${f.id}: ${fate(f).replace(/\.$/, '')}. ${sentence(pairBrief(f.statement, 240))}`).join('\n')}`
 }
 
 // The design reviews the run may spend before it stops for the user: maxDesignReviews, and as many
@@ -924,7 +1046,7 @@ function pairDesignQuestion(S) {
     `Open design findings: ${open.map(f => `${f.id} (${f.severity}) ${pairBrief(f.statement, 160)}`).join('; ') || 'none'}${open.length ? '.' : ''} ` +
     `${plural(left, 'review')} of ${o.maxReviews} remain. Choose one. (a) Continue the design: answer with a scope decision the author and reviewer then follow, ` +
     `for example narrow the scope, or accept named findings as documented residuals; the design gets up to ${plural(o.maxDesignReviews, 'more review')}. ` +
-    '(b) Start the implementation now: answer with implement: true; the open design findings carry into code review as open items, and each still blocks readiness until the reviewer closes it. ' +
+    '(b) Start the implementation now: answer with implement: true; the open design findings carry into code review as open items, and each blocker or major one still blocks readiness until the reviewer closes it. ' +
     '(c) Stop: don\'t continue this run.'
 }
 
@@ -1076,7 +1198,7 @@ function pairResult(S, status = 'blocked') {
   const hostRunDir = S.host === 'codex' && S.raw.repo && S.raw.hostRunId ? `${S.raw.repo}/.council/${S.raw.hostRunId}` : '<hostRunDir>'
   const resumeSteps = resumable ? pairResumeSteps(S, S.host === 'codex' ? 'codex' : 'native', hostRunDir) : ''
   const live = ready.liveChecks, pending = [...new Set(live.map(c => c.criterion))]
-  const highlights = pairHighlights(S)
+  const highlights = pairHighlights(S), minors = pairMinorSection(S)
   const report = [`Pair: ${S.pairOptions.author.name} authors; ${S.pairOptions.reviewer.name} reviews.`,
     `Readiness: ${ready.state}${pending.length ? `; live checks pending: ${pending.join(', ')}` : ''}. Reviews: ${p.reviews.length}/${S.pairOptions.maxReviews}.`,
     ...live.map(c => `Live check for ${c.criterion}: ${c.check}${c.reason ? ` (${c.reason})` : ''}`),
@@ -1086,6 +1208,7 @@ function pairResult(S, status = 'blocked') {
     ...ready.infrastructure, ...ready.blocked, ...ready.incomplete,
     `How the run went:\n\n${[...(S.story || []), pairEndLine(S, status, ready)].map((line, i) => `${i + 1}. ${line}`).join('\n')}`,
     ...(highlights.length ? [`Points of interest:\n\n${highlights.map(h => `- ${h}`).join('\n')}`] : []),
+    ...(minors ? [minors] : []),
     ...(pairSpecSection(S) ? [pairSpecSection(S)] : []),
     ...(questions.length ? [`Questions for the user (answer each under its ID):\n\n${questions.map(q => `- ${q.id} (about ${q.about}): ${q.question}`).join('\n')}`] : []),
     ...(p.decisions.length ? [`User decisions:\n\n${p.decisions.map(d => `- ${d.id} (about ${d.about}; asked in ${d.label}): ${d.question} Answer: ${d.answer}` +
@@ -1097,7 +1220,9 @@ function pairResult(S, status = 'blocked') {
     forTheOrchestrator: 'Read final.readiness first. Report unresolved findings or missing evidence before any success summary. ' +
       (p.readings.some(r => r.status === 'accepted') ? 'Report the accepted readings (readings with status accepted): requirements the reviewer agreed the work may read other than literally. ' : '') +
       (live.length ? 'Before delivery, run each live check (final.readiness.liveChecks) against the real service or resource it names and report its outcome: a ready run with live checks pending is not done until they pass. ' : '') +
-      'Spot-check the reviewed snapshot. Show the "How the run went" and "Points of interest" lists from report.markdown as they are: they give the design and implementation reviews in order, from the run\'s record. The change stays in final.worktree. ' +
+      'Spot-check the reviewed snapshot. Show the "How the run went" and "Points of interest" lists from report.markdown as they are: they give the design and implementation reviews in order, from the run\'s record. ' +
+      (minors ? 'Show the "Minor findings" list too: minor findings never block readiness, so the user decides on any the author declined or left open. ' : '') +
+      (p.polish?.discarded ? 'The polish pass was set aside: final.snapshotRef is the snapshot reviewed before it, and final.worktree still holds the polish, so deliver with dark-factory apply, never from the worktree. ' : 'The change stays in final.worktree. ') +
       'Readiness unverified means no review finding is open but the run could not measure the snapshot (final.readiness.infrastructure says why): run the gate on the delivered bytes before calling it done. ' +
       'Deliver only within the user\'s authorization, preserving unrelated edits. With HEAD at the original base, nothing staged, and no local edits other than those recorded at setup (run.json deliveryBaseline: unstaged tracked edits and untracked files, none on a path the reviewed change touches), ' +
       `dark-factory apply --run-dir ${S.run?.runDir ? shq(S.run.runDir) : '<runDir>'} --result <file> stages the reviewed snapshot and checks its tree hash, leaving those recorded edits in place; it refuses any other checkout. ` +
@@ -1111,7 +1236,7 @@ function pairResult(S, status = 'blocked') {
     room: S.run?.room || null, refs: S.refs, stage: p.stage, stopReason: p.stop,
     design: p.design, testContract: p.approvedContract || p.testContract, replayMapping: p.replayMapping,
     author: S.pairOptions.author.name, reviewer: S.pairOptions.reviewer.name,
-    reviews: p.reviews, findings: p.findings, readings: p.readings, spec: p.spec, liveChecks: live, questions, decisions: p.decisions, unusedAnswers: unused,
+    reviews: p.reviews, ...(p.polish ? { polish: p.polish } : {}), findings: p.findings, readings: p.readings, spec: p.spec, liveChecks: live, questions, decisions: p.decisions, unusedAnswers: unused,
     ...(resumable ? { resumable: true, resumeSteps } : {}), notes: S.notes,
     report: { markdown: report },
     final: { author: 'A', model: S.pairOptions.author.name, summary: p.author?.summary || '',

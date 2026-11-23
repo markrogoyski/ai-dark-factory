@@ -397,6 +397,7 @@ function pairOutcomeFacts(S) {
   const byStage = stage => p.reviews.filter(r => r.stage === stage).length
   return `- Outcome: the pair strategy, ${o.author.name} authoring and ${o.reviewer.name} reviewing; ` +
     `${p.reviews.length} of at most ${o.maxReviews} reviews (design ${byStage('design')}${o.design !== false && o.maxDesignReviews ? `, asking the user after every ${o.maxDesignReviews} without approval` : ''}, code ${byStage('code')}), ended at the ${p.stage} stage` +
+    `${p.polish ? `; a polish pass on minor ${p.polish.minors.join(', ')}, ${p.polish.discarded ? `set aside (${oneLine(p.polish.discarded, 160)})` : 'kept'}` : ''}` +
     `${p.stop ? ` (${oneLine(p.stop, 200)})` : ''}. Findings: ${p.findings.length ? countsOf(p.findings, f => `${f.stage} ${f.severity} ${f.status}`) : 'none'}. ` +
     `Verification command: ${S.verify ? `\`${oneLine(S.verify, 200)}\`` : 'none'}.` +
     (p.asked?.length ? ` Questions for the user: ${p.asked.map(q => `${q.id} (about ${q.about}, asked in ${q.label})`).join(', ')}; ` +

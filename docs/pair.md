@@ -56,10 +56,15 @@ authenticated CLIs. `--author sol --reviewer astra` uses only Codex models.
   |      v
   |   reviewer: a fresh context and its own checkout of the measured snapshot
   |      |
-  |      +-- ready: every criterion met, required checks pass --> done, delivery pending
-  +------+-- findings or failed checks
+  |      +-- ready, no minor findings open --> done, delivery pending
+  |      +-- ready, minor findings open --> polish pass: the author fixes or declines
+  |      |      them, the helper measures, a short check confirms; done either way,
+  |      |      with the polish set aside if it broke anything
+  +------+-- blocker or major findings, or failed checks
          '-- the approach must change --> back to the design stage
-  Every review counts against maxReviews (default 8, both stages together).
+  Ready means every criterion met, required checks passing and no blocker or major finding
+  open. Every review counts against maxReviews (default 8, both stages together); the polish
+  check does not.
 ```
 
 ## Setup
@@ -181,10 +186,24 @@ evidenced finding, a partial/unmet assessment, or a design revision request, whi
 back to the author. A malformed contract or challenge gets one correction attempt before the run
 stops; corrections count toward the turn budget and never count as approval.
 
-**Minor findings don't hold the design.** Open blocker and major design findings block design
-approval; open minor ones don't. They stay open into the code stage, where every open finding
-blocks readiness, and the code-stage author and reviewer prompts name them as carried items to fix
-and check against the implementation. The design reviewer is told to raise new findings for
+**Severity.** Every review prompt defines it by what goes wrong if the finding stays: a
+**blocker** does the wrong thing on the main path, breaks what worked, loses data or opens a
+security hole (for a document or plan, states something false that work built from it would rely
+on); a **major** does the same on a plausible case, misses a requirement or criterion, or changes
+behaviour no check would catch; a **minor** is anything else worth the author's time (wording,
+naming, style, a rare case, a tighter check). A blocker or major finding must give its `failure`,
+the concrete input or situation and what goes wrong in it; the engine files one without a failure
+as minor and notes it. A criterion assessed partial or unmet needs something that fails it: an
+open or new blocker or major finding, a failing or missing required check, a challenge with no
+rejecting check, a design revision request, a rejected reading or a question to the user. A review
+holding one short without any of those gets the review's one correction. Two document runs
+(Jira ticket rewrites, 2026-11-23) spent all 8 reviews on wording filed as major and criteria held
+partial over it; these rules are the response.
+
+**Minor findings never hold the work.** Open blocker and major design findings block design
+approval; open minor ones don't. They stay open into the code stage, and the code-stage author and
+reviewer prompts name them as carried items to fix and check against the implementation. At the
+code stage they don't block readiness either: they go to the polish pass ([below](#the-polish-pass)). The design reviewer is told to raise new findings for
 defects that affect an acceptance criterion, correctness or scope, and to leave benchmark,
 documentation and wording detail to code review unless a criterion depends on it; a criterion can
 be assessed met when the design satisfies it apart from minor findings. A challenge with no
@@ -222,9 +241,33 @@ instead.
 3. The author fixes findings and failed checks, then measurement and review repeat. A material
    approach problem can send the task back through design review.
 
-All actionable findings, including minor ones and those carried from the design stage, must
-close; optional preferences are reported separately. The author's `addressed` entry for each
+Blocker and major findings, including those carried from the design stage, must close; minor
+ones go to the polish pass, and optional preferences are reported separately. When a defect
+appears in several places (a claim restated, a pattern repeated), the reviewer files it once and
+lists every place, and the author searches the whole deliverable for every place before answering:
+in the document runs, a claim fixed in one place and restated in another kept findings open for up
+to six revisions. The author's handoff, notes and probes are evidence, not the deliverable: a flaw
+in them is a finding only when it hides a defect in the deliverable or weakens a contract check.
+For a document deliverable, the author keeps that evidence out of the document unless the task
+asks for it there, and setup writes a hard size or format limit the deliverable must meet (a Jira
+field's 32,767 characters) as a criterion, so it is met from the first draft. The author's `addressed` entry for each
 finding says whether it `changed` the work or `disputed` the finding.
+
+### The polish pass
+
+When a code review leaves only minor findings open, with every criterion met and verification
+passing, the author gets one polish turn (label `pair-polish`): it fixes the minor findings it
+agrees with and declines the rest with a reason, changing nothing else (the contract and replay
+mapping stay as reviewed). The helper measures the result, and a short check reviews only the
+polish: it resolves each minor finding, files a new finding only for a blocker or major defect
+the polish introduced, and assesses every criterion. If the polished snapshot is ready, it is the
+result. If the polish broke anything, or the author, the measurement or the check didn't finish,
+the polish is set aside and the result is the snapshot reviewed before it, which was ready:
+`final.snapshotRef` names it, and `final.worktree` still holds the polish, so deliver with
+`dark-factory apply`. The polish check spends none of `maxReviews`, runs at most once, and is
+recorded in `polish`, not `reviews`. The report's "Minor findings" list gives each minor finding
+the run ends with and what became of it: fixed in the polish pass, declined with the author's
+reason, or left open.
 
 ### Readings
 

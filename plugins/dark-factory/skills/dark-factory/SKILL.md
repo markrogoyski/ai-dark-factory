@@ -36,8 +36,10 @@ A design not approved after `--max-design-reviews` reviews (default 3, at most t
 one) stops with `needs-user` and one question of kind `design`: show its rounds, open findings
 and choices, and let the user choose. An answer continues the design with it as a scope decision;
 `implement: true` in the answer starts the implementation with the open design findings carried
-into code review; not resuming stops. Minor design findings never hold the design; they carry
-into code review, where every open finding blocks readiness.
+into code review; not resuming stops. Minor findings never hold the work: they carry from design
+into code review, and a code review that leaves only minor findings gets one polish pass (the
+author fixes or declines them, a short check confirms, and a polish that breaks anything is set
+aside for the snapshot reviewed before it). Show the report's "Minor findings" list.
 `--no-design` (`design: false`) skips the design stage when the deliverable is itself a document
 or plan: the author writes it directly and review starts at the measured result. `--no-retro`
 (`retro: false`) skips the closing process retro.

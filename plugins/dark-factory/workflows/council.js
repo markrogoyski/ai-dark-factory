@@ -1896,33 +1896,35 @@ ${Gn(e,t,{round:t,text:"a question about the request reached the escalation thre
 ${_n(e,null)}`].join("\n\n")+Kn(e)}}function ho(e){const t=e.pair,n=e.pairOptions;const i=s=>t.reviews.filter(r=>r.stage===
 s).length;return`- Outcome: the pair strategy, ${n.author.name} authoring and ${n.reviewer.name} reviewing; ${t.reviews.
 length} of at most ${n.maxReviews} reviews (design ${i("design")}${n.design!==false&&n.maxDesignReviews?`, asking the us\
-er after every ${n.maxDesignReviews} without approval`:""}, code ${i("code")}), ended at the ${t.stage} stage${t.stop?` \
-(${w(t.stop,200)})`:""}. Findings: ${t.findings.length?Q(t.findings,s=>`${s.stage} ${s.severity} ${s.status}`):"none"}. \
-Verification command: ${e.verify?`\`${w(e.verify,200)}\``:"none"}.`+(t.asked?.length?` Questions for the user: ${t.asked.
-map(s=>`${s.id} (about ${s.about}, asked in ${s.label})`).join(", ")}; answered: ${t.decisions.map(s=>s.id).join(", ")||
-"none"}.`:"")}function Jn(e,t){const n=e.turnLog.filter(o=>o.vendor==="claude");const i=["codex","gemini","openrouter"].
-map(o=>[o,e.turnLog.filter(u=>u.vendor===o)]).filter(([,o])=>o.length);const s=e.turnLog.filter(o=>!o.ok).map(o=>o.turn);
-const r=e.ledger.filter(o=>String(o.ruledBy||"").startsWith("panel")).length;return[`- Run ${e.run.runId} in ${e.run.repoRoot}\
-, ${e.mode} mode. Task: ${w(e.task,300)}`,Co(e),`- Seats: ${e.seats.map(o=>`${o.L}=${o.name} (${o.effort})${o.active?"":
-", dropped"}`).join(", ")}. Panel: ${e.panel.map(o=>o.name).join(", ")}. Checkers: ${e.checkModel}.`,e.pair?ho(e):!t.outcome?
-`- Outcome: the Simple change by ${t.W.L}${t.audit&&t.audit.fixPass?", with one fix pass":""}.`:e.build?Po(e,t):j(e).architecture?
-No(e,t):`- Outcome: ${t.outcome.kind==="consensus"?`consensus on ${t.outcome.W} in round ${t.outcome.round}${t.outcome.via===
-"blind"?`, before any debate, because ${t.outcome.same.join(", ")} were byte-identical`:t.outcome.via==="identical"?` by\
- pooling the votes for identical versions ${t.outcome.same.join(", ")}`:t.outcome.via==="approval"?" by approval":""}`:`\
-no consensus after ${R(t.outcome.round,"round")}; the scorecard picked ${t.outcome.W}`}, with up to ${R(e.rounds,"round")}\
- allowed. Endorsed at ratification by ${t.endorsements.length?t.endorsements.join(", "):"nobody"}${t.fixPass?"; one fix \
-pass for upheld objections":""}.`,e.dropped.length?`- Left contention: ${e.dropped.map(o=>`${o.seat} after round ${o.afterRound}`).
-join(", ")}.`:"",`- Claude agent turns: ${n.length} (${Q(n,o=>o.role)}).${i.map(([o,u])=>` ${_t[o]} turns: ${u.length} (${Q(
-u,d=>d.role)}).`).join("")}`,s.length?`- Turns that returned nothing: ${s.join(", ")}.`:"",e.relayFailures.length?`- Rel\
-ay attempts that didn't return a result: ${e.relayFailures.map(o=>`${o.turn} via ${o.model}: ${o.status}${o.errorClass?`\
- [${o.errorClass}]`:""}${o.error?` (${o.error})`:""}`).join("; ")}.`:"",mo(e),e.longPosts.length?`- Posts over the ${e.postWords}\
--word limit: ${e.longPosts.map(o=>`${o.turn} ${o.words} words`).join(", ")}.`:"",`- Ledger: ${R(e.ledger.length,"item")}\
- (${Q(e.ledger,o=>o.status||"open")}), ${R(e.challenges.length,"challenge")}, ${r} ruled by the panel. Questions raised:\
- ${e.questions.length}.`,`- Ledger by kind: ${["fact","verification","finding","test"].map(o=>[o,e.ledger.filter(u=>u.kind===
-o)]).filter(([,o])=>o.length).map(([o,u])=>`${o} ${u.length} (${Q(u,d=>d.status)})`).join("; ")}.`,`- Votes by round: ${fo(
-e)||"none"}.`,e.spec.ran?`- Spec review: ${so(e)}.`:"",t.audit&&t.audit.ran?`- Audit: ${po(e,t.audit)}.`:"",t.ready?`- F\
-inal readiness: ${Tn(t.ready)}.`:"",e.baselineOk?"":`- The verification command failed at baseline (expected when the ta\
-sk is to fix a failing test): ${e.baselineNote}`,e.notes.length?`- Problems during the run:
+er after every ${n.maxDesignReviews} without approval`:""}, code ${i("code")}), ended at the ${t.stage} stage${t.polish?
+`; a polish pass on minor ${t.polish.minors.join(", ")}, ${t.polish.discarded?`set aside (${w(t.polish.discarded,160)})`:
+"kept"}`:""}${t.stop?` (${w(t.stop,200)})`:""}. Findings: ${t.findings.length?Q(t.findings,s=>`${s.stage} ${s.severity} ${s.
+status}`):"none"}. Verification command: ${e.verify?`\`${w(e.verify,200)}\``:"none"}.`+(t.asked?.length?` Questions for \
+the user: ${t.asked.map(s=>`${s.id} (about ${s.about}, asked in ${s.label})`).join(", ")}; answered: ${t.decisions.map(s=>s.
+id).join(", ")||"none"}.`:"")}function Jn(e,t){const n=e.turnLog.filter(o=>o.vendor==="claude");const i=["codex","gemini",
+"openrouter"].map(o=>[o,e.turnLog.filter(u=>u.vendor===o)]).filter(([,o])=>o.length);const s=e.turnLog.filter(o=>!o.ok).
+map(o=>o.turn);const r=e.ledger.filter(o=>String(o.ruledBy||"").startsWith("panel")).length;return[`- Run ${e.run.runId}\
+ in ${e.run.repoRoot}, ${e.mode} mode. Task: ${w(e.task,300)}`,Co(e),`- Seats: ${e.seats.map(o=>`${o.L}=${o.name} (${o.effort}\
+)${o.active?"":", dropped"}`).join(", ")}. Panel: ${e.panel.map(o=>o.name).join(", ")}. Checkers: ${e.checkModel}.`,e.pair?
+ho(e):!t.outcome?`- Outcome: the Simple change by ${t.W.L}${t.audit&&t.audit.fixPass?", with one fix pass":""}.`:e.build?
+Po(e,t):j(e).architecture?No(e,t):`- Outcome: ${t.outcome.kind==="consensus"?`consensus on ${t.outcome.W} in round ${t.outcome.
+round}${t.outcome.via==="blind"?`, before any debate, because ${t.outcome.same.join(", ")} were byte-identical`:t.outcome.
+via==="identical"?` by pooling the votes for identical versions ${t.outcome.same.join(", ")}`:t.outcome.via==="approval"?
+" by approval":""}`:`no consensus after ${R(t.outcome.round,"round")}; the scorecard picked ${t.outcome.W}`}, with up to\
+ ${R(e.rounds,"round")} allowed. Endorsed at ratification by ${t.endorsements.length?t.endorsements.join(", "):"nobody"}${t.
+fixPass?"; one fix pass for upheld objections":""}.`,e.dropped.length?`- Left contention: ${e.dropped.map(o=>`${o.seat} \
+after round ${o.afterRound}`).join(", ")}.`:"",`- Claude agent turns: ${n.length} (${Q(n,o=>o.role)}).${i.map(([o,u])=>`\
+ ${_t[o]} turns: ${u.length} (${Q(u,d=>d.role)}).`).join("")}`,s.length?`- Turns that returned nothing: ${s.join(", ")}.`:
+"",e.relayFailures.length?`- Relay attempts that didn't return a result: ${e.relayFailures.map(o=>`${o.turn} via ${o.model}\
+: ${o.status}${o.errorClass?` [${o.errorClass}]`:""}${o.error?` (${o.error})`:""}`).join("; ")}.`:"",mo(e),e.longPosts.length?
+`- Posts over the ${e.postWords}-word limit: ${e.longPosts.map(o=>`${o.turn} ${o.words} words`).join(", ")}.`:"",`- Ledg\
+er: ${R(e.ledger.length,"item")} (${Q(e.ledger,o=>o.status||"open")}), ${R(e.challenges.length,"challenge")}, ${r} ruled\
+ by the panel. Questions raised: ${e.questions.length}.`,`- Ledger by kind: ${["fact","verification","finding","test"].map(
+o=>[o,e.ledger.filter(u=>u.kind===o)]).filter(([,o])=>o.length).map(([o,u])=>`${o} ${u.length} (${Q(u,d=>d.status)})`).join(
+"; ")}.`,`- Votes by round: ${fo(e)||"none"}.`,e.spec.ran?`- Spec review: ${so(e)}.`:"",t.audit&&t.audit.ran?`- Audit: ${po(
+e,t.audit)}.`:"",t.ready?`- Final readiness: ${Tn(t.ready)}.`:"",e.baselineOk?"":`- The verification command failed at b\
+aseline (expected when the task is to fix a failing test): ${e.baselineNote}`,e.notes.length?`- Problems during the run:\
+
 ${e.notes.slice(0,30).map(o=>`  - ${w(o,300)}`).join("\n")}${e.notes.length>30?`
   - … ${e.notes.length-30} more`:""}`:"- Problems during the run: none."].filter(Boolean).join("\n")}function po(e,t){
 const n=e.ledger.filter(o=>F(o.author));const i=n.filter(o=>o.kind==="finding"&&o.round==="H"),s=n.filter(o=>o.kind==="t\

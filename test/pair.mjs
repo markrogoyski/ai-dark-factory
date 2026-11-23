@@ -41,9 +41,11 @@ const setup = () => ({ status: 'ok', mode: 'implement', runId: 'pair-test', runD
 const measurement = (label, tree = 'a'.repeat(40)) => ({ status: 'done', error: '', snapshot: {
   ref: `refs/council/pair-test/A-${label}`, tree, diff: `/repo/.council/pair-test/room/${label}/A.diff`,
 }, suite: { ran: true, passed: true, command: 'node test.cjs', failureKind: '', log: `/repo/.council/pair-test/logs/suite-A-${label}.log` }, replay: replay(tree) })
-const finding = statement => ({ severity: 'minor', statement, evidence: 'src/example.js:12 lacks the required case.' })
-// A minor design finding no longer holds the design, so a test that needs a design revision files a major one.
-const major = statement => ({ ...finding(statement), severity: 'major' })
+// A finding that holds the work: a major one, naming the failure it causes. A minor finding never
+// holds it (the polish pass deals with those), and a major one naming no failure is filed as minor.
+const finding = statement => ({ severity: 'major', statement, evidence: 'src/example.js:12 lacks the required case.', failure: 'The boundary input returns the wrong result.' })
+const major = finding
+const minor = statement => ({ ...finding(statement), severity: 'minor', failure: '' })
 const reading = (over = {}) => ({ requirement: 'C1', literal: 'Runs on Node 20 and 22.', reading: 'Runs on at least Node 20 and 22.', reason: 'CI also tests Node 24.', ...over })
 const liveCheck = (over = {}) => ({ criterion: 'C1', check: 'Run `node cli.js fetch` against the real API and confirm it prints the status.',
   reason: 'The tests stub the HTTP call, so TLS verification against the machine\'s certificate store never runs.', ...over })
@@ -718,12 +720,14 @@ test('the report tells the run in order, with the author\'s disputes and how the
   const { result } = await run({ native: true, author: a => ++authors === 2
     ? { ...a, addressed: [{ id: 'P1', action: 'changed', response: 'Added the boundary to the design.', evidence: 'design step 2' },
       { id: 'P2', action: 'disputed', response: 'The cache is per request, so it cannot go stale.', evidence: 'src/cache.js:4' }] }
+    : authors === 6 ? { ...a, addressed: [{ id: 'P4', action: 'changed', response: 'Renamed tmp to total.', evidence: 'src/sum.js:3' }] }
     : a, review: (r, n) => {
-    if (n === 1) r.findings = [finding('Cover the boundary case.'), { ...finding('The cache can go stale.'), severity: 'major' }]
+    if (n === 1) r.findings = [minor('Cover the boundary case.'), finding('The cache can go stale.')]
     if (n === 2) r.resolutions = [{ id: 'P1', status: 'fixed', evidence: 'Step 2 covers it.' }, { id: 'P2', status: 'refuted', evidence: 'The cache is built per request.' }]
-    if (n === 3) { r.findings = [finding('Name the helper after its result.')]; r.criteria[0].status = 'partial' }
-    if (n === 4) r.resolutions = [{ id: 'P3', status: 'open', evidence: 'Still named tmp.' }]
-    if (n === 5) r.resolutions = [{ id: 'P3', status: 'fixed', evidence: 'Renamed.' }]
+    if (n === 3) { r.findings = [finding('The helper drops the last item.')]; r.criteria[0].status = 'partial' }
+    if (n === 4) r.resolutions = [{ id: 'P3', status: 'open', evidence: 'Still loops to length - 1.' }]
+    if (n === 5) { r.resolutions = [{ id: 'P3', status: 'fixed', evidence: 'Loops to length.' }]; r.findings = [minor('Name the helper after its result.')] }
+    if (n === 6) r.resolutions = [{ id: 'P4', status: 'fixed', evidence: 'Renamed.' }]
     return r
   } })
   assert.equal(result.status, 'done')
@@ -736,17 +740,22 @@ test('the report tells the run in order, with the author\'s disputes and how the
     '5. Claude Opus revised the design. Changed P1. Disputed P2: The cache is per request, so it cannot go stale.',
     '6. Design review 2/8 by Codex Astra: approved. Fixed P1. Refuted P2. Criteria all met.',
     '7. Claude Opus implemented the approved design. The gate passed on its snapshot.',
-    '8. Code review 3/8 by Codex Astra: changes requested. New: P3 (minor) Name the helper after its result. Criteria: C1 partial.',
+    '8. Code review 3/8 by Codex Astra: changes requested. New: P3 (major) The helper drops the last item. Criteria: C1 partial.',
     '9. Claude Opus revised the implementation. No reply to P3. The gate passed on its snapshot.',
     '10. Code review 4/8 by Codex Astra: changes requested. Still open: P3. Criteria all met.',
     '11. Claude Opus revised the implementation. No reply to P3. The gate passed on its snapshot.',
-    '12. Code review 5/8 by Codex Astra: approved. Fixed P3. Criteria all met.',
-    '13. Ready after 5 reviews of 8.',
+    '12. Code review 5/8 by Codex Astra: approved. Fixed P3. New: P4 (minor) Name the helper after its result. Criteria all met.',
+    '13. Only minor findings are open (P4), so Claude Opus gets one polish pass.',
+    '14. Claude Opus made the polish pass. Changed P4. The gate passed on its snapshot.',
+    '15. Polish check by Codex Astra: confirmed. Fixed P4.',
+    '16. Ready after 5 reviews of 8.',
   ].join('\n') + '\n\nPoints of interest:\n\n' + [
     '- Claude Opus disputed P2 (major, design), "The cache can go stale": The cache is per request, so it cannot go stale. Codex Astra accepted that and refuted it.',
-    '- P3 (minor, code) took 2 revisions before it was fixed: Name the helper after its result.',
-  ].join('\n') + '\n\nSpecification review:\n\n- spec by Codex Astra: no problems in the criteria.\n\nP1: fixed'), md)
+    '- P3 (major, code) took 2 revisions before it was fixed: The helper drops the last item.',
+  ].join('\n') + '\n\nMinor findings (they never block readiness; the user decides on any left open):\n\n- P4: fixed in the polish pass. Name the helper after its result.' +
+    '\n\nSpecification review:\n\n- spec by Codex Astra: no problems in the criteria.\n\nP1: fixed'), md)
   assert.match(result.forTheOrchestrator, /Show the "How the run went" and "Points of interest" lists from report\.markdown as they are/)
+  assert.match(result.forTheOrchestrator, /Show the "Minor findings" list too: minor findings never block readiness/)
 })
 
 test('pair prompts without a design stage have reviewed golden coverage', async () => {
@@ -1054,9 +1063,9 @@ test('repeated identical findings retain their identity and do not defeat stall 
 
 
 test('unchanged unmet criteria and failed checks stall even without findings', async () => {
-  for (const obligation of ['criterion', 'suite', 'replay']) {
+  for (const obligation of ['suite', 'replay']) {
     const { result } = await run({ sameTree: true, args: { maxReviews: 8 },
-      review: (r, n) => { if (obligation === 'criterion' && n > 1) r.criteria[0].status = 'unmet'; return r },
+      review: (r, n) => { if (n > 1) r.criteria[0].status = 'unmet'; return r },
       measure: m => {
         if (obligation === 'suite') m.suite.passed = false
         if (obligation === 'replay') m.replay.records.find(r => r.side === 'final').passed = false
@@ -1072,7 +1081,11 @@ test('unchanged unmet criteria and failed checks stall even without findings', a
 test('changed criterion and verification outcomes count as progress on the same tree', async () => {
   for (const obligation of ['criterion', 'suite']) {
     const { result } = await run({ sameTree: true, args: { maxReviews: 8 },
-      review: (r, n) => { if (obligation === 'criterion' && n === 2) r.criteria[0].status = 'unmet'; return r },
+      review: (r, n) => {
+        if (obligation === 'criterion' && n === 2) { r.criteria[0].status = 'unmet'; r.findings = [finding('The boundary is wrong.')] }
+        if (obligation === 'criterion' && n === 3) r.resolutions = [{ id: 'P1', status: 'fixed', evidence: 'The boundary test passes.' }]
+        return r
+      },
       measure: (m, n) => { if (obligation === 'suite' && n === 1) m.suite.passed = false; return m } })
     assert.equal(result.status, 'done', obligation)
     assert.equal(result.reviews.length, 3, obligation)
@@ -1866,42 +1879,47 @@ test('maxDesignReviews defaults to 3 of the budget, leaves code at least one rev
     assert.throws(() => L.parsePairConfig({ task: 'x', maxReviews, maxDesignReviews }), /maxDesignReviews must be an integer from 1 to maxReviews - 1/)
 })
 
-test('minor design findings do not hold the design: they carry into code review and block readiness there until fixed', async () => {
+test('minor design findings do not hold the design: they carry into code review, and from there to the polish pass', async () => {
   for (const native of [false, true]) {
     const { result, calls } = await run({ native, review: (r, n) => {
-      if (n === 1) r.findings = [finding('Document the timing of the cache.')]
+      if (n === 1) r.findings = [minor('Document the timing of the cache.')]
       if (n === 2) r.resolutions = [{ id: 'P1', status: 'open', evidence: 'The README still has no timings.' }]
       if (n === 3) r.resolutions = [{ id: 'P1', status: 'fixed', evidence: 'README.md now states the timings.' }]
       return r
     } })
     assert.equal(result.status, 'done')
-    assert.deepEqual(result.reviews.map(r => r.stage), ['design', 'code', 'code'], 'approved at the first design review')
+    assert.deepEqual(result.reviews.map(r => r.stage), ['design', 'code'], 'approved at the first design review; the polish check is not a review')
+    assert.equal(result.polish.review.label, 'pair-polish')
     assert.deepEqual(result.findings.map(f => [f.id, f.stage, f.severity, f.status]), [['P1', 'design', 'minor', 'fixed']])
     const authors = calls.filter(c => c.kind === 'author'), reviews = calls.filter(c => c.kind === 'review')
     const carried = 'Design finding P1 is still open and carried into this implementation: fix each in the code, tests or documentation, or dispute it with evidence; the reviewer checks it against the code.'
     assert.ok(authors[1].prompt.includes(`Fix all open actionable findings and any failed verification. ${carried} Return design`), authors[1].prompt)
     assert.ok(reviews[1].prompt.includes(' Design finding P1 is still open and carried into code review: resolve it against the implementation, fixed once the code, tests or documentation address it, open otherwise. Add only'))
     assert.ok(!authors[0].prompt.includes('carried into') && !reviews[0].prompt.includes('carried into code review:'), 'nothing is carried at design')
-    // The design review says minors don't block it; the code review keeps counting them.
+    // The design review says minors don't block it; the code review sends them to the polish pass.
     assert.ok(reviews[0].prompt.includes('Minor findings do not block design approval: they stay open, and code review checks them against the implementation') &&
       reviews[0].prompt.includes('leave benchmark, documentation and wording detail to code review unless a criterion depends on it') &&
       reviews[0].prompt.includes('assess it met when the design satisfies it apart from minor findings') && reviews[0].prompt.includes('do not manufacture findings'))
-    assert.ok(reviews[1].prompt.includes('Actionable minor findings count too.') && !reviews[1].prompt.includes('Minor findings do not block design approval'))
+    assert.ok(reviews.slice(0, 2).every(r => r.prompt.includes('Minor findings never hold the work for a review round of their own')))
+    assert.ok(reviews[2].prompt.startsWith('You are the independent reviewer in a pair workflow, checking its polish pass.'))
+    assert.ok(!reviews[1].prompt.includes('Minor findings do not block design approval'))
     const md = result.report.markdown
     assert.match(md, /\n4\. Design review 1\/8 by [^:]+: approved\. New: P1 \(minor\) Document the timing of the cache\. Criteria all met\. Minor finding P1 stays open for code review\.\n/)
-    assert.match(md, /Code review 2\/8 by [^:]+: changes requested\. Still open: P1\./)
+    assert.match(md, /Code review 2\/8 by [^:]+: approved\. Still open: P1\. Criteria all met\.\n7\. Only minor findings are open \(P1\), so [^\n]+ gets one polish pass\.\n/)
+    assert.match(md, /- P1: fixed in the polish pass\. Document the timing of the cache\./)
   }
-  // Left open, the carried minor finding blocks readiness at the end of the budget.
-  const { result } = await run({ args: { maxReviews: 3 }, review: (r, n) => n === 1 ? { ...r, findings: [finding('Document the timing of the cache.')] } : r })
-  assert.equal(result.status, 'blocked')
-  assert.match(result.stopReason, /budget exhausted/)
-  assert.deepEqual(result.final.readiness.blocked, ['P1 (minor): Document the timing of the cache.'])
+  // Left open after the polish pass, the minor finding is reported, and the run is still ready.
+  const { result } = await run({ args: { maxReviews: 3 }, review: (r, n) => n === 1 ? { ...r, findings: [minor('Document the timing of the cache.')] } : r })
+  assert.equal(result.status, 'done')
+  assert.equal(result.final.readiness.state, 'ready')
+  assert.deepEqual(result.final.readiness.blocked, [])
+  assert.match(result.report.markdown, /\n- P1: still open after the polish pass\. Document the timing of the cache\./)
 })
 
 test('blocker and major design findings still hold the design, and a minor finding cannot stand in for a rejecting check', async () => {
   for (const severity of ['blocker', 'major']) {
     const { result } = await run({ review: (r, n) => {
-      if (n === 1) r.findings = [finding('Design omits the boundary.'), { ...finding('The cache can go stale.'), severity }]
+      if (n === 1) r.findings = [minor('Design omits the boundary.'), { ...finding('The cache can go stale.'), severity }]
       if (n === 2) r.resolutions = [{ id: 'P2', status: 'fixed', evidence: 'The design rebuilds the cache per request.' }]
       if (n === 3) r.resolutions = [{ id: 'P1', status: 'fixed', evidence: 'The code covers the boundary.' }]
       return r
@@ -1911,7 +1929,7 @@ test('blocker and major design findings still hold the design, and a minor findi
   }
   // The corrected review cites the rejecting check, and the design passes with the minor finding open.
   const { result, calls } = await run({ review: (r, n) => {
-    if (n === 1) { r.challenges[0].rejectingCheckIds = []; r.findings = [finding('No check rejects the wrong boundary.')] }
+    if (n === 1) { r.challenges[0].rejectingCheckIds = []; r.findings = [minor('No check rejects the wrong boundary.')] }
     return r
   } })
   const corrected = calls.find(c => c.kind === 'review' && c.prompt.includes('# Correct the previous structured review'))
@@ -1938,7 +1956,7 @@ test('a design still unapproved after maxDesignReviews stops for the user with i
       'review 3: 1 new finding; open 3 major; design 8 words. Open design findings: P1 (major) Design gap 1; P2 (major) Design gap 2; P3 (major) Design gap 3. 5 reviews of 8 remain. ' +
       'Choose one. (a) Continue the design: answer with a scope decision the author and reviewer then follow, for example narrow the scope, or accept named findings as documented residuals; ' +
       'the design gets up to 3 more reviews. (b) Start the implementation now: answer with implement: true; the open design findings carry into code review as open items, ' +
-      'and each still blocks readiness until the reviewer closes it. (c) Stop: don\'t continue this run.')
+      'and each blocker or major one still blocks readiness until the reviewer closes it. (c) Stop: don\'t continue this run.')
     assert.equal(result.final.readiness.state, 'blocked')
     assert.ok(result.final.readiness.blocked.includes('P3 (major): Design gap 3.'))
     assert.ok(result.final.readiness.incomplete.includes(reason))
@@ -2351,4 +2369,138 @@ test('spec review golden prompts: a conflict answered, setup again, and a findin
   assert.equal(result.status, 'done')
   assert.deepEqual(calls.map(c => c.kind), ['setup', 'spec', 'stop', 'resume', 'setup', 'spec', 'author', 'review', 'author', 'measure', 'review', 'retro'])
   goldenCalls('pair-spec', calls)
+})
+
+const polishCall = call => /pair-polish/.test(call.label)
+
+test('severity: a blocker or major finding naming no failure is filed as minor, and every review prompt defines severity', async () => {
+  const { result, calls } = await run({ review: (r, n) => {
+    if (n === 2) r.findings = [{ ...finding('Rename tmp to total.'), failure: '' }, finding('The boundary is wrong.')]
+    if (n === 3) r.resolutions = [{ id: 'P2', status: 'fixed', evidence: 'The boundary test passes.' }]
+    return r
+  } })
+  assert.deepEqual(result.findings.map(f => [f.id, f.severity]), [['P1', 'minor'], ['P2', 'major']])
+  assert.ok(result.notes.includes('review pair-code-2: filed "Rename tmp to total." as minor, not major: it names no failure.'), result.notes.join('\n'))
+  const reviews = calls.filter(c => c.kind === 'review' && !polishCall(c))
+  for (const r of reviews) {
+    assert.ok(r.prompt.includes('# Severity\n\nRate a finding by what goes wrong if it stays'))
+    assert.ok(r.prompt.includes('Give every blocker and major finding a failure: the concrete input or situation, and what goes wrong in it.'))
+    assert.ok(r.prompt.includes('file it once and list every place; resolve it fixed only after checking each one.'))
+  }
+  const code = reviews.find(r => /# Review stage: code/.test(r.prompt))
+  assert.ok(code.prompt.includes("The author's handoff, notes and probes under /repo/.council/pair-test/room are evidence, not the deliverable"))
+  assert.ok(!code.prompt.includes('Actionable minor findings count too.'))
+  const authors = calls.filter(c => c.kind === 'author' && !polishCall(c))
+  assert.ok(authors.every(a => a.prompt.includes('Before you answer a finding, search the whole deliverable for every other place with the same defect') &&
+    a.prompt.includes('Have each probe take the checkout it inspects as an argument instead of naming your worktree')))
+  assert.equal(calls.find(c => c.kind === 'review').schema.properties.findings.items.required.includes('failure'), true)
+})
+
+test('a criterion held partial with nothing to show what fails it gets one reviewer correction', async () => {
+  const { result, calls } = await run({ review: (r, n) => {
+    if (n === 2) { r.findings = [minor('Rename tmp to total.')]; r.criteria[0] = { criterion: 'C1', status: 'partial', note: 'The name is unclear.' } }
+    return r
+  } })
+  const corrected = calls.find(c => c.kind === 'review' && c.prompt.includes('# Correct the previous structured review'))
+  assert.ok(corrected.prompt.includes('C1 is assessed partial, but no blocker or major finding, open or new in this review, shows what fails it. File the defect as a blocker or major finding with its failure, or assess it met and file what remains as a minor finding.'), corrected.prompt.slice(0, 400))
+  assert.equal(result.status, 'done')
+  assert.equal(result.final.readiness.state, 'ready')
+  // A failing check, an open major finding or a challenge with no rejecting check holds a criterion without one.
+  for (const variant of ['suite', 'major']) {
+    const { calls } = await run({ args: { maxReviews: 3 }, measure: m => variant === 'suite' ? { ...m, suite: { ...m.suite, passed: false } } : m,
+      review: (r, n) => {
+        if (n === 2) { r.criteria[0] = { criterion: 'C1', status: 'partial', note: 'Short.' }; if (variant === 'major') r.findings = [finding('The boundary is wrong.')] }
+        if (n === 3 && variant === 'major') r.criteria[0] = { criterion: 'C1', status: 'partial', note: 'P1 is still open.' }
+        return r
+      } })
+    assert.ok(!calls.some(c => c.prompt.includes('# Correct the previous structured review')), variant)
+  }
+})
+
+test('polish: only minor findings left, the author fixes or declines them, a short check confirms, and the budget is not spent', async () => {
+  for (const native of [false, true]) {
+    const { result, calls } = await run({ native, args: { maxReviews: 2 },
+      author: (a, call) => polishCall(call) ? { ...a, testContract: { testRoots: [], checks: [] }, addressed: [
+        { id: 'P1', action: 'changed', response: 'Renamed tmp to total.', evidence: 'src/sum.js:3' },
+        { id: 'P2', action: 'disputed', response: 'The longer name matches the rest of the module.', evidence: 'src/sum.js:1' }] } : a,
+      review: (r, n, call) => {
+        if (n === 2) r.findings = [minor('Rename tmp to total.'), minor('Shorten the helper name.')]
+        if (polishCall(call)) { r.resolutions = [{ id: 'P1', status: 'fixed', evidence: 'Renamed.' }, { id: 'P2', status: 'open', evidence: 'Declined.' }]; r.findings = [minor('A comment is stale.')] }
+        return r
+      } })
+    assert.equal(result.status, 'done')
+    assert.equal(result.final.readiness.state, 'ready')
+    assert.equal(result.reviews.length, 2, 'the polish check spends none of the budget')
+    assert.equal(result.final.snapshotRef, 'refs/council/pair-test/A-pair-polish')
+    assert.deepEqual(result.findings.map(f => [f.id, f.status]), [['P1', 'fixed'], ['P2', 'open']], 'the polish check files no new minor finding')
+    assert.ok(result.notes.some(n => n === 'review pair-polish: left out a new minor finding, which the polish check does not file: A comment is stale.'))
+    assert.equal(result.polish.discarded, '')
+    assert.deepEqual(result.polish.minors, ['P1', 'P2'])
+    assert.equal(result.polish.saved, undefined)
+    const author = calls.find(c => c.kind === 'author' && polishCall(c)), check = calls.find(c => c.kind === 'review' && polishCall(c))
+    assert.ok(author.prompt.startsWith('You are the sole author in a pair workflow. The last review (pair-code-2) found no blocker or major defect'))
+    assert.ok(author.prompt.includes('"id":"P1"') && author.prompt.includes('"id":"P2"'))
+    assert.ok(check.prompt.includes('Review pair-code-2 approved the snapshot refs/council/pair-test/A-pair-code-2'))
+    assert.ok(check.prompt.includes("File a new finding only for a blocker or major defect the polish itself introduced"))
+    const md = result.report.markdown
+    assert.match(md, /\n\d+\. Code review 2\/2 by [^:]+: approved\. New: P1 \(minor\) Rename tmp to total; P2 \(minor\) Shorten the helper name\. Criteria all met\.\n/)
+    assert.match(md, /\n\d+\. [^\n]+ made the polish pass\. Changed P1\. Declined P2: The longer name matches the rest of the module\. The gate passed on its snapshot\.\n/)
+    assert.match(md, /\n\d+\. Polish check by [^:]+: confirmed\. Fixed P1\. Still open: P2\.\n\d+\. Ready after 2 reviews of 2\./)
+    assert.match(md, /\n- P1: fixed in the polish pass\. Rename tmp to total\.\n- P2: declined by [^:]+: The longer name matches the rest of the module\. Shorten the helper name\./)
+    assert.match(result.forTheOrchestrator, /The change stays in final\.worktree\./)
+  }
+})
+
+test('polish: a polish that breaks something, or does not finish, is set aside and the run delivers the snapshot reviewed before it', async () => {
+  const cases = {
+    regression: { review: (r, n, call) => {
+      if (n === 2) r.findings = [minor('Rename tmp to total.')]
+      if (polishCall(call)) { r.resolutions = [{ id: 'P1', status: 'fixed', evidence: 'Renamed.' }]; r.findings = [finding('The rename missed a caller, which now throws.')]; r.criteria[0].status = 'unmet' }
+      return r
+    }, reason: /^P2 \(major\): The rename missed a caller/ },
+    measurement: { review: (r, n) => n === 2 ? { ...r, findings: [minor('Rename tmp to total.')] } : r,
+      measure: (m, k) => k === 2 ? { ...m, status: 'error', error: 'The checkout vanished.' } : m, reason: /^its measurement failed: The checkout vanished/ },
+    author: { review: (r, n) => n === 2 ? { ...r, findings: [minor('Rename tmp to total.')] } : r,
+      author: (a, call) => polishCall(call) ? { ...a, status: 'blocked', summary: 'The worktree is locked.' } : a, reason: /^the author returned blocked: The worktree is locked/ },
+  }
+  for (const [name, c] of Object.entries(cases)) {
+    const { result } = await run(c)
+    assert.equal(result.status, 'done', name)
+    assert.equal(result.final.readiness.state, 'ready', name)
+    assert.equal(result.final.snapshotRef, 'refs/council/pair-test/A-pair-code-2', name)
+    assert.match(result.polish.discarded, c.reason, name)
+    assert.deepEqual(result.findings.map(f => [f.id, f.status]), [['P1', 'open']], name)
+    const md = result.report.markdown
+    assert.ok(md.includes('The polish pass was set aside (') && md.includes('; the result is the snapshot reviewed in pair-code-2.'), name)
+    assert.ok(md.includes('so the result is the snapshot reviewed in pair-code-2. final.worktree still holds the polish; dark-factory apply stages final.snapshotRef, not the worktree.\n\n- P1: open; the polish pass was set aside. Rename tmp to total.'), md)
+    assert.match(result.forTheOrchestrator, /The polish pass was set aside: final\.snapshotRef is the snapshot reviewed before it/, name)
+  }
+})
+
+test('polish: no pass without open minor findings, without a design stage it keeps the contract, and the facts record it', async () => {
+  const plain = await run({})
+  assert.ok(!plain.calls.some(polishCall))
+  assert.equal(plain.result.polish, undefined)
+  const { result, calls } = await run({ args: { design: false }, review: (r, n) => n === 1 ? { ...r, findings: [minor('Rename tmp to total.')] } : r,
+    author: (a, call) => polishCall(call) ? { ...a, testContract: { testRoots: [], checks: [] }, replayMapping: [] } : a })
+  assert.equal(result.status, 'done')
+  assert.deepEqual(result.testContract, contract())
+  const check = calls.find(c => c.kind === 'review' && polishCall(c))
+  assert.equal(check.prompt.match(/^Version: (.+)$/m)[1], `code:${'2'.repeat(40)}:${calls.find(c => c.kind === 'review').prompt.match(/^Version: code:[0-9a-f]+:(.+)$/m)[1]}`)
+  const retro = calls.find(c => c.kind === 'retro')
+  assert.ok(retro.prompt.includes('; a polish pass on minor P1, kept'), retro.prompt.slice(0, 2000))
+})
+
+test('polish prompts have reviewed golden coverage', async () => {
+  const { result, calls } = await run({ native: true,
+    author: (a, call) => polishCall(call) ? { ...a, testContract: { testRoots: [], checks: [] }, addressed: [
+      { id: 'P1', action: 'changed', response: 'Renamed tmp to total.', evidence: 'src/sum.js:3' },
+      { id: 'P2', action: 'disputed', response: 'The longer name matches the rest of the module.', evidence: 'src/sum.js:1' }] } : a,
+    review: (r, n, call) => {
+      if (n === 2) r.findings = [minor('Rename tmp to total.'), minor('Shorten the helper name.')]
+      if (polishCall(call)) r.resolutions = [{ id: 'P1', status: 'fixed', evidence: 'Renamed.' }, { id: 'P2', status: 'open', evidence: 'Declined.' }]
+      return r
+    } })
+  assert.equal(result.status, 'done')
+  goldenCalls('pair-polish', calls.filter(c => polishCall(c)))
 })
