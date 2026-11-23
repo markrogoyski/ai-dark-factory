@@ -252,6 +252,14 @@ test('explicit independent model choices are never silently discarded by Pair ro
   assert.throws(() => L.factoryStrategy(state, { mode: 'implement' }), /does not accept seats/)
 })
 
+test('a mode the user gave outranks intake when Factory chooses Pair', () => {
+  const state = { raw: { mode: 'investigate' }, factory: { tier: 'fix' } }
+  assert.equal(L.factoryStrategy(state, { strategy: 'pair', mode: 'implement' }), 'independent')
+  state.raw.strategy = 'pair'
+  assert.throws(() => L.factoryStrategy(state, { mode: 'implement' }), /requires an implementation/)
+  assert.equal(L.factoryStrategy({ raw: {}, factory: { tier: 'fix' } }, { strategy: 'pair', mode: 'implement' }), 'pair')
+})
+
 test('run time admission budget stops before another model turn', async () => {
   let tick = 1
   const { result, calls } = await simulate('pair', { maxRunMin: 1 }, { clock: () => tick++ === 1 ? 1 : 60002 })

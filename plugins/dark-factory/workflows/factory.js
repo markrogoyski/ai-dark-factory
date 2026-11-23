@@ -4206,8 +4206,10 @@ function factoryStrategy(S, intake) {
   const independentOptions = ['seats', 'simple', 'panel', 'spec', 'audit', 'roles', 'evidence'].filter(k => S.raw[k] !== undefined && !(k === 'spec' && S.raw[k] === 'ask'))
   if (requested === 'pair' && independentOptions.length) throw new Error(`Pair strategy does not accept ${independentOptions.join(', ')}; configure participants with pair: {author, reviewer, maxReviews}.`)
   const tier = S.factory.tier
-  if (requested === 'pair' && (intake.mode !== 'implement' || tier === 'architecture')) throw new Error('Pair strategy requires an implementation below Architecture.')
-  return requested === 'pair' || (requested === 'auto' && !independentOptions.length && intake.strategy === 'pair' && intake.mode === 'implement' && tier !== 'architecture') ? 'pair' : 'independent'
+  // A mode the user gave outranks intake's reading: Pair only implements.
+  const mode = S.raw.mode || intake.mode
+  if (requested === 'pair' && (mode !== 'implement' || tier === 'architecture')) throw new Error('Pair strategy requires an implementation below Architecture.')
+  return requested === 'pair' || (requested === 'auto' && !independentOptions.length && intake.strategy === 'pair' && mode === 'implement' && tier !== 'architecture') ? 'pair' : 'independent'
 }
 
 function factoryPairConfig(S) {
