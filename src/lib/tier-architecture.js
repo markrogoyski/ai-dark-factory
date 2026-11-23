@@ -33,7 +33,7 @@ function milestoneArgs(S, m, design, findings) {
   if (findings.length) lines.push('', 'Findings from the review of the plan that still stand against this milestone:', ...findings.map(c => `- ${oneLine(c.statement, 400)}`))
   const original = S.factory && S.factory.args || S.raw
   // Carry every option except what describes this run's task, so a new option isn't dropped.
-  const own = new Set(['task', 'prompt', 'question', 'plan', 'mode', 'tier', 'tierConfirmed', 'noSplit', 'criteria', 'clarifications', 'hostRunId'])
+  const own = new Set(['task', 'prompt', 'question', 'plan', 'mode', 'tier', 'tierConfirmed', 'noSplit', 'criteria', 'clarifications', 'brief', 'hostRunId'])
   const options = S.host === 'codex'
     ? Object.fromEntries(Object.entries(original).filter(([k, v]) => !own.has(k) && v !== undefined)) : {}
   return { ...options, task: lines.join('\n'), plan: [design, ...S.plan], tier: m.tier, tierConfirmed: true, noSplit: true }

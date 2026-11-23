@@ -1,8 +1,8 @@
 Save this run's facts. Run this with the Bash tool, exactly as written:
-dark-factory retro --facts-only --run-dir '/tmp/proj/.council/test-fsimple' --expect 2504-ca88af16
+dark-factory retro --facts-only --run-dir '/tmp/proj/.council/test-fsimple' --expect 2504-cb82ca9e
 The last line it prints is JSON. "ok": set saved to its "path". "sandboxed": run the same command again with the sandbox disabled (dangerouslyDisableSandbox: true). "error", or "sandboxed" again: set saved to "" and error to what it printed. Do nothing else.
 
-=====BEGIN PAYLOAD 2504-ca88af16=====
+=====BEGIN PAYLOAD 2504-cb82ca9e=====
 ## Process notes
 
 - None: no turn reported anything in its way.
@@ -14,7 +14,7 @@ The last line it prints is JSON. "ok": set saved to its "path". "sandboxed": run
 - Intake: simple, implement; it looks like simple work Signals: kind=change, files=1, publicApi=false, crossModule=false, testsCover=yes, ambiguous=false, planGiven=false.
 - Seats: A=Claude Sonnet (high). Panel: Claude Opus, Codex Astra. Checkers: sonnet.
 - Outcome: the Simple change by A.
-- Claude agent turns: 5 (intake 1, setup 1, seat 1, checker 1, relay 1). Codex turns: 1 (auditor 1).
+- Claude agent turns: 7 (intake 3, setup 1, seat 1, checker 1, relay 1). Codex turns: 1 (auditor 1).
 - Codex and Gemini turn times: median 42s; slowest review0-review 42s.
 - Ledger: 1 item (verified 1), 0 challenges, 0 ruled by the panel. Questions raised: 0.
 - Ledger by kind: verification 1 (verified 1).
@@ -37,9 +37,9 @@ The last line it prints is JSON. "ok": set saved to its "path". "sandboxed": run
     "strategy": "independent",
     "host": "claude",
     "elapsedMs": null,
-    "turns": 6,
+    "turns": 8,
     "turnsByRole": {
-      "intake": 1,
+      "intake": 3,
       "setup": 1,
       "seat": 1,
       "checker": 1,
@@ -82,9 +82,9 @@ The last line it prints is JSON. "ok": set saved to its "path". "sandboxed": run
   "mode": "implement",
   "readiness": "ready",
   "turns": {
-    "claude": 5,
+    "claude": 7,
     "byRole": {
-      "intake": 1,
+      "intake": 3,
       "setup": 1,
       "seat": 1,
       "checker": 1,
@@ -98,4 +98,4 @@ The last line it prints is JSON. "ok": set saved to its "path". "sandboxed": run
   "overTierHints": []
 }
 ```
-=====END PAYLOAD 2504-ca88af16=====
+=====END PAYLOAD 2504-cb82ca9e=====

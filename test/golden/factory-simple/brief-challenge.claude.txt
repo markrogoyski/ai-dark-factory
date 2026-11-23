@@ -1,0 +1,12 @@
+Independently challenge the draft against the original wording. Try to show two plausible outcomes the wording permits that the user would judge differently. Quote the wording, spell out both outcomes and what changes for delivery or acceptance. First try to settle each difference from repository evidence: read the relevant code, docs, git log, retros and available issues. Correct the draft where evidence settles it. An unavailable source is not itself a reason to ask.
+Return all and only unresolved what/why differences in questions. For each, give the competing outcomes, evidence considered, a recommended answer and what the answer changes. Do not ask about testing, implementation, internal design, preferences or speculative cases. There is no completeness checklist. Return [] on a clear goal, including a clear one-line goal. No criteria or harness review.
+Draft: {"outcome":"Log the retry count at debug level.","purpose":"Let operators identify repeated retries.","scope":"Fetcher retries.","nonGoals":"Changing the retry policy.","acceptanceExamples":["The second retry logs 2."],"verification":"Observe the retry log.","delegated":["testing","implementation","internal design"]}
+Write the object you return in brief as UTF-8 JSON to a temporary file with the file tool. Save it by running this helper, substituting the quoted temporary file path for FILE and provisional for STATE if questions survive, otherwise settled:
+dark-factory brief --repo "$PWD" --content FILE --state STATE --decisions '[]'
+Copy the printed briefFile and document.brief exactly. On helper failure leave briefFile empty.
+
+Original task: Add a debug log line with the retry count in Fetcher::retry
+Context: (none)
+Documents: []
+Explicit constraints: {}
+Inspect the repository and the documents relevant to this request. Read only, apart from saving the requested brief. Preserve the user's wording and decisions. If a required document cannot be found, name it in planMissing where provided. Include "testing", "implementation" and "internal design" in delegated. Keep the brief short.

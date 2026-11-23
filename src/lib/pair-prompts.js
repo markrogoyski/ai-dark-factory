@@ -56,7 +56,7 @@ function pairSpecPrompt(S) {
 # Task
 
 ${S.task}
-${refsBlock(S)}${S.context ? `\n# Context from the user\n\n${S.context}\n` : ''}
+${goalBriefBlock(S)}${refsBlock(S)}${S.context ? `\n# Context from the user\n\n${S.context}\n` : ''}
 # Acceptance criteria (${given ? 'given by the user' : 'written by setup from the task and the code'})
 
 ${specCriteria(S)}

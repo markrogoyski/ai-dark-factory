@@ -105,7 +105,7 @@ async function pausedRun(t, flags = []) {
     else Object.assign(result, { status: 'error', error: 'Test stops at setup.' })
     return { status: 'done', result }
   } } }
-  const first = await runWorkflow(parseCLI(['--cwd', f.repo, '--tier', 'simple', ...flags, 'Fix code']), dependencies)
+  const first = await runWorkflow(parseCLI(['--cwd', f.repo, '--no-brief', '--tier', 'simple', ...flags, 'Fix code']), dependencies)
   assert.equal(first.status, 'needs-tier')
   const resume = flags => runWorkflow({ ...parseCLI(['--resume', first.hostRunDir, ...(flags || [])]), args: { tierConfirmed: true } }, dependencies)
   const metadata = () => JSON.parse(readFileSync(join(first.hostRunDir, 'host.json'), 'utf8'))
@@ -263,7 +263,7 @@ test('runner resumes a tier decision using the saved intake and a new setup oper
     else { calls.push('setup'); Object.assign(result, { status: 'error', error: 'Test stops at the setup boundary.' }) }
     return { status: 'done', result }
   } } }
-  const first = await runWorkflow(parseCLI(['--cwd', f.repo, '--tier', 'simple', 'Fix code']), dependencies)
+  const first = await runWorkflow(parseCLI(['--cwd', f.repo, '--no-brief', '--tier', 'simple', 'Fix code']), dependencies)
   assert.equal(first.status, 'needs-tier')
   const second = await runWorkflow({ ...parseCLI(['--resume', first.hostRunDir]), args: { tierConfirmed: true } }, dependencies)
   assert.equal(second.status, 'failed')
@@ -282,7 +282,7 @@ test('resume retains turns started after the last checkpoint even without a fina
     const schema = JSON.parse(prompt.split('<<<OUTPUT_SCHEMA\n')[1].split('\nOUTPUT_SCHEMA>>>')[0])
     return { status: 'done', result: { ...empty(schema), status: 'ok', tier: 'feature', mode: 'implement', strategy: 'independent' } }
   } } }
-  const first = await runWorkflow(parseCLI(['--cwd', f.repo, '--tier', 'simple', 'Fix code']), dependencies)
+  const first = await runWorkflow(parseCLI(['--cwd', f.repo, '--no-brief', '--tier', 'simple', 'Fix code']), dependencies)
   assert.equal(first.status, 'needs-tier')
   rmSync(join(first.hostRunDir, 'result.json'))
   appendFileSync(first.hostEvents, JSON.stringify({ type: 'turn.started', role: 'setup', job: 'interrupted-before-checkpoint' }) + '\n')
@@ -361,4 +361,182 @@ test('pair resume replays the spec review and sends a reworded repeat of the ans
   assert.deepEqual(calls, [...original, 'setup', 'spec'], 'the first setup and spec review replay; only the answer-dependent turns are new')
   assert.equal(second.status, 'failed', 'the fixture stops at the author, which the repeat went to')
   assert.deepEqual(second.spec.findings.map(x => [x.id, x.pass, x.to, x.repeats]), [['S1', 'spec', 'user', ''], ['S2', 'spec-2', 'author', 'Q1']])
+})
+
+const goalTask = 'Look into missing pages.'
+const goal = { outcome: 'Explain the “missing pages” report.', purpose: "Help the user's support team.",
+  scope: 'Page listings.', nonGoals: 'Rebuilding the index.', acceptanceExamples: ['An archived page is accounted for.'],
+  verification: 'Observe the reported page count.', delegated: ['testing', 'implementation', 'internal design'] }
+
+function briefRunner(f, ambiguous = false) {
+  const helper = fileURLToPath(new URL('../plugins/dark-factory/bin/dark-factory', import.meta.url))
+  const labels = [], prompts = []
+  const deps = { progress: () => {}, prepare: noPrepare, runtime: { execute: async argv => {
+    if (argv[0] === 'preflight') return { status: 'ok' }
+    const prompt = readFileSync(argv[argv.indexOf('--prompt-file') + 1], 'utf8')
+    const schema = JSON.parse(prompt.split('<<<OUTPUT_SCHEMA\n')[1].split('\nOUTPUT_SCHEMA>>>')[0])
+    const v = empty(schema)
+    prompts.push(prompt)
+    if ('brief' in v) {
+      v.brief = { ...goal }
+      if ('questions' in v) {
+        labels.push('challenge')
+        if (ambiguous) v.questions = ['Deliverable?', 'Include archives?'].map((question, i) => ({
+          question, wording: goalTask, evidence: 'Callers and documentation permit either.',
+          outcomeA: i ? 'Live pages only' : 'Diagnosis', outcomeB: i ? 'All pages' : 'Fix',
+          recommendation: i ? 'All pages' : 'Fix', changes: i ? 'Acceptance coverage' : 'Delivered artifact',
+        }))
+      } else if ('planMissing' in v) labels.push('shape')
+      else {
+        labels.push('answered')
+        assert.ok(prompt.includes('Ship a fix') && prompt.includes('Include archives'))
+        Object.assign(v.brief, { outcome: 'Restore missing pages.', acceptanceExamples: ['Archived pages appear again.'] })
+      }
+    } else if ('signals' in v) {
+      labels.push('intake')
+      Object.assign(v, { status: 'ok', tier: 'simple', mode: 'implement', strategy: ambiguous ? 'pair' : 'independent' })
+    } else if ('runId' in v) {
+      labels.push('setup')
+      if (ambiguous) {
+        if (prompt.includes('Keep the flags')) Object.assign(v, { status: 'error', error: 'End of fixture after answered Pair setup.' })
+        else Object.assign(v, { status: 'needs-user', questions: ['Keep the existing flags?'] })
+      } else {
+        const runId = prompt.match(/--run-id '([^']+)'/)[1]
+        const ref = prompt.match(/--ref '([^']+)'/)[1]
+        const created = JSON.parse(execFileSync(helper, ['init', '--repo', f.repo, '--seats', 'A', '--run-id', runId, '--ref', ref], { encoding: 'utf8' }).trim().split('\n').at(-1))
+        Object.assign(v, { status: 'ok', runId, runDir: created.runDir, repoRoot: f.repo, mode: 'implement',
+          refs: created.refs.map(({ source, path, inWorktrees }) => ({ source, path, inWorktrees })),
+          verify: 'true', criteria: [{ id: 'C1', text: 'Restore pages.' }], baselinePasses: true })
+      }
+    } else {
+      labels.push('seat')
+      return { status: 'error', error: 'Fixture ends at the first implementation turn.' }
+    }
+    return { status: 'done', result: v }
+  } } }
+  const launch = args => runWorkflow({ ...parseCLI(['--cwd', f.repo, goalTask]), args: { task: goalTask, retro: false, ...args } }, deps)
+  const resume = (run, answers) => runWorkflow({ ...parseCLI(['--resume', run.hostRunDir]), args: { clarifications: answers } }, deps)
+  return { labels, prompts, launch, resume, helper }
+}
+
+test('brief resume applies a batch and preserves subsequent routed Pair answers', async t => {
+  const f = fixture(t), h = briefRunner(f, true)
+  const first = await h.launch({})
+  assert.equal(first.status, 'needs-user')
+  assert.deepEqual(first.questions.map(q => q.id), ['B1', 'B2'])
+  const firstAnswer = [{ id: 'B1', answer: 'Ship a fix' }]
+  const partial = await h.resume(first, firstAnswer)
+  assert.deepEqual(partial.questions.map(q => q.id), ['B2'])
+  assert.deepEqual(h.labels, ['shape', 'challenge'])
+  await assert.rejects(h.resume(first, [{ id: 'B1', answer: 'Change it' }]), /Existing clarification answers cannot change/)
+  await assert.rejects(h.resume(first, [...firstAnswer, { id: 'B9', answer: 'Unknown' }]), /question from this paused run/)
+  const answers = [...firstAnswer, { id: 'B2', answer: 'Include archives' }]
+  const routed = await h.resume(first, answers)
+  assert.deepEqual(h.labels, ['shape', 'challenge', 'answered', 'intake', 'setup'])
+  assert.equal(routed.status, 'needs-user')
+  assert.deepEqual(routed.questions.map(q => q.id), ['Q1'])
+  const doc = JSON.parse(readFileSync(routed.briefFile, 'utf8'))
+  assert.deepEqual(doc, routed.brief)
+  assert.equal(doc.brief.outcome, 'Restore missing pages.')
+  assert.deepEqual(doc.brief.acceptanceExamples, ['Archived pages appear again.'])
+  assert.deepEqual(doc.decisions.map(({ id, answer }) => ({ id, answer })), answers)
+  for (const value of [doc.brief.outcome, ...doc.brief.acceptanceExamples, ...answers.map(d => d.answer)]) {
+    assert.ok(h.prompts[3].includes(value) && routed.report.markdown.includes(value), value)
+  }
+  const after = await h.resume(first, [...answers, { id: 'Q1', answer: 'Keep the flags' }])
+  assert.deepEqual(h.labels, ['shape', 'challenge', 'answered', 'intake', 'setup', 'setup'])
+  assert.ok(h.prompts.at(-1).includes('Keep the flags'))
+  assert.deepEqual(after.decisions.map(d => d.id), ['Q1'])
+})
+
+function nativeFactory() {
+  const source = readFileSync(new URL('../plugins/dark-factory/workflows/factory.js', import.meta.url), 'utf8').replace(/^export const meta\s*=/m, 'void')
+  return new (Object.getPrototypeOf(async function () {}).constructor)('args', 'agent', 'phase', 'log', source)
+}
+
+function runNativeBriefCommand(repo, command) {
+  const bin = fileURLToPath(new URL('../plugins/dark-factory/bin', import.meta.url))
+  return JSON.parse(execFileSync('/bin/sh', ['-c', command], { cwd: repo, encoding: 'utf8',
+    env: { ...process.env, PATH: bin + ':' + process.env.PATH } }))
+}
+
+test('brief reuse requires a native saved artifact with the state selected by the challenge', async t => {
+  const { repo } = fixture(t)
+  const execute = nativeFactory()
+  writeFileSync(join(repo, 'draft brief.json'), JSON.stringify(goal))
+  const question = { question: 'What should ship?', wording: goalTask, outcomeA: 'Diagnosis', outcomeB: 'Fix',
+    evidence: 'Both outcomes fit the existing docs.', recommendation: 'Fix', changes: 'Delivered artifact' }
+  for (const questions of [[], [question]]) {
+    const expected = questions.length ? 'provisional' : 'settled'
+    for (const state of ['settled', 'provisional']) {
+      const calls = []
+      let saved
+      const result = await execute({ task: goalTask, repo, explain: true }, (prompt, opts) => {
+        calls.push(opts.label)
+        const fields = empty(opts.schema)
+        if (opts.label === 'brief shape') return { ...fields, brief: goal }
+        if (opts.label === 'intake') return { ...fields, status: 'ok', tier: 'simple', mode: 'implement' }
+        assert.equal(opts.label, 'brief challenge')
+        const command = prompt.split('\n').find(line => line.startsWith('dark-factory brief '))
+        saved = runNativeBriefCommand(repo, command.replace(' FILE ', " 'draft brief.json' ").replace(' STATE ', ' ' + state + ' '))
+        return { ...fields, brief: saved.document.brief, briefFile: saved.briefFile, questions }
+      }, () => {}, () => {})
+      const disk = JSON.parse(readFileSync(saved.briefFile, 'utf8'))
+      assert.deepEqual(disk, { version: 1, state, decisions: [], brief: goal })
+      if (state !== expected) {
+        assert.equal(result.status, 'failed')
+        assert.equal(result.briefFile, undefined)
+      } else {
+        assert.equal(result.status, questions.length ? 'needs-user' : 'explained')
+        assert.equal(result.briefFile, saved.briefFile)
+        assert.deepEqual(result.brief, disk)
+      }
+      const reachesIntake = state === 'settled' && !questions.length
+      assert.deepEqual(calls, ['brief shape', 'brief challenge', ...(reachesIntake ? ['intake'] : [])])
+    }
+  }
+})
+
+test('brief reuse reads the explained artifact and snapshots it into a separate tier run', async t => {
+  const f = fixture(t), h = briefRunner(f)
+  const first = await h.launch({ explain: true })
+  assert.equal(first.status, 'explained')
+  assert.deepEqual(h.labels, ['shape', 'challenge', 'intake'])
+  const doc = JSON.parse(readFileSync(first.briefFile, 'utf8'))
+  assert.deepEqual(doc.brief, goal)
+  assert.deepEqual(doc, first.brief)
+  assert.ok(first.report.markdown.includes(goal.purpose))
+  const file = join(f.repo, "saved 'résumé' brief.json")
+  writeFileSync(file, JSON.stringify(doc))
+  const second = await h.launch({ brief: file })
+  assert.deepEqual(h.labels.slice(3), ['intake', 'setup', 'seat'])
+  assert.ok(h.prompts.slice(3).every(p => p.includes(goal.outcome) && p.includes(goal.purpose)))
+  assert.ok(second.briefFile.startsWith(second.runDir + '/refs/'))
+  assert.deepEqual(JSON.parse(readFileSync(second.briefFile)), doc)
+  assert.deepEqual(second.brief, doc)
+  // Execute the native intake's literal helper command as a transport would. The native
+  // runtime has no direct filesystem binding and must use the helper within this one turn.
+  const execute = nativeFactory()
+  const nativeCalls = []
+  const native = await execute({ task: goalTask, brief: file, explain: true, repo: f.repo }, (prompt, opts) => {
+    nativeCalls.push(opts.label)
+    const command = prompt.split('\n').find(line => line.startsWith('dark-factory brief '))
+    const copy = runNativeBriefCommand(f.repo, command)
+    return { ...empty(opts.schema), ...copy, status: 'ok', tier: 'simple', mode: 'implement' }
+  }, () => {}, () => {})
+  assert.deepEqual(nativeCalls, ['intake'])
+  assert.deepEqual(native.brief, doc)
+  assert.deepEqual(JSON.parse(readFileSync(native.briefFile)), doc)
+  for (const [name, content] of [['missing', null], ['malformed', '{}'], ['provisional', JSON.stringify({ ...doc, state: 'provisional' })]]) {
+    const badFile = join(f.repo, name)
+    if (content) writeFileSync(badFile, content)
+    const before = h.labels.length
+    const bad = await h.launch({ brief: badFile, explain: true })
+    assert.equal(bad.status, 'failed', name)
+    assert.equal(h.labels.length, before)
+  }
+  writeFileSync(file, JSON.stringify(doc) + '\n')
+  await assert.rejects(h.resume(second, []), /Checkpoint goal brief changed/)
+  writeFileSync(first.briefFile, '{}')
+  await assert.rejects(h.resume(first, []), /Checkpoint goal brief changed/)
 })

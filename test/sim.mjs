@@ -219,6 +219,7 @@ function roleOf(label) {
   let m
   if (label === 'setup') return { kind: 'setup' }
   if (label === 'retro') return { kind: 'retro' }
+  if (label.startsWith('brief ')) return { kind: label.replace(' ', '-') }
   if (label === 'intake') return { kind: 'intake' }
   if (label === 'record') return { kind: 'record' }
   if ((m = label.match(/^r(\d+):([A-F]) (\w+)/))) return { kind: m[1] === '0' ? 'solve' : 'debate', round: +m[1], L: m[2], key: m[3] }
@@ -1887,15 +1888,23 @@ const INTAKE = (tier, o = {}) => ({
   signals: { kind: 'change', files: 1, publicApi: false, crossModule: false, testsCover: 'yes', ambiguous: false, planGiven: false }, split: [],
 })
 const NOT_BIG = { tooBig: { tier: '', reason: '' } }
-const factory = (name, handler, args, hooks = {}) => run(name, handler, args, { ...hooks, workflow: 'factory' })
+// Tier-specific scenarios exercise the direct intake path. The clean Simple golden includes shaping.
+const factory = (name, handler, args, hooks = {}) => run(name, handler,
+  name === 'factory-simple' ? args : typeof args === 'string' ? '--no-brief ' + args : { brief: false, ...args },
+  { ...hooks, workflow: 'factory' })
 const factsIn = prompt => JSON.parse(prompt.match(/## Run facts \(data\)\n\n```json\n([\s\S]*?)\n```/)[1])
 const LOG_TASK = 'Add a debug log line with the retry count in Fetcher::retry'
 
 async function scenarioFactorySimple() {
   const handler = async (role, prompt) => {
     switch (role.kind) {
+      case 'brief-shape':
+      case 'brief-challenge':
+        return { brief: { outcome: 'Log the retry count at debug level.', purpose: 'Let operators identify repeated retries.', scope: 'Fetcher retries.',
+          nonGoals: 'Changing the retry policy.', acceptanceExamples: ['The second retry logs 2.'], verification: 'Observe the retry log.',
+          delegated: ['testing', 'implementation', 'internal design'] }, questions: [], briefFile: '/tmp/proj/.council/brief-one/BRIEF.json' }
       case 'intake': return INTAKE('simple')
-      case 'setup': return { ...SETUP('test-fsimple'), criteria: [{ id: 'C1', text: 'logs the retry count at debug level' }] }
+      case 'setup': return { ...SETUP('test-fsimple'), refs: [{ source: '/tmp/proj/.council/brief-one/BRIEF.json', path: '/tmp/proj/.council/test-fsimple/refs/BRIEF.json', inWorktrees: false }], criteria: [{ id: 'C1', text: 'logs the retry count at debug level' }] }
       case 'solve': return solve(role.L, NOT_BIG)
       case 'check': return check(prompt, () => 'verified', () => 'no', () => [], { criteria: [{ criterion: 'C1', status: 'met', note: '' }] })
       default: throw new Error(`unexpected role ${role.kind}`)
@@ -1903,7 +1912,7 @@ async function scenarioFactorySimple() {
   }
   const { result, calls } = await factory('factory-simple', handler, { task: LOG_TASK })
   assert.deepEqual([result.status, result.tier, result.factory.chosenBy, result.final.readiness.state], ['done', 'simple', 'intake', 'ready'])
-  assert.deepEqual(calls.map(c => c.role.kind), ['intake', 'setup', 'solve', 'check', 'audit', 'record'], 'no spec review, debate, ratification or model retro')
+  assert.deepEqual(calls.map(c => c.role.kind), ['brief-shape', 'brief-challenge', 'intake', 'setup', 'solve', 'check', 'audit', 'record'], 'no spec review, debate, ratification or model retro')
   const call = kind => calls.find(c => c.role.kind === kind)
   assert.deepEqual([call('intake').opts.model, call('setup').opts.model, call('solve').opts.model], ['opus', 'opus', 'sonnet'])
   assert.ok(call('intake').prompt.includes('# The tiers, cheapest first') && !/tierConfirmed|pinned/.test(call('intake').prompt))
@@ -1924,7 +1933,7 @@ async function scenarioFactorySimple() {
   assert.deepEqual([facts.workflow, facts.tier, facts.chosenBy, facts.escalation, facts.readiness, facts.signals.files], ['factory', 'simple', 'intake', null, 'ready', 1])
   assert.ok(call('record').prompt.includes('retro --facts-only --run-dir'))
   assert.equal(result.retro.recorded, true)
-  return 'intake → one Sonnet change, the neutral check, one Astra review; facts recorded, no model retro (6 turns)'
+  return 'goal brief and challenge → intake → one Sonnet change, the neutral check, one Astra review; facts recorded, no model retro (8 turns)'
 }
 
 // The criteria and the verification command the user supplied are checked against what setup

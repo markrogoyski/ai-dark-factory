@@ -47,11 +47,11 @@ test('a standalone pair run ends with the model retro on the Codex retro role, a
   assert.equal(off.result.retro, undefined)
 })
 
-test('explain performs only intake for Factory and no turns for explicit Pair or Ensemble', async () => {
+test('explain shapes and routes for Factory and no turns for explicit Pair or Ensemble', async () => {
   for (const workflow of ['factory', 'pair', 'ensemble']) {
     const { result, calls } = await simulate(workflow, { explain: true })
     assert.equal(result.status, 'explained'); assert.equal(result.execution, 'not-started')
-    assert.deepEqual(calls.map(c => c.role), workflow === 'factory' ? ['intake'] : [])
+    assert.deepEqual(calls.map(c => c.role), workflow === 'factory' ? ['intake', 'intake', 'intake'] : [])
     assert.ok(result.plan.requiredCLIs.includes('codex'))
     assert.equal(result.final.readiness.state, 'not-assessed')
   }

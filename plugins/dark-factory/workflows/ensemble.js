@@ -648,7 +648,7 @@ function taskBlock(S, round) {
 // as explicit user decisions instead (pairDecisionsBlock).
 function taskCore(S) {
   let t = `# Task\n\n${S.task}\n`
-  t += refsBlock(S)
+  t += goalBriefBlock(S) + refsBlock(S)
   if (S.context) t += `\n# Context from the user\n\n${S.context}\n`
   t += escalationBlock(S)
   t += `\n# Acceptance criteria (fixed before any work began)\n\n${S.criteria.map(c => `- ${c.id}: ${c.text}`).join('\n') || '- (none recorded)'}\n`
@@ -1128,7 +1128,7 @@ Keep the post under about ${Math.min(S.postWords, 600)} words.${notesAsk(s, k)}`
 // Codex and Gemini seats resume their own thread, which already holds the protocol, task and workspace.
 function resumedPreamble(S, s, round) {
   return `The council continues. You are still seat ${s.L}, and the rules, task and workspace from round 0 still apply (the task and acceptance criteria are also in ${S.run.runDir}/TASK.md). Your worktree is ${s.wt}; the room is ${S.run.room}.` +
-    `${typeof round === 'number' && round > 0 ? ` ${blindNote(S, round)}` : ''}\n${clarificationsFor(S, round)}`
+    `${typeof round === 'number' && round > 0 ? ` ${blindNote(S, round)}` : ''}\n${goalBriefBlock(S)}${clarificationsFor(S, round)}`
 }
 
 function recoverSeatPrompt(S, post) {
@@ -1352,7 +1352,7 @@ function specReviewPrompt(S, r) {
 # Task
 
 ${S.task}
-${refsBlock(S)}${S.context ? `\n# Context from the user\n\n${S.context}\n` : ''}
+${goalBriefBlock(S)}${refsBlock(S)}${S.context ? `\n# Context from the user\n\n${S.context}\n` : ''}
 Mode: ${S.mode}. ${tierProfile(S).architecture ? 'The result is a design and a plan of milestones for building it, each to be built later by a run of its own; nothing in the repository changes in this run.' : { implement: 'The result is a change to the repository.', investigate: 'The result is an answer, with evidence; nothing in the repository changes.', design: 'The result is a design to choose from, not the change itself.' }[S.mode]}
 
 # The acceptance criteria${given ? ' (written by the user)' : ' (written by the setup from the task and the code)'}
@@ -1390,7 +1390,7 @@ function specPanelPrompt(S, findings) {
 # Task
 
 ${S.task}
-${refsBlock(S)}${S.context ? `\n# Context from the user\n\n${S.context}\n` : ''}
+${goalBriefBlock(S)}${refsBlock(S)}${S.context ? `\n# Context from the user\n\n${S.context}\n` : ''}
 # The acceptance criteria
 
 ${specCriteria(S)}
@@ -1431,7 +1431,7 @@ function specAmendPrompt(S, todo) {
 # Task
 
 ${S.task}
-${refsBlock(S)}${S.context ? `\n# Context from the user\n\n${S.context}\n` : ''}
+${goalBriefBlock(S)}${refsBlock(S)}${S.context ? `\n# Context from the user\n\n${S.context}\n` : ''}
 # The acceptance criteria now
 
 ${specCriteria(S)}
@@ -1666,14 +1666,14 @@ Review only what the revision changed: problems it introduced, and revisions tha
 function auditPrompt(S, a, W, round) {
   if (tierProfile(S).architecture) {
     if (round === 'H') return planReviewBody(S, a, W)
-    if (external(a)) return `The review continues. You are still the ${a.lens} reviewer of the same plan; the task and your instructions from before still apply.\n\n${planRereviewBody(S, a, W)}`
+    if (external(a)) return `The review continues. You are still the ${a.lens} reviewer of the same plan; the task and your instructions from before still apply.\n${goalBriefBlock(S)}\n${planRereviewBody(S, a, W)}`
     return `You are an independent reviewer of a milestone plan another AI wrote for the task below. You haven't seen how it was made or anything said about it, and that is deliberate. You have no stake in it. Apart from the files named below, don't open anything under ${S.run.room}: it holds the discussion that produced the plan.
 
 ${taskBlock(S, 'J')}
 ${planRereviewBody(S, a, W)}`
   }
   if (round === 'H') return auditBody(S, a, W)
-  if (external(a)) return `The audit continues. You are still the ${a.lens} auditor of the same change; the task and your instructions from before still apply.\n\n${reauditBody(S, a, W)}`
+  if (external(a)) return `The audit continues. You are still the ${a.lens} auditor of the same change; the task and your instructions from before still apply.\n${goalBriefBlock(S)}\n${reauditBody(S, a, W)}`
   return `You are an independent auditor, reviewing a change another AI made to complete a task. You haven't seen how it was made or anything said about it, and that is deliberate. You have no stake in it. Apart from the files named below, don't open anything under ${S.run.room}: it holds the discussion that produced the change.
 
 ${taskBlock(S, 'J')}
@@ -1885,7 +1885,7 @@ function setupPrompt(S) {
 # Task
 
 ${S.task}
-${S.context ? `\n# Context from the user\n\n${S.context}\n` : ''}${S.escalation ? `\n# An earlier attempt\n\nThis task was first ${S.escalation.from === 'feature' ? 'planned as one feature' : 'tried as a simple change'} and handed up because ${S.escalation.why}. Its acceptance criteria were:\n${S.escalation.criteria.map(c => `- ${c}`).join('\n') || '- (none)'}\n${S.escalation.from === 'feature' ? 'Start from them: they describe the whole of the work, which this run designs and breaks into milestones.' : 'Start from them, and widen them where the reason above shows they fell short.'}\n` : ''}
+${goalBriefBlock(S, true)}${S.context ? `\n# Context from the user\n\n${S.context}\n` : ''}${S.escalation ? `\n# An earlier attempt\n\nThis task was first ${S.escalation.from === 'feature' ? 'planned as one feature' : 'tried as a simple change'} and handed up because ${S.escalation.why}. Its acceptance criteria were:\n${S.escalation.criteria.map(c => `- ${c}`).join('\n') || '- (none)'}\n${S.escalation.from === 'feature' ? 'Start from them: they describe the whole of the work, which this run designs and breaks into milestones.' : 'Start from them, and widen them where the reason above shows they fell short.'}\n` : ''}
 ${S.modeGiven ? `Mode: ${S.mode}. Return it as \`mode\`.\n` : ''}${startedAt ? `
 ## Before you start — the time
 Before anything else, run \`date -u +%Y-%m-%dT%H:%M:%SZ\` and keep what it prints. Step 2 passes it to init, so the run's timeline counts setup from its start.
@@ -1908,7 +1908,7 @@ Read the task together with the part of those documents it points to, and decide
 When the work would end with a change someone commits, choose implement.
 `}
 ## Step 2 — create the run
-Run: ${S.cli} init --repo ${S.raw.repo ? shq(S.raw.repo) : '"$PWD"'} --seats ${letters}${P.factory ? ' --factory' : ''}${setupRunId(S) ? ` --run-id ${shq(setupRunId(S))}` : ''}${startedAt ? ' --started-at <the time you read before you started>' : ''}${S.plan.map(p => ` --ref ${shq(p)}`).join('')} followed by --ref <path> for each other document from step 1
+Run: ${S.cli} init --repo ${S.raw.repo ? shq(S.raw.repo) : '"$PWD"'} --seats ${letters}${P.factory ? ' --factory' : ''}${setupRunId(S) ? ` --run-id ${shq(setupRunId(S))}` : ''}${startedAt ? ' --started-at <the time you read before you started>' : ''}${S.plan.map(p => ` --ref ${shq(p)}`).join('')}${S.factory?.briefFile ? ` --ref ${shq(S.factory.briefFile)}` : ''} followed by --ref <path> for each other document from step 1
 ${S.host !== 'codex' ? 'Make it one Bash call with timeout 600000 and dangerouslyDisableSandbox: true: init can take several minutes on a large repository, and it creates git worktrees, which the Bash sandbox blocks: it refuses to write the repository\'s worktree records (".git/worktrees/…: Operation not permitted").\n' : ''}It prints JSON with runId, runDir, repoRoot, refs (the snapshots it made of those documents) and dirty (tracked files with uncommitted changes).
 - If it fails, return status "error" with its message, and empty values elsewhere.
 ${S.allowDirty || (S.modeGiven && S.mode !== 'implement') ? '' : `- If ${S.modeGiven ? '' : 'the mode is implement and '}dirty is non-empty, stop and return status "dirty" with that list. The worktrees branch from HEAD, so uncommitted changes would be invisible to every seat.\n`}
@@ -1946,7 +1946,7 @@ You are the intake for a software factory. A task arrives, and you decide how mu
 # Task
 
 ${S.task}
-${S.context ? `\n# Context from the user\n\n${S.context}\n` : ''}${S.plan.length ? `\n# Documents the user gave\n\n${S.plan.map(p => `- ${p}`).join('\n')}\n` : ''}
+${goalBriefBlock(S, true)}${S.context ? `\n# Context from the user\n\n${S.context}\n` : ''}${S.plan.length ? `\n# Documents the user gave\n\n${S.plan.map(p => `- ${p}`).join('\n')}\n` : ''}
 # The documents the work follows
 
 If the task depends on a plan, checklist or other document, find it: the paths above, or a file the task names (resolved against the repository root, and ~/.claude/plans/ for a plan named there). If it depends on one you can't identify or find, including "the plan" with no file named, return status "needs-plan" with planMissing saying what is missing. Never pick a plan yourself. Otherwise planMissing is "", and status is "ok" (or "needs-split", below).
@@ -2086,6 +2086,7 @@ function readiness(S, L, finalRound, raters, reviews, gaps = []) {
 // rewritten or dropped through a Pair decision is theirs to change. [] when everything was kept.
 function setupLosses(S, criteria, verify) {
   const lost = []
+  if (S.factory?.briefFile && !S.refs.some(r => r.source === S.factory.briefFile)) lost.push('the goal brief snapshot')
   const want = String(S.raw.verify || '').trim()
   const got = String(verify || '').trim()
   if (want && got !== want) lost.push(`the verification command \`${oneLine(want, 200)}\` (setup returned ${got ? `\`${oneLine(got, 200)}\`` : 'none'})`)
@@ -3614,7 +3615,7 @@ function needsTier(S, push, intake) {
     status: 'needs-tier', task: S.task, asked: push.asked, recommended: push.recommended,
     reasons: intake.reasons || '', signals: intake.signals || null, notes: S.notes,
     forTheOrchestrator:
-      `The factory stopped before creating anything: the user asked for the ${push.asked} tier, and intake recommends ${push.recommended} (${oneLine(intake.reasons, 400) || 'no reason given'}). ` +
+      `The factory stopped before ${S.factory?.brief ? 'tier work' : 'creating anything'}: the user asked for the ${push.asked} tier, and intake recommends ${push.recommended} (${oneLine(intake.reasons, 400) || 'no reason given'}). ` +
       `Ask the user in one short message whether to keep ${push.asked} or switch to ${push.recommended}, with intake's reason. ` +
       (S.host === 'codex'
         ? `Rerun the runner with the original args file and tierConfirmed: true to keep it, or tier: "${push.recommended}" to switch. This starts a new run. `
@@ -3632,7 +3633,7 @@ function needsSplit(S, items, intake) {
   return {
     status: 'needs-split', task: S.task, items, tier, reasons: intake.reasons || '', signals: intake.signals || null, notes: S.notes,
     forTheOrchestrator:
-      `The factory stopped before creating anything: intake found ${items.length} separate pieces of work in this task (${oneLine(intake.reasons, 400) || 'no reason given'}). ` +
+      `The factory stopped before ${S.factory?.brief ? 'tier work' : 'creating anything'}: intake found ${items.length} separate pieces of work in this task (${oneLine(intake.reasons, 400) || 'no reason given'}). ` +
       'One run would debate and review them all together, at the cost of the hardest piece. ' +
       `Show the user the pieces (items[]: title, estimated tier, and the earlier pieces each builds on) and ask in one short message: run them one at a time (recommended), or the whole task as one ${pinned || tier} run. ` +
       (S.host === 'codex'
@@ -3698,6 +3699,44 @@ function routedResult(S, res) {
     ...deliveryFields(S, res),
     factory: { tier: f.tier, chosenBy: f.chosenBy, asked: f.asked, recommended: f.recommended, reasons: f.intake ? f.intake.reasons : '' },
     forTheOrchestrator: `The factory ran this at the ${f.tier} tier (${f.chosenBy === 'intake' ? 'intake\'s choice' : f.chosenBy === 'pinned' ? 'the user\'s choice, which intake agreed with' : `the user's choice, over intake's ${f.recommended}`}); mention it in a few words. ${res.forTheOrchestrator || ''}` }
+}
+
+// The input before intake deliberately excludes pins, budgets and clarification answers:
+// resuming a stop must replay the very same shaper and challenger requests.
+function briefInputs(S) {
+  return `Original task: ${S.task}
+Context: ${S.context || '(none)'}
+Documents: ${JSON.stringify(S.plan)}
+Explicit constraints: ${JSON.stringify({ mode: S.raw.mode, criteria: S.raw.criteria, verify: S.raw.verify })}
+Inspect the repository${S.raw.repo ? ' at ' + S.raw.repo : ''} and the documents relevant to this request. Read only, apart from saving the requested brief. Preserve the user's wording and decisions. If a required document cannot be found, name it in planMissing where provided. Include "testing", "implementation" and "internal design" in delegated. Keep the brief short.`
+}
+
+function goalBriefBlock(S, full = false) {
+  const doc = S.factory?.brief
+  if (!doc) return ''
+  const b = doc.brief
+  const lines = [`Outcome: ${b.outcome}`, `Purpose: ${b.purpose}`]
+  if (full) lines.push(`Scope: ${b.scope}`, `Non-goals: ${b.nonGoals}`, 'Acceptance examples:', ...b.acceptanceExamples.map(e => '- ' + e),
+    `Verification: ${b.verification}`, `Delegated decisions: ${b.delegated.join(', ')}.`,
+    ...doc.decisions.map(d => `User decision ${d.id} (${d.question}): ${d.answer}`))
+  return '\n# Goal brief\n\n' + lines.join('\n') + '\n'
+}
+
+// The generated brief snapshot is additional to the user's plan documents.
+function planReferenceCount(S) {
+  return S.factory?.briefFile ? S.refs.filter(r => r.source !== S.factory.briefFile).length : S.refs.length
+}
+
+function withGoalBrief(S, result) {
+  if (!S.factory?.brief) return result
+  const snapshot = S.refs.find(r => r.source === S.factory.briefFile)
+  const briefFile = snapshot?.path || S.factory.briefFile
+  const entry = goalBriefBlock(S, true).replace('\n# Goal brief\n\n', '').trimEnd() + '\nBrief file: ' + briefFile
+  let markdown = result.report?.markdown || ''
+  const heading = /^(?:### )?How the run went:?$/m
+  markdown = heading.test(markdown) ? markdown.replace(heading, title => title + '\n\n' + entry) :
+    '### How the run went\n\n' + entry + (markdown ? '\n\n' + markdown : '')
+  return { ...result, brief: S.factory.brief, briefFile, report: { ...result.report, markdown } }
 }
 
 // The Simple tier's rules: when it hands the work up, and its report and result. Pure, like the
@@ -3969,7 +4008,7 @@ function milestoneArgs(S, m, design, findings) {
   if (findings.length) lines.push('', 'Findings from the review of the plan that still stand against this milestone:', ...findings.map(c => `- ${oneLine(c.statement, 400)}`))
   const original = S.factory && S.factory.args || S.raw
   // Carry every option except what describes this run's task, so a new option isn't dropped.
-  const own = new Set(['task', 'prompt', 'question', 'plan', 'mode', 'tier', 'tierConfirmed', 'noSplit', 'criteria', 'clarifications', 'hostRunId'])
+  const own = new Set(['task', 'prompt', 'question', 'plan', 'mode', 'tier', 'tierConfirmed', 'noSplit', 'criteria', 'clarifications', 'brief', 'hostRunId'])
   const options = S.host === 'codex'
     ? Object.fromEntries(Object.entries(original).filter(([k, v]) => !own.has(k) && v !== undefined)) : {}
   return { ...options, task: lines.join('\n'), plan: [design, ...S.plan], tier: m.tier, tierConfirmed: true, noSplit: true }
@@ -5828,7 +5867,7 @@ async function councilSetup() {
   S.refs = (setup.refs || []).filter(r => r && typeof r.path === 'string' && r.path.startsWith(`${S.run.runDir}/refs/`))
     .map(r => ({ source: String(r.source || ''), path: r.path, inWorktrees: !!r.inWorktrees }))
   if ((setup.refs || []).length !== S.refs.length) S.notes.push('Setup reported reference documents outside the run\'s refs/ directory; they were ignored.')
-  if (S.plan.length && S.refs.length < S.plan.length) S.notes.push(`${plural(S.plan.length, 'plan document')} given, but setup snapshotted only ${S.refs.length}.`)
+  if (S.plan.length && planReferenceCount(S) < S.plan.length) S.notes.push(`${plural(S.plan.length, 'plan document')} given, but setup snapshotted only ${planReferenceCount(S)}.`)
   S.verify = String(setup.verify || '').trim()
   // The helper runs the verify.sh setup wrote, and TASK.md carries setup's criteria, so a supplied
   // command or criterion setup dropped can't be put back from here: the run stops before any seat.

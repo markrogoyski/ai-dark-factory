@@ -1,0 +1,7 @@
+Shape the requested goal into a short brief. State the user-visible outcome and its purpose, scope and non-goals, concrete acceptance examples and the observable evidence that would verify delivery. Delegate testing, implementation and internal design explicitly. Do not ask the user questions or decide a tier.
+
+Original task: Add a debug log line with the retry count in Fetcher::retry
+Context: (none)
+Documents: []
+Explicit constraints: {}
+Inspect the repository and the documents relevant to this request. Read only, apart from saving the requested brief. Preserve the user's wording and decisions. If a required document cannot be found, name it in planMissing where provided. Include "testing", "implementation" and "internal design" in delegated. Keep the brief short.

@@ -6,6 +6,17 @@ You are the intake for a software factory. A task arrives, and you decide how mu
 
 Add a debug log line with the retry count in Fetcher::retry
 
+# Goal brief
+
+Outcome: Log the retry count at debug level.
+Purpose: Let operators identify repeated retries.
+Scope: Fetcher retries.
+Non-goals: Changing the retry policy.
+Acceptance examples:
+- The second retry logs 2.
+Verification: Observe the retry log.
+Delegated decisions: testing, implementation, internal design.
+
 # The documents the work follows
 
 If the task depends on a plan, checklist or other document, find it: the paths above, or a file the task names (resolved against the repository root, and ~/.claude/plans/ for a plan named there). If it depends on one you can't identify or find, including "the plan" with no file named, return status "needs-plan" with planMissing saying what is missing. Never pick a plan yourself. Otherwise planMissing is "", and status is "ok" (or "needs-split", below).

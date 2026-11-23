@@ -19,6 +19,7 @@ export function parseCLI(argv, cwd = process.cwd()) {
     if (arg === '--') { task.push(...argv.slice(i + 1)); break }
     if (arg === '--explain') { out.args.explain = true; continue }
     if (arg === '--prepare') { out.prepare = true; continue }
+    if (arg === '--no-brief') { out.args.brief = false; continue }
     if (arg === '--brief') { out.brief = true; continue }
     if (arg === '--no-design') { out.args.design = false; out.noDesign = true; continue }
     if (arg === '--no-retro') { out.args.retro = false; out.noRetro = true; continue }
@@ -55,6 +56,7 @@ export function parseCLI(argv, cwd = process.cwd()) {
   if (!out.resume && out.workflow !== 'pair' && ['author', 'reviewer', 'maxReviews', 'maxDesignReviews'].some(key => out.args[key] !== undefined)) throw new Error('author, reviewer, maxReviews, and maxDesignReviews require --workflow pair')
   if (!out.resume && out.workflow !== 'pair' && out.noDesign) throw new Error('--no-design requires --workflow pair')
   if (!out.resume && out.workflow !== 'pair' && out.noRetro) throw new Error('--no-retro requires --workflow pair')
+  if (!out.resume && out.workflow !== 'factory' && out.args.brief !== undefined) throw new Error('The goal brief requires --workflow factory')
   delete out.noDesign
   delete out.noRetro
   if (out.args.tier && !tiers.has(out.args.tier)) throw new Error('Unknown tier: ' + out.args.tier)

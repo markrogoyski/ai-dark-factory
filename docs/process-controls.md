@@ -12,7 +12,7 @@ $dark-factory --workflow pair --explain Implement the retry policy
 $dark-factory --strategy pair Implement the retry policy
 ```
 
-- **Factory** runs its read-only intake, then returns the tier, strategy, participants, reviewers,
+- **Factory** shapes the goal, challenges the brief and runs intake, then returns the brief, its file, the tier, strategy, participants, reviewers,
   required CLIs, verification setting, limits and expected deliverable. Missing plans, split
   decisions and tier disagreements still take precedence. Architecture says it returns a plan
   without building.

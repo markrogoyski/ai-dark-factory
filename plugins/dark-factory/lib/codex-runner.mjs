@@ -44,7 +44,8 @@ Git, and authenticated CLIs for the selected models.
   --reviewers N              Ensemble review lenses per candidate (default: 2)
   --mode MODE                implement, investigate, or design (workflow dependent)
   --strategy NAME            Factory: auto, pair, or independent
-  --explain                  Resolve the process without setup or implementation (Factory runs intake)
+  --no-brief                 Factory: skip goal shaping and its challenger
+  --explain                  Resolve the process without setup or implementation (Factory shapes the goal and runs intake)
   --prepare                  Check CLIs and plan documents offline, then stop; no model turn
   --max-turns N              Run-wide model turn budget, including retries
   --max-run-min N            Run-wide active-time limit
@@ -412,7 +413,11 @@ export function createRuntime({ repo, hostRunDir, concurrency = 3, timeoutMin = 
       logs(join(runDir, 'logs'))
     }
   }
-  return { agent, turn, measure, cancel, now: () => Date.now(), elapsedBefore, budgetStop: () => limitStop, checkpointState: () => ({ sequence, elapsedMs: elapsedBefore + Date.now() - started, spentTurns }) }
+  function brief({ document, source }) {
+    const input = source ? ['--reuse', source] : ['--document', JSON.stringify(document)]
+    return callHelper(['brief', '--repo', repo, '--host-dir', hostRunDir, ...input], { cwd: repo, env: childEnv, signal })
+  }
+  return { agent, turn, measure, brief, cancel, now: () => Date.now(), elapsedBefore, budgetStop: () => limitStop, checkpointState: () => ({ sequence, elapsedMs: elapsedBefore + Date.now() - started, spentTurns }) }
 }
 
 export async function runWorkflow(options, dependencies = {}) {
@@ -489,10 +494,14 @@ export async function runWorkflow(options, dependencies = {}) {
       // malformed, repeated, unknown or missing ID is named rather than replayed or refused
       // generically. Then answers a stop took must stay as they were; one no stop took (held from
       // the first arguments) never reached a prompt, so it may be removed.
-      if (stopped?.status === 'needs-user' && stopped.resumable === true) {
+      if (stopped?.status === 'needs-user' && stopped.resumable === true && stopped.brief?.state !== 'provisional') {
         const took = new Set((Array.isArray(stopped.decisions) ? stopped.decisions : []).map(d => d?.id))
         const taken = list => (Array.isArray(list) ? list : []).filter(a => took.has(a?.id))
-        const check = pairResumeAnswerCheck(stopped, args.clarifications || [])
+        const briefIds = new Set((options.workflow === 'factory' && previous.brief === undefined ? stopped.brief?.decisions || [] : []).map(d => d.id))
+        const atBrief = answers => answers.filter(a => briefIds.has(a?.id))
+        const answers = args.clarifications || []
+        if (briefIds.size && (!Array.isArray(answers) || fingerprint(atBrief(answers)) !== fingerprint(atBrief(oldAnswers)))) throw new Error('Existing clarification answers cannot change on resume.')
+        const check = pairResumeAnswerCheck(stopped, briefIds.size ? answers.filter(a => !briefIds.has(a?.id)) : answers)
         if (check.settled && fingerprint(taken(args.clarifications)) !== fingerprint(taken(oldAnswers))) throw new Error('Existing clarification answers cannot change on resume.')
         if (!check.settled) {
           const { retro, ...rest } = stopped

@@ -42,6 +42,7 @@ import sys
 
 from . import common
 from .common import CouncilError, DEFAULT_MAX_WAIT, TRANSCRIPT_WAIT_SEC, fail, prompt_hash, prose_words, read
+from .brief import cmd_brief
 from .delivery import cmd_apply, cmd_verify_delivery
 from .jobs import cmd_job, cmd_jobs, cmd_wait
 from .measure import cmd_measure
@@ -76,6 +77,16 @@ def main():
 
     ap = argparse.ArgumentParser(prog='dark-factory', description=__doc__.split('\n')[0])
     sub = ap.add_subparsers(dest='cmd', required=True)
+
+    p = sub.add_parser('brief', help='save or reuse a Factory goal brief')
+    inputs = p.add_mutually_exclusive_group(required=True)
+    inputs.add_argument('--content', help='JSON brief content from a shaping turn')
+    inputs.add_argument('--document', help='complete JSON document from the runner')
+    inputs.add_argument('--reuse', help='settled v1 brief file')
+    p.add_argument('--repo')
+    p.add_argument('--host-dir')
+    p.add_argument('--state', choices=['settled', 'provisional'], default='settled')
+    p.add_argument('--decisions', default='[]')
 
     p = sub.add_parser('init')
     p.add_argument('--repo')
@@ -207,7 +218,7 @@ def main():
     a = ap.parse_args()
     if getattr(a, 'run_dir', None):
         a.run_dir = os.path.abspath(os.path.expanduser(a.run_dir))
-    handlers = {'init': cmd_init, 'seat-run': cmd_seat_run, 'wait': cmd_wait, 'measure': cmd_measure,
+    handlers = {'brief': cmd_brief, 'init': cmd_init, 'seat-run': cmd_seat_run, 'wait': cmd_wait, 'measure': cmd_measure,
                 'verify': cmd_verify, 'verify-delivery': cmd_verify_delivery, 'evidence': cmd_evidence,
                 'apply': cmd_apply,
                 'materialize': cmd_materialize, 'usage': cmd_usage, 'jobs': cmd_jobs,

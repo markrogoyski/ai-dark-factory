@@ -1,8 +1,9 @@
 export const meta = {
   name: 'factory',
   description: 'Routes one task to the process it needs: a simple change gets one implementer and one reviewer, harder work the council; escalates on evidence',
-  whenToUse: 'Use for implementation work the user wants done end to end with independent review, when it is not obvious how much process it needs. An Opus intake reads the task and the code and picks a tier: simple (Sonnet implements, Codex Astra reviews, at most one fix pass: about 6-9 agent turns), fix (a subtle bug: Opus and Astra attempt it blind and debate, through /council), feature (Opus and Astra each plan it blind and debate the plans; the chosen plan, merged with the best of the other, is built by its author in at most 4 checked increments, then audited for correctness, design and tests: about 25-40 agent turns) or architecture (a request for a design or plan, or one connected piece of work too big for one feature: Opus, Astra and Sonnet design it blind and debate the designs; the chosen design\'s author writes a milestone plan, reviewed for grounding (Astra), sequencing (Opus) and risk and alternatives (Gemini Hydrogen) and revised once; nothing is built: about 35-50 agent turns). The lowest tier that plausibly suffices is chosen, because a run whose tier the evidence shows is too low hands the work to a higher tier automatically, in the same run: Simple on failing verification after its fix pass, an upheld design finding, a change over its size budget, or the implementer saying so; Feature when its chosen plan needs more than 4 increments, which goes to architecture before anything is built. An architecture result lists milestones[], each with a task, draft criteria, the earlier milestones it builds on, a tier and ready-made args: show them, then offer to run each as its own /factory run with Workflow({name: "dark-factory:factory", args: milestones[i].args}), one at a time and in order, committing each before the next; never start one unasked. When the user names a tier, pass it in `tier` (or prefix a string task with --tier simple); if intake disagrees, the run stops with status needs-tier before creating anything, and you ask the user once: rerun with tierConfirmed: true to keep their tier, or with intake\'s. A kept tier is where the run starts, not a ceiling. When the task bundles separate pieces of work (a checklist, several fixes with their own causes, one commit per item), intake stops the run with status needs-split and lists them: ask the user once whether to run each piece as its own /factory run, in order and committing each before the next, or the whole task as one (rerun with noSplit: true). Seats work in git worktrees checked out from HEAD, so they cannot see uncommitted files: if the work follows a plan or other document that is not committed (a plan from plan mode under ~/.claude/plans/, an untracked PLAN.md, a checklist), pass its absolute path in `plan`, e.g. {task: "Do item 13 on the bug checklist", plan: ["/abs/path/BUG_CHECK_LIST.md"]}, and say in the task which part to do; do not paste the document. `simple: {implementer, reviewer, maxLines, maxFiles}` changes the Simple tier; every /council argument (seats, spec, audit, rounds, ...) passes through to the council tiers, audit: {tests: <model>} swaps the Feature tier\'s tests auditor (Sonnet), and audit: {risk: <model>} the Architecture tier\'s risk reviewer (Gemini Hydrogen; swap it for "sonnet" if the Antigravity CLI is unavailable).',
+  whenToUse: 'Use for implementation work the user wants done end to end with independent review, when it is not obvious how much process it needs. A shaper and a fresh challenger clarify the goal before intake. Pass brief: false (--no-brief) to skip or an absolute brief file path in brief to reuse it. An Opus intake reads the task and the code and picks a tier: simple (Sonnet implements, Codex Astra reviews, at most one fix pass: about 8-11 agent turns), fix (a subtle bug: Opus and Astra attempt it blind and debate, through /council), feature (Opus and Astra each plan it blind and debate the plans; the chosen plan, merged with the best of the other, is built by its author in at most 4 checked increments, then audited for correctness, design and tests: about 27-42 agent turns) or architecture (a request for a design or plan, or one connected piece of work too big for one feature: Opus, Astra and Sonnet design it blind and debate the designs; the chosen design\'s author writes a milestone plan, reviewed for grounding (Astra), sequencing (Opus) and risk and alternatives (Gemini Hydrogen) and revised once; nothing is built: about 37-52 agent turns). The lowest tier that plausibly suffices is chosen, because a run whose tier the evidence shows is too low hands the work to a higher tier automatically, in the same run: Simple on failing verification after its fix pass, an upheld design finding, a change over its size budget, or the implementer saying so; Feature when its chosen plan needs more than 4 increments, which goes to architecture before anything is built. An architecture result lists milestones[], each with a task, draft criteria, the earlier milestones it builds on, a tier and ready-made args: show them, then offer to run each as its own /factory run with Workflow({name: "dark-factory:factory", args: milestones[i].args}), one at a time and in order, committing each before the next; never start one unasked. When the user names a tier, pass it in `tier` (or prefix a string task with --tier simple); if intake disagrees, the run stops with status needs-tier before tier work, and you ask the user once: rerun with tierConfirmed: true to keep their tier, or with intake\'s. A kept tier is where the run starts, not a ceiling. When the task bundles separate pieces of work (a checklist, several fixes with their own causes, one commit per item), intake stops the run with status needs-split and lists them: ask the user once whether to run each piece as its own /factory run, in order and committing each before the next, or the whole task as one (rerun with noSplit: true). Seats work in git worktrees checked out from HEAD, so they cannot see uncommitted files: if the work follows a plan or other document that is not committed (a plan from plan mode under ~/.claude/plans/, an untracked PLAN.md, a checklist), pass its absolute path in `plan`, e.g. {task: "Do item 13 on the bug checklist", plan: ["/abs/path/BUG_CHECK_LIST.md"]}, and say in the task which part to do; do not paste the document. `simple: {implementer, reviewer, maxLines, maxFiles}` changes the Simple tier; every /council argument (seats, spec, audit, rounds, ...) passes through to the council tiers, audit: {tests: <model>} swaps the Feature tier\'s tests auditor (Sonnet), and audit: {risk: <model>} the Architecture tier\'s risk reviewer (Gemini Hydrogen; swap it for "sonnet" if the Antigravity CLI is unavailable).',
   phases: [
+    { title: 'Brief', detail: 'shape the outcome and purpose, then challenge unresolved readings before routing', model: 'opus' },
     { title: 'Intake', detail: 'reads the task and the code, and picks the tier the work needs', model: 'opus' },
     { title: 'Setup', detail: 'worktrees, room, and acceptance criteria fixed before anyone starts', model: 'opus' },
     { title: 'Spec', detail: 'council tiers: two reviewers attack the acceptance criteria before work begins' },
@@ -30,7 +31,7 @@ export const meta = {
 //   noSplit: run a task intake would split into separate runs (needs-split) as one.
 //   simple: {implementer: 'sonnet', reviewer: 'astra', maxLines: 200, maxFiles: 8}
 //
-// Shape: Intake -> [needs-plan | needs-split | needs-tier] ->
+// Shape: Brief -> [needs-user] -> Intake -> [needs-plan | needs-split | needs-tier] ->
 //   simple:  Setup (1 seat) -> Solve -> check -> Review (-> panel) -> one fix pass -> check -> facts
 //            (handed up to fix or feature when simpleTrigger fires: a fresh state and that tier's flow)
 //   feature: Setup -> Spec -> plans (Solve, Rounds) -> final plan (Synthesize) -> Build, one increment
@@ -681,7 +682,7 @@ function taskBlock(S, round) {
 // as explicit user decisions instead (pairDecisionsBlock).
 function taskCore(S) {
   let t = `# Task\n\n${S.task}\n`
-  t += refsBlock(S)
+  t += goalBriefBlock(S) + refsBlock(S)
   if (S.context) t += `\n# Context from the user\n\n${S.context}\n`
   t += escalationBlock(S)
   t += `\n# Acceptance criteria (fixed before any work began)\n\n${S.criteria.map(c => `- ${c.id}: ${c.text}`).join('\n') || '- (none recorded)'}\n`
@@ -1161,7 +1162,7 @@ Keep the post under about ${Math.min(S.postWords, 600)} words.${notesAsk(s, k)}`
 // Codex and Gemini seats resume their own thread, which already holds the protocol, task and workspace.
 function resumedPreamble(S, s, round) {
   return `The council continues. You are still seat ${s.L}, and the rules, task and workspace from round 0 still apply (the task and acceptance criteria are also in ${S.run.runDir}/TASK.md). Your worktree is ${s.wt}; the room is ${S.run.room}.` +
-    `${typeof round === 'number' && round > 0 ? ` ${blindNote(S, round)}` : ''}\n${clarificationsFor(S, round)}`
+    `${typeof round === 'number' && round > 0 ? ` ${blindNote(S, round)}` : ''}\n${goalBriefBlock(S)}${clarificationsFor(S, round)}`
 }
 
 function recoverSeatPrompt(S, post) {
@@ -1385,7 +1386,7 @@ function specReviewPrompt(S, r) {
 # Task
 
 ${S.task}
-${refsBlock(S)}${S.context ? `\n# Context from the user\n\n${S.context}\n` : ''}
+${goalBriefBlock(S)}${refsBlock(S)}${S.context ? `\n# Context from the user\n\n${S.context}\n` : ''}
 Mode: ${S.mode}. ${tierProfile(S).architecture ? 'The result is a design and a plan of milestones for building it, each to be built later by a run of its own; nothing in the repository changes in this run.' : { implement: 'The result is a change to the repository.', investigate: 'The result is an answer, with evidence; nothing in the repository changes.', design: 'The result is a design to choose from, not the change itself.' }[S.mode]}
 
 # The acceptance criteria${given ? ' (written by the user)' : ' (written by the setup from the task and the code)'}
@@ -1423,7 +1424,7 @@ function specPanelPrompt(S, findings) {
 # Task
 
 ${S.task}
-${refsBlock(S)}${S.context ? `\n# Context from the user\n\n${S.context}\n` : ''}
+${goalBriefBlock(S)}${refsBlock(S)}${S.context ? `\n# Context from the user\n\n${S.context}\n` : ''}
 # The acceptance criteria
 
 ${specCriteria(S)}
@@ -1464,7 +1465,7 @@ function specAmendPrompt(S, todo) {
 # Task
 
 ${S.task}
-${refsBlock(S)}${S.context ? `\n# Context from the user\n\n${S.context}\n` : ''}
+${goalBriefBlock(S)}${refsBlock(S)}${S.context ? `\n# Context from the user\n\n${S.context}\n` : ''}
 # The acceptance criteria now
 
 ${specCriteria(S)}
@@ -1699,14 +1700,14 @@ Review only what the revision changed: problems it introduced, and revisions tha
 function auditPrompt(S, a, W, round) {
   if (tierProfile(S).architecture) {
     if (round === 'H') return planReviewBody(S, a, W)
-    if (external(a)) return `The review continues. You are still the ${a.lens} reviewer of the same plan; the task and your instructions from before still apply.\n\n${planRereviewBody(S, a, W)}`
+    if (external(a)) return `The review continues. You are still the ${a.lens} reviewer of the same plan; the task and your instructions from before still apply.\n${goalBriefBlock(S)}\n${planRereviewBody(S, a, W)}`
     return `You are an independent reviewer of a milestone plan another AI wrote for the task below. You haven't seen how it was made or anything said about it, and that is deliberate. You have no stake in it. Apart from the files named below, don't open anything under ${S.run.room}: it holds the discussion that produced the plan.
 
 ${taskBlock(S, 'J')}
 ${planRereviewBody(S, a, W)}`
   }
   if (round === 'H') return auditBody(S, a, W)
-  if (external(a)) return `The audit continues. You are still the ${a.lens} auditor of the same change; the task and your instructions from before still apply.\n\n${reauditBody(S, a, W)}`
+  if (external(a)) return `The audit continues. You are still the ${a.lens} auditor of the same change; the task and your instructions from before still apply.\n${goalBriefBlock(S)}\n${reauditBody(S, a, W)}`
   return `You are an independent auditor, reviewing a change another AI made to complete a task. You haven't seen how it was made or anything said about it, and that is deliberate. You have no stake in it. Apart from the files named below, don't open anything under ${S.run.room}: it holds the discussion that produced the change.
 
 ${taskBlock(S, 'J')}
@@ -1918,7 +1919,7 @@ function setupPrompt(S) {
 # Task
 
 ${S.task}
-${S.context ? `\n# Context from the user\n\n${S.context}\n` : ''}${S.escalation ? `\n# An earlier attempt\n\nThis task was first ${S.escalation.from === 'feature' ? 'planned as one feature' : 'tried as a simple change'} and handed up because ${S.escalation.why}. Its acceptance criteria were:\n${S.escalation.criteria.map(c => `- ${c}`).join('\n') || '- (none)'}\n${S.escalation.from === 'feature' ? 'Start from them: they describe the whole of the work, which this run designs and breaks into milestones.' : 'Start from them, and widen them where the reason above shows they fell short.'}\n` : ''}
+${goalBriefBlock(S, true)}${S.context ? `\n# Context from the user\n\n${S.context}\n` : ''}${S.escalation ? `\n# An earlier attempt\n\nThis task was first ${S.escalation.from === 'feature' ? 'planned as one feature' : 'tried as a simple change'} and handed up because ${S.escalation.why}. Its acceptance criteria were:\n${S.escalation.criteria.map(c => `- ${c}`).join('\n') || '- (none)'}\n${S.escalation.from === 'feature' ? 'Start from them: they describe the whole of the work, which this run designs and breaks into milestones.' : 'Start from them, and widen them where the reason above shows they fell short.'}\n` : ''}
 ${S.modeGiven ? `Mode: ${S.mode}. Return it as \`mode\`.\n` : ''}${startedAt ? `
 ## Before you start — the time
 Before anything else, run \`date -u +%Y-%m-%dT%H:%M:%SZ\` and keep what it prints. Step 2 passes it to init, so the run's timeline counts setup from its start.
@@ -1941,7 +1942,7 @@ Read the task together with the part of those documents it points to, and decide
 When the work would end with a change someone commits, choose implement.
 `}
 ## Step 2 — create the run
-Run: ${S.cli} init --repo ${S.raw.repo ? shq(S.raw.repo) : '"$PWD"'} --seats ${letters}${P.factory ? ' --factory' : ''}${setupRunId(S) ? ` --run-id ${shq(setupRunId(S))}` : ''}${startedAt ? ' --started-at <the time you read before you started>' : ''}${S.plan.map(p => ` --ref ${shq(p)}`).join('')} followed by --ref <path> for each other document from step 1
+Run: ${S.cli} init --repo ${S.raw.repo ? shq(S.raw.repo) : '"$PWD"'} --seats ${letters}${P.factory ? ' --factory' : ''}${setupRunId(S) ? ` --run-id ${shq(setupRunId(S))}` : ''}${startedAt ? ' --started-at <the time you read before you started>' : ''}${S.plan.map(p => ` --ref ${shq(p)}`).join('')}${S.factory?.briefFile ? ` --ref ${shq(S.factory.briefFile)}` : ''} followed by --ref <path> for each other document from step 1
 ${S.host !== 'codex' ? 'Make it one Bash call with timeout 600000 and dangerouslyDisableSandbox: true: init can take several minutes on a large repository, and it creates git worktrees, which the Bash sandbox blocks: it refuses to write the repository\'s worktree records (".git/worktrees/…: Operation not permitted").\n' : ''}It prints JSON with runId, runDir, repoRoot, refs (the snapshots it made of those documents) and dirty (tracked files with uncommitted changes).
 - If it fails, return status "error" with its message, and empty values elsewhere.
 ${S.allowDirty || (S.modeGiven && S.mode !== 'implement') ? '' : `- If ${S.modeGiven ? '' : 'the mode is implement and '}dirty is non-empty, stop and return status "dirty" with that list. The worktrees branch from HEAD, so uncommitted changes would be invisible to every seat.\n`}
@@ -1979,7 +1980,7 @@ You are the intake for a software factory. A task arrives, and you decide how mu
 # Task
 
 ${S.task}
-${S.context ? `\n# Context from the user\n\n${S.context}\n` : ''}${S.plan.length ? `\n# Documents the user gave\n\n${S.plan.map(p => `- ${p}`).join('\n')}\n` : ''}
+${goalBriefBlock(S, true)}${S.context ? `\n# Context from the user\n\n${S.context}\n` : ''}${S.plan.length ? `\n# Documents the user gave\n\n${S.plan.map(p => `- ${p}`).join('\n')}\n` : ''}
 # The documents the work follows
 
 If the task depends on a plan, checklist or other document, find it: the paths above, or a file the task names (resolved against the repository root, and ~/.claude/plans/ for a plan named there). If it depends on one you can't identify or find, including "the plan" with no file named, return status "needs-plan" with planMissing saying what is missing. Never pick a plan yourself. Otherwise planMissing is "", and status is "ok" (or "needs-split", below).
@@ -2119,6 +2120,7 @@ function readiness(S, L, finalRound, raters, reviews, gaps = []) {
 // rewritten or dropped through a Pair decision is theirs to change. [] when everything was kept.
 function setupLosses(S, criteria, verify) {
   const lost = []
+  if (S.factory?.briefFile && !S.refs.some(r => r.source === S.factory.briefFile)) lost.push('the goal brief snapshot')
   const want = String(S.raw.verify || '').trim()
   const got = String(verify || '').trim()
   if (want && got !== want) lost.push(`the verification command \`${oneLine(want, 200)}\` (setup returned ${got ? `\`${oneLine(got, 200)}\`` : 'none'})`)
@@ -3647,7 +3649,7 @@ function needsTier(S, push, intake) {
     status: 'needs-tier', task: S.task, asked: push.asked, recommended: push.recommended,
     reasons: intake.reasons || '', signals: intake.signals || null, notes: S.notes,
     forTheOrchestrator:
-      `The factory stopped before creating anything: the user asked for the ${push.asked} tier, and intake recommends ${push.recommended} (${oneLine(intake.reasons, 400) || 'no reason given'}). ` +
+      `The factory stopped before ${S.factory?.brief ? 'tier work' : 'creating anything'}: the user asked for the ${push.asked} tier, and intake recommends ${push.recommended} (${oneLine(intake.reasons, 400) || 'no reason given'}). ` +
       `Ask the user in one short message whether to keep ${push.asked} or switch to ${push.recommended}, with intake's reason. ` +
       (S.host === 'codex'
         ? `Rerun the runner with the original args file and tierConfirmed: true to keep it, or tier: "${push.recommended}" to switch. This starts a new run. `
@@ -3665,7 +3667,7 @@ function needsSplit(S, items, intake) {
   return {
     status: 'needs-split', task: S.task, items, tier, reasons: intake.reasons || '', signals: intake.signals || null, notes: S.notes,
     forTheOrchestrator:
-      `The factory stopped before creating anything: intake found ${items.length} separate pieces of work in this task (${oneLine(intake.reasons, 400) || 'no reason given'}). ` +
+      `The factory stopped before ${S.factory?.brief ? 'tier work' : 'creating anything'}: intake found ${items.length} separate pieces of work in this task (${oneLine(intake.reasons, 400) || 'no reason given'}). ` +
       'One run would debate and review them all together, at the cost of the hardest piece. ' +
       `Show the user the pieces (items[]: title, estimated tier, and the earlier pieces each builds on) and ask in one short message: run them one at a time (recommended), or the whole task as one ${pinned || tier} run. ` +
       (S.host === 'codex'
@@ -3731,6 +3733,44 @@ function routedResult(S, res) {
     ...deliveryFields(S, res),
     factory: { tier: f.tier, chosenBy: f.chosenBy, asked: f.asked, recommended: f.recommended, reasons: f.intake ? f.intake.reasons : '' },
     forTheOrchestrator: `The factory ran this at the ${f.tier} tier (${f.chosenBy === 'intake' ? 'intake\'s choice' : f.chosenBy === 'pinned' ? 'the user\'s choice, which intake agreed with' : `the user's choice, over intake's ${f.recommended}`}); mention it in a few words. ${res.forTheOrchestrator || ''}` }
+}
+
+// The input before intake deliberately excludes pins, budgets and clarification answers:
+// resuming a stop must replay the very same shaper and challenger requests.
+function briefInputs(S) {
+  return `Original task: ${S.task}
+Context: ${S.context || '(none)'}
+Documents: ${JSON.stringify(S.plan)}
+Explicit constraints: ${JSON.stringify({ mode: S.raw.mode, criteria: S.raw.criteria, verify: S.raw.verify })}
+Inspect the repository${S.raw.repo ? ' at ' + S.raw.repo : ''} and the documents relevant to this request. Read only, apart from saving the requested brief. Preserve the user's wording and decisions. If a required document cannot be found, name it in planMissing where provided. Include "testing", "implementation" and "internal design" in delegated. Keep the brief short.`
+}
+
+function goalBriefBlock(S, full = false) {
+  const doc = S.factory?.brief
+  if (!doc) return ''
+  const b = doc.brief
+  const lines = [`Outcome: ${b.outcome}`, `Purpose: ${b.purpose}`]
+  if (full) lines.push(`Scope: ${b.scope}`, `Non-goals: ${b.nonGoals}`, 'Acceptance examples:', ...b.acceptanceExamples.map(e => '- ' + e),
+    `Verification: ${b.verification}`, `Delegated decisions: ${b.delegated.join(', ')}.`,
+    ...doc.decisions.map(d => `User decision ${d.id} (${d.question}): ${d.answer}`))
+  return '\n# Goal brief\n\n' + lines.join('\n') + '\n'
+}
+
+// The generated brief snapshot is additional to the user's plan documents.
+function planReferenceCount(S) {
+  return S.factory?.briefFile ? S.refs.filter(r => r.source !== S.factory.briefFile).length : S.refs.length
+}
+
+function withGoalBrief(S, result) {
+  if (!S.factory?.brief) return result
+  const snapshot = S.refs.find(r => r.source === S.factory.briefFile)
+  const briefFile = snapshot?.path || S.factory.briefFile
+  const entry = goalBriefBlock(S, true).replace('\n# Goal brief\n\n', '').trimEnd() + '\nBrief file: ' + briefFile
+  let markdown = result.report?.markdown || ''
+  const heading = /^(?:### )?How the run went:?$/m
+  markdown = heading.test(markdown) ? markdown.replace(heading, title => title + '\n\n' + entry) :
+    '### How the run went\n\n' + entry + (markdown ? '\n\n' + markdown : '')
+  return { ...result, brief: S.factory.brief, briefFile, report: { ...result.report, markdown } }
 }
 
 // The Simple tier's rules: when it hands the work up, and its report and result. Pure, like the
@@ -4002,7 +4042,7 @@ function milestoneArgs(S, m, design, findings) {
   if (findings.length) lines.push('', 'Findings from the review of the plan that still stand against this milestone:', ...findings.map(c => `- ${oneLine(c.statement, 400)}`))
   const original = S.factory && S.factory.args || S.raw
   // Carry every option except what describes this run's task, so a new option isn't dropped.
-  const own = new Set(['task', 'prompt', 'question', 'plan', 'mode', 'tier', 'tierConfirmed', 'noSplit', 'criteria', 'clarifications', 'hostRunId'])
+  const own = new Set(['task', 'prompt', 'question', 'plan', 'mode', 'tier', 'tierConfirmed', 'noSplit', 'criteria', 'clarifications', 'brief', 'hostRunId'])
   const options = S.host === 'codex'
     ? Object.fromEntries(Object.entries(original).filter(([k, v]) => !own.has(k) && v !== undefined)) : {}
   return { ...options, task: lines.join('\n'), plan: [design, ...S.plan], tier: m.tier, tierConfirmed: true, noSplit: true }
@@ -5725,7 +5765,7 @@ function pairSpecPrompt(S) {
 # Task
 
 ${S.task}
-${refsBlock(S)}${S.context ? `\n# Context from the user\n\n${S.context}\n` : ''}
+${goalBriefBlock(S)}${refsBlock(S)}${S.context ? `\n# Context from the user\n\n${S.context}\n` : ''}
 # Acceptance criteria (${given ? 'given by the user' : 'written by setup from the task and the code'})
 
 ${specCriteria(S)}
@@ -5974,12 +6014,7 @@ ${cmd}
 It prints one line of JSON with status and reason. Return status and reason exactly as printed. If the command fails without printing that JSON, return status error with the actual message in reason.`
 }
 
-// From here the script runs. `S` is the one state object: the lib/ functions take it as their first
-// argument, and the code below it (schemas, turns, the flows) uses it directly. `let`, because the
-// factory rebuilds it once it knows the tier.
-let S = newState(parseConfig(args))
-// Claude supplies agent()/parallel(); the standalone runner supplies this optional adapter.
-// Keep the feature check here so the same generated workflow runs in both hosts.
+let S = newState(parseConfig(parseArgs(args, { 'no-brief': ['brief', false] }), { workflow: 'factory' }))
 const hostRuntime = typeof factoryRuntime === 'undefined' ? null : factoryRuntime
 const requestControl = { started: requestClock(), turns: 0, ...S.controls }
 
@@ -7199,7 +7234,7 @@ async function councilSetup() {
   S.refs = (setup.refs || []).filter(r => r && typeof r.path === 'string' && r.path.startsWith(`${S.run.runDir}/refs/`))
     .map(r => ({ source: String(r.source || ''), path: r.path, inWorktrees: !!r.inWorktrees }))
   if ((setup.refs || []).length !== S.refs.length) S.notes.push('Setup reported reference documents outside the run\'s refs/ directory; they were ignored.')
-  if (S.plan.length && S.refs.length < S.plan.length) S.notes.push(`${plural(S.plan.length, 'plan document')} given, but setup snapshotted only ${S.refs.length}.`)
+  if (S.plan.length && planReferenceCount(S) < S.plan.length) S.notes.push(`${plural(S.plan.length, 'plan document')} given, but setup snapshotted only ${planReferenceCount(S)}.`)
   S.verify = String(setup.verify || '').trim()
   // The helper runs the verify.sh setup wrote, and TASK.md carries setup's criteria, so a supplied
   // command or criterion setup dropped can't be put back from here: the run stops before any seat.
@@ -7694,7 +7729,7 @@ async function pairSetup() {
   S.refs = (setup.refs || []).filter(r => r.path?.startsWith(`${S.run.runDir}/refs/`))
   const lost = setupLosses(S, S.criteria, S.verify)
   if (!S.criteria.length || new Set(S.criteria.map(c => c.id)).size !== S.criteria.length || S.criteria.some(c => !c.id || !c.text) ||
-      S.refs.length !== (setup.refs || []).length || S.refs.length < S.plan.length || lost.length) {
+      S.refs.length !== (setup.refs || []).length || planReferenceCount(S) < S.plan.length || lost.length) {
     S.pair.stop = `Setup omitted criteria, reference snapshots, or the requested verification command${lost.length ? `: it dropped ${lost.join('; ')}` : ''}.`
     return pairResult(S)
   }
@@ -8031,22 +8066,155 @@ async function architectureRun() {
   return architectureResult(S, { outcome, W, rows: decisionRows, table: decisionTable, ready, audit, report, retro })
 }
 
+// Factory's pre-intake turns. Decisions stay in the workflow. The file helper
+// snapshots the document before any implementation worktree exists.
+const BRIEF_TEXT = { type: 'string' }
+const BRIEF_CONTENT = { type: 'object', properties: {
+  outcome: BRIEF_TEXT, purpose: BRIEF_TEXT, scope: BRIEF_TEXT, nonGoals: BRIEF_TEXT,
+  acceptanceExamples: { type: 'array', items: BRIEF_TEXT }, verification: BRIEF_TEXT,
+  delegated: { type: 'array', items: BRIEF_TEXT },
+} }
+const BRIEF_FIELDS = { brief: BRIEF_CONTENT, planMissing: BRIEF_TEXT }
+const BRIEF_DECISION = { type: 'object', properties: { id: BRIEF_TEXT, question: BRIEF_TEXT, answer: BRIEF_TEXT } }
+const BRIEF_DOCUMENT = { type: 'object', properties: {
+  version: { type: 'integer' }, state: BRIEF_TEXT, brief: BRIEF_CONTENT, decisions: { type: 'array', items: BRIEF_DECISION },
+} }
+const BRIEF_CHALLENGE = { type: 'object', properties: {
+  question: BRIEF_TEXT, wording: BRIEF_TEXT, outcomeA: BRIEF_TEXT, outcomeB: BRIEF_TEXT,
+  evidence: BRIEF_TEXT, recommendation: BRIEF_TEXT, changes: BRIEF_TEXT,
+} }
+
+function briefTurn(label, instruction, properties) {
+  return ask(instruction + '\n\n' + briefInputs(S), { label, phase: 'Brief', model: 'opus', effort: 'medium',
+    schema: strict({ type: 'object', properties }) }, 'intake')
+}
+
+function nativeBriefSave(decisions, challenged = false) {
+  if (hostRuntime) return 'Return briefFile as an empty string. The runner saves the file.'
+  const state = challenged ? 'STATE' : 'settled'
+  return `Write the object you return in brief as UTF-8 JSON to a temporary file with the file tool. Save it by running this helper, substituting the quoted temporary file path for FILE${challenged ? ' and provisional for STATE if questions survive, otherwise settled' : ''}:\n` +
+    `${S.cli} brief --repo ${S.raw.repo ? shq(S.raw.repo) : '"$PWD"'} --content FILE --state ${state} --decisions ${shq(JSON.stringify(decisions))}\n` +
+    'Copy the printed briefFile and document.brief exactly. On helper failure leave briefFile empty.'
+}
+
+async function keepBrief(content, state, decisions, nativePath) {
+  const document = { version: 1, state, brief: content, decisions }
+  const saved = hostRuntime ? await hostRuntime.brief({ document }) : { document, briefFile: nativePath }
+  return acceptBrief(saved, state)
+}
+
+function acceptBrief(saved, state) {
+  const doc = saved?.document
+  const filename = state === 'settled' ? '/BRIEF.json' : '/BRIEF.provisional.json'
+  if (typeof saved?.briefFile !== 'string' || !saved.briefFile.startsWith('/') || !saved.briefFile.endsWith(filename) ||
+      doc?.version !== 1 || doc.state !== state ||
+      !Array.isArray(doc.decisions) || !doc.decisions.every(d => d && [d.id, d.question, d.answer].every(nonemptyBriefText)) ||
+      !validBriefContent(doc.brief)) return failure(S, 'failed', saved?.error || 'Factory could not read or save a valid goal brief.')
+  S.factory.brief = doc
+  S.factory.briefFile = saved.briefFile
+  return null
+}
+
+function nonemptyBriefText(value) {
+  return typeof value === 'string' && !!value.trim()
+}
+
+function validBriefContent(b) {
+  return b && ['outcome', 'purpose', 'scope', 'nonGoals', 'verification'].every(key => nonemptyBriefText(b[key])) &&
+    Array.isArray(b.acceptanceExamples) && b.acceptanceExamples.length && b.acceptanceExamples.every(nonemptyBriefText) &&
+    Array.isArray(b.delegated) && b.delegated.every(nonemptyBriefText) && ['testing', 'implementation', 'internal design'].every(item => b.delegated.includes(item))
+}
+
+async function shapeBrief() {
+  phase('Brief')
+  const draft = await briefTurn('brief shape', 'Shape the requested goal into a short brief. State the user-visible outcome and its purpose, scope and non-goals, concrete acceptance examples and the observable evidence that would verify delivery. Delegate testing, implementation and internal design explicitly. Do not ask the user questions or decide a tier.', BRIEF_FIELDS)
+  if (draft?.planMissing) return needsPlan(S, draft.planMissing, null)
+  if (!validBriefContent(draft?.brief)) return failure(S, 'failed', 'The shaper returned no usable goal brief.')
+  const reviewed = await briefTurn('brief challenge',
+    `Independently challenge the draft against the original wording. Try to show two plausible outcomes the wording permits that the user would judge differently. Quote the wording, spell out both outcomes and what changes for delivery or acceptance. First try to settle each difference from repository evidence: read the relevant code, docs, git log, retros and available issues. Correct the draft where evidence settles it. An unavailable source is not itself a reason to ask.
+Return all and only unresolved what/why differences in questions. For each, give the competing outcomes, evidence considered, a recommended answer and what the answer changes. Do not ask about testing, implementation, internal design, preferences or speculative cases. There is no completeness checklist. Return [] on a clear goal, including a clear one-line goal. No criteria or harness review.
+Draft: ${JSON.stringify(draft.brief)}
+${nativeBriefSave([], true)}`, { ...BRIEF_FIELDS, questions: { type: 'array', items: BRIEF_CHALLENGE }, briefFile: BRIEF_TEXT })
+  if (reviewed?.planMissing) return needsPlan(S, reviewed.planMissing, null)
+  if (!validBriefContent(reviewed?.brief) || !Array.isArray(reviewed.questions) ||
+      !reviewed.questions.every(q => q && Object.keys(BRIEF_CHALLENGE.properties).every(k => nonemptyBriefText(q[k])) && q.outcomeA.trim() !== q.outcomeB.trim())) {
+    return failure(S, 'failed', 'The brief challenger returned no usable verdict.')
+  }
+  const questions = reviewed.questions.map((q, i) => ({ ...q, id: `B${i + 1}`, kind: 'brief' }))
+  const failed = await keepBrief(reviewed.brief, questions.length ? 'provisional' : 'settled', [], reviewed.briefFile)
+  if (failed || !questions.length) return failed
+  const decisions = [], open = []
+  for (const q of questions) {
+    const matches = S.clarifications.filter(a => a.id === q.id)
+    if (matches.length !== 1 || !matches[0].answer.trim()) open.push(q)
+    else decisions.push({ id: q.id, question: q.question, answer: matches[0].answer })
+  }
+  if (open.length) {
+    const how = hostRuntime ? 'Resume the saved hostRunDir with --resume and an args file' :
+      'Resume this dark-factory:factory workflow in the same session using resumeFromRunId and the original arguments'
+    const resumeSteps = `${how}, appending {id, answer} entries to clarifications. Keep earlier answers unchanged.`
+    return { status: 'needs-user', task: S.task, questions: open, decisions, resumable: true, resumeSteps,
+      forTheOrchestrator: 'Ask all questions together. Show both outcomes, the recommendation and what the answer changes. ' + resumeSteps }
+  }
+  const revised = await briefTurn('brief answered',
+    `Revise the brief so its outcome, scope and acceptance examples follow the user's answers. The answers settle the challenge.\nBrief: ${JSON.stringify(reviewed.brief)}\nQuestions: ${JSON.stringify(questions)}\nUser decisions: ${JSON.stringify(decisions)}\n${nativeBriefSave(decisions)}`,
+    { brief: BRIEF_CONTENT, briefFile: BRIEF_TEXT })
+  if (!validBriefContent(revised?.brief)) return failure(S, 'failed', 'The shaper returned no usable answered brief.')
+  const error = await keepBrief(revised.brief, 'settled', decisions, revised.briefFile)
+  if (!error) {
+    const taken = new Set(decisions.map(d => d.id))
+    S.raw = { ...S.raw, clarifications: S.raw.clarifications.filter(a => !taken.has(a?.id)) }
+    S.clarifications = S.clarifications.filter(a => !taken.has(a.id))
+  }
+  return error
+}
+
+async function factoryIntake() {
+  let prompt = intakePrompt(S), schema = INTAKE_SCHEMA
+  const nativeLoad = typeof S.raw.brief === 'string' && !hostRuntime
+  if (nativeLoad) {
+    prompt = `Before choosing a tier, load the supplied settled brief. Run this exact command:\n${S.cli} brief --repo ${S.raw.repo ? shq(S.raw.repo) : '"$PWD"'} --reuse ${shq(S.raw.brief)}\nUse its document with the original task. Copy its document and briefFile into your result. On failure leave briefFile empty.\n\n${prompt}`
+    schema = strict({ type: 'object', properties: { ...schema.properties, document: BRIEF_DOCUMENT, briefFile: BRIEF_TEXT } })
+  }
+  const intake = await ask(prompt, { label: 'intake', phase: 'Intake', schema, model: 'opus', effort: 'medium' }, 'intake')
+  if (nativeLoad) {
+    const error = acceptBrief(intake, 'settled')
+    if (error) return { error }
+    const { document, briefFile, ...routing } = intake
+    return { intake: routing }
+  }
+  return { intake }
+}
+
 // ---------------------------------------------------------------- the factory
 
 // Intake picks the tier, unless the user pinned one; a pin intake disagrees with is asked about
 // once, and so is a task intake would split into separate runs. Then the run is rebuilt for its
 // tier: the Simple flow, the Feature flow, the Architecture flow, or the council.
-return await controlledRun(factoryRun)
+const result = await controlledRun(factoryRun)
+return withGoalBrief(S, result)
 
 async function factoryRun() {
+  const raw = S.raw
+  const factoryArgs = parseFactory(raw)
+  S.factory = {}
+  if (raw.brief === undefined) {
+    const stopped = await shapeBrief()
+    if (stopped) return stopped
+  } else if (raw.brief !== false) {
+    if (typeof raw.brief !== 'string' || !raw.brief.startsWith('/')) return failure(S, 'failed', 'brief must be false or an absolute path to a settled brief.')
+    if (hostRuntime) {
+      const failed = acceptBrief(await hostRuntime.brief({ source: raw.brief }), 'settled')
+      if (failed) return failed
+    }
+  }
   phase('Intake')
-  const factoryArgs = parseFactory(S.raw)
-  S = newState(parseConfig(S.raw, { workflow: 'factory' }))
-  const intake = await ask(intakePrompt(S), { label: 'intake', phase: 'Intake', schema: INTAKE_SCHEMA, model: 'opus', effort: 'medium' }, 'intake')
+  const { intake, error } = await factoryIntake()
+  if (error) return error
   if (!intake) return failure(S, 'failed', 'the intake agent returned nothing')
   if (intake.status === 'needs-plan') return needsPlan(S, intake.planMissing, null)
   const pieces = splitItems(intake)
-  S.factory = { tier: null, asked: factoryArgs.tier, tierConfirmed: factoryArgs.tierConfirmed, chosenBy: 'intake', recommended: intakeTier(intake), intake, escalation: null, args: S.raw,
+  S.factory = { ...S.factory, tier: null, asked: factoryArgs.tier, tierConfirmed: factoryArgs.tierConfirmed, chosenBy: 'intake', recommended: intakeTier(intake), intake, escalation: null, args: S.raw,
     split: pieces.length ? { pieces: pieces.length, declined: true } : null }
   if (pieces.length && !factoryArgs.noSplit) return needsSplit(S, pieces, intake)
   const push = tierPushback(S, intake)

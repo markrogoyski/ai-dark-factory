@@ -126,7 +126,7 @@ async function run(options = {}) {
     },
   }
   const result = await (options.factory ? executeFactory : execute)(agent, () => { throw new Error('Pair must not launch a panel') }, null,
-    title => phases.push(title), () => {}, { task: 'Implement the behavior', repo: '/repo', ...(options.native ? {} : { host: 'codex' }), ...options.args }, {}, null, runtime)
+    title => phases.push(title), () => {}, { task: 'Implement the behavior', repo: '/repo', ...(options.factory ? { brief: false } : {}), ...(options.native ? {} : { host: 'codex' }), ...options.args }, {}, null, runtime)
   return { result, calls, measurements, phases, baselines, events }
 }
 

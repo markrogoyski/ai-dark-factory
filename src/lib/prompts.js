@@ -29,7 +29,7 @@ function taskBlock(S, round) {
 // as explicit user decisions instead (pairDecisionsBlock).
 function taskCore(S) {
   let t = `# Task\n\n${S.task}\n`
-  t += refsBlock(S)
+  t += goalBriefBlock(S) + refsBlock(S)
   if (S.context) t += `\n# Context from the user\n\n${S.context}\n`
   t += escalationBlock(S)
   t += `\n# Acceptance criteria (fixed before any work began)\n\n${S.criteria.map(c => `- ${c.id}: ${c.text}`).join('\n') || '- (none recorded)'}\n`
@@ -509,7 +509,7 @@ Keep the post under about ${Math.min(S.postWords, 600)} words.${notesAsk(s, k)}`
 // Codex and Gemini seats resume their own thread, which already holds the protocol, task and workspace.
 function resumedPreamble(S, s, round) {
   return `The council continues. You are still seat ${s.L}, and the rules, task and workspace from round 0 still apply (the task and acceptance criteria are also in ${S.run.runDir}/TASK.md). Your worktree is ${s.wt}; the room is ${S.run.room}.` +
-    `${typeof round === 'number' && round > 0 ? ` ${blindNote(S, round)}` : ''}\n${clarificationsFor(S, round)}`
+    `${typeof round === 'number' && round > 0 ? ` ${blindNote(S, round)}` : ''}\n${goalBriefBlock(S)}${clarificationsFor(S, round)}`
 }
 
 function recoverSeatPrompt(S, post) {
@@ -733,7 +733,7 @@ function specReviewPrompt(S, r) {
 # Task
 
 ${S.task}
-${refsBlock(S)}${S.context ? `\n# Context from the user\n\n${S.context}\n` : ''}
+${goalBriefBlock(S)}${refsBlock(S)}${S.context ? `\n# Context from the user\n\n${S.context}\n` : ''}
 Mode: ${S.mode}. ${tierProfile(S).architecture ? 'The result is a design and a plan of milestones for building it, each to be built later by a run of its own; nothing in the repository changes in this run.' : { implement: 'The result is a change to the repository.', investigate: 'The result is an answer, with evidence; nothing in the repository changes.', design: 'The result is a design to choose from, not the change itself.' }[S.mode]}
 
 # The acceptance criteria${given ? ' (written by the user)' : ' (written by the setup from the task and the code)'}
@@ -771,7 +771,7 @@ function specPanelPrompt(S, findings) {
 # Task
 
 ${S.task}
-${refsBlock(S)}${S.context ? `\n# Context from the user\n\n${S.context}\n` : ''}
+${goalBriefBlock(S)}${refsBlock(S)}${S.context ? `\n# Context from the user\n\n${S.context}\n` : ''}
 # The acceptance criteria
 
 ${specCriteria(S)}
@@ -812,7 +812,7 @@ function specAmendPrompt(S, todo) {
 # Task
 
 ${S.task}
-${refsBlock(S)}${S.context ? `\n# Context from the user\n\n${S.context}\n` : ''}
+${goalBriefBlock(S)}${refsBlock(S)}${S.context ? `\n# Context from the user\n\n${S.context}\n` : ''}
 # The acceptance criteria now
 
 ${specCriteria(S)}
@@ -1047,14 +1047,14 @@ Review only what the revision changed: problems it introduced, and revisions tha
 function auditPrompt(S, a, W, round) {
   if (tierProfile(S).architecture) {
     if (round === 'H') return planReviewBody(S, a, W)
-    if (external(a)) return `The review continues. You are still the ${a.lens} reviewer of the same plan; the task and your instructions from before still apply.\n\n${planRereviewBody(S, a, W)}`
+    if (external(a)) return `The review continues. You are still the ${a.lens} reviewer of the same plan; the task and your instructions from before still apply.\n${goalBriefBlock(S)}\n${planRereviewBody(S, a, W)}`
     return `You are an independent reviewer of a milestone plan another AI wrote for the task below. You haven't seen how it was made or anything said about it, and that is deliberate. You have no stake in it. Apart from the files named below, don't open anything under ${S.run.room}: it holds the discussion that produced the plan.
 
 ${taskBlock(S, 'J')}
 ${planRereviewBody(S, a, W)}`
   }
   if (round === 'H') return auditBody(S, a, W)
-  if (external(a)) return `The audit continues. You are still the ${a.lens} auditor of the same change; the task and your instructions from before still apply.\n\n${reauditBody(S, a, W)}`
+  if (external(a)) return `The audit continues. You are still the ${a.lens} auditor of the same change; the task and your instructions from before still apply.\n${goalBriefBlock(S)}\n${reauditBody(S, a, W)}`
   return `You are an independent auditor, reviewing a change another AI made to complete a task. You haven't seen how it was made or anything said about it, and that is deliberate. You have no stake in it. Apart from the files named below, don't open anything under ${S.run.room}: it holds the discussion that produced the change.
 
 ${taskBlock(S, 'J')}
@@ -1266,7 +1266,7 @@ function setupPrompt(S) {
 # Task
 
 ${S.task}
-${S.context ? `\n# Context from the user\n\n${S.context}\n` : ''}${S.escalation ? `\n# An earlier attempt\n\nThis task was first ${S.escalation.from === 'feature' ? 'planned as one feature' : 'tried as a simple change'} and handed up because ${S.escalation.why}. Its acceptance criteria were:\n${S.escalation.criteria.map(c => `- ${c}`).join('\n') || '- (none)'}\n${S.escalation.from === 'feature' ? 'Start from them: they describe the whole of the work, which this run designs and breaks into milestones.' : 'Start from them, and widen them where the reason above shows they fell short.'}\n` : ''}
+${goalBriefBlock(S, true)}${S.context ? `\n# Context from the user\n\n${S.context}\n` : ''}${S.escalation ? `\n# An earlier attempt\n\nThis task was first ${S.escalation.from === 'feature' ? 'planned as one feature' : 'tried as a simple change'} and handed up because ${S.escalation.why}. Its acceptance criteria were:\n${S.escalation.criteria.map(c => `- ${c}`).join('\n') || '- (none)'}\n${S.escalation.from === 'feature' ? 'Start from them: they describe the whole of the work, which this run designs and breaks into milestones.' : 'Start from them, and widen them where the reason above shows they fell short.'}\n` : ''}
 ${S.modeGiven ? `Mode: ${S.mode}. Return it as \`mode\`.\n` : ''}${startedAt ? `
 ## Before you start — the time
 Before anything else, run \`date -u +%Y-%m-%dT%H:%M:%SZ\` and keep what it prints. Step 2 passes it to init, so the run's timeline counts setup from its start.
@@ -1289,7 +1289,7 @@ Read the task together with the part of those documents it points to, and decide
 When the work would end with a change someone commits, choose implement.
 `}
 ## Step 2 — create the run
-Run: ${S.cli} init --repo ${S.raw.repo ? shq(S.raw.repo) : '"$PWD"'} --seats ${letters}${P.factory ? ' --factory' : ''}${setupRunId(S) ? ` --run-id ${shq(setupRunId(S))}` : ''}${startedAt ? ' --started-at <the time you read before you started>' : ''}${S.plan.map(p => ` --ref ${shq(p)}`).join('')} followed by --ref <path> for each other document from step 1
+Run: ${S.cli} init --repo ${S.raw.repo ? shq(S.raw.repo) : '"$PWD"'} --seats ${letters}${P.factory ? ' --factory' : ''}${setupRunId(S) ? ` --run-id ${shq(setupRunId(S))}` : ''}${startedAt ? ' --started-at <the time you read before you started>' : ''}${S.plan.map(p => ` --ref ${shq(p)}`).join('')}${S.factory?.briefFile ? ` --ref ${shq(S.factory.briefFile)}` : ''} followed by --ref <path> for each other document from step 1
 ${S.host !== 'codex' ? 'Make it one Bash call with timeout 600000 and dangerouslyDisableSandbox: true: init can take several minutes on a large repository, and it creates git worktrees, which the Bash sandbox blocks: it refuses to write the repository\'s worktree records (".git/worktrees/…: Operation not permitted").\n' : ''}It prints JSON with runId, runDir, repoRoot, refs (the snapshots it made of those documents) and dirty (tracked files with uncommitted changes).
 - If it fails, return status "error" with its message, and empty values elsewhere.
 ${S.allowDirty || (S.modeGiven && S.mode !== 'implement') ? '' : `- If ${S.modeGiven ? '' : 'the mode is implement and '}dirty is non-empty, stop and return status "dirty" with that list. The worktrees branch from HEAD, so uncommitted changes would be invisible to every seat.\n`}
@@ -1327,7 +1327,7 @@ You are the intake for a software factory. A task arrives, and you decide how mu
 # Task
 
 ${S.task}
-${S.context ? `\n# Context from the user\n\n${S.context}\n` : ''}${S.plan.length ? `\n# Documents the user gave\n\n${S.plan.map(p => `- ${p}`).join('\n')}\n` : ''}
+${goalBriefBlock(S, true)}${S.context ? `\n# Context from the user\n\n${S.context}\n` : ''}${S.plan.length ? `\n# Documents the user gave\n\n${S.plan.map(p => `- ${p}`).join('\n')}\n` : ''}
 # The documents the work follows
 
 If the task depends on a plan, checklist or other document, find it: the paths above, or a file the task names (resolved against the repository root, and ~/.claude/plans/ for a plan named there). If it depends on one you can't identify or find, including "the plan" with no file named, return status "needs-plan" with planMissing saying what is missing. Never pick a plan yourself. Otherwise planMissing is "", and status is "ok" (or "needs-split", below).

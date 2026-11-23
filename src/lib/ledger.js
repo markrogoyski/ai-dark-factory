@@ -77,6 +77,7 @@ function readiness(S, L, finalRound, raters, reviews, gaps = []) {
 // rewritten or dropped through a Pair decision is theirs to change. [] when everything was kept.
 function setupLosses(S, criteria, verify) {
   const lost = []
+  if (S.factory?.briefFile && !S.refs.some(r => r.source === S.factory.briefFile)) lost.push('the goal brief snapshot')
   const want = String(S.raw.verify || '').trim()
   const got = String(verify || '').trim()
   if (want && got !== want) lost.push(`the verification command \`${oneLine(want, 200)}\` (setup returned ${got ? `\`${oneLine(got, 200)}\`` : 'none'})`)

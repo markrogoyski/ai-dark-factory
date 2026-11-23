@@ -207,7 +207,7 @@ async function councilSetup() {
   S.refs = (setup.refs || []).filter(r => r && typeof r.path === 'string' && r.path.startsWith(`${S.run.runDir}/refs/`))
     .map(r => ({ source: String(r.source || ''), path: r.path, inWorktrees: !!r.inWorktrees }))
   if ((setup.refs || []).length !== S.refs.length) S.notes.push('Setup reported reference documents outside the run\'s refs/ directory; they were ignored.')
-  if (S.plan.length && S.refs.length < S.plan.length) S.notes.push(`${plural(S.plan.length, 'plan document')} given, but setup snapshotted only ${S.refs.length}.`)
+  if (S.plan.length && planReferenceCount(S) < S.plan.length) S.notes.push(`${plural(S.plan.length, 'plan document')} given, but setup snapshotted only ${planReferenceCount(S)}.`)
   S.verify = String(setup.verify || '').trim()
   // The helper runs the verify.sh setup wrote, and TASK.md carries setup's criteria, so a supplied
   // command or criterion setup dropped can't be put back from here: the run stops before any seat.

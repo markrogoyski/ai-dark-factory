@@ -351,7 +351,7 @@ async function factoryFlow(tier, { escalate = false, oversizedPlan = false, fail
   const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor
   const factory = new AsyncFunction('factoryRuntime', 'agent', 'parallel', 'phase', 'log', 'args', source)
   const result = await factory(runtime, () => { throw new Error('Claude runtime was called') },
-    jobs => Promise.all(jobs.map(f => f())), phase => phases.push(phase), () => {}, { task: 'Improve the parser', host: 'codex', ...args })
+    jobs => Promise.all(jobs.map(f => f())), phase => phases.push(phase), () => {}, { task: 'Improve the parser', host: 'codex', brief: false, ...args })
   return { result, calls, phases }
 }
 
@@ -517,6 +517,11 @@ describe('Codex factory phase routing', () => {
       roles: { checker: 'astra' }, rounds: 3, narrow: false, retro: false }
     const { result } = await factoryFlow('architecture', { args: options })
     const milestone = result.milestones[0].args
+    assert.equal(Object.hasOwn(milestone, 'brief'), false, 'a child shapes its own task')
+    const parent = { host: 'codex', task: 'Parent design', milestones: [{}], plan: [],
+      factory: { args: { ...options, brief: '/previous/BRIEF.json' } } }
+    const child = L.milestoneArgs(parent, result.milestones[0], '/design.md', [])
+    assert.equal(Object.hasOwn(child, 'brief'), false, 'a supplied parent brief belongs to the parent task')
     for (const [key, value] of Object.entries(options)) assert.deepEqual(milestone[key], value, key)
     const config = L.parseConfig(L.tierArgs(milestone, 'simple', { mode: 'implement' }), { workflow: 'factory', tier: 'simple' })
     assert.equal(config.lineup[0].key, 'luna')

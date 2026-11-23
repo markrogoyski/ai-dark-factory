@@ -26,7 +26,12 @@ function helper(...argv) {
   while (value.status === 'running') value = JSON.parse(execFileSync('dark-factory', ['wait', '--run-dir', argv[argv.indexOf('--run-dir') + 1], '--job', value.job], { encoding: 'utf8', cwd: repo }).trim().split('\n').at(-1))
   return value
 }
-if ('signals' in schema.properties) {
+if ('brief' in schema.properties) {
+  kind = 'questions' in schema.properties ? 'challenger' : 'shaper'
+  result.brief = { outcome: 'sum adds both operands.', purpose: 'Callers receive the correct total.', scope: 'Arithmetic in sum.',
+    nonGoals: 'Changing the public API.', acceptanceExamples: ['sum(2,3) returns 5.'], verification: 'Observe the returned total.',
+    delegated: ['testing', 'implementation', 'internal design'] }
+} else if ('signals' in schema.properties) {
   kind = 'intake'
   Object.assign(result, { status: 'ok', tier: 'simple', mode: 'implement', reasons: 'One-line arithmetic fix.' })
 } else if ('runDir' in schema.properties) {

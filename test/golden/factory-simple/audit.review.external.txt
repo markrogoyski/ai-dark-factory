@@ -3,6 +3,18 @@ Independently review the exact measured implementation below. You have a fresh c
 
 Add a debug log line with the retry count in Fetcher::retry
 
+# Goal brief
+
+Outcome: Log the retry count at debug level.
+Purpose: Let operators identify repeated retries.
+
+# Reference documents
+
+The task follows this document. Read it first, at this path: snapshots taken when the run started, because your worktree is a checkout of the last commit and doesn't have it, or has an older version.
+- /tmp/proj/.council/test-fsimple/refs/BRIEF.json (from /tmp/proj/.council/brief-one/BRIEF.json)
+
+Treat it as part of the task. The work must stand on its own: don't copy it into your worktree, and don't cite it (file names, step or item numbers) in code, comments or tests.
+
 # Acceptance criteria (fixed before any work began)
 
 - C1: logs the retry count at debug level
@@ -52,8 +64,8 @@ Write your review to /tmp/proj/.council/test-fsimple/room/review0/review.md.
 
 The process has a bounded repair budget. This review must stand on its evidence even if no further repair remains.
 
-Set `turn` in your output to exactly "review0-review-5ebb1f18".
+Set `turn` in your output to exactly "review0-review-c4ec3147".
 
 <<<OUTPUT_SCHEMA
-{"type":"object","properties":{"summary":{"type":"string","description":"Your verdict on the change, in 2-4 sentences."},"findings":{"type":"array","items":{"type":"object","properties":{"severity":{"type":"string","enum":["blocker","major","minor"]},"kind":{"type":"string","enum":["fact","judgment"],"description":"\"fact\": checkable. \"judgment\": a trade-off."},"statement":{"type":"string","description":"What is wrong, and the change you would make."},"evidence":{"type":"string","description":"A published test ID, a file:line, or a command plus the real tail of its output."}},"required":["severity","kind","statement","evidence"],"additionalProperties":false}},"tests":{"type":"array","items":{"type":"object","properties":{"id":{"type":"string","description":"The ID you used for its directory, e.g. T1B1."},"purpose":{"type":"string","description":"The behaviour it pins down."},"command":{"type":"string","description":"The same command as in its test.json."}},"required":["id","purpose","command"],"additionalProperties":false},"description":"Tests you published, IDs as instructed. Empty if none."},"probes":{"type":"array","description":"Design lens: the next changes you traced. Empty otherwise.","items":{"type":"object","properties":{"change":{"type":"string","description":"A plausible next change to this code."},"touches":{"type":"string","description":"The files and functions it would have to touch in this version."},"verdict":{"type":"string","enum":["easy","awkward","hard"]}},"required":["change","touches","verdict"],"additionalProperties":false}},"process":{"type":"string","description":"Feedback on the council process, not on the task: at most two sentences on anything in this turn's instructions, inputs or tools that got in your way, such as an unclear or conflicting instruction, missing context, wasted effort, a limit that cut you short, or a command that failed. Name the instruction or input. \"\" if nothing did; don't invent feedback."},"turn":{"type":"string","enum":["review0-review-5ebb1f18"],"description":"Exactly \"review0-review-5ebb1f18\"."}},"required":["summary","findings","tests","probes","process","turn"],"additionalProperties":false}
+{"type":"object","properties":{"summary":{"type":"string","description":"Your verdict on the change, in 2-4 sentences."},"findings":{"type":"array","items":{"type":"object","properties":{"severity":{"type":"string","enum":["blocker","major","minor"]},"kind":{"type":"string","enum":["fact","judgment"],"description":"\"fact\": checkable. \"judgment\": a trade-off."},"statement":{"type":"string","description":"What is wrong, and the change you would make."},"evidence":{"type":"string","description":"A published test ID, a file:line, or a command plus the real tail of its output."}},"required":["severity","kind","statement","evidence"],"additionalProperties":false}},"tests":{"type":"array","items":{"type":"object","properties":{"id":{"type":"string","description":"The ID you used for its directory, e.g. T1B1."},"purpose":{"type":"string","description":"The behaviour it pins down."},"command":{"type":"string","description":"The same command as in its test.json."}},"required":["id","purpose","command"],"additionalProperties":false},"description":"Tests you published, IDs as instructed. Empty if none."},"probes":{"type":"array","description":"Design lens: the next changes you traced. Empty otherwise.","items":{"type":"object","properties":{"change":{"type":"string","description":"A plausible next change to this code."},"touches":{"type":"string","description":"The files and functions it would have to touch in this version."},"verdict":{"type":"string","enum":["easy","awkward","hard"]}},"required":["change","touches","verdict"],"additionalProperties":false}},"process":{"type":"string","description":"Feedback on the council process, not on the task: at most two sentences on anything in this turn's instructions, inputs or tools that got in your way, such as an unclear or conflicting instruction, missing context, wasted effort, a limit that cut you short, or a command that failed. Name the instruction or input. \"\" if nothing did; don't invent feedback."},"turn":{"type":"string","enum":["review0-review-c4ec3147"],"description":"Exactly \"review0-review-c4ec3147\"."}},"required":["summary","findings","tests","probes","process","turn"],"additionalProperties":false}
 OUTPUT_SCHEMA>>>

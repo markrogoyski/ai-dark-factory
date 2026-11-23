@@ -4,6 +4,18 @@ You are a neutral verifier for a council of AI models. You wrote none of this wo
 
 Add a debug log line with the retry count in Fetcher::retry
 
+# Goal brief
+
+Outcome: Log the retry count at debug level.
+Purpose: Let operators identify repeated retries.
+
+# Reference documents
+
+The task follows this document. Read it first, at this path: snapshots taken when the run started, because your worktree is a checkout of the last commit and doesn't have it, or has an older version.
+- /tmp/proj/.council/test-fsimple/refs/BRIEF.json (from /tmp/proj/.council/brief-one/BRIEF.json)
+
+Treat it as part of the task. The work must stand on its own: don't copy it into your worktree, and don't cite it (file names, step or item numbers) in code, comments or tests.
+
 # Acceptance criteria (fixed before any work began)
 
 - C1: logs the retry count at debug level

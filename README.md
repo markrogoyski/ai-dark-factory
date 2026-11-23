@@ -14,7 +14,7 @@ whether the result is ready. Nothing reaches your checkout until you deliver it.
 
 | Workflow | Use It For | What You Get Back | Rough Cost |
 |---|---|---|---|
-| [`factory`](docs/factory.md) | Any task, when you don't know how much review it needs. It picks the lightest process that fits and moves up if needed. | The finished result. | 6–50 turns, by tier. |
+| [`factory`](docs/factory.md) | Any task, when you don't know how much review it needs. It picks the lightest process that fits and moves up if needed. | The finished result. | 8–52 turns, by tier. |
 | [`pair`](docs/pair.md) | A scoped change that one agent should own. One author and one reviewer repeat until review passes. | A reviewed snapshot, or the open findings. | 12–17 turns. |
 | [`council`](docs/council.md) | A subtle bug, a design with real trade-offs, or a problem with several plausible answers. Several seats solve it blind, then debate. | One converged result, or the scorecard's pick. | 30–50 turns. |
 | [`ensemble`](docs/ensemble.md) | A task worth several attempts. Independent solvers each try it, and every attempt is reviewed. | Ranked candidates for you to pick or merge. | About 18 turns. |
@@ -57,8 +57,10 @@ Run from a repository with a clean working tree.
 
 ### Small Change
 
-You have a small change and don't want to decide how much review it needs. Factory sizes it;
-this one goes to the Simple tier, one implementer and one reviewer:
+Factory spends two turns on a clear goal before intake picks a tier. A shaper writes the outcome
+and purpose. A fresh challenger asks only when the wording permits outcomes you would judge
+differently and repository evidence cannot settle them. Use `--no-brief` to skip this stage.
+This change goes to the Simple tier for one implementer and one reviewer.
 
     /dark-factory:factory Add a debug log line with the retry count in Fetcher::retry
 

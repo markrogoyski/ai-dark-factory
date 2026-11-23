@@ -201,7 +201,7 @@ function needsTier(S, push, intake) {
     status: 'needs-tier', task: S.task, asked: push.asked, recommended: push.recommended,
     reasons: intake.reasons || '', signals: intake.signals || null, notes: S.notes,
     forTheOrchestrator:
-      `The factory stopped before creating anything: the user asked for the ${push.asked} tier, and intake recommends ${push.recommended} (${oneLine(intake.reasons, 400) || 'no reason given'}). ` +
+      `The factory stopped before ${S.factory?.brief ? 'tier work' : 'creating anything'}: the user asked for the ${push.asked} tier, and intake recommends ${push.recommended} (${oneLine(intake.reasons, 400) || 'no reason given'}). ` +
       `Ask the user in one short message whether to keep ${push.asked} or switch to ${push.recommended}, with intake's reason. ` +
       (S.host === 'codex'
         ? `Rerun the runner with the original args file and tierConfirmed: true to keep it, or tier: "${push.recommended}" to switch. This starts a new run. `
@@ -219,7 +219,7 @@ function needsSplit(S, items, intake) {
   return {
     status: 'needs-split', task: S.task, items, tier, reasons: intake.reasons || '', signals: intake.signals || null, notes: S.notes,
     forTheOrchestrator:
-      `The factory stopped before creating anything: intake found ${items.length} separate pieces of work in this task (${oneLine(intake.reasons, 400) || 'no reason given'}). ` +
+      `The factory stopped before ${S.factory?.brief ? 'tier work' : 'creating anything'}: intake found ${items.length} separate pieces of work in this task (${oneLine(intake.reasons, 400) || 'no reason given'}). ` +
       'One run would debate and review them all together, at the cost of the hardest piece. ' +
       `Show the user the pieces (items[]: title, estimated tier, and the earlier pieces each builds on) and ask in one short message: run them one at a time (recommended), or the whole task as one ${pinned || tier} run. ` +
       (S.host === 'codex'
@@ -285,4 +285,42 @@ function routedResult(S, res) {
     ...deliveryFields(S, res),
     factory: { tier: f.tier, chosenBy: f.chosenBy, asked: f.asked, recommended: f.recommended, reasons: f.intake ? f.intake.reasons : '' },
     forTheOrchestrator: `The factory ran this at the ${f.tier} tier (${f.chosenBy === 'intake' ? 'intake\'s choice' : f.chosenBy === 'pinned' ? 'the user\'s choice, which intake agreed with' : `the user's choice, over intake's ${f.recommended}`}); mention it in a few words. ${res.forTheOrchestrator || ''}` }
+}
+
+// The input before intake deliberately excludes pins, budgets and clarification answers:
+// resuming a stop must replay the very same shaper and challenger requests.
+function briefInputs(S) {
+  return `Original task: ${S.task}
+Context: ${S.context || '(none)'}
+Documents: ${JSON.stringify(S.plan)}
+Explicit constraints: ${JSON.stringify({ mode: S.raw.mode, criteria: S.raw.criteria, verify: S.raw.verify })}
+Inspect the repository${S.raw.repo ? ' at ' + S.raw.repo : ''} and the documents relevant to this request. Read only, apart from saving the requested brief. Preserve the user's wording and decisions. If a required document cannot be found, name it in planMissing where provided. Include "testing", "implementation" and "internal design" in delegated. Keep the brief short.`
+}
+
+function goalBriefBlock(S, full = false) {
+  const doc = S.factory?.brief
+  if (!doc) return ''
+  const b = doc.brief
+  const lines = [`Outcome: ${b.outcome}`, `Purpose: ${b.purpose}`]
+  if (full) lines.push(`Scope: ${b.scope}`, `Non-goals: ${b.nonGoals}`, 'Acceptance examples:', ...b.acceptanceExamples.map(e => '- ' + e),
+    `Verification: ${b.verification}`, `Delegated decisions: ${b.delegated.join(', ')}.`,
+    ...doc.decisions.map(d => `User decision ${d.id} (${d.question}): ${d.answer}`))
+  return '\n# Goal brief\n\n' + lines.join('\n') + '\n'
+}
+
+// The generated brief snapshot is additional to the user's plan documents.
+function planReferenceCount(S) {
+  return S.factory?.briefFile ? S.refs.filter(r => r.source !== S.factory.briefFile).length : S.refs.length
+}
+
+function withGoalBrief(S, result) {
+  if (!S.factory?.brief) return result
+  const snapshot = S.refs.find(r => r.source === S.factory.briefFile)
+  const briefFile = snapshot?.path || S.factory.briefFile
+  const entry = goalBriefBlock(S, true).replace('\n# Goal brief\n\n', '').trimEnd() + '\nBrief file: ' + briefFile
+  let markdown = result.report?.markdown || ''
+  const heading = /^(?:### )?How the run went:?$/m
+  markdown = heading.test(markdown) ? markdown.replace(heading, title => title + '\n\n' + entry) :
+    '### How the run went\n\n' + entry + (markdown ? '\n\n' + markdown : '')
+  return { ...result, brief: S.factory.brief, briefFile, report: { ...result.report, markdown } }
 }

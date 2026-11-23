@@ -11,7 +11,8 @@ const root = new URL('../../', import.meta.url)
 const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor
 
 export async function simulate(workflow, args = {}, behavior = {}) {
-  const source = readFileSync(new URL(`plugins/dark-factory/workflows/${workflow}.js`, root), 'utf8').replace(/^export const meta\s*=/m, 'const meta =')
+  // Execute the workflow body after the host has scanned its metadata, with no runtime meta binding.
+  const source = readFileSync(new URL(`plugins/dark-factory/workflows/${workflow}.js`, root), 'utf8').replace(/^export const meta\s*=/m, 'void')
   const execute = new AsyncFunction('args','factoryRuntime','parallel','agent','phase','log',source)
   const calls = []; let repairs = 0, reviewCount = 0
   const run = behavior.setup?.runDir || '/repo/.council/demo'
@@ -22,9 +23,14 @@ export async function simulate(workflow, args = {}, behavior = {}) {
     if (behavior.error) throw behavior.error
     if (behavior.fail?.(r)) return null
     const v = empty(r.schema)
-    if (r.role === 'intake') Object.assign(v, { status: 'ok', tier: 'simple', mode: 'implement', strategy: behavior.pair ? 'pair' : 'independent', reasons: 'Scoped implementation.' })
+    if (r.label?.startsWith('brief ')) {
+      v.brief = { outcome: 'Emit the retry count in the debug log.', purpose: 'Help an operator diagnose repeated requests.',
+        scope: 'Retries only.', nonGoals: 'Changing retry timing.', acceptanceExamples: ['Retry two logs count 2.'],
+        verification: 'Observe the debug entry after a retry.', delegated: ['testing', 'implementation', 'internal design'] }
+    } else if (r.role === 'intake') Object.assign(v, { status: 'ok', tier: 'simple', mode: 'implement', strategy: behavior.pair ? 'pair' : 'independent', reasons: 'Scoped implementation.' })
     else if (r.role === 'setup') {
       Object.assign(v, { status: 'ok', runId: 'demo', runDir: run, repoRoot: '/repo', ...('head' in v ? { head: 'b'.repeat(40) } : {}), mode: 'implement', dirty: [], verify: 'check', baselinePasses: true, criteria: [{ id: 'C1', text: 'The boundary works.' }] })
+      if (r.prompt.includes("--ref '/repo/.council/host-test/BRIEF.json'")) v.refs = [{ source: '/repo/.council/host-test/BRIEF.json', path: run + '/refs/BRIEF.json', inWorktrees: false }]
       for (const [k, x] of Object.entries(behavior.setup || {})) if (k in v) v[k] = x
     }
     else if (r.role === 'checker') Object.assign(v, { measured: true, diff: { files: 1, added: 2, removed: 1, tree: tree() }, suite: { ran: true, passed: true, tail: 'pass', scratchFailed: false }, criteria,
@@ -50,6 +56,8 @@ export async function simulate(workflow, args = {}, behavior = {}) {
     // The runner's running token total and past runs, when a test supplies them.
     ...(behavior.usage ? { usage: behavior.usage } : {}),
     ...(behavior.history ? { history: behavior.history } : {}),
+    brief: async ({ document }) => ({ document, briefFile: '/repo/.council/host-test/' +
+      (document.state === 'settled' ? 'BRIEF.json' : 'BRIEF.provisional.json') }),
     agent: respond,
     turn: async r => { const result = await respond(r); return result && { status: 'done', result } },
     measure: behavior.measure || (async ({ label }) => {
@@ -58,12 +66,12 @@ export async function simulate(workflow, args = {}, behavior = {}) {
     }),
   }
   const nativeAgent = (prompt, opts) => {
-    const role = opts.label === 'setup' ? 'setup' : opts.label.startsWith('check ') ? 'checker'
+    const role = opts.label === 'intake' || opts.label.startsWith('brief ') ? 'intake' : opts.label === 'setup' ? 'setup' : opts.label.startsWith('check ') ? 'checker'
       : opts.label.startsWith('r0:') ? 'seat' : opts.label.startsWith('ensemble-') ? 'reviewer' : opts.label === 'compare' ? 'compare' : null
     assert.ok(role, `Unexpected native call: ${opts.label}`)
     return respond({ ...opts, prompt, role, cwd: '/repo', vendor: 'claude' })
   }
-  const result = await execute({ task: 'Fix the boundary', host: behavior.native ? 'claude' : 'codex', retro: false, ...args }, behavior.native ? null : runtime,
+  const result = await execute(typeof args === 'string' ? args : { task: 'Fix the boundary', host: behavior.native ? 'claude' : 'codex', retro: false, ...args }, behavior.native ? null : runtime,
     async jobs => { const all = await Promise.allSettled(jobs.map(f => f())); const bad = all.find(x => x.status === 'rejected'); if (bad) throw bad.reason; return all.map(x => x.value) },
     behavior.native ? nativeAgent : () => { throw new Error('Unexpected native call') }, () => {}, behavior.log || (() => {}))
   return { result, calls, repairs }

@@ -81,6 +81,9 @@ export function loadCheckpoint(path, { repo, args, engine, executor }) {
   if (saved.version !== 1 || saved.engine !== engine) throw new Error('Checkpoint engine changed; start a new run.')
   if (executor && (!saved.executor || engineIdentityIssues({}, saved.executor, executor).length)) throw new Error('Checkpoint executor identity changed; no migration or reset was performed.')
   if (fingerprint(saved.repository) !== fingerprint(repositoryIdentity(repo, args))) throw new Error('Checkpoint repository or reference inputs changed; start a new run.')
+  for (const [file, hash] of Object.entries(saved.briefFiles || {})) {
+    if (!existsSync(file) || digest(readFileSync(file)) !== hash) throw new Error(`Checkpoint goal brief changed: ${file}`)
+  }
   const current = artifacts(repo, saved.runs)
   for (const [file, hash] of Object.entries(saved.artifacts.files)) {
     if (current.files[file] !== hash) throw new Error(`Checkpoint evidence changed: ${file}. Start a new run; no files were reset.`)
@@ -97,6 +100,7 @@ const FINAL_ERRORS = new Set(['CHECKPOINT_MISMATCH', 'RUN_LIMIT', 'ENGINE_DRIFT'
 
 export function journalRuntime(runtime, { repo, hostRunDir, args, engine, executor, saved, emit }) {
   const entries = saved?.entries || [], runs = new Set(saved?.runs || [])
+  const briefFiles = { ...saved?.briefFiles }
   const repository = saved?.repository || repositoryIdentity(repo, args)
   // A batch is the operations in flight together, committed when the last one ends. A batch with
   // a failure (a throw, no result, or an error status) is held back rather than committed: if the
@@ -112,12 +116,12 @@ export function journalRuntime(runtime, { repo, hostRunDir, args, engine, execut
     if (active || stopped) return
     const data = { version: 1, engine, repository, runs: [...runs], entries,
       ...(executor ? { executor } : {}),
-      runtime: runtime.checkpointState(), artifacts: artifacts(repo, runs) }
+      ...(Object.keys(briefFiles).length ? { briefFiles } : {}), runtime: runtime.checkpointState(), artifacts: artifacts(repo, runs) }
     const file = join(hostRunDir, 'checkpoint.json')
     writeJsonAtomic(file, data)
     emit({ type: 'checkpoint.saved', operations: entries.length, path: file })
   }
-  for (const method of ['agent', 'turn', 'measure']) wrapped[method] = async request => {
+  for (const method of ['agent', 'turn', 'measure', ...(runtime.brief ? ['brief'] : [])]) wrapped[method] = async request => {
     if (fatal) throw fatal
     const hash = fingerprint({ method, request })
     if (remaining.size) {
@@ -148,6 +152,9 @@ export function journalRuntime(runtime, { repo, hostRunDir, args, engine, execut
       const result = await runtime[method]({ ...request, ...(request.onResult ? { onResult: value => { diagnostic = value; request.onResult(value) } } : {}) })
       if (!result || ['error', 'failed', 'sandboxed'].includes(result.status)) failed = true
       if (request.run?.runDir) runs.add(request.run.runDir)
+      if (method === 'brief' && result?.status === 'ok') {
+        for (const file of [result.briefFile, request.source].filter(Boolean)) briefFiles[file] = digest(readFileSync(file))
+      }
       if (method === 'agent' && result?.runDir) runs.add(result.runDir)
       pending[slot] = record({ result })
       return result

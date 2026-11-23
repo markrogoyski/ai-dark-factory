@@ -390,7 +390,7 @@ test('factory decisions stop before setup while preserving input and machine-rea
       count++
       const payload = readFileSync(argv[argv.indexOf('--prompt-file') + 1], 'utf8')
       const schema = JSON.parse(payload.split('<<<OUTPUT_SCHEMA\n')[1].split('\nOUTPUT_SCHEMA>>>')[0])
-      return { status: 'done', result: { ...empty(schema), status: 'needs-plan', planMissing: 'PLAN.md' } }
+      return { status: 'done', result: { ...empty(schema), planMissing: 'PLAN.md' } }
     },
   } })
   assert.equal(result.status, 'needs-plan')

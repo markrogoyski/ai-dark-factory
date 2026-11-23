@@ -249,7 +249,7 @@ async function pairSetup() {
   S.refs = (setup.refs || []).filter(r => r.path?.startsWith(`${S.run.runDir}/refs/`))
   const lost = setupLosses(S, S.criteria, S.verify)
   if (!S.criteria.length || new Set(S.criteria.map(c => c.id)).size !== S.criteria.length || S.criteria.some(c => !c.id || !c.text) ||
-      S.refs.length !== (setup.refs || []).length || S.refs.length < S.plan.length || lost.length) {
+      S.refs.length !== (setup.refs || []).length || planReferenceCount(S) < S.plan.length || lost.length) {
     S.pair.stop = `Setup omitted criteria, reference snapshots, or the requested verification command${lost.length ? `: it dropped ${lost.join('; ')}` : ''}.`
     return pairResult(S)
   }

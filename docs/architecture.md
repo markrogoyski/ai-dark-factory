@@ -15,7 +15,9 @@
 
   factory     chooses how much process a task needs
      |
-  an intake agent reads the task and the code, then picks:
+  shape the goal and challenge unresolved outcomes
+     |
+  intake reads the brief, task and code, then picks:
      |
      +-- a small, clear change ----> Simple        one implementer, one reviewer
      |                                              (moves up to Fix or Feature if it struggles)
@@ -107,7 +109,7 @@ relative to its real installed path, so prompts never depend on an install path.
 ### The workflow files
 
 `workflows/*.js` hold the turn order, the ledger, the stop rule, the scorecards and every prompt,
-and never judge. `factory.js` is the council's engine plus intake, the three tiers, Pair for its
+and never judge. `factory.js` is the council's engine plus goal shaping, intake, the three tiers, Pair for its
 pair strategy, and `src/main-factory.js` (routing and `escalate()`).
 
 All five are **generated** from `src/` by `tools/build.mjs` (the workflow runtime allows no

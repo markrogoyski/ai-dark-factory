@@ -120,13 +120,13 @@ Rough cost, in agent turns at the defaults:
 
 | run | agent turns |
 |---|---|
-| factory, Simple tier | 6–9 |
+| factory, Simple tier | 8–11 |
 | pair | 12–17 in recent runs (`maxReviews` caps the reviews at 8) |
-| factory, Fix tier | 15–25 |
+| factory, Fix tier | 17–27 |
 | ensemble, 4 candidates × 2 lenses | about 18, before relays and retries |
-| factory, Feature tier | 25–40 |
+| factory, Feature tier | 27–42 |
 | council | 30–50 |
-| factory, Architecture tier | 35–50 |
+| factory, Architecture tier | 37–52 |
 
 ## OpenRouter seats
 

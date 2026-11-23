@@ -11,10 +11,10 @@ that wasn't enough.
 
 | tier | what runs | rough cost |
 |---|---|---|
-| `simple` | Sonnet implements, the neutral check, Codex Astra reviews, at most one fix pass | 6–9 agent turns |
-| `fix` | the council with two seats, Opus and Astra: blind attempts, debate, audit | 15–25 |
-| `feature` | Opus and Astra plan it blind and debate the plans; the chosen plan's author builds it in checked increments; a three-lens audit | 25–40 |
-| `architecture` | Opus, Astra and Sonnet design it blind and debate the designs; the chosen design's author writes a milestone plan; a three-lens review and one revision; nothing is built | 35–50 |
+| `simple` | Sonnet implements, the neutral check, Codex Astra reviews, at most one fix pass | 8–11 agent turns |
+| `fix` | the council with two seats, Opus and Astra: blind attempts, debate, audit | 17–27 |
+| `feature` | Opus and Astra plan it blind and debate the plans; the chosen plan's author builds it in checked increments; a three-lens audit | 27–42 |
+| `architecture` | Opus, Astra and Sonnet design it blind and debate the designs; the chosen design's author writes a milestone plan; a three-lens review and one revision; nothing is built | 37–52 |
 
 Models here are the Claude Code defaults; the Codex host has its own ([Choosing the models](models.md#defaults)).
 
@@ -24,6 +24,33 @@ Intake can also choose [Pair](pair.md) for a scoped implementation with one clea
 criteria before its first author turn like a standalone run ([Spec review](pair.md#spec-review);
 `spec: false` inside `pair` skips it). The result reports tier and strategy separately. Passing `seats`, `simple`, `panel`, `spec`, `audit`, `roles` or `evidence` keeps
 routing independent, and combining one with `strategy: "pair"` is rejected.
+
+## Goal brief
+
+Before intake selects a tier, a shaper reads the task as given, including a one-line chat goal.
+It describes the outcome you will receive, its purpose, scope, non-goals, acceptance examples
+and the evidence that will verify delivery. Testing, implementation and internal design are
+explicitly delegated to the agents. Setup, authors and reviewers use the outcome and purpose
+when the criteria leave a judgment call open.
+
+A fresh challenger tries to find two outcomes that your wording permits and that you would
+judge differently. It looks for an answer in the code, docs, git history, retros and available
+issues. A clear task costs two turns before intake and proceeds with zero questions. If the
+evidence leaves a real difference in outcome or acceptance, Factory returns `needs-user` before
+routing. Each question in the batch includes both outcomes, a recommendation and what your
+answer changes. For example, a missing-page report might call for a diagnosis or a shipped fix.
+
+Resume with the original arguments and append answers such as
+`{"id":"B1","answer":"Ship the pagination fix."}` to `clarifications`. Follow the result's
+`resumeSteps` for your host. When the batch is complete, the shaper incorporates the decisions
+and intake runs on the settled brief.
+
+The result contains `brief` and `briefFile`, and **How the run went** includes the brief.
+`--explain` produces the file and routing decision without starting tier work. To reuse a
+settled brief, pass `{"task":"Fix pagination","brief":"/absolute/path/BRIEF.json"}` as workflow
+arguments (an `--args-file` on the CLI). Both shaping turns are skipped. Use `--no-brief`
+or `brief: false` to go straight to intake. The standalone CLI's `--brief` switch requests
+compact result output.
 
 ## Intake
 
@@ -37,7 +64,7 @@ dozens.
 - One connected piece of work too big for one feature (over about 4 increments, or a design
   decision to settle first) goes to architecture.
 
-It can also stop the run before anything is created:
+It can also stop the run before tier setup:
 
 | status | when | you then |
 |---|---|---|

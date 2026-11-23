@@ -47,7 +47,7 @@ test:
 	$(NODE) test/sim.mjs
 
 # One node --test run, so its files run in parallel and it lasts about as long as the slowest file.
-HOST_TESTS = host-logic codex-runner codex-install checkpoint run-plan delivery-results \
+HOST_TESTS = factory-brief host-logic codex-runner codex-install checkpoint run-plan delivery-results \
   engine-identity engine-isolation engine-closure provenance policy-bundle engine-bootstrap \
   pinned-providers pinned-state pinned-delivery \
   provider-policy provider-settings provider-routing live-compatibility engine-imports \

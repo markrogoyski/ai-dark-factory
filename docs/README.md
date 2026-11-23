@@ -4,7 +4,7 @@
 
 ## Workflows
 
-- [Factory](factory.md): intake picks a tier (Simple, Fix, Feature, Architecture) or Pair, and escalates on evidence.
+- [Factory](factory.md): two turns shape and challenge a clear goal, then intake picks a tier or Pair. At this stage Factory asks only about different outcomes the repository cannot settle. Use `--no-brief` to skip shaping.
 - [Pair](pair.md): one author and one independent reviewer, from design through implementation.
 - [Council](council.md): seats solve blind, debate on an evidence ledger, and converge; scoring, arguments and the end-of-run report.
 - [Ensemble](ensemble.md): independent candidates, cross-reviewed and ranked for you to pick or merge.
