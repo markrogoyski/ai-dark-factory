@@ -92,15 +92,24 @@ export function loadCheckpoint(path, { repo, args, engine, executor }) {
   return saved
 }
 
+// Errors that end the run; mirrors fatalTurnError in src/turns.js.
+const FINAL_ERRORS = new Set(['CHECKPOINT_MISMATCH', 'RUN_LIMIT', 'ENGINE_DRIFT'])
+
 export function journalRuntime(runtime, { repo, hostRunDir, args, engine, executor, saved, emit }) {
   const entries = saved?.entries || [], runs = new Set(saved?.runs || [])
   const repository = saved?.repository || repositoryIdentity(repo, args)
-  let cursor = 0, active = 0, broken = false, fatal = null
+  // A batch is the operations in flight together, committed when the last one ends. A batch with
+  // a failure (a throw, no result, or an error status) is held back rather than committed: if the
+  // run stops there, a resume retries it. Once a later batch completes cleanly the workflow has
+  // handled the failure and carried on, so the held batches are committed ahead of it and replay
+  // the same failure, keeping the operations after it reusable. A mismatch or an error that ends
+  // the run (the engine's fatalTurnError codes) stops recording for good.
+  let cursor = 0, active = 0, stopped = false, failed = false, fatal = null
   const remaining = new Set(entries.map((_, i) => i))
-  const pending = []
+  const pending = [], held = []
   const wrapped = { ...runtime }
   function commit() {
-    if (active || broken) return
+    if (active || stopped) return
     const data = { version: 1, engine, repository, runs: [...runs], entries,
       ...(executor ? { executor } : {}),
       runtime: runtime.checkpointState(), artifacts: artifacts(repo, runs) }
@@ -118,6 +127,7 @@ export function journalRuntime(runtime, { repo, hostRunDir, args, engine, execut
         remaining.delete(index); cursor++
         if (record.diagnostic) request.onResult?.(record.diagnostic)
         emit({ type: 'checkpoint.replayed', method, label: request.label, operation: index + 1 })
+        if (record.error) throw Object.assign(new Error(record.error.message), record.error.code ? { code: record.error.code } : {})
         return structuredClone(record.result)
       }
       // Independent pipelines can replay in a different completion order. Let their cached
@@ -125,7 +135,7 @@ export function journalRuntime(runtime, { repo, hostRunDir, args, engine, execut
       await new Promise(resolve => setImmediate(resolve))
       if (fatal) throw fatal
       if (remaining.size) {
-        broken = true
+        stopped = true
         fatal = Object.assign(new Error(`Checkpoint request changed at operation ${cursor + 1} (${method}); dependent reviews were not reused. Start a new run.`), { code: 'CHECKPOINT_MISMATCH' })
         throw fatal
       }
@@ -133,18 +143,29 @@ export function journalRuntime(runtime, { repo, hostRunDir, args, engine, execut
     const slot = pending.length
     pending.push(null); active++
     let diagnostic
+    const record = fields => ({ method, hash, ...(typeof request.label === 'string' ? { label: request.label } : {}), ...fields, ...(diagnostic ? { diagnostic } : {}) })
     try {
       const result = await runtime[method]({ ...request, ...(request.onResult ? { onResult: value => { diagnostic = value; request.onResult(value) } } : {}) })
-      if (!result || ['error', 'failed', 'sandboxed'].includes(result.status)) broken = true
+      if (!result || ['error', 'failed', 'sandboxed'].includes(result.status)) failed = true
       if (request.run?.runDir) runs.add(request.run.runDir)
       if (method === 'agent' && result?.runDir) runs.add(result.runDir)
-      pending[slot] = { method, hash, ...(typeof request.label === 'string' ? { label: request.label } : {}), result, ...(diagnostic ? { diagnostic } : {}) }
+      pending[slot] = record({ result })
       return result
-    } catch (error) { broken = true; throw error } finally {
+    } catch (error) {
+      failed = true
+      if (FINAL_ERRORS.has(error?.code)) stopped = true
+      if (request.run?.runDir) runs.add(request.run.runDir)
+      pending[slot] = record({ error: { message: String(error?.message || error), ...(error?.code ? { code: String(error.code) } : {}) } })
+      throw error
+    } finally {
       active--
-      if (!active && !broken) {
-        entries.push(...pending.splice(0)); cursor = entries.length
-        commit()
+      if (!active && !stopped) {
+        const batch = pending.splice(0)
+        if (failed) { held.push(...batch); failed = false }
+        else {
+          entries.push(...held.splice(0), ...batch); cursor = entries.length
+          commit()
+        }
       }
     }
   }

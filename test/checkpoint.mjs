@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdtempSync, realpathSync, writeFileSync, mkdirSync, readFileSync, rmSync, appendFileSync } from 'node:fs'
+import { mkdtempSync, realpathSync, writeFileSync, mkdirSync, readFileSync, rmSync, appendFileSync, existsSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -111,6 +111,53 @@ async function pausedRun(t, flags = []) {
   const metadata = () => JSON.parse(readFileSync(join(first.hostRunDir, 'host.json'), 'utf8'))
   return { ...f, first, resume, metadata, deadlines }
 }
+
+test('a failure the workflow carries on past is recorded and replays, so later operations stay reusable', async t => {
+  const f = fixture(t), state = { checkpointState: () => ({ sequence: 1 }) }
+  const base = { run: f.run, seat: 'A', label: 'base' }, review = { run: f.run, prompt: 'Spec review', label: 'spec' }
+  const first = journalRuntime({ ...state, measure: async () => { throw new Error('helper crashed') }, agent: async () => ({ findings: [] }) }, f.opts)
+  await assert.rejects(() => first.measure(base), /helper crashed/)
+  assert.equal(existsSync(join(f.hostRunDir, 'checkpoint.json')), false, 'a failure alone is not committed')
+  await first.agent(review)
+  const saved = loadCheckpoint(f.hostRunDir, f.opts)
+  assert.deepEqual(saved.entries.map(e => [e.method, e.label, e.error?.message || null]), [['measure', 'base', 'helper crashed'], ['agent', 'spec', null]])
+  const live = () => { throw new Error('must reuse') }
+  const resumed = journalRuntime({ ...state, measure: live, agent: live }, { ...f.opts, saved })
+  await assert.rejects(() => resumed.measure(base), /helper crashed/, 'the recorded failure replays')
+  assert.deepEqual(await resumed.agent(review), { findings: [] })
+})
+
+test('a failure the run stops at is not committed, so a resume retries it', async t => {
+  const f = fixture(t), state = { checkpointState: () => ({ sequence: 1 }) }
+  const request = { run: f.run, prompt: 'Author', label: 'author' }
+  const first = journalRuntime({ ...state, agent: async r => r.label === 'setup' ? { ok: true } : null, measure: async () => ({ status: 'error' }) }, f.opts)
+  await first.agent({ run: f.run, prompt: 'Setup', label: 'setup' })
+  assert.equal(await first.agent(request), null)
+  await first.measure({ run: f.run, seat: 'A', label: 'base' })
+  first.finishCheckpoint()
+  const saved = loadCheckpoint(f.hostRunDir, f.opts)
+  assert.deepEqual(saved.entries.map(e => e.label), ['setup'])
+  let retried = false
+  const resumed = journalRuntime({ ...state, agent: async r => { if (r.label === 'author') retried = true; return { ok: true } } }, { ...f.opts, saved })
+  await resumed.agent({ run: f.run, prompt: 'Setup', label: 'setup' })
+  assert.deepEqual(await resumed.agent(request), { ok: true }); assert.equal(retried, true)
+})
+
+test('a recovered error status is committed, and an error that ends the run stops recording', async t => {
+  const f = fixture(t), state = { checkpointState: () => ({ sequence: 1 }) }
+  const runtime = journalRuntime({ ...state, measure: async () => ({ status: 'error', error: 'suite timed out' }), agent: async r => {
+    if (r.label === 'limit') throw Object.assign(new Error('Run turn budget exhausted (3).'), { code: 'RUN_LIMIT' })
+    return { ok: r.label }
+  } }, f.opts)
+  await runtime.measure({ run: f.run, seat: 'A', label: 'base' })
+  await runtime.agent({ run: f.run, prompt: 'Review', label: 'review' })
+  assert.deepEqual(loadCheckpoint(f.hostRunDir, f.opts).entries.map(e => [e.label, e.result]), [['base', { status: 'error', error: 'suite timed out' }], ['review', { ok: 'review' }]])
+  const before = readFileSync(join(f.hostRunDir, 'checkpoint.json'), 'utf8')
+  await assert.rejects(() => runtime.agent({ run: f.run, prompt: 'Over budget', label: 'limit' }), { code: 'RUN_LIMIT' })
+  await runtime.agent({ run: f.run, prompt: 'After', label: 'after' })
+  runtime.finishCheckpoint()
+  assert.equal(readFileSync(join(f.hostRunDir, 'checkpoint.json'), 'utf8'), before)
+})
 
 test('checkpoint request mismatch aborts the generated workflow instead of failing an ordinary turn', async t => {
   const f = await pausedRun(t)

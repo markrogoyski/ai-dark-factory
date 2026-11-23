@@ -105,7 +105,11 @@ contexts and separate checkouts. Findings keep stable IDs and evidence.
 
 ## Resume
 
-Codex saves a checkpoint when all in-flight operations at a boundary have completed successfully:
+Codex saves a checkpoint when all in-flight operations at a boundary have completed successfully.
+An operation that failed (threw, returned nothing, or reported an error) is held back: if the run
+stops there, a resume retries it; once a later operation completes, the workflow has handled the
+failure, so it is saved and replays as the same failure. A checkpoint mismatch, an exhausted run
+budget or engine drift stops saving for the rest of the run.
 
 ```sh
 node plugins/dark-factory/bin/dark-factory-codex --resume /project/.council/host-abc
