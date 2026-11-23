@@ -131,10 +131,19 @@ first author turn, with or without a design stage.
   one question of kind `spec` per conflict, quoting each requirement involved. Answered, setup
   runs again (`setup-answered`, in a new run directory, with its baseline) with the decisions, so
   the role that owns the criteria rewrites them, and the spec review reads the new criteria
-  (`spec-2`). The decisions are in its prompt, and it asks only about a conflict they leave open.
-  The engine sends a question already answered, word for word, to the author instead, and after
-  two spec stops every later conflict goes to the author too, whose own `needs-user` still covers
-  it. The stopped run's directory stays; the notes name the `dark-factory cleanup` command for it.
+  (`spec-2`). The decisions are in its prompt, and it asks only about a conflict they leave open:
+  a question that returns to an answered one names that decision in `revisits` and says in
+  `leftOpen` what its answer leaves open, and the user sees both. The engine sends a repeat to the
+  author instead, marked with the decision it repeats, which the author reads it by: a revisit
+  with nothing in `leftOpen`, and any question clearly the same as an answered one (other than
+  the decision a stated revisit names). Clearly the same means it names the same things (files,
+  paths by their last part, identifiers, versions, options) and shares at least 60% of the
+  shorter question's content words, with a Dice coefficient of at least 0.4; criterion IDs are
+  ignored, since setup renumbers them. A question about another file, or one that shares the
+  subject but asks something else, still reaches the user. After two spec stops every later
+  conflict goes to the author too, whose own `needs-user` still covers it. A resumed run rebuilds
+  the answered questions from the replayed passes and the decisions. The stopped run's directory
+  stays; the notes name the `dark-factory cleanup` command for it.
 - **A failed turn** changes nothing: the run goes on with setup's criteria, and the notes, the
   story and the report say the spec review returned nothing. It never blocks readiness.
 
@@ -471,7 +480,8 @@ cleanup command for after delivery), followed by `design`, `testContract`, `repl
 
 - `readings`, each with its ruling (also in `report.markdown`).
 - `spec`: the [spec review](#spec-review)'s passes and its findings S1, S2, …, each with whom it
-  went to (the author or the user) and, for a question, its ID.
+  went to (the author or the user), for a question its ID, and for a repeat the decision it
+  `repeats`.
 - `questions`, `decisions`, `unusedAnswers`, `resumable`, `resumeSteps`: see
   [Answering a stop](#answering-a-stop).
 - `liveChecks`: the [live checks](#live-checks) still to run (also in `final.readiness.liveChecks`).

@@ -2021,7 +2021,7 @@ test('a design stop answered with implement: true starts the implementation with
 const specPass = call => Number((String(call.label).match(/^spec-(\d+)/) || [])[1] || 1)
 const specFinding = (over = {}) => ({ criteria: ['C1'], statement: 'C1 calls the entry point parse(), but src/a.js has only read().',
   quoted: ['C1: "The requested behavior works."'], evidence: 'src/a.js:1 defines read() and nothing named parse().', settle: 'reading',
-  reading: 'Read parse() as read(), the entry point src/a.js has.', question: '', ...over })
+  reading: 'Read parse() as read(), the entry point src/a.js has.', question: '', revisits: '', leftOpen: '', ...over })
 const specConflict = (over = {}) => specFinding({ statement: 'C1 fixes tests/config.json, which the new tests may not share.', settle: 'user', reading: '',
   quoted: ['C1: "The behavior reads tests/config.json."', 'Rule: "Tests that depend on new code go in their own files"'],
   question: 'C1 fixes tests/config.json, but tests of new code need their own files. Rename the file, or let the new tests share it?', ...over })
@@ -2138,7 +2138,7 @@ test('a conflict only the user can settle stops before the author; answered, set
     assert.ok(setup2.includes(`\n- Q1 (about C1; asked in spec): ${question} Answer: ${answer.answer}\n`))
     if (!native) assert.match(setup2, /--run-id 'host-x-pair-answered'/)
     const spec2 = answered.calls.find(c => c.kind === 'spec' && specPass(c) === 2).prompt
-    assert.ok(spec2.includes('\n# Explicit user decisions\n') && spec2.includes(' The user\'s decisions above settle what they answer: don\'t ask again about anything they settle, only about a conflict they leave open.'))
+    assert.ok(spec2.includes('\n# Explicit user decisions\n') && spec2.includes(' The user\'s decisions above settle what they answer: don\'t ask again about anything they settle, only about a conflict they leave open, and then set `revisits` to the decision\'s ID and say in `leftOpen` what its answer leaves open. A question an answer already settles goes to the author, not the user.'))
     // The first pass's settleable finding reviewed criteria setup has since replaced.
     assert.ok(answered.calls.filter(c => c.kind === 'author').every(c => !c.prompt.includes('# Spec review findings')))
     assert.equal(answered.result.status, 'done')
@@ -2176,6 +2176,102 @@ test('the spec review stops at most twice; a repeated question or a third confli
     assert.equal(thrice.result.status, 'done')
     assert.deepEqual(thrice.result.spec.findings.map(f => [f.pass, f.to]), [['spec', 'user'], ['spec-2', 'user'], ['spec-3', 'author']])
     assert.deepEqual(thrice.calls.filter(c => c.kind === 'setup').map(c => c.label), ['setup', 'setup-answered', 'setup-answered-2'])
+  }
+})
+
+// Reworded repeats of an answered question (the first asked, the second asks again), and near
+// misses: a question on the same subject that asks something else, or one with another file,
+// identifier, version or option.
+const SPEC_REPEATS = [
+  ['Should tests live in AlgebraTest.php?', 'Must the new tests be added to AlgebraTest.php or a separate file?'],
+  ['C2 puts the new tests in tests/AlgebraTest.php, but the rules put tests of new code in their own files. Add them to AlgebraTest.php, or create a separate test file?',
+    'Must the new tests be added to AlgebraTest.php or a separate file?'],
+  ['C1 fixes tests/config.json, but tests of new code need their own files. Rename the file, or let the new tests share it?',
+    'Tests of new code need their own files, yet C3 fixes tests/config.json. Should the file be renamed, or may the new tests share it?'],
+  ['C3 requires parse() to throw InvalidArgumentException, but C4 says it returns null on bad input. Which should it do?',
+    'Which wins for bad input: C3\'s InvalidArgumentException from parse(), or C4\'s null return?'],
+  ['The task says to support PHP 7.4, but C2 requires typed properties with union types, which need PHP 8.0. Drop 7.4 support or avoid union types?',
+    'C2 needs union types (PHP 8.0) while the task requires PHP 7.4 support: should the work drop PHP 7.4, or avoid union types?'],
+  ['Should the CLI flag be --dry-run, as the task says, or --check, as docs/cli.md says?', 'The task names the flag --dry-run but docs/cli.md calls it --check; which name should the CLI use?'],
+]
+const SPEC_NEAR_MISSES = [
+  ['Should the new tests go in tests/AlgebraTest.php or a separate file?',
+    'C2 puts the new tests in tests/AlgebraTest.php, which has no data provider for the matrix cases; add a data provider, or write one test method per case?'],
+  ['C1 fixes tests/config.json, but tests of new code need their own files. Rename the file, or let the new tests share it?',
+    'C1 fixes tests/config.json, which the baseline suite also reads; may the new tests change its contents, or must they copy it to a fixture?'],
+  ['C3 requires parse() to throw InvalidArgumentException, but C4 says it returns null on bad input. Which should it do?',
+    'C3 requires parse() to throw InvalidArgumentException, but the existing parser throws DomainException for the same input. Which exception class should parse() throw?'],
+  ['The task says to support PHP 7.4, but C2 requires typed properties with union types, which need PHP 8.0. Drop 7.4 support or avoid union types?',
+    'The task supports PHP 7.4, but composer.json requires PHP 8.1 for the test suite. Should the composer.json PHP constraint be lowered?'],
+  ['Should the CLI flag be --dry-run, as the task says, or --check, as docs/cli.md says?', 'Should --dry-run also print the diff it would apply, as docs/cli.md describes for --check?'],
+  ['Should the new tests go in tests/AlgebraTest.php or a separate file?', 'Should the new tests for Matrix::inverse go in tests/MatrixTest.php or a separate file?'],
+  ['C1 fixes tests/config.json, but tests of new code need their own files. Rename the file, or let the new tests share it?',
+    'C2 fixes tests/fixtures.json, but tests of new code need their own files. Rename the fixture, or let the new tests share it?'],
+  ['Which wins?', 'Which one wins?'],
+]
+
+test('a question is the same as an answered one only when it names the same things and shares most of its words', () => {
+  for (const [a, b] of SPEC_REPEATS) {
+    assert.ok(L.pairSameQuestion(a, b), `a repeat: ${b}`)
+    assert.ok(L.pairSameQuestion(b, a), `either way round: ${b}`)
+  }
+  for (const [a, b] of SPEC_NEAR_MISSES) {
+    assert.ok(!L.pairSameQuestion(a, b), `a new question: ${b}`)
+    assert.ok(!L.pairSameQuestion(b, a), `either way round: ${b}`)
+  }
+  // The words that look like code are compared by name; a path by its last part.
+  const words = L.pairQuestionWords('Should C1\'s parse() throw, as tests/Unit/AlgebraTest.php and --dry-run in PHP 8.0 expect?')
+  assert.deepEqual([...words.names], ['algebratest.php', '--dry-run', '8.0'])
+  assert.deepEqual([...words.words], ['parse', 'throw', 'algebratest.php', '--dry-run', 'php', '8.0', 'expect'])
+  // A limit: one changed word in an otherwise identical question is the same question, unless the
+  // reviewer says it revisits the answer and what the answer leaves open (pairIngestSpec).
+  assert.ok(L.pairSameQuestion('Should the parser reject empty input or return an empty list?', 'Should the parser reject whitespace-only input or return an empty list?'))
+})
+
+test('a spec question that repeats an answered one goes to the author; a stated revisit or a new question goes to the user', () => {
+  const S = { specReviewers: [{ name: 'Codex Astra' }], pair: L.newPairState() }
+  const [asked, reworded] = SPEC_REPEATS[1], nearMiss = SPEC_NEAR_MISSES[0][1]
+  L.pairIngestSpec(S, { summary: '', findings: [specConflict({ question: asked })] }, 'spec')
+  S.pair.spec.passes[0].stopped = true
+  S.pair.spec.findings[0].asked = 'Q1'
+  S.pair.decisions.push({ id: 'Q1', about: 'C1', kind: 'spec', question: `${asked} Requirements as written: C2`, answer: 'Add them to AlgebraTest.php.', label: 'spec' })
+  // The answered set lives in state a checkpoint saves and a resumed run rebuilds: it survives JSON.
+  const resumed = JSON.parse(JSON.stringify(S))
+  const pass = L.pairIngestSpec(resumed, { summary: '', findings: [
+    specConflict({ question: reworded }),
+    specConflict({ question: nearMiss }),
+    specConflict({ question: 'Where do the matrix helpers go?', revisits: 'Q1', leftOpen: '' }),
+    specConflict({ question: reworded, revisits: 'Q1', leftOpen: 'Whether the shared setup helper moves with the tests.' }),
+    specConflict({ question: reworded, revisits: 'Q7', leftOpen: 'Something.' }),
+    specFinding(),
+  ] }, 'spec-2')
+  const fs = pass.findings.map(id => resumed.pair.spec.findings.find(f => f.id === id))
+  assert.deepEqual(fs.map(f => [f.id, f.to, f.repeats, f.revisits]), [
+    ['S2', 'author', 'Q1', ''], // reworded: the guard
+    ['S3', 'user', '', ''], // same file and subject, another question
+    ['S4', 'author', 'Q1', 'Q1'], // a stated revisit that names nothing left open
+    ['S5', 'user', '', 'Q1'], // a stated revisit, with what the answer leaves open
+    ['S6', 'author', 'Q1', ''], // no such decision: not a revisit, so the guard
+    ['S7', 'author', '', ''], // a reading
+  ])
+  assert.equal(L.pairSpecQuestion(fs[3]), `${reworded} Your answer to Q1 leaves this open: Whether the shared setup helper moves with the tests. Requirements as written: ${specConflict().quoted.join('; ')}`)
+  const block = L.pairSpecBlock(resumed, 'author')
+  assert.ok(block.includes(`\n- S2 (about C1): ${specConflict().statement}\n`) && block.includes(`\n  No reading settles it, the spec reviewer found: ${reworded}\n  It repeats Q1, which the user answered above; read it by that answer.\n`), block)
+  assert.match(L.pairSpecLine(resumed, pass), /For the author: S2 \(C1\) [^;]* \(repeats Q1\); S4 /)
+})
+
+test('a reworded repeat of an answered spec question reaches the author in the resumed run; a new one stops for the user', async () => {
+  const [asked, reworded] = SPEC_REPEATS[1], nearMiss = SPEC_NEAR_MISSES[0][1]
+  for (const native of [false, true]) {
+    const spec = second => (v, call) => ({ ...v, findings: [specConflict({ question: specPass(call) === 1 ? asked : second })] })
+    const repeat = await run({ native, spec: spec(reworded), args: { clarifications: [{ id: 'Q1', answer: 'Add them to AlgebraTest.php.' }] } })
+    assert.equal(repeat.result.status, 'done')
+    assert.deepEqual(repeat.result.spec.findings.map(f => [f.id, f.pass, f.to, f.asked, f.repeats]), [['S1', 'spec', 'user', 'Q1', ''], ['S2', 'spec-2', 'author', '', 'Q1']])
+    assert.ok(repeat.calls.find(c => c.kind === 'author').prompt.includes(`\n  No reading settles it, the spec reviewer found: ${reworded}\n  It repeats Q1, which the user answered above; read it by that answer.\n`))
+    assert.ok(repeat.result.report.markdown.includes(' → for the author, as a repeat of Q1: no reading answers it.'), repeat.result.report.markdown)
+    const fresh = await run({ native, spec: spec(nearMiss), args: { clarifications: [{ id: 'Q1', answer: 'Add them to AlgebraTest.php.' }] } })
+    assert.equal(fresh.result.status, 'needs-user')
+    assert.deepEqual(fresh.result.questions.map(q => [q.id, q.kind, q.question.startsWith(nearMiss)]), [['Q2', 'spec', true]])
   }
 })
 

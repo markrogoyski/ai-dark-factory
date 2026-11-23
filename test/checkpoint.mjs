@@ -279,3 +279,39 @@ test('resume reuses specification review but amends criteria with the new answer
   assert.equal(second.status, 'failed')
   assert.deepEqual(calls, [...original, 'amend'], 'only the answer-dependent amendment is a new turn')
 })
+
+test('pair resume replays the spec review and sends a reworded repeat of the answered question to the author', async t => {
+  const f = fixture(t), calls = []
+  const helper = new URL('../plugins/dark-factory/bin/dark-factory', import.meta.url)
+  const asked = 'C1 fixes tests/AlgebraTest.php, but tests of new code need their own files. Should the new tests go in tests/AlgebraTest.php, or in a separate file?'
+  const reworded = 'Must the new tests be added to AlgebraTest.php or put in a separate test file?'
+  const conflict = question => ({ criteria: ['C1'], statement: 'C1 fixes the test file.', quoted: [], evidence: 'tests/AlgebraTest.php:1', settle: 'user', reading: '', question, revisits: '', leftOpen: '' })
+  const dependencies = { progress: () => {}, prepare: noPrepare, runtime: { execute: async argv => {
+    if (argv[0] === 'preflight') return { status: 'ok' }
+    // The runner measures the baseline itself, with the real helper.
+    if (['measure', 'wait'].includes(argv[0])) return JSON.parse(execFileSync(fileURLToPath(helper), argv, { cwd: f.repo, encoding: 'utf8', env: { ...process.env, COUNCIL_JOB_POLL: '0.01' } }).trim().split('\n').at(-1))
+    const prompt = readFileSync(argv[argv.indexOf('--prompt-file') + 1], 'utf8')
+    const schema = JSON.parse(prompt.split('<<<OUTPUT_SCHEMA\n')[1].split('\nOUTPUT_SCHEMA>>>')[0])
+    const result = empty(schema)
+    if ('runDir' in result) {
+      calls.push('setup')
+      const runId = prompt.match(/--run-id '([^']+)'/)[1]
+      const created = JSON.parse(execFileSync(fileURLToPath(helper), ['init', '--repo', f.repo, '--seats', 'A', '--run-id', runId], { encoding: 'utf8' }).trim().split('\n').at(-1))
+      writeFileSync(join(created.runDir, 'verify.sh'), 'true\n')
+      Object.assign(result, { status: 'ok', mode: 'implement', runId, runDir: created.runDir, repoRoot: f.repo, head: f.git('rev-parse', 'HEAD').trim(),
+        criteria: [{ id: 'C1', text: 'The new tests cover the change.' }], verify: 'true', baselinePasses: true })
+    } else if ('findings' in result) {
+      calls.push('spec')
+      result.findings = [conflict(prompt.includes('# Explicit user decisions') ? reworded : asked)]
+    } else return { status: 'error', error: 'Fixture stops before the author.' }
+    return { status: 'done', result }
+  } } }
+  const first = await runWorkflow({ ...parseCLI(['--cwd', f.repo, '--workflow', 'pair', 'Fix code']), args: { task: 'Fix code', retro: false } }, dependencies)
+  assert.equal(first.status, 'needs-user', JSON.stringify(first))
+  assert.deepEqual(first.questions.map(q => [q.id, q.kind]), [['Q1', 'spec']])
+  const original = [...calls]
+  const second = await runWorkflow({ ...parseCLI(['--resume', first.hostRunDir]), args: { clarifications: [{ id: 'Q1', answer: 'Put them in AlgebraTest.php.' }] } }, dependencies)
+  assert.deepEqual(calls, [...original, 'setup', 'spec'], 'the first setup and spec review replay; only the answer-dependent turns are new')
+  assert.equal(second.status, 'failed', 'the fixture stops at the author, which the repeat went to')
+  assert.deepEqual(second.spec.findings.map(x => [x.id, x.pass, x.to, x.repeats]), [['S1', 'spec', 'user', ''], ['S2', 'spec-2', 'author', 'Q1']])
+})
