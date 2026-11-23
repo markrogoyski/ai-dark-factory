@@ -53,6 +53,13 @@ this repo.
   One note is a lead; the same note across several runs is a pattern. When a failure
   happened, the transcripts usually explain it better than the notes do.
 
+## Releases
+
+- Claude Code updates an installed plugin only when `version` in
+  `plugins/dark-factory/.claude-plugin/plugin.json` changes; pushing to `main` alone ships nothing.
+  To release, bump it (never in `marketplace.json`), commit, run `make release-check`, then tag
+  the commit `v<version>` and push the commit and the tag. A bump ships all of `main`.
+
 ## Commits
 
 One imperative line in the style of `git log`, with a body only when needed. Don't mention

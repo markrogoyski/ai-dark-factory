@@ -27,7 +27,7 @@ PYTHON_SOURCES = plugins/dark-factory/bin/dark-factory plugins/dark-factory/lib/
 SHELL_SOURCES  = install.sh install-codex.sh .githooks/pre-commit
 
 .DEFAULT_GOAL := check
-.PHONY: check test logic host-test build build-check static parity unit syntax installed hooks unhooks clean
+.PHONY: check test logic host-test build build-check static parity unit syntax installed release-check hooks unhooks clean
 
 # The quick gates run first; then the two long ones, unit and host-test, run side by side.
 check: syntax build-check static parity logic test
@@ -53,7 +53,7 @@ HOST_TESTS = factory-brief host-logic codex-runner codex-install checkpoint run-
   provider-policy provider-settings provider-routing live-compatibility engine-imports \
   engine-loader-bindings engine-loader-controls engine-publication validation-overhead \
   pin-diagnostics engine-links engine-descriptors provider-refusal launch-prepare \
-  openrouter-host pinned-openrouter bench usage
+  openrouter-host pinned-openrouter bench usage release-check
 
 host-test:
 	$(NODE) --test $(HOST_TESTS:%=test/%.mjs)
@@ -73,6 +73,10 @@ syntax:
 	@for f in $(SHELL_SOURCES); do bash -n $$f || exit 1; done
 	@$(PYTHON) -B -c "import sys; [compile(open(f, encoding='utf-8').read(), f, 'exec') for f in sys.argv[1:]]" $(PYTHON_SOURCES)
 	@echo "syntax: ok"
+
+# Claude Code updates an installed plugin only when its version changes: run before tagging a release.
+release-check:
+	$(NODE) tools/release-check.mjs
 
 # A plugin installed from a local folder is read from it live, so there is nothing to copy; this checks
 # that the installed dark-factory is this checkout and that no pre-plugin copies shadow it.
