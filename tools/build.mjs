@@ -1,15 +1,17 @@
 // Builds each workflow in tools/sources.mjs (plugins/dark-factory/workflows/council.js, ...) from src/.
 //   node tools/build.mjs           write them
 //   node tools/build.mjs --check   fail if a committed file differs from its build
-// The workflows are minified with esbuild (a development dependency: `npm ci`), because Claude Code
-// skips a plugin workflow over 512 KiB. The meta file stays as written, since the runtime reads
-// `export const meta` from the top; the rest is minified and its strings, prompts included, are kept.
-// policy.mjs is not minified. Read src/, not a built workflow.
+// Claude Code skips a plugin workflow over 512 KiB, so each workflow drops the top-level declarations
+// it never reaches (tools/prune.mjs) and is minified with esbuild (a development dependency:
+// `npm ci`). The meta file stays as written, since the runtime reads `export const meta` from the
+// top; the rest is minified and its strings, prompts included, are kept. policy.mjs is neither
+// pruned nor minified. Read src/, not a built workflow.
 import { readFileSync, writeFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { assertPolicy } from './policy-static.mjs'
+import { prune } from './prune.mjs'
 import { POLICY_EXPORTS, TARGETS } from './sources.mjs'
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..')
@@ -40,7 +42,7 @@ export function build(target) {
   if (target === 'policy') assertPolicy(TARGETS.policy.order.map(file => ({ file, text: readFileSync(join(root, file), 'utf8') })), POLICY_EXPORTS, TARGETS.policy.trailer)
   const [first, ...rest] = TARGETS[target].order
   if (target === 'policy') return [first, ...rest].map(read).join('\n') + (TARGETS[target].trailer || '')
-  return read(first) + minify(rest.map(read).join('\n'))
+  return read(first) + minify(prune(rest.map(read).join('\n')).code)
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
@@ -58,7 +60,7 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
         if (have !== text) { console.error(`build: ${output} is out of date with src/; run \`make build\``); stale++ }
       } else {
         writeFileSync(out, text)
-        console.log(`built ${output} (${size} bytes)`)
+        console.log(`built ${output} (${size} bytes${name === 'policy' ? '' : `, ${WORKFLOW_BUDGET - size} under the ${WORKFLOW_BUDGET}-byte budget`})`)
       }
     }
   } catch (e) {

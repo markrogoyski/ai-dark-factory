@@ -115,9 +115,11 @@ pair strategy, and `src/main-factory.js` (routing and `escalate()`).
 All five are **generated** from `src/` by `tools/build.mjs` (the workflow runtime allows no
 imports, so each must be one file) and committed, so they can be run without a build.
 Edit `src/`, then `make build`. `tools/sources.mjs` lists each built workflow's files in order.
-The build minifies each workflow after its `meta` with esbuild, a development dependency (`npm ci`);
-strings and prompts are kept as written. Claude Code skips a plugin workflow over 512 KiB, so
-`make check` fails a workflow over 480,000 bytes. Read and diff `src/`, not the built files.
+The build drops the top-level declarations a workflow never reaches (`tools/prune.mjs`), then
+minifies everything after its `meta` with esbuild, a development dependency (`npm ci`); strings and
+prompts are kept as written. Claude Code skips a plugin workflow over 512 KiB, so `make check`
+fails a workflow over 480,000 bytes, and `make installed` asks a headless Claude Code session which
+workflows it loaded. Read and diff `src/`, not the built files.
 
 - `src/lib/*.js` is the pure half. Every function takes the state object `S` (from
   `newState(parseConfig(args))`) first and calls nothing from the runtime: config and seats,
