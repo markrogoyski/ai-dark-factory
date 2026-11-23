@@ -91,6 +91,14 @@ unknown revisions are labeled.
   but right) and `notReadyFailed`, with `ungraded`, `unknown` (no grade) and three rates
   (`passRate`, `escapedDefectRate` among ready runs, `falseBlockRate` among the rest).
   `matchedTasks` cells count `hiddenGraded` and `hiddenPassed`.
+- An Ensemble run's grade carries `ensemble: {pick, recommendation, candidates}` (see
+  [grade](#commands)). Its 2×2 entry is the pick against the pick's own readiness, since the
+  run's readiness is always `incomplete`. Groups with such runs also get
+  `hiddenTests.candidates`: `runs`, every candidate's own 2×2 (`readyPassed`, `readyFailed`,
+  `notReadyPassed`, `notReadyFailed`) with `graded` and `ungraded`,
+  `runsWithPassingCandidate` (did any candidate pass), `pickPassed` (did the advisor pick one
+  that passed) and `pickMissedPassing` (a candidate passed, the pick did not). Contaminated runs
+  are left out of these too. Other workflows' groups have no `candidates`.
 
 The evaluator never runs tasks, changes defaults, contacts providers, or invents prices.
 
@@ -136,6 +144,10 @@ helper's, with no model. `test/bench.mjs` checks offline, through `--prepare` an
 the variant reaches Luna and Haiku and nothing else. Its results are not comparable with any
 other variant's.
 
+`ensemble` runs Ensemble in implement mode with its defaults; on the standalone runner every
+turn is Codex Astra: setup, four solvers and their checkers, two review lenses per candidate and
+the comparison, 18 turns. `test/bench.mjs` runs it through the stub CLIs and grades it.
+
 ### Commands
 
 Clones and records go under `~/.cache/dark-factory-bench` (`--root` or
@@ -175,6 +187,25 @@ Clones and records go under `~/.cache/dark-factory-bench` (`--root` or
   `records/outcomes.json` (or `--outcomes FILE`), keyed by `hostRunDir`; a result without a
   snapshot is `ungraded`. Regrading replaces a run's earlier grade and keeps its post-delivery
   observation. Each graded run is also scanned for [contamination](#contamination-check).
+- **grade an Ensemble run**: the result has no `final.snapshotRef`, but each of its
+  `candidates` has one (`refs/council/<run>/<seat>-r0`, kept until `dark-factory cleanup`) and
+  its tree. Every candidate with a snapshot is graded, ready or not, into
+  `ensemble.candidates: [{candidate, stance, readiness, status, evidence, ...}]`. The outcome's
+  own `status`, `readiness`, `evidence` and commit are those of `ensemble.pick`, the advisory
+  comparison's top-ranked candidate (lowest `rank`; the first listed on a tie), the one the
+  ensemble recommends; `ensemble.recommendation` (`adopt-one`, `merge`, `none-adequate`) is
+  recorded beside it but doesn't change the pick. With no comparison, or a ranking that names
+  no candidate the result has, `pick` is null and the outcome is `ungraded`, with the
+  candidates still graded.
+- **grade's exit code** is for a script grading a batch: `0` when every run was graded, its
+  scan wasn't contaminated, and it passed; `1` when every run counts and at least one failed;
+  `3` when any run is missing from the 2×2 (ungraded, skipped because its record names no
+  result, or contaminated), whatever else happened. In a baseline, failures are the data, so a
+  script carries on after `1`; `3` means the batch's numbers are incomplete and a run needs
+  rerunning or a look first, so it takes precedence over `1`, which would otherwise hide it in
+  any batch with a failure. A partial scan doesn't change the code. An error also exits `1`,
+  with a `bench:` line on stderr and nothing on stdout; otherwise stderr ends with a one-line
+  count (`bench: graded 10 run(s): 7 passed, 2 failed, 1 ungraded; 0 contaminated; exit 3`).
 - **scan** runs the contamination scan alone and prints each run's report; it exits 0 when
   every run is clean and 2 otherwise.
 

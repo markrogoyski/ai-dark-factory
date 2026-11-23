@@ -5,7 +5,7 @@
 //   node tools/bench.mjs prepare ID [--force]                    leak-proof clone at base; no models
 //   node tools/bench.mjs validate ID...                           hidden tests fail at base, pass at the fix; no models
 //   node tools/bench.mjs run ID --variant V --rep N [--yes]       LIVE MODELS, costs money; without --yes, prints the plan
-//   node tools/bench.mjs grade FILE... [--outcomes FILE]         hidden tests on each run's reviewed snapshot, and the contamination scan
+//   node tools/bench.mjs grade FILE... [--outcomes FILE]         hidden tests on each run's reviewed snapshot, and the contamination scan; exits 0, 1 or 3
 //   node tools/bench.mjs scan FILE...                             the contamination scan alone
 //   node tools/bench.mjs results [ID...]                          result files of the recorded runs, for the evaluator
 // --bench DIR holds tasks/, variants.json and validations/ (default: bench/ in this checkout).
@@ -511,8 +511,38 @@ function scanFields(scan) {
   return { contaminated: status === 'contaminated', ...(status === 'contaminated' ? { contamination } : {}), scan: { status, hits, files, missing, sources } }
 }
 
+// Grades one reviewed snapshot: ref in the run's repository, checked against the tree the result
+// records for it. Returns the grade's fields, or {status: 'ungraded', reason}, with the log as
+// evidence when the grade command could not start.
+function gradeSnapshot(paths, m, { repo, ref, recordedTree, name }) {
+  const commit = spawnSync('git', ['-C', repo, 'rev-parse', '--verify', '--quiet', `${ref}^{commit}`], { env: env(), encoding: 'utf8' }).stdout.trim()
+  if (!commit) return { status: 'ungraded', reason: `${ref} is missing from ${repo}` }
+  const tree = git(repo, ['rev-parse', `${commit}^{tree}`]).trim()
+  if (recordedTree && recordedTree !== tree) return { status: 'ungraded', reason: `${ref} no longer has the tree the result records` }
+  const log = join(paths.records, 'grades', m.id, `${name}.log`)
+  const run = gradeTree(m, { repo, commit, overlay: true, depsFrom: repo, log })
+  if (run.launchError) return { status: 'ungraded', reason: `the grade command could not start: ${run.launchError}`, evidence: log }
+  return { status: run.exitCode === 0 ? 'passed' : 'failed', evidence: log, snapshotRef: ref, commit, tree,
+    exitCode: run.exitCode, timedOut: run.timedOut, durationMs: run.durationMs }
+}
+
+// The candidate an Ensemble result recommends: its advisory comparison's top-ranked one (lowest
+// rank, the first listed on a tie), or null and why there is none.
+export function ensemblePick(result) {
+  const ranking = (Array.isArray(result.advisor?.ranking) ? result.advisor.ranking : []).filter(r => Number.isSafeInteger(r?.candidate) && Number.isFinite(r?.rank))
+  if (!ranking.length) return { pick: null, reason: result.advisor ? 'the advisory comparison ranked no candidate' : 'the result has no advisory comparison' }
+  const top = ranking.reduce((best, r) => r.rank < best.rank ? r : best)
+  if (!result.candidates.some(c => c.candidate === top.candidate)) return { pick: null, reason: `the advisory comparison ranked candidate ${top.candidate} first, which the result does not have` }
+  return { pick: top.candidate, reason: null }
+}
+
+function isEnsemble(result) {
+  return (result.workflow === 'ensemble' || result.metrics?.workflow === 'ensemble') && Array.isArray(result.candidates)
+}
+
 // The reviewed snapshot is final.snapshotRef in the run's repository, and final.snapshotTree its
-// tree, as delivery checks it. Every result with one is graded, ready or not.
+// tree, as delivery checks it. Every result with one is graded, ready or not. An Ensemble result
+// has one per candidate instead (gradeEnsemble).
 export function gradeResult(paths, file, result) {
   const identity = identityOf(result)
   if (!identity) throw new Error(`${file} has no evaluation identity (metrics.taskId); runs launched by tools/bench.mjs run have one`)
@@ -521,20 +551,37 @@ export function gradeResult(paths, file, result) {
   const outcome = { kind: 'hidden-tests', taskId: identity.taskId, variant: identity.variant, repetition: identity.repetition,
     readiness: result.final?.readiness?.state || result.metrics?.readiness || null, result: file, gradedAt: new Date().toISOString() }
   const ungraded = reason => ({ ...outcome, status: 'ungraded', reason, evidence: file })
+  const name = [identity.variant || 'unknown', `rep-${identity.repetition || 0}`, basename(key || file)].join('-').replace(/[^\w.-]/g, '_')
+  if (isEnsemble(result)) return { key, outcome: gradeEnsemble(paths, m, file, result, outcome, name) }
   const ref = result.final?.snapshotRef
   if (!ref) return { key, outcome: ungraded('the result has no reviewed snapshot') }
   const repo = repositoryOf(result)
   if (!repo || !existsSync(repo)) return { key, outcome: ungraded('the run\'s repository is not on disk') }
-  const commit = spawnSync('git', ['-C', repo, 'rev-parse', '--verify', '--quiet', `${ref}^{commit}`], { env: env(), encoding: 'utf8' }).stdout.trim()
-  if (!commit) return { key, outcome: ungraded(`${ref} is missing from ${repo}`) }
-  const tree = git(repo, ['rev-parse', `${commit}^{tree}`]).trim()
-  if (result.final.snapshotTree && result.final.snapshotTree !== tree) return { key, outcome: ungraded(`${ref} no longer has the tree the result records`) }
-  const name = [identity.variant || 'unknown', `rep-${identity.repetition || 0}`, basename(key || file)].join('-').replace(/[^\w.-]/g, '_')
-  const log = join(paths.records, 'grades', identity.taskId, `${name}.log`)
-  const run = gradeTree(m, { repo, commit, overlay: true, depsFrom: repo, log })
-  if (run.launchError) return { key, outcome: { ...ungraded(`the grade command could not start: ${run.launchError}`), evidence: log } }
-  return { key, outcome: { ...outcome, status: run.exitCode === 0 ? 'passed' : 'failed', evidence: log, snapshotRef: ref, commit, tree,
-    exitCode: run.exitCode, timedOut: run.timedOut, durationMs: run.durationMs } }
+  const graded = gradeSnapshot(paths, m, { repo, ref, recordedTree: result.final.snapshotTree, name })
+  if (graded.status === 'ungraded') return { key, outcome: { ...ungraded(graded.reason), ...(graded.evidence ? { evidence: graded.evidence } : {}) } }
+  return { key, outcome: { ...outcome, ...graded } }
+}
+
+// Every candidate with a snapshot is graded, ready or not, into ensemble.candidates. The outcome's
+// own status, readiness and evidence are the advisor's pick's, so the 2x2 sets the candidate the
+// ensemble recommends against that candidate's reviewed readiness. The run's own readiness is
+// always incomplete (the ranking is advisory) and is not used.
+function gradeEnsemble(paths, m, file, result, outcome, name) {
+  const repo = repositoryOf(result), onDisk = !!repo && existsSync(repo)
+  const candidates = result.candidates.map(c => {
+    const own = { candidate: c.candidate, stance: c.stance || null, readiness: c.final?.readiness?.state || null }
+    const ref = c.final?.snapshotRef
+    if (!ref) return { ...own, status: 'ungraded', reason: 'the candidate has no reviewed snapshot', evidence: file }
+    if (!onDisk) return { ...own, status: 'ungraded', reason: 'the run\'s repository is not on disk', evidence: file }
+    const graded = gradeSnapshot(paths, m, { repo, ref, recordedTree: c.final.snapshotTree, name: `${name}-c${c.candidate}` })
+    return { ...own, ...graded, evidence: graded.evidence || file }
+  })
+  const { pick, reason } = ensemblePick(result)
+  const ensemble = { pick, recommendation: result.advisor?.recommendation || null, candidates }
+  const chosen = candidates.find(c => c.candidate === pick)
+  if (!chosen) return { ...outcome, readiness: null, status: 'ungraded', reason, evidence: file, ensemble }
+  const { candidate, stance, reason: why, ...grade } = chosen
+  return { ...outcome, ...grade, ...(why ? { reason: `the advisor's pick, candidate ${pick}: ${why}` } : {}), ensemble }
 }
 
 // One key can hold a post-delivery observation and a hidden-test outcome. A single entry stays a
@@ -569,10 +616,28 @@ export async function grade(paths, files, { outcomes: outcomesFile = join(paths.
     mergeOutcome(outcomes, key, outcome)
     graded.push({ key, result: file, status: outcome.status, readiness: outcome.readiness, taskId: outcome.taskId, variant: outcome.variant,
       repetition: outcome.repetition, evidence: outcome.evidence, ...(outcome.reason ? { reason: outcome.reason } : {}),
+      ...(outcome.ensemble ? { pick: outcome.ensemble.pick, candidates: outcome.ensemble.candidates.map(c => ({ candidate: c.candidate, status: c.status, readiness: c.readiness })) } : {}),
       scan: outcome.scan.status, ...(outcome.contaminated ? { contamination: outcome.contamination.slice(0, 3) } : {}) })
   }
   writeJson(outcomesFile, outcomes)
   return { outcomes: outcomesFile, graded }
+}
+
+// grade's exit code, for a script that grades a batch: 3 when any run is missing from the 2x2
+// (ungraded, skipped for want of a result, or contaminated), since its numbers are then incomplete
+// whatever else happened; otherwise 1 when any graded run failed the hidden tests; 0 when every
+// run counts and passed. An error exits 1 too, with a `bench:` line on stderr and no JSON.
+export const GRADE_EXIT = { passed: 0, failed: 1, incomplete: 3 }
+export function gradeExitCode(graded) {
+  if (graded.some(g => g.status === 'ungraded' || g.status === 'skipped' || g.scan === 'contaminated')) return GRADE_EXIT.incomplete
+  return graded.some(g => g.status === 'failed') ? GRADE_EXIT.failed : GRADE_EXIT.passed
+}
+
+export function gradeSummaryLine(graded) {
+  const count = status => graded.filter(g => g.status === status).length
+  const contaminated = graded.filter(g => g.scan === 'contaminated').length
+  return `bench: graded ${graded.length} run(s): ${count('passed')} passed, ${count('failed')} failed, ${count('ungraded')} ungraded` +
+    `${count('skipped') ? `, ${count('skipped')} skipped (no result file)` : ''}; ${contaminated} contaminated; exit ${gradeExitCode(graded)}\n`
 }
 
 // The contamination scan alone, for result files or run records; writes nothing.
@@ -621,8 +686,11 @@ export const USAGE = `Usage: node tools/bench.mjs COMMAND [options]
   validate ID...                         hidden tests must fail at base and pass at the fix; no models
   run ID --variant V --rep N [--yes]     LIVE MODELS, costs money. Without --yes it prints the command and arguments only.
                                          --replace discards an earlier clone and record of the same repetition
-  grade FILE... [--outcomes F]           hidden tests on each run's reviewed snapshot, and the contamination scan, into the
-                                         evaluator's outcomes file; FILE is a result.json or a run record
+  grade FILE... [--outcomes F]           hidden tests on each run's reviewed snapshot (every Ensemble candidate's, headed by
+                                         the advisor's pick), and the contamination scan, into the evaluator's outcomes file;
+                                         FILE is a result.json or a run record. Exits 0 when every run was graded, clean of
+                                         contamination, and passed; 1 when one failed; 3 when one is ungraded, skipped or
+                                         contaminated, whatever else happened
   scan FILE...                           the contamination scan alone: did any agent touch the source repository, the
                                          records or the fix commit? Exits 0 when every run is clean, 2 otherwise
   results [ID...]                        the result file of every recorded run, one per line
@@ -668,7 +736,12 @@ export async function main(argv) {
     print(record)
     return record.status === 'dry-run' ? 2 : 0
   }
-  if (command === 'grade') { print(await grade(paths, rest, flags.outcomes ? { outcomes: resolve(flags.outcomes) } : {})); return 0 }
+  if (command === 'grade') {
+    const out = await grade(paths, rest, flags.outcomes ? { outcomes: resolve(flags.outcomes) } : {})
+    print(out)
+    process.stderr.write(gradeSummaryLine(out.graded))
+    return gradeExitCode(out.graded)
+  }
   if (command === 'scan') {
     const scans = await scan(paths, rest)
     print(scans)
