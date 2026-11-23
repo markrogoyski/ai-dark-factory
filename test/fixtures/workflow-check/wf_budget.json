@@ -1,0 +1,1 @@
+{"taskId":"wf_task3","status":"completed","logs":[{"message":"DFPROBE {\"probe\": \"L1-b3\", \"nonce\": \"wrong\", \"observed\": {\"p0\": 0}}"},{"message":"DFPROBE {\"probe\": \"L1-b3\", \"nonce\": \"meter\", \"observed\": {\"p0\": 9, \"c0\": 9, \"c1\": 17, \"p1\": 18}}"}]}

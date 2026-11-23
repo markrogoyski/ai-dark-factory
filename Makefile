@@ -53,7 +53,7 @@ HOST_TESTS = factory-brief host-logic codex-runner codex-install checkpoint run-
   provider-policy provider-settings provider-routing live-compatibility engine-imports \
   engine-loader-bindings engine-loader-controls engine-publication validation-overhead \
   pin-diagnostics engine-links engine-descriptors provider-refusal launch-prepare \
-  openrouter-host pinned-openrouter bench usage release-check prune loader-check
+  openrouter-host pinned-openrouter bench usage release-check prune loader-check native-gate workflow-check
 
 host-test:
 	$(NODE) --test $(HOST_TESTS:%=test/%.mjs)
@@ -80,7 +80,8 @@ release-check:
 
 # A plugin installed from a local folder is read from it live, so there is nothing to copy; this checks
 # that the installed dark-factory is this checkout, that no pre-plugin copies shadow it, and, with one
-# headless Haiku turn, that Claude Code loads every workflow.
+# headless Haiku turn, that Claude Code loads every workflow. Then check native workflow behavior
+# with isolated probe plugins.
 installed:
 	@status=0; \
 	if ! claude plugin list 2>/dev/null | grep -q "Read from: $$(pwd)/plugins/dark-factory$$"; then echo "installed: dark-factory is not installed from $$(pwd)/plugins/dark-factory; run ./install.sh" >&2; status=1; fi; \
@@ -88,6 +89,7 @@ installed:
 	  if [ -e "$$HOME/.claude/workflows/$$f.js" ]; then echo "installed: stale pre-plugin copy $$HOME/.claude/workflows/$$f.js; run ./install.sh" >&2; status=1; fi; \
 	done; \
 	$(NODE) tools/loader-check.mjs || status=1; \
+	$(NODE) tools/workflow-check.mjs || status=1; \
 	[ $$status -eq 0 ] && echo "installed: ok"; exit $$status
 
 # Changes this clone's git config, not a tracked file. Refuses to replace another hooks path.

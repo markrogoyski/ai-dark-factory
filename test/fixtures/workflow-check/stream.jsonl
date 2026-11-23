@@ -1,0 +1,9 @@
+{"type":"system","subtype":"init","session_id":"7f2019be-77a2-4e0e-9a13-5b520bd9293c"}
+{"type":"assistant","session_id":"7f2019be-77a2-4e0e-9a13-5b520bd9293c","message":{"content":[{"type":"tool_use","id":"toolu_budget","name":"Workflow","input":{"name":"df-probe:budget","args":{"nonce":"meter"}}}]}}
+{"type":"user","session_id":"7f2019be-77a2-4e0e-9a13-5b520bd9293c","message":{"content":[{"type":"tool_result","tool_use_id":"toolu_unrelated","content":"a decoy"}]}}
+{"type":"user","session_id":"7f2019be-77a2-4e0e-9a13-5b520bd9293c","message":{"content":[{"type":"tool_result","tool_use_id":"toolu_budget","content":[{"type":"text","text":"Workflow launched in background. Task ID: wf_task3\nSummary: df-probe\nRun ID: wf_budget\n"}]}]},"tool_use_result":{"status":"async_launched","taskId":"wf_task3","runId":"wf_budget"}}
+{"type":"result","subtype":"success","session_id":"7f2019be-77a2-4e0e-9a13-5b520bd9293c","result":"driver finished"}
+{"type":"system","subtype":"task_notification","session_id":"7f2019be-77a2-4e0e-9a13-5b520bd9293c","task_id":"wf_task3","tool_use_id":"wrong-tool","status":"failed"}
+{"type":"system","subtype":"task_notification","session_id":"wrong-session","task_id":"wf_task3","status":"failed"}
+{"type":"system","subtype":"task_notification","session_id":"7f2019be-77a2-4e0e-9a13-5b520bd9293c","task_id":"wf_task3","tool_use_id":"toolu_budget","status":"completed"}
+{"type":"control_response","response":{"subtype":"error","request_id":"stop1","error":"stop_task is not supported in this context"}}

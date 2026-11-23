@@ -1,0 +1,4 @@
+{"type":"launched"}
+{"type":"started","key":"v2:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","agentId":"a-p1","label":"DFPROBE:j-capture:P1"}
+{"type":"result","key":"v2:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","agentId":"a-p1","result":{"token":"p1 token"}}
+{"type":"started","key":"v2:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd","agentId":"a-c1-before","label":"DFPROBE:j-capture:C1"}
