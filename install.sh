@@ -13,11 +13,12 @@ plugin="dark-factory@ai-dark-factory"
 
 command -v claude >/dev/null || { echo "error: the claude CLI is not on PATH" >&2; exit 1; }
 
-# The workflows are generated from src/: rebuild them, so an edit there can't be left out.
-if command -v node >/dev/null; then
+# The workflows are generated from src/: rebuild them, so an edit there can't be left out. The build
+# minifies them with esbuild, a development dependency (`npm ci`).
+if command -v node >/dev/null && [ -d "$here/node_modules/esbuild" ]; then
   node "$here/tools/build.mjs"
 else
-  echo "warning: node not on PATH; installing the workflows as committed, without rebuilding them from src/" >&2
+  echo "warning: node or esbuild (npm ci) is missing; installing the workflows as committed, without rebuilding them from src/" >&2
 fi
 chmod +x "$here/plugins/dark-factory/bin/dark-factory"
 

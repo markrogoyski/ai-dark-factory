@@ -12,6 +12,9 @@ this repo.
   `/dark-factory:<meta.name>`.
 - `plugins/dark-factory/workflows/council.js`, `factory.js`, `pair.js`, `ensemble.js`, and `run-plan.js` are generated from `src/` (the file
   lists are in `tools/sources.mjs`). Edit `src/`, then `make build`. Never edit a built file.
+- The build minifies the workflows with esbuild (run `npm ci` once), because Claude Code skips a
+  plugin workflow over 512 KiB; `make check` fails one over 480,000 bytes. Read `src/`, not a built
+  workflow. When a workflow nears the budget, shrink it; don't raise the budget.
 - Agents call the helper by its bare name, `dark-factory`: the plugin's `bin/` is on their PATH.
   Never write an install path into a prompt; the plugin's directory changes between installs.
 - `src/lib/*.js` stays pure: each function takes the state `S` first and calls no runtime

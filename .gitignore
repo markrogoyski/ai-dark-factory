@@ -2,3 +2,4 @@ retros/
 __pycache__/
 /.agents/skills/dark-factory
 archive/
+node_modules/

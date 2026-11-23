@@ -1,0 +1,8 @@
+{
+  "name": "ai-dark-factory-dev",
+  "private": true,
+  "description": "Development tools only: tools/build.mjs minifies the workflows with esbuild. Nothing here ships with the plugin.",
+  "devDependencies": {
+    "esbuild": "0.25.5"
+  }
+}
