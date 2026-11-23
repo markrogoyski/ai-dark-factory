@@ -4740,26 +4740,76 @@ function pairIngestLiveChecks(S, list, source) {
 // and the author's own needs-user covers it.
 const PAIR_SPEC_STOPS = 2
 
+// The words a question is compared by (pairSameQuestion): its names, the words that look like code
+// (a path, as its last part, a file, an identifier, a version, an option), and its content words,
+// lower-cased, without small words or a plural s. Run IDs (C1, Q2, S3, …) are left out: setup
+// renumbers criteria when it runs again.
+const PAIR_SMALL_WORDS = new Set(('a an the to of in into on or and nor but be is are was were been being should must may might can could would will shall ' +
+  'do does did it its they them their this that these those we you your for with as at by from which what whether there here so if then than ' +
+  'either neither also any all each every still yet just only about own same other').split(' '))
+function pairQuestionWords(question) {
+  const names = new Set(), words = new Set()
+  for (const raw of String(question ?? '').split(/\s+/)) {
+    const w = raw.replace(/^[^\w./:-]+|[^\w-]+$/g, '').replace(/'s$/, '')
+    if (!w || /^[A-Z]\d+$/.test(w)) continue
+    if (/^-|\w[./:_]+\w|\d|[a-z][A-Z]/.test(w)) {
+      const name = (w.split('/').filter(Boolean).at(-1) || w).toLowerCase()
+      names.add(name)
+      words.add(name)
+      continue
+    }
+    for (const part of w.toLowerCase().split(/[^a-z0-9]+/))
+      if (part.length > 1 && !PAIR_SMALL_WORDS.has(part)) words.add(part.length > 3 && /[^s]s$/.test(part) ? part.slice(0, -1) : part)
+  }
+  return { names, words }
+}
+
+// Whether two questions are clearly the same question: they name the same things, and they share
+// at least 60% of the shorter one's words and a Dice coefficient of at least 0.4 (2 × shared ÷ both
+// sizes), with at least two words shared. A question that names another file, identifier, version
+// or option is a new question, however it is worded; so is one that shares the subject but asks
+// something else. Erring toward the user costs one more question; erring toward the author, a
+// reading the reviewer can still reject.
+function pairSameQuestion(a, b) {
+  const x = pairQuestionWords(a), y = pairQuestionWords(b)
+  if (x.names.size !== y.names.size || [...x.names].some(n => !y.names.has(n))) return false
+  const shared = [...x.words].filter(w => y.words.has(w)).length
+  return shared >= 2 && shared >= 0.6 * Math.min(x.words.size, y.words.size) && 2 * shared >= 0.4 * (x.words.size + y.words.size)
+}
+
+// The questions the user has answered, by decision ID: a spec stop's as the reviewer asked it, any
+// other as the run asked it.
+function pairAnsweredQuestions(S) {
+  const sp = S.pair.spec
+  return (S.pair.decisions || []).map(d => ({ id: d.id, question: sp?.findings.find(f => f.asked === d.id)?.question || d.question }))
+}
+
 // One spec review pass (res is null when the turn failed). Each finding gets an ID, S1, S2, …
 // across the run, and goes to the user (a conflict no reading settles) or to the author (anything a
-// reading settles). A question the user already answered, word for word, goes to the author, as
-// does every conflict once the run has stopped PAIR_SPEC_STOPS times for the spec review. Returns
-// the pass: {label, reviewer, ok, summary, findings: [IDs], stopped}.
+// reading settles). A question the user already answered goes to the author, marked with the
+// decision it repeats: one the reviewer says revisits a decision without saying what its answer
+// leaves open, and one clearly the same as an answered question (pairSameQuestion) unless it is
+// that stated revisit. So does every conflict once the run has stopped PAIR_SPEC_STOPS times for
+// the spec review. Returns the pass: {label, reviewer, ok, summary, findings: [IDs], stopped}.
 function pairIngestSpec(S, res, label) {
   const p = S.pair, sp = p.spec, text = v => String(v ?? '').trim(), same = v => text(v).replace(/\s+/g, ' ')
   const list = v => (Array.isArray(v) ? v : []).map(text).filter(Boolean)
   const pass = { label, reviewer: S.specReviewers[0]?.name || '', ok: !!res, summary: text(res?.summary), findings: [], stopped: false }
   sp.passes.push(pass)
   const stops = sp.passes.filter(x => x.stopped).length
-  const answered = new Set(sp.findings.filter(f => f.to === 'user').map(f => same(f.question)))
+  const answered = pairAnsweredQuestions(S)
   for (const f of (Array.isArray(res?.findings) ? res.findings : []).slice(0, 8)) {
     if (!text(f?.statement)) continue
     const user = f.settle === 'user'
     const question = user ? text(f.question) || text(f.statement) : ''
-    const to = user && stops < PAIR_SPEC_STOPS && !answered.has(same(question)) ? 'user' : 'author'
+    const revisits = user ? (text(f.revisits).match(/\bQ\d+\b/g) || []).find(id => answered.some(q => q.id === id)) || '' : ''
+    const leftOpen = revisits ? text(f.leftOpen) : ''
+    const repeats = !user ? '' : revisits && !leftOpen ? revisits
+      : answered.find(q => q.id !== revisits && (same(q.question) === same(question) || pairSameQuestion(q.question, question)))?.id || ''
+    const to = user && stops < PAIR_SPEC_STOPS && !repeats ? 'user' : 'author'
     const id = `S${sp.findings.length + 1}`
     sp.findings.push({ id, pass: label, criteria: list(f.criteria), statement: text(f.statement), quoted: list(f.quoted), evidence: text(f.evidence),
-      settle: user ? 'user' : 'reading', reading: text(f.reading), question, to, asked: '' })
+      settle: user ? 'user' : 'reading', reading: text(f.reading), question, revisits, leftOpen, repeats, to, asked: '' })
     pass.findings.push(id)
   }
   return pass
@@ -4791,9 +4841,10 @@ function pairSpecAbout(S, f) {
   return f.criteria.find(id => S.criteria.some(c => c.id === id)) || 'none'
 }
 
-// A spec finding as the user is asked it, with the requirements it quotes.
+// A spec finding as the user is asked it, with what an earlier answer it revisits leaves open and
+// the requirements it quotes.
 function pairSpecQuestion(f) {
-  return `${f.question}${f.quoted.length ? ` Requirements as written: ${f.quoted.join('; ')}` : ''}`
+  return `${f.question}${f.revisits ? ` Your answer to ${f.revisits} leaves this open: ${sentence(f.leftOpen)}` : ''}${f.quoted.length ? ` Requirements as written: ${f.quoted.join('; ')}` : ''}`
 }
 
 // The story line after a spec review pass.
@@ -4804,7 +4855,7 @@ function pairSpecLine(S, pass) {
   if (!fs.length) return `${by}: no problems in the criteria.`
   const part = (to, words) => {
     const xs = fs.filter(f => f.to === to)
-    return xs.length ? ` ${words}: ${xs.map(f => `${f.id}${f.criteria.length ? ` (${f.criteria.join(', ')})` : ''} ${pairBrief(f.statement, 140)}`).join('; ')}.` : ''
+    return xs.length ? ` ${words}: ${xs.map(f => `${f.id}${f.criteria.length ? ` (${f.criteria.join(', ')})` : ''} ${pairBrief(f.statement, 140)}${f.repeats ? ` (repeats ${f.repeats})` : ''}`).join('; ')}.` : ''
   }
   return `${by}: ${plural(fs.length, 'finding')}.${part('author', 'For the author')}${part('user', 'For the user')}`
 }
@@ -4819,9 +4870,10 @@ function pairSpecSection(S) {
       const d = p.decisions.find(d => d.id === f.asked)
       return !f.asked ? 'for the user, not asked' : d ? `asked the user as ${f.asked}, who answered: ${pairBrief(d.answer, 200)}` : `asked the user as ${f.asked}, unanswered`
     }
-    if (f.pass !== latest) return 'for the author, but setup ran again before any author turn'
+    const to = `for the author${f.repeats ? `, as a repeat of ${f.repeats}` : ''}`
+    if (f.pass !== latest) return `${to}, but setup ran again before any author turn`
     const rs = p.readings.filter(r => pairCites(r, f.id))
-    return rs.length ? `for the author: ${rs.map(r => `reading ${r.id}, ${r.status}`).join('; ')}` : 'for the author: no reading answers it'
+    return rs.length ? `${to}: ${rs.map(r => `reading ${r.id}, ${r.status}`).join('; ')}` : `${to}: no reading answers it`
   }
   const lines = []
   for (const pass of sp.passes) {
@@ -5547,7 +5599,8 @@ function pairSpecBlock(S, role) {
     : `Before any work began, a spec review read the criteria against the task, its documents and the code, and found ${one ? 'this problem' : 'these problems'}. The author answers ${one ? 'it' : 'each'} in the readings ledger under its ID. Rule on those readings like any other; a reading that answers a spec finding may also rest on the code the finding cites. A spec finding no reading in the ledger answers is unresolved: file it as a finding.`
   return `\n# Spec review findings\n\n${intro}\n` + fs.map(f => [`- ${f.id}${f.criteria.length ? ` (about ${f.criteria.join(', ')})` : ''}: ${f.statement}`,
     ...(f.quoted.length ? [`  Requirements as written: ${f.quoted.join('; ')}`] : []), ...(f.evidence ? [`  Evidence: ${f.evidence}`] : []),
-    f.reading ? `  Proposed reading: ${f.reading}` : f.question ? `  No reading settles it, the spec reviewer found: ${f.question}` : '  No reading proposed.'].join('\n')).join('\n') + '\n'
+    f.reading ? `  Proposed reading: ${f.reading}` : f.question ? `  No reading settles it, the spec reviewer found: ${f.question}` : '  No reading proposed.',
+    ...(f.repeats ? [`  It repeats ${f.repeats}, which the user answered above; read it by that answer.`] : [])].join('\n')).join('\n') + '\n'
 }
 
 // The rules a Pair run holds the work to, as the spec reviewer checks the criteria against them.
@@ -5601,7 +5654,7 @@ Don't ask for criteria the task doesn't call for, don't report preferences or wo
 
 - "reading": a reading inside the words of the task, the documents and the decisions settles it: an ambiguity with a conservative reading, a criterion that misdescribes the code but has an obvious correct reading, or a dropped requirement the work can simply meet. Put that reading in \`reading\`: what the work should do. The author answers each such finding in its readings ledger, and the reviewer rules on it there.
 - "user": no such reading settles it: two requirements that can't both hold as written, or one that a fact you found makes impossible as written. Ask in \`question\`, saying what conflicts and giving the options you see, and set \`reading\` to "". The run stops and asks the user before the author starts, and setup then rewrites the criteria to the answer.
-Choose "reading" whenever a reading keeps every requirement's intent.${decided ? ' The user\'s decisions above settle what they answer: don\'t ask again about anything they settle, only about a conflict they leave open.' : ''} In each finding, \`criteria\` lists the criterion IDs involved ([] when no criterion states the requirement), \`quoted\` the exact words of each requirement involved (a criterion, the task, a document or a rule above), and \`evidence\` a file:line, a quote, or a command and the real tail of its output.
+Choose "reading" whenever a reading keeps every requirement's intent.${decided ? ' The user\'s decisions above settle what they answer: don\'t ask again about anything they settle, only about a conflict they leave open, and then set `revisits` to the decision\'s ID and say in `leftOpen` what its answer leaves open. A question an answer already settles goes to the author, not the user.' : ''} In each finding, \`criteria\` lists the criterion IDs involved ([] when no criterion states the requirement), \`quoted\` the exact words of each requirement involved (a criterion, the task, a document or a rule above), and \`evidence\` a file:line, a quote, or a command and the real tail of its output.
 
 An empty findings list is the right answer when the criteria hold together: don't pad it. In \`summary\`, give your verdict in one or two sentences.`
 }
@@ -7159,6 +7212,8 @@ const PAIR_SPEC_SCHEMA = strict({ type: 'object', properties: {
     settle: { type: 'string', enum: ['reading', 'user'], description: 'reading: a reading inside the words of the task, documents and decisions settles it; user: only the user can.' },
     reading: { type: 'string', description: 'For settle reading: what the work should do. "" for user.' },
     question: { type: 'string', description: 'For settle user: the question for the user, saying what conflicts and giving the options you see. "" for reading.' },
+    revisits: { type: 'string', description: 'For settle user: the ID of the user decision (Q1, …) this question returns to. "" for a new question, and for reading.' },
+    leftOpen: { type: 'string', description: 'For a revisit: what that decision\'s answer leaves open. "" otherwise.' },
   } } },
 } })
 const PAIR_CONTRACT = { type: 'object', properties: {

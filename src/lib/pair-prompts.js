@@ -31,7 +31,8 @@ function pairSpecBlock(S, role) {
     : `Before any work began, a spec review read the criteria against the task, its documents and the code, and found ${one ? 'this problem' : 'these problems'}. The author answers ${one ? 'it' : 'each'} in the readings ledger under its ID. Rule on those readings like any other; a reading that answers a spec finding may also rest on the code the finding cites. A spec finding no reading in the ledger answers is unresolved: file it as a finding.`
   return `\n# Spec review findings\n\n${intro}\n` + fs.map(f => [`- ${f.id}${f.criteria.length ? ` (about ${f.criteria.join(', ')})` : ''}: ${f.statement}`,
     ...(f.quoted.length ? [`  Requirements as written: ${f.quoted.join('; ')}`] : []), ...(f.evidence ? [`  Evidence: ${f.evidence}`] : []),
-    f.reading ? `  Proposed reading: ${f.reading}` : f.question ? `  No reading settles it, the spec reviewer found: ${f.question}` : '  No reading proposed.'].join('\n')).join('\n') + '\n'
+    f.reading ? `  Proposed reading: ${f.reading}` : f.question ? `  No reading settles it, the spec reviewer found: ${f.question}` : '  No reading proposed.',
+    ...(f.repeats ? [`  It repeats ${f.repeats}, which the user answered above; read it by that answer.`] : [])].join('\n')).join('\n') + '\n'
 }
 
 // The rules a Pair run holds the work to, as the spec reviewer checks the criteria against them.
@@ -85,7 +86,7 @@ Don't ask for criteria the task doesn't call for, don't report preferences or wo
 
 - "reading": a reading inside the words of the task, the documents and the decisions settles it: an ambiguity with a conservative reading, a criterion that misdescribes the code but has an obvious correct reading, or a dropped requirement the work can simply meet. Put that reading in \`reading\`: what the work should do. The author answers each such finding in its readings ledger, and the reviewer rules on it there.
 - "user": no such reading settles it: two requirements that can't both hold as written, or one that a fact you found makes impossible as written. Ask in \`question\`, saying what conflicts and giving the options you see, and set \`reading\` to "". The run stops and asks the user before the author starts, and setup then rewrites the criteria to the answer.
-Choose "reading" whenever a reading keeps every requirement's intent.${decided ? ' The user\'s decisions above settle what they answer: don\'t ask again about anything they settle, only about a conflict they leave open.' : ''} In each finding, \`criteria\` lists the criterion IDs involved ([] when no criterion states the requirement), \`quoted\` the exact words of each requirement involved (a criterion, the task, a document or a rule above), and \`evidence\` a file:line, a quote, or a command and the real tail of its output.
+Choose "reading" whenever a reading keeps every requirement's intent.${decided ? ' The user\'s decisions above settle what they answer: don\'t ask again about anything they settle, only about a conflict they leave open, and then set `revisits` to the decision\'s ID and say in `leftOpen` what its answer leaves open. A question an answer already settles goes to the author, not the user.' : ''} In each finding, \`criteria\` lists the criterion IDs involved ([] when no criterion states the requirement), \`quoted\` the exact words of each requirement involved (a criterion, the task, a document or a rule above), and \`evidence\` a file:line, a quote, or a command and the real tail of its output.
 
 An empty findings list is the right answer when the criteria hold together: don't pad it. In \`summary\`, give your verdict in one or two sentences.`
 }

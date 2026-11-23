@@ -30,6 +30,8 @@ const PAIR_SPEC_SCHEMA = strict({ type: 'object', properties: {
     settle: { type: 'string', enum: ['reading', 'user'], description: 'reading: a reading inside the words of the task, documents and decisions settles it; user: only the user can.' },
     reading: { type: 'string', description: 'For settle reading: what the work should do. "" for user.' },
     question: { type: 'string', description: 'For settle user: the question for the user, saying what conflicts and giving the options you see. "" for reading.' },
+    revisits: { type: 'string', description: 'For settle user: the ID of the user decision (Q1, …) this question returns to. "" for a new question, and for reading.' },
+    leftOpen: { type: 'string', description: 'For a revisit: what that decision\'s answer leaves open. "" otherwise.' },
   } } },
 } })
 const PAIR_CONTRACT = { type: 'object', properties: {
