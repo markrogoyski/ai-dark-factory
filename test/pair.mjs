@@ -55,9 +55,11 @@ const baseRecord = () => helperRecord({ status: 'done', error: '', snapshot: {
   ref: 'refs/council/pair-test/A-base', tree: 'b'.repeat(40), diff: '/repo/.council/pair-test/room/base/A.diff',
 }, suite: { ran: true, passed: true, command: 'node test.cjs', failureKind: '', log: '/repo/.council/pair-test/logs/suite-A-base.log' } })
 
+// options.meter makes the budget read 5000 + 1000 per native or hosted agent dispatch.
 async function run(options = {}) {
-  const calls = [], measurements = [], phases = [], baselines = [], events = []
-  let reviewNumber = 0
+  const calls = [], measurements = [], phases = [], baselines = [], events = [], logs = []
+  let reviewNumber = 0, agentCalls = 0
+  const budget = options.meter ? { total: null, spent: () => 5000 + 1000 * agentCalls, remaining: () => Infinity } : {}
   async function respond(prompt, schema, meta) {
     let value = defaults(schema)
     // A native stop's record turn is 'stop'; the check before a continuation is 'resume'.
@@ -105,6 +107,7 @@ async function run(options = {}) {
     return options.measure ? options.measure(value, measurements.length) : value
   }
   async function agent(prompt, opts) {
+    agentCalls++
     const match = prompt.match(/=====BEGIN PAYLOAD \S+=====\n([\s\S]*)\n=====END PAYLOAD/)
     if (!match || opts.label === 'retro') return respond(prompt, opts.schema, opts)
     const payload = match[1]
@@ -113,8 +116,12 @@ async function run(options = {}) {
     return value && { status: 'done', result: value, seconds: 1 }
   }
   const runtime = options.native ? undefined : {
-    agent: request => respond(request.prompt, request.schema, request),
+    agent: request => {
+      agentCalls++
+      return respond(request.prompt, request.schema, request)
+    },
     turn: async request => {
+      agentCalls++
       const value = await respond(request.prompt, request.schema, request)
       return value && { status: 'done', result: value }
     }, measure: async request => {
@@ -128,8 +135,8 @@ async function run(options = {}) {
     },
   }
   const result = await (options.factory ? executeFactory : execute)(agent, () => { throw new Error('Pair must not launch a panel') }, null,
-    title => phases.push(title), () => {}, { task: 'Implement the behavior', repo: '/repo', ...(options.factory ? { brief: false } : {}), ...(options.native ? {} : { host: 'codex' }), ...options.args }, {}, null, runtime)
-  return { result, calls, measurements, phases, baselines, events }
+    title => phases.push(title), line => logs.push(line), { task: 'Implement the behavior', repo: '/repo', ...(options.factory ? { brief: false } : {}), ...(options.native ? {} : { host: 'codex' }), ...options.args }, budget, null, runtime)
+  return { result, calls, measurements, phases, baselines, events, logs, agentCalls }
 }
 
 test('pair selects the author and opposite-vendor reviewer without council roles', () => {
@@ -2504,3 +2511,18 @@ test('polish prompts have reviewed golden coverage', async () => {
   assert.equal(result.status, 'done')
   goldenCalls('pair-polish', calls.filter(c => polishCall(c)))
 })
+
+for (const native of [true, false]) {
+  test(`the meter hook (${native ? 'native' : 'hosted'}): Factory Pair meters agent dispatches`, async () => {
+    const metered = await run({ native, factory: true, meter: true })
+    assert.equal(metered.result.status, 'done')
+    assert.ok(metered.logs.some(line => /^pair: .* · Claude output so far ≈ \d+k \(budget meter\)$/.test(line)), metered.logs.join('\n'))
+    // A native relay may dispatch an agent before its response reaches the scenario.
+    assert.ok(metered.agentCalls >= metered.calls.length)
+    const report = metered.result.report.markdown
+    assert.ok(report.includes(`counted about ${metered.agentCalls}k output tokens`), report.split('### Token use').at(-1))
+    const plain = await run({ native, factory: true })
+    assert.doesNotMatch(plain.logs.join('\n'), /\(budget meter\)/)
+    assert.doesNotMatch(plain.result.report.markdown, /### Token use/)
+  })
+}

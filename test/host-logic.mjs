@@ -12,9 +12,9 @@ const L = loadLib()
 const schema = { type: 'object', properties: { summary: { type: 'string' } }, required: ['summary'], additionalProperties: false }
 
 function harness(runtime, args = { task: 'Fix the parser', host: 'codex' }) {
-  const source = [...LIB, 'src/boot.js', 'src/schemas.js', 'src/turns.js'].map(f => readFileSync(join(root, f), 'utf8')).join('\n')
+  const source = [...LIB, 'src/boot.js', 'src/schemas.js', 'src/turns-core.js', 'src/turns.js'].map(f => readFileSync(join(root, f), 'utf8')).join('\n')
   const load = new Function('factoryRuntime', 'agent', 'parallel', 'log', 'phase', 'args', source +
-    '\nreturn { state: S, control: requestControl, ask, seatTurn, externalTurn, panelRun, recordFacts, runRetro };')
+    '\nreturn { state: S, control: requestControl, controlledRun, ask, seatTurn, externalTurn, panelRun, recordFacts, runRetro };')
   return load(runtime, () => { throw new Error('unexpected Claude runtime call') }, jobs => Promise.all(jobs.map(f => f())), () => {}, () => {}, args)
 }
 
@@ -22,6 +22,29 @@ const run = { runId: 'test-host', runDir: '/repo/.council/test-host', room: '/re
 const turnOptions = { key: 'A-r0', threadKey: 'A', vendor: 'codex', model: 'gpt-6.1-sol', effort: 'high', role: 'seat',
   sandbox: 'workspace-write', cwd: `${run.runDir}/wt/A`, writable: [run.room], fresh: false }
 const done = request => ({ status: 'done', result: { summary: 'completed', turn: request.schema.properties.turn.enum[0] }, elapsedSec: 3 })
+
+test('request finalization withdraws resume guidance when a budget stop overrides a user stop', async () => {
+  const h = harness({})
+  const resumeSteps = 'Continue with the saved run ID and the answer.'
+  const userStop = () => ({
+    status: 'needs-user', resumable: true, resumeSteps, forTheOrchestrator: `Ask the user. ${resumeSteps}`,
+  })
+  const resumable = await h.controlledRun(userStop)
+  assert.equal(resumable.status, 'needs-user')
+  assert.equal(resumable.resumable, true)
+  assert.equal(resumable.resumeSteps, resumeSteps)
+
+  const stopReason = 'Run turn budget exhausted (2).'
+  const blocked = await h.controlledRun(() => {
+    h.control.stop = stopReason
+    return userStop()
+  })
+  assert.equal(blocked.status, 'blocked')
+  assert.equal(blocked.stopReason, stopReason)
+  assert.equal(Object.hasOwn(blocked, 'resumable'), false)
+  assert.equal(Object.hasOwn(blocked, 'resumeSteps'), false)
+  assert.equal(blocked.forTheOrchestrator, 'Ask the user.')
+})
 
 test('host orchestration, seats, and optional retros propagate checkpoint mismatches', async () => {
   const error = Object.assign(new Error('Checkpoint request changed'), { code: 'CHECKPOINT_MISMATCH' })

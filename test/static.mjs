@@ -2,6 +2,7 @@
 //   - each script parses the way the runtime loads it (an async function body, no imports)
 //   - `meta` is a plain literal: sim.mjs rewrites `export const meta` to ordinary code and runs it,
 //     so a computed value there would pass every test and fail when Claude Code scans the workflow
+//   - workflows that use turns.js load its core first, and only Factory bundles the intake schema
 //   - src/lib stays pure: no runtime calls or references to runtime globals, and a function that reads the state object `S` takes it
 //     as a parameter rather than reaching for the script's global one
 //   node test/static.mjs
@@ -59,6 +60,19 @@ export function assertPlainLiteral(text) {
 }
 
 let failed = 0
+const intakeMarkers = [
+  'Up to three sentences: what in the task or the code decided the tier',
+  'Your estimate of the files the change touches',
+]
+for (const name of ['council', 'ensemble', 'pair', 'factory']) {
+  const { order } = TARGETS[name]
+  const turns = order.indexOf('src/turns.js')
+  if (turns < 1 || order[turns - 1] !== 'src/turns-core.js') {
+    failed++
+    console.log(`FAIL ${name}: src/turns-core.js must immediately precede src/turns.js`)
+  }
+}
+
 for (const file of readdirSync(join(root, 'plugins', 'dark-factory', 'workflows')).filter(f => f.endsWith('.js')).sort()) {
   const source = readFileSync(join(root, 'plugins', 'dark-factory', 'workflows', file), 'utf8')
   try {
@@ -67,6 +81,9 @@ for (const file of readdirSync(join(root, 'plugins', 'dark-factory', 'workflows'
     const meta = new Function(`return ${metaLiteral(source)}`)()
     assert.equal(meta.name + '.js', file, 'meta.name matches the file name')
     assert.ok(meta.description && meta.whenToUse && Array.isArray(meta.phases) && meta.phases.every(p => p.title), 'meta has description, whenToUse and titled phases')
+    for (const marker of intakeMarkers) {
+      assert.equal(source.includes(marker), meta.name === 'factory', `intake schema marker must appear only in factory.js: ${marker}`)
+    }
     console.log(`ok   ${file}: parses, meta is a plain literal`)
   } catch (e) {
     failed++

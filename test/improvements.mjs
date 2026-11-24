@@ -527,3 +527,73 @@ test('per-attempt state is not carried: a rebuilt state starts clean apart from 
   const clean = freshState()
   for (const k of Object.keys(clean).filter(k => !CARRIED.includes(k))) assert.deepEqual(next[k], clean[k], `${k} starts clean`)
 })
+
+// Factory's turn budget counts the shaping, challenge and intake turns it spends before any tier, and
+// the outer maxTurns governs even when a Pair budget is larger. The stub intake answers with the
+// pinned route; natively the challenger also returns the brief file the helper would have saved.
+const pinnedRoute = ({ tier, strategy }, native) => (value, request) => {
+  if (request.label === 'intake') Object.assign(value, { tier, strategy, split: [] })
+  if (native && request.label === 'brief challenge') value.briefFile = '/repo/.council/native/BRIEF.json'
+}
+const shapedBriefCalls = ['brief shape', 'brief challenge', 'intake']
+const earlyResultAccounting = native => native ? { meter: true } : { usage: () => usageSoFar(5000, 1000, 3000) }
+
+test('a turn budget spent before routing starts no tier turn', async () => {
+  const cases = [
+    [{ brief: false, tier: 'simple', strategy: 'pair', maxTurns: 1, pair: { maxTurns: 2 } }, ['intake'], [true]],
+    [{ brief: false, tier: 'fix', strategy: 'independent', maxTurns: 1 }, ['intake'], [true]],
+    [{ tier: 'simple', strategy: 'pair', maxTurns: 3 }, shapedBriefCalls, [true, false]],
+    [{ tier: 'fix', strategy: 'independent', maxTurns: 3 }, shapedBriefCalls, [true, false]],
+  ]
+  for (const [args, labels, hosts] of cases) {
+    for (const native of hosts) {
+      const what = `${native ? 'native' : 'runner'} ${JSON.stringify(args)}`
+      const { result, calls } = await simulate('factory', args, {
+        native, ...earlyResultAccounting(native), modify: pinnedRoute(args, native),
+      })
+      assert.deepEqual(calls.map(c => c.label), labels, what)
+      assert.equal(result.status, 'blocked', what)
+      assert.equal(result.stopReason, `Run turn budget exhausted (${args.maxTurns}).`, what)
+      assert.equal(result.metrics.turns, args.maxTurns, what)
+      assert.doesNotMatch(JSON.stringify(result), /### Token use/, what)
+    }
+  }
+})
+
+test('a shaped-brief explain spends the shaping, challenge and intake turns and nothing after', async () => {
+  for (const [tier, strategy] of [['simple', 'pair'], ['feature', 'independent']]) {
+    const args = { tier, strategy, maxTurns: 3, explain: true }
+    for (const native of [true, false]) {
+      const what = `${native ? 'native' : 'runner'} ${strategy}/${tier}`
+      const { result, calls } = await simulate('factory', args, {
+        native, ...earlyResultAccounting(native), modify: pinnedRoute(args, native),
+      })
+      assert.deepEqual(calls.map(c => c.label), shapedBriefCalls, what)
+      assert.equal(result.status, 'explained', what)
+      assert.doesNotMatch(JSON.stringify(result), /### Token use/, what)
+    }
+  }
+})
+
+test('a Factory Pair budget stop after setup keeps the run and its blocked summary', async () => {
+  const task = 'Fix the boundary'
+  const runDir = '/repo/.council/demo'
+  const stopReason = 'Run turn budget exhausted (2).'
+  const { result, calls } = await simulate('factory',
+    { task, brief: false, tier: 'simple', strategy: 'pair', maxTurns: 2 }, { native: true, pair: true })
+  assert.deepEqual(calls.map(c => c.label), ['intake', 'setup'])
+  assert.equal(result.status, 'blocked')
+  assert.equal(result.stopReason, stopReason)
+  assert.equal(result.task, task)
+  assert.equal(result.runDir, runDir)
+  const readiness = { state: 'incomplete', blocked: [], incomplete: [stopReason, stopReason] }
+  assert.deepEqual(result.final.readiness, readiness)
+  assert.equal(result.artifactType, 'dark-factory-result')
+  assert.equal(result.artifactVersion, 1)
+  assert.equal(Object.keys(result)[0], 'summary')
+  assert.equal(result.summary.artifactType, 'dark-factory-summary')
+  assert.equal(result.summary.status, 'blocked')
+  assert.equal(result.summary.runDir, runDir)
+  assert.equal(result.summary.stopReason, stopReason)
+  assert.deepEqual(result.summary.final.readiness, readiness)
+})

@@ -13,7 +13,7 @@ const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor
 export async function simulate(workflow, args = {}, behavior = {}) {
   // Execute the workflow body after the host has scanned its metadata, with no runtime meta binding.
   const source = readFileSync(new URL(`plugins/dark-factory/workflows/${workflow}.js`, root), 'utf8').replace(/^export const meta\s*=/m, 'void')
-  const execute = new AsyncFunction('args','factoryRuntime','parallel','agent','phase','log',source)
+  const execute = new AsyncFunction('args','factoryRuntime','parallel','agent','phase','log','budget',source)
   const calls = []; let repairs = 0, reviewCount = 0
   const run = behavior.setup?.runDir || '/repo/.council/demo'
   const tree = behavior.tree || (() => String(behavior.stall ? 1 : repairs + 1).repeat(40))
@@ -71,8 +71,9 @@ export async function simulate(workflow, args = {}, behavior = {}) {
     assert.ok(role, `Unexpected native call: ${opts.label}`)
     return respond({ ...opts, prompt, role, cwd: '/repo', vendor: 'claude' })
   }
+  const budget = behavior.meter ? { spent: () => 5000 + 1000 * calls.length } : undefined
   const result = await execute(typeof args === 'string' ? args : { task: 'Fix the boundary', host: behavior.native ? 'claude' : 'codex', retro: false, ...args }, behavior.native ? null : runtime,
     async jobs => { const all = await Promise.allSettled(jobs.map(f => f())); const bad = all.find(x => x.status === 'rejected'); if (bad) throw bad.reason; return all.map(x => x.value) },
-    behavior.native ? nativeAgent : () => { throw new Error('Unexpected native call') }, () => {}, behavior.log || (() => {}))
+    behavior.native ? nativeAgent : () => { throw new Error('Unexpected native call') }, () => {}, behavior.log || (() => {}), budget)
   return { result, calls, repairs }
 }

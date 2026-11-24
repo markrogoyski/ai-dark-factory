@@ -60,18 +60,18 @@ export const meta = {
 // each turn) carry private notes forward where Codex and Gemini seats keep their thread.
 function O(e,t){const n=String(e??"");return n.length<=t?n:n.slice(0,t)+" […]"}function w(e,t){
 return O(String(e??"").replace(/\s+/g," ").trim(),t)}function $e(e){return e.reduce((t,n)=>t+n,0)}function Ee(e,t){const n=new Set;
-return e.filter(i=>{const s=t(i);if(n.has(s))return false;n.add(s);return true})}function st(e){return`dark-factory:${e}`}
+return e.filter(i=>{const s=t(i);if(n.has(s))return false;n.add(s);return true})}function nt(e){return`dark-factory:${e}`}
 function x(e){return`'${String(e).replace(/'/g,`'\\''`)}'`}function _(e){return/^[\w./:@%+=,-]+$/.test(String(e))?String(
 e):x(e)}const xi=/\b((?:repair|review)\d+[A-F]\d+|T\d+[A-F]\d+|TX[CDRT]\d+|\d+[A-F]\d+|[FGI][A-F]\d+|K\d+[A-F]\d+|X[CDGKRST]\d+|Q\d+|S\d+)\b/;
-function E(e){const t=String(e??"").trim();const n=t.match(xi);return n?n[1]:t}function Mt(e){let t=2166136261;for(let n=0;n<
+function E(e){const t=String(e??"").trim();const n=t.match(xi);return n?n[1]:t}function Ft(e){let t=2166136261;for(let n=0;n<
 e.length;n++){t=(t^e.charCodeAt(n))>>>0;t=Math.imul(t,16777619)>>>0}return t}function Ti(e){return String(e).replace(/\r\n/g,
-"\n").replace(/[ \t\n]+$/,"")}function ve(e){const t=Ti(e);return`${t.length}-${Mt(t).toString(16).padStart(8,"0")}`}function Ri(e,t){
+"\n").replace(/[ \t\n]+$/,"")}function ve(e){const t=Ti(e);return`${t.length}-${Ft(t).toString(16).padStart(8,"0")}`}function Ri(e,t){
 const n=Array.from({length:e},(s,r)=>r);let i=t>>>0||1;for(let s=e-1;s>0;s--){i=Math.imul(i,1664525)+1013904223>>>0;const r=i%
 (s+1);const o=n[s];n[s]=n[r];n[r]=o}return n}function I(e){if(!e||typeof e!=="object")return e;const t={...e};if(t.type===
 "object"&&t.properties){t.properties=Object.fromEntries(Object.entries(t.properties).map(([n,i])=>[n,I(i)]));t.required=
 Object.keys(t.properties);t.additionalProperties=false}if(t.type==="array"&&t.items)t.items=I(t.items);return t}const R=(e,t)=>`${e}\
  ${t}${e===1?"":"s"}`;function Li(e,t){(e.story||=[]).push(t);return t}const N=e=>{const t=typeof e==="string"&&e.match(
-/^K(\d+)$/);return t?Number(t[1]):null};const qt=e=>e==="F"?"in the final version":e==="G"?"in the fix pass":e==="I"?"in\
+/^K(\d+)$/);return t?Number(t[1]):null};const Mt=e=>e==="F"?"in the final version":e==="G"?"in the fix pass":e==="I"?"in\
  the audit fix pass":N(e)?`in build increment ${N(e)}`:`in round ${e}`;const H=e=>{const t=w(e,1e5);return!t||/[.!?…]$/.
 test(t)?t:`${t}.`};const Pe=e=>e.charAt(0).toUpperCase()+e.slice(1);const Oe=e=>e.length>2?`${e.slice(0,-1).join(", ")} \
 and ${e[e.length-1]}`:e.join(" and ");const Q=(e,t)=>Object.entries(e.reduce((n,i)=>{const s=t(i);n[s]=(n[s]||0)+1;return n},
@@ -86,8 +86,8 @@ reviewers",mode:"mode",runtime:"runtime"};let s=e,r;while(true){if(/^\s*--explai
 t[o[1]][1];s=o[2]||"";continue}r=s.match(/^\s*--([\w-]+)[= ]\s*([^\s]+)(?:\s+([\s\S]*))?$/);if(!r||!i[r[1]]&&r[1]!=="rep\
 air-passes")break;if(r[1]==="repair-passes")n.repair={maxPasses:r[2]};else n[i[r[1]]]=r[2];s=r[3]||""}return{task:s,...n}}
 const Di=/\b(implement|fix|add|writ(e|ing)|build|refactor|migrat\w*|port|rename|remove|delete|optimi[sz]\w*|patch|introduce|support)\b/i;
-const Ci=/\b(design|architect\w*|propos(e|al)|approach(es)?|trade-?offs?|strategy|plan)\b/i;const Ne=["implement","inves\
-tigate","design"];const Bt={implement:800,investigate:1500,design:4e3,plan:1500};const Ht=400;const Ei=4e3;const ot={opus:{
+const Ci=/\b(design|architect\w*|propos(e|al)|approach(es)?|trade-?offs?|strategy|plan)\b/i;const it=["implement","inves\
+tigate","design"];const qt={implement:800,investigate:1500,design:4e3,plan:1500};const Bt=400;const Ei=4e3;const st={opus:{
 vendor:"claude",model:"opus",name:"Claude Opus"},sonnet:{vendor:"claude",model:"sonnet",name:"Claude Sonnet"},fable:{vendor:"\
 claude",model:"fable",name:"Claude Fable"},haiku:{vendor:"claude",model:"haiku",name:"Claude Haiku"},astra:{vendor:"code\
 x",model:"gpt-6.2-astra",name:"Codex Astra"},sol:{vendor:"codex",model:"gpt-6.2-sol",name:"Codex Sol"},luna:{vendor:"cod\
@@ -95,48 +95,48 @@ ex",model:"gpt-6-luna",name:"Codex Luna"},terra:{vendor:"codex",model:"gpt-6.1-t
 gemini",model:"gemini-4-hydrogen",name:"Gemini Hydrogen",efforts:["low","medium","high","xhigh"]},argon:{vendor:"gemini",
 model:"gemini-4-argon",name:"Gemini Argon",efforts:["low","medium","high"]},neon:{vendor:"gemini",model:"gemini-4-neon",
 name:"Gemini Neon",efforts:["low","medium","high","xhigh"]}};const Pi=["opus","sonnet","astra","gemini"];const Oi=["opus",
-"astra","sol"];const _t={claude:"Claude",codex:"Codex",gemini:"Gemini",openrouter:"OpenRouter"};const ee={claude:"Claude\
+"astra","sol"];const Ht={claude:"Claude",codex:"Codex",gemini:"Gemini",openrouter:"OpenRouter"};const ee={claude:"Claude\
  CLI",codex:"Codex CLI",gemini:"Antigravity CLI (agy)",openrouter:"Claude CLI on OpenRouter"};const Ni=/^(?=.*[A-Za-z0-9])[A-Za-z0-9._~:@+\/-]{1,128}$/;
-const U=e=>e.external===true||e.vendor!=="claude";const pe=(e,t)=>e==="codex"?{...t,external:true}:t;const rt={intake:"a\
+const U=e=>e.external===true||e.vendor!=="claude";const pe=(e,t)=>e==="codex"?{...t,external:true}:t;const ot={intake:"a\
 stra",setup:"astra",checker:"astra",questions:"luna",spec:"astra",retro:"astra",record:"luna"};const Fi={intake:"medium",
 setup:"medium",checker:"medium",questions:"low",spec:"medium",retro:"medium",record:"low"};function Mi(e){if(e.host!=="c\
-odex")return{};const t=e.roles&&typeof e.roles==="object"?e.roles:{};for(const n of Object.keys(t))if(!(n in rt))throw new Error(
-`factory: unknown role '${n}'. Known: ${Object.keys(rt).join(", ")}.`);return Object.fromEntries(Object.entries(rt).map(
+odex")return{};const t=e.roles&&typeof e.roles==="object"?e.roles:{};for(const n of Object.keys(t))if(!(n in ot))throw new Error(
+`factory: unknown role '${n}'. Known: ${Object.keys(ot).join(", ")}.`);return Object.fromEntries(Object.entries(ot).map(
 ([n,i])=>{const s=t[n];const r=s&&typeof s==="object"?s:{model:s};const o=r.model||n==="checker"&&e.checkModel||i;return[
-n,re(o,r.effort||Fi[n])]}))}function Ut(e,t,n){return e.roles&&e.roles[t]?e.roles[t]:{vendor:"claude",model:n.model,name:n.
-model,effort:n.effort}}const Gt=["low","medium","high","xhigh","max"];const qi=[...Gt,"ultra"];function re(e,t){const n=String(
-e).trim(),i=n.toLowerCase();let s;if(ot[i])s={key:i,...ot[i]};else if(i.startsWith("codex:")&&i.length>6)s={key:i,vendor:"\
+n,re(o,r.effort||Fi[n])]}))}function _t(e,t,n){return e.roles&&e.roles[t]?e.roles[t]:{vendor:"claude",model:n.model,name:n.
+model,effort:n.effort}}const Ut=["low","medium","high","xhigh","max"];const qi=[...Ut,"ultra"];function re(e,t){const n=String(
+e).trim(),i=n.toLowerCase();let s;if(st[i])s={key:i,...st[i]};else if(i.startsWith("codex:")&&i.length>6)s={key:i,vendor:"\
 codex",model:i.slice(6),name:`Codex ${i.slice(6)}`};else if(i.startsWith("gemini:")&&i.length>7)s={key:i,vendor:"gemini",
 model:i.slice(7),name:`Gemini ${i.slice(7)}`,slug:true};else if(i.startsWith("openrouter:")&&Ni.test(n.slice(11))){const u=n.
 slice(11);s={key:`openrouter:${u}`,vendor:"openrouter",model:u,name:`OpenRouter ${u}`}}else throw new Error(`council: un\
-known seat '${e}'. Known: ${Object.keys(ot).join(", ")}, codex:<model-id>, gemini:<model-id> or openrouter:<model-id>.`);
-const r=t&&typeof t==="object"?t[s.key]:t;s.effort=r?String(r).toLowerCase():"high";const o=s.vendor==="codex"?qi:Gt;if(!o.
+known seat '${e}'. Known: ${Object.keys(st).join(", ")}, codex:<model-id>, gemini:<model-id> or openrouter:<model-id>.`);
+const r=t&&typeof t==="object"?t[s.key]:t;s.effort=r?String(r).toLowerCase():"high";const o=s.vendor==="codex"?qi:Ut;if(!o.
 includes(s.effort))throw new Error(`council: effort '${s.effort}' is not valid for ${s.name}. Valid: ${o.join(", ")}.`);
 if(s.vendor==="gemini"&&!s.slug){const u=["low","medium","high","xhigh","max","ultra"];const d=u.indexOf(s.effort);s.effort=
 s.efforts.reduce((l,c)=>Math.abs(u.indexOf(c)-d)<=Math.abs(u.indexOf(l)-d)?c:l);s.model=`${s.model}-${s.effort}`}delete s.
 efforts;delete s.slug;return s}function Bi(e){const t=String(e).toLowerCase().replace(/[^a-z0-9]+/g,"-").replace(/^-+|-+$/g,
-"").slice(0,32).replace(/-+$/,"");return t||"model"}const Kt=e=>e.vendor==="openrouter"?`openrouter:${e.model}`:e.vendor;
-const Fe=e=>(Array.isArray(e)?e:typeof e==="string"?e.split(","):[]).map(t=>String(t).trim()).filter(Boolean);const at={
-correctness:{model:"astra",id:"XC"},design:{model:"opus",id:"XD"}};const Yt={tests:{model:"sonnet",id:"XT"}};const be=4;
-const Jt={review:{model:"astra",id:"XR"}};const Vt={grounding:{model:"astra",id:"XG"},sequencing:{model:"opus",id:"XS"},
+"").slice(0,32).replace(/-+$/,"");return t||"model"}const Gt=e=>e.vendor==="openrouter"?`openrouter:${e.model}`:e.vendor;
+const Ne=e=>(Array.isArray(e)?e:typeof e==="string"?e.split(","):[]).map(t=>String(t).trim()).filter(Boolean);const rt={
+correctness:{model:"astra",id:"XC"},design:{model:"opus",id:"XD"}};const Kt={tests:{model:"sonnet",id:"XT"}};const be=4;
+const Jt={review:{model:"astra",id:"XR"}};const Yt={grounding:{model:"astra",id:"XG"},sequencing:{model:"opus",id:"XS"},
 risk:{model:"gemini",id:"XK"}};const Hi={correctness:{model:"astra",id:"XC"},design:{model:"astra",id:"XD"}};const _i={tests:{
 model:"luna",id:"XT"}};const Ui={grounding:{model:"astra",id:"XG"},sequencing:{model:"astra",id:"XS"},risk:{model:"luna",
-id:"XK"}};const zt=8;function Gi(e,t=at){if(e===false)return[];const n=e&&typeof e==="object"?e:{};return Object.entries(
-t).map(([i,s])=>({lens:i,id:s.id,...re(n[i]||s.model,n.effort||"high")}))}const Qt={coverage:"astra",intent:"opus"};function Ki(e,t=Qt){
+id:"XK"}};const Vt=8;function Gi(e,t=rt){if(e===false)return[];const n=e&&typeof e==="object"?e:{};return Object.entries(
+t).map(([i,s])=>({lens:i,id:s.id,...re(n[i]||s.model,n.effort||"high")}))}const zt={coverage:"astra",intent:"opus"};function Ki(e,t=zt){
 if(e===false)return{reviewers:[],ask:false};const n=e&&typeof e==="object"?e:{};return{reviewers:Object.entries(t).map(([
-i,s])=>({lens:i,...re(n[i]||s,n.effort||"high")})),ask:e==="ask"||n.ask===true}}function Yi(e,t={}){const n=Ai(e);const i=n.
+i,s])=>({lens:i,...re(n[i]||s,n.effort||"high")})),ask:e==="ask"||n.ask===true}}function Ji(e,t={}){const n=Ai(e);const i=n.
 host==="codex"?"codex":"claude";const s=Mi(n);const r=String(n.task||n.prompt||n.question||"").trim();if(!r){throw new Error(
 "council: no task given. Pass args as a string, or {task, mode?, seats?, rounds?, ...}.")}const o=t.tier==="simple"?To(n).
-simple:null;const u=!!o||Ne.includes(n.mode);const d=o?"implement":u?n.mode:Di.test(r)?"implement":Ci.test(r)?"design":"\
-investigate";const l=(o?[re(o.implementer,n.effort)]:(Fe(n.seats).length?Fe(n.seats):i==="codex"?Oi:Pi).map(m=>re(m,n.effort))).
+simple:null;const u=!!o||it.includes(n.mode);const d=o?"implement":u?n.mode:Di.test(r)?"implement":Ci.test(r)?"design":"\
+investigate";const l=(o?[re(o.implementer,n.effort)]:(Ne(n.seats).length?Ne(n.seats):i==="codex"?Oi:Pi).map(m=>re(m,n.effort))).
 map(m=>pe(i,m));if(!o&&(l.length<2||l.length>6))throw new Error("council: use between 2 and 6 seats.");const c=i==="code\
-x"?Hi:at;const p=i==="codex"?_i:Yt;const y=i==="codex"?Ui:Vt;const g=o?{reviewers:[],ask:false}:Ki(n.spec,i==="codex"?{coverage:"\
-astra",intent:"astra"}:Qt);return{raw:n,host:i,roles:s,task:r,modeGiven:u,mode:d,controls:Fo(n),rounds:Math.max(1,Math.min(
+x"?Hi:rt;const p=i==="codex"?_i:Kt;const y=i==="codex"?Ui:Yt;const g=o?{reviewers:[],ask:false}:Ki(n.spec,i==="codex"?{coverage:"\
+astra",intent:"astra"}:zt);return{raw:n,host:i,roles:s,task:r,modeGiven:u,mode:d,controls:Fo(n),rounds:Math.max(1,Math.min(
 3,Number(n.rounds)||2)),context:String(n.context||"").trim(),plan:(Array.isArray(n.plan)?n.plan:n.plan?[n.plan]:[]).map(
 m=>String(m).trim()).filter(Boolean),cli:String(n.cli||"dark-factory"),allowDirty:n.allowDirty===true,evidence:n.evidence===
 true,narrow:n.narrow!==false,retro:n.retro!==false,approval:n.approval===true,ballot:n.ballot===true,clarifications:(Array.
 isArray(n.clarifications)?n.clarifications:[]).filter(m=>m&&m.id&&m.answer).map(m=>({id:String(m.id),answer:String(m.answer),
-afterRound:Number.isInteger(m.afterRound)?m.afterRound:-1})),lineup:l,panel:(Fe(n.panel).length?Fe(n.panel):i==="codex"?
+afterRound:Number.isInteger(m.afterRound)?m.afterRound:-1})),lineup:l,panel:(Ne(n.panel).length?Ne(n.panel):i==="codex"?
 ["astra","sol"]:["opus","astra"]).map(m=>pe(i,re(m,"high"))),auditors:o?[{lens:"review",id:Jt.review.id,...re(o.reviewer,
 "high")}].map(m=>pe(i,m)):Gi(n.audit,t.tier==="feature"?{...c,...p}:t.tier==="architecture"?y:c).map(m=>pe(i,m)),specReviewers:o?
 []:g.reviewers.map(m=>pe(i,m)),specAsk:o?false:g.ask,workflowName:t.workflow||"council",tier:t.tier||null,simple:o,escalation:t.
@@ -145,39 +145,39 @@ escalation||null,checkModel:i==="codex"?s.checker.key:["sonnet","opus","haiku","
 ature",s=t==="architecture";return{tier:t,factory:!!t,simple:n,feature:i,architecture:s,workflow:e.workflowName,ensemble:e.
 workflowName==="ensemble",pair:e.workflowName==="pair",gated:!!t&&!s,worker:n?"you":"a council seat",workersHave:n?"you \
 have":"seats have",workerPossessive:n?"your":"a seat's",roomNote:n?"where your post and tests go":"shared by all seats",
-changeReviewer:n?"reviewer":"auditor",resultReviewer:s?"reviewer":"auditor",result:s?"plan":"change"}}function Ji(e){return{
-...e,postWords:Bt[e.mode],run:null,seats:[],criteria:[],verify:"",refs:[],baselineOk:true,baselineNote:"",ledger:[],byId:{},
+changeReviewer:n?"reviewer":"auditor",resultReviewer:s?"reviewer":"auditor",result:s?"plan":"change"}}function Yi(e){return{
+...e,postWords:qt[e.mode],run:null,seats:[],criteria:[],verify:"",refs:[],baselineOk:true,baselineNote:"",ledger:[],byId:{},
 challenges:[],adoptions:[],votes:{},ballots:{},questions:[],pendingQ:[],pos:{},behaviour:{},testResults:{},notes:[],seatNotes:{},
 processNotes:[],turnLog:[],relayFailures:[],longPosts:[],inContention:null,dropped:[],declined:[],lastRound:0,blocked:{},
 vendorTimes:[],spec:{ran:false,reviews:{},findings:[],applied:[],assumptions:[],answered:[],before:null},auditedTag:null,
 factory:null,build:null,milestones:null}}function Vi(e){return[...e.lineup,...e.panel,...e.specReviewers,...e.auditors,...e.
-ensemble?[e.ensemble.compare]:[],...e.host==="codex"?Object.values(e.roles).map(t=>pe(e.host,t)):[]].filter(U)}function dt(e){
-return[...new Set(Vi(e).map(Kt))]}function ut(e){return new Set(e.map(t=>t.vendor).filter(t=>t!=="openrouter"))}function fe(e,t){
-return t.vendor==="openrouter"?`or${e.panel.indexOf(t)+1}-${Bi(t.model)}`:t.key}function lt(e){if(e.host!=="codex"||e.raw.
+ensemble?[e.ensemble.compare]:[],...e.host==="codex"?Object.values(e.roles).map(t=>pe(e.host,t)):[]].filter(U)}function at(e){
+return[...new Set(Vi(e).map(Gt))]}function dt(e){return new Set(e.map(t=>t.vendor).filter(t=>t!=="openrouter"))}function fe(e,t){
+return t.vendor==="openrouter"?`or${e.panel.indexOf(t)+1}-${Bi(t.model)}`:t.key}function ut(e){if(e.host!=="codex"||e.raw.
 hostRunId===void 0||e.raw.hostRunId===null)return null;const t=e.raw.hostRunId;const n=e.pair?.setupAttempt||0;const i=`${t}\
 -${e.tier||e.workflowName}${n?`-answered${n>1?`-${n}`:""}`:""}`;if(typeof t!=="string"||!/^[A-Za-z0-9][A-Za-z0-9._-]*$/.
 test(t)||!/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(i)){throw new Error("factory: hostRunId must contain only letters, digits,\
  dots, underscores and hyphens, starting with a letter or digit.")}return i}function zi(e,t){return e.auditors.find(n=>n.
-id===t)}function Me(e,t){return e.seats.find(n=>n.L===t)}function A(e){return e.seats.filter(t=>t.active)}function te(e,t){
+id===t)}function Fe(e,t){return e.seats.find(n=>n.L===t)}function A(e){return e.seats.filter(t=>t.active)}function te(e,t){
 return e.seats.some(n=>n.L===t&&n.active)}const X=e=>!!e&&(e.status==="refuted"||e.status==="fabricated");function G(e,t){
 return te(e,t)&&(!e.inContention||e.inContention.has(t))}function W(e){return A(e).filter(t=>G(e,t.L))}function ke(e,t){
-return e.dropped.find(n=>n.seat===t)}const Z={blocker:3,major:2,minor:1};function Xt(e,t){const n=A(e).length||e.seats.length;
-const i=Number(t);return i?Math.max(1,Math.min(n,i)):Math.max(2,Math.ceil(2*n/3))}function je(e){return Xt(e,e.raw.consensusAt)}
-function xe(e){return Xt(e,e.raw.escalateAt)}function qe(e){return ut(A(e)).size>1}function ct(e){return ut(A(e)).size>2?
-"at least two vendors":"both vendors"}const Wt={H:"audit",I:"final3",J:"reaudit"};const k=e=>typeof e==="number"?`r${e}`:
-e==="F"?"final":e==="G"?"final2":Wt[e]||(N(e)?`inc${N(e)}`:e);const Be=e=>{const t=typeof e==="string"&&e.match(/^b(\d+)$/);
-return t?Number(t[1]):null};const Qi=e=>typeof e==="number"?e:Be(e)!==null?Be(e):99;const Te=e=>e===0?"Solve":typeof e===
-"number"?`Round ${e}`:Be(e)!==null?`Round ${Be(e)}`:e==="ratify"?"Ratify":Wt[e]?"Audit":N(e)?"Build":"Synthesize";function D(e,t,n){
+return e.dropped.find(n=>n.seat===t)}const Z={blocker:3,major:2,minor:1};function Qt(e,t){const n=A(e).length||e.seats.length;
+const i=Number(t);return i?Math.max(1,Math.min(n,i)):Math.max(2,Math.ceil(2*n/3))}function je(e){return Qt(e,e.raw.consensusAt)}
+function xe(e){return Qt(e,e.raw.escalateAt)}function Me(e){return dt(A(e)).size>1}function lt(e){return dt(A(e)).size>2?
+"at least two vendors":"both vendors"}const Xt={H:"audit",I:"final3",J:"reaudit"};const k=e=>typeof e==="number"?`r${e}`:
+e==="F"?"final":e==="G"?"final2":Xt[e]||(N(e)?`inc${N(e)}`:e);const qe=e=>{const t=typeof e==="string"&&e.match(/^b(\d+)$/);
+return t?Number(t[1]):null};const Qi=e=>typeof e==="number"?e:qe(e)!==null?qe(e):99;const Te=e=>e===0?"Solve":typeof e===
+"number"?`Round ${e}`:qe(e)!==null?`Round ${qe(e)}`:e==="ratify"?"Ratify":Xt[e]?"Audit":N(e)?"Build":"Synthesize";function D(e,t,n){
 return`${e.run.room}/${k(n)}/${t}.md`}function me(e,t){const n=typeof t.round==="number"?String(t.round):t.round;let i=t.
 id;if(!i){let r=1;while(e.byId[`${n}${t.author}${r}`])r++;i=`${n}${t.author}${r}`}const s={id:i,round:t.round,author:t.author,
 kind:t.kind,target:t.target,severity:t.severity||null,judgment:!!t.judgment,statement:String(t.statement||""),evidence:String(
 t.evidence||""),criterion:t.criterion||"",status:t.judgment?"judgment":"open",fixed:false,conceded:false,withdrawn:false,
-note:"",ruledBy:""};e.ledger.push(s);e.byId[i]=s;return s}const ht=e=>e.kind==="verification"||e.kind==="test"||e.kind===
+note:"",ruledBy:""};e.ledger.push(s);e.byId[i]=s;return s}const ct=e=>e.kind==="verification"||e.kind==="test"||e.kind===
 "finding"&&(e.severity==="blocker"||e.severity==="major");function K(e,t){return t.kind==="finding"&&!t.judgment&&!t.fixed&&
 !t.withdrawn&&(t.status==="verified"||t.status==="unresolved")&&te(e,t.target)}function ne(e){return e.ledger.filter(t=>t.
-kind==="test"&&!t.withdrawn&&!X(t))}function pt(e,t){let n=0,i=0;for(const s of ne(e)){const r=e.testResults[s.id]&&e.testResults[s.
-id][t];if(!r||r==="conflict")continue;i++;if(r==="pass")n++}return{pass:n,total:i}}const F=e=>(Object.entries({...at,...Yt,
-...Jt,...Vt}).find(([,t])=>t.id===e)||[])[0];function Zt(e,t){const n=F(t.author);if(n&&t.kind==="finding"&&e.tier==="ar\
+kind==="test"&&!t.withdrawn&&!X(t))}function ht(e,t){let n=0,i=0;for(const s of ne(e)){const r=e.testResults[s.id]&&e.testResults[s.
+id][t];if(!r||r==="conflict")continue;i++;if(r==="pass")n++}return{pass:n,total:i}}const F=e=>(Object.entries({...rt,...Kt,
+...Jt,...Yt}).find(([,t])=>t.id===e)||[])[0];function Wt(e,t){const n=F(t.author);if(n&&t.kind==="finding"&&e.tier==="ar\
 chitecture"){return`${t.round==="J"?"re-review":"review"} finding by the ${n} reviewer against ${t.target}'s ${t.round===
 "J"?"revised ":""}milestone plan, severity ${t.severity}${t.judgment?", judgment":""}`}if(n&&t.kind==="finding"){return`${t.
 round==="J"?"re-review":"audit"} finding by the ${n} auditor against ${t.target}'s ${t.round==="J"?"fixed ":""}final ver\
@@ -185,15 +185,15 @@ sion, severity ${t.severity}${t.judgment?", judgment":""}`}if(n)return`test publ
 finding"){return t.round==="F"?`objection by ${t.author} to ${t.target}'s final version, severity ${t.severity}`:`findin\
 g by ${t.author} against ${t.target}'s round-${t.round-1} version, severity ${t.severity}`}if(t.kind==="test")return`tes\
 t published by ${t.author} in round ${t.round}`;return`${t.kind} claim by ${t.author} about its ${typeof t.round==="numb\
-er"?`round-${t.round}`:N(t.round)?`build increment ${N(t.round)}`:"final"} version`}function ft(e,t,n=Infinity){return e.
+er"?`round-${t.round}`:N(t.round)?`build increment ${N(t.round)}`:"final"} version`}function pt(e,t,n=Infinity){return e.
 clarifications.some(i=>i.id===t&&!(Number(i.afterRound)>n))}function Xi(e,t){return new Set([...t.raisedBy,...t.seconds].
-filter(n=>te(e,n))).size}function St(e,t){const n=e.clarifications.filter(i=>Qi(t)>i.afterRound);if(!n.length)return"";return`\
+filter(n=>te(e,n))).size}function Zt(e,t){const n=e.clarifications.filter(i=>Qi(t)>i.afterRound);if(!n.length)return"";return`\
 
 # Clarifications from the user
 
 ${n.map(i=>{const s=e.questions.find(r=>r.id===i.id)||e.spec.findings.find(r=>r.id===i.id);return`- ${i.id}${s?` ("${w(s.
 text||s.statement,300)}")`:""}: ${i.answer}`}).join("\n")}
-`}function He(e){if(!e.refs.length)return"";return`
+`}function Be(e){if(!e.refs.length)return"";return`
 # Reference documents
 
 The task follows ${e.refs.length===1?"this document":"these documents"}. Read ${e.refs.length===1?"it":"them"} first, at\
@@ -206,10 +206,10 @@ Treat ${e.refs.length===1?"it":"them"} as part of the task. The work must stand 
  code, comments or tests.`+(e.pairOptions?` A document deliverable, such as a plan, may name ${e.refs.length===1?"it":"t\
 hem"} and ${e.refs.length===1?"its":"their"} item numbers where that lets its reader trace an item to its source.`:"")+`\
 
-`}function M(e,t){return Wi(e)+St(e,t)}function Wi(e){let t=`# Task
+`}function M(e,t){return Wi(e)+Zt(e,t)}function Wi(e){let t=`# Task
 
 ${e.task}
-`;t+=ie(e)+He(e);if(e.context)t+=`
+`;t+=ie(e)+Be(e);if(e.context)t+=`
 # Context from the user
 
 ${e.context}
@@ -231,8 +231,8 @@ For a focused test or an intended red, put the command in a file and pass --comm
 ate unchanged. Shell-local exports are not shared verification configuration. Setup and specification amendment own veri\
 fication.json; other roles must report missing settings instead of silently changing that file or project-wide defaults.\
  A workaround is established only after the exact gate passes neutral measurement in a disposable checkout.
-`}function Y(e){return!!(j(e).factory&&e.mode==="implement"&&e.evidence)}function Re(e){return e.auditors.find(t=>t.lens===
-"tests")||e.auditors.find(t=>t.lens==="correctness")||e.auditors[0]}function _e(e,t,n,i){if(!Y(e))return"";const s=Re(e);
+`}function J(e){return!!(j(e).factory&&e.mode==="implement"&&e.evidence)}function Re(e){return e.auditors.find(t=>t.lens===
+"tests")||e.auditors.find(t=>t.lens==="correctness")||e.auditors[0]}function He(e,t,n,i){if(!J(e))return"";const s=Re(e);
 return`
 
 # Historical evidence
@@ -277,7 +277,7 @@ deas, revises, and votes on which position should ship.${e.narrow&&n>2&&e.rounds
 ontention, as does any position another seat voted for and any whose author has a verified blocker or major finding agai\
 nst one that stays. The rest leave contention: their authors stop revising and become reviewers, who critique the remain\
 ing positions, publish tests and vote.`:""}
-- The council has converged when ${je(e)} of ${n} seats vote to ship the same position${qe(e)?`, with votes from ${ct(e)}\
+- The council has converged when ${je(e)} of ${n} seats vote to ship the same position${Me(e)?`, with votes from ${lt(e)}\
  among them`:""}.${e.mode==="implement"?" Votes for positions whose measured snapshots are byte-identical count together\
 , so vote for the version you want shipped; you need not switch to another seat's identical copy.":""} ${e.mode==="plan"?
 "Its author then writes the final plan and builds it.":j(e).architecture?"Its author then writes the final design and it\
@@ -312,7 +312,7 @@ tput, or a test ID. Trade-offs and taste are welcome as kind "judgment"; they ar
 The council settles judgment calls itself. Raise a question only when the request itself is ambiguous and reasonable rea\
 dings lead to materially different results, and always state the assumption you're proceeding on. The user is consulted \
 only when ${xe(e)} or more seats raise or second the same question.
-`}function en(e,t,n){const i=`T${n}${t}`;return`
+`}function St(e,t,n){const i=`T${n}${t}`;return`
 ## Publishing tests
 A test that any correct solution must pass is the strongest evidence there is: ${j(e).simple?"the neutral verifier runs \
 it against your change":"it runs against every seat's position every round"}. To publish one:
@@ -325,17 +325,17 @@ rktree."}
 purpose": "<the behaviour it pins down>"}.
 - List it in \`tests\`. A test is itself a claim: one that asserts behaviour the task doesn't require can be challenged an\
 d thrown out.
-`}function tn(e,t){return`The other seats write their posts for this round at the same time. Don't open their files unde\
-r ${e.run.room}/${k(t)}/ while you work; read the earlier rounds the prompt points you to.`}const nn="Don't stash or swi\
+`}function en(e,t){return`The other seats write their posts for this round at the same time. Don't open their files unde\
+r ${e.run.room}/${k(t)}/ while you work; read the earlier rounds the prompt points you to.`}const tn="Don't stash or swi\
 tch branches: git stash fails partway in your sandbox, and the stash list is shared with the repository's other worktree\
-s.";function sn(e){return`To run something against the starting version of a file, swap it in place, with the path from \
+s.";function nn(e){return`To run something against the starting version of a file, swap it in place, with the path from \
 the worktree root: \`cp <path> <path>.mine && git show <start>:<path> > <path>\`, where <start> is the commit your worktre\
 e started from (\`head\` in ${e.run.runDir}/run.json; not HEAD, which moves if you commit). For a file the starting comm\
 it doesn't have, \`mv <path> <path>.mine\` instead. Run it, then restore each file straight away with \`cp <path>.mine <pat\
 h> && rm <path>.mine\`, and before you write your post check that \`git status\` shows no .mine file. Don't run it from a c\
 opy of the tree elsewhere instead: autoloaders and build caches can resolve back to your worktree.`}function es(e,t){if(t.
 vendor==="gemini"){return"Don't commit, stash or switch branches: your sandbox can't use git, so the change stays in the\
- working tree. If the task asks for commits, say in your post how the change splits into them."}return nn+" "+sn(e)+" Le\
+ working tree. If the task asks for commits, say in your post how the change splits into them."}return tn+" "+nn(e)+" Le\
 ave the change uncommitted unless the task asks for commits; if it does, commit on the worktree's detached HEAD as the t\
 ask describes, and rewrite those commits there as your work changes. Each snapshot of your work keeps your commits, with\
  anything left uncommitted on top."+(t.vendor==="codex"?' In your sandbox, git commit prints "Unable to create …/packed-\
@@ -348,17 +348,17 @@ s.push(`  This is the planning stage, so nothing is built yet. Leave your worktr
 n a scratch copy under $TMPDIR. Never modify ${e.run.repoRoot} itself.`)}else{s.push(`  This is ${e.mode==="design"?"a d\
 esign":"an investigation"} task, so nothing in your worktree ships. Use it freely for experiments, instrumentation and p\
 rototypes, and run commands from inside it. Never modify ${e.run.repoRoot} itself.${t.vendor==="gemini"||i.ensemble?"":`\
- ${nn} ${sn(e)}`}`)}s.push(`- The room, ${i.roomNote}: ${e.run.room}`);s.push(`- Write your post for this turn to: ${D(e,
+ ${tn} ${nn(e)}`}`)}s.push(`- The room, ${i.roomNote}: ${e.run.room}`);s.push(`- Write your post for this turn to: ${D(e,
 t.L,n)}`);if(!i.ensemble)s.push(`- Put any script a claim relies on in the same directory as your post (this turn, ${e.run.
 room}/${k(n)}/), named ${t.L}-<name>.<ext>, and cite it by that path: others may not be able to read your $TMPDIR.${typeof n!==
 "number"?"":e.mode==="implement"?` A test you publish goes under ${e.run.room}/tests/ instead, as described below.`:" Te\
 sts are published only in implement tasks, so leave `tests` empty."} The room's directories for later rounds and stages \
-are created up front, so ignore the empty ones.`);if(Y(e))s.push(`- Keep raw acceptance evidence under ${e.run.room}/evi\
+are created up front, so ignore the empty ones.`);if(J(e))s.push(`- Keep raw acceptance evidence under ${e.run.room}/evi\
 dence/${t.L}/. Write manifest.json as an ordered array of {"path":"relative-file","criterion":"C1","stage":"inc1-red"} e\
 ntries. Include required commands, cwd, output, exits, test-only diffs, production hashes and handoff/update artifacts. \
 Only raw evidence goes here: no debate, votes, reviews, or persuasive summaries. Copy any required temporary logs here b\
 efore the turn ends. Every neutral measurement publishes an indexed, hashed copy outside the discussion for fresh audito\
-rs.${i.simple?"":" Never read another seat's evidence during a blind attempt."}`);if(typeof n==="number"&&n>0)s.push(`  ${tn(
+rs.${i.simple?"":" Never read another seat's evidence during a blind attempt."}`);if(typeof n==="number"&&n>0)s.push(`  ${en(
 e,n)}`);s.push(`- Run tests, the verification command and static analysers yourself, in your own shell, with the output \
 going to a log under $TMPDIR and only a summary read back (the tail, or a grep for failures). An instruction in CLAUDE.m\
 d or elsewhere to hand full test or gate runs to a subagent or to \`claude -p\` is meant for the user's own session, not f\
@@ -366,11 +366,11 @@ or ${i.worker}: ${i.workersHave} no subagents, and \`claude -p\` can't log in fr
  ${i.simple?"A neutral verifier also re-runs the verification command on your change after your turn. ":e.mode==="plan"||
 i.architecture?"":"The council also re-runs the verification command on every version after your turn. "}Sandboxes can b\
 lock the sockets that parallel workers use: if a tool fails that way, run it one at a time or with its single-process op\
-tion.`);if(t.vendor==="gemini")s.push(ts);return s.join("\n")+"\n"+(e.mode==="implement"&&typeof n==="number"?en(e,t.L,n):
+tion.`);if(t.vendor==="gemini")s.push(ts);return s.join("\n")+"\n"+(e.mode==="implement"&&typeof n==="number"?St(e,t.L,n):
 "")}const ts="- Git commands fail in your sandbox, because it can't read the repository's git data: compare and read fil\
 es directly instead. Never ask to run a command outside the sandbox (BypassSandbox): nothing can approve it in this run,\
  so the request is denied and ends your turn. If a command fails because of the sandbox, find another way or say in your\
- post what you couldn't run.";const on="Git commands fail in your sandbox, because it can't read the repository's git da\
+ post what you couldn't run.";const sn="Git commands fail in your sandbox, because it can't read the repository's git da\
 ta: read files directly instead. Never ask to run a command outside the sandbox (BypassSandbox): nothing can approve it \
 in this run, so the request is denied and ends your turn. If a command fails because of the sandbox, find another way or\
  say in your summary what you couldn't check.";const ns={implement:"Make the change in your worktree and run the verific\
@@ -397,7 +397,7 @@ te run that sees only that milestone's task, its criteria and the final design. 
 - The changes, module by module: the interfaces you add or change, and the existing code they build on.
 - The risks: what is hard to undo (data, schemas, public APIs, removals), and what you are least sure of in the existing\
  code.
-- The milestones, in order, at most ${zt}: each a change that can be reviewed and committed by itself, that leaves the s\
+- The milestones, in order, at most ${Vt}: each a change that can be reviewed and committed by itself, that leaves the s\
 ystem working (the verification command passes, and nothing half-done is exposed to users), and that one feature build c\
 an make in at most ${be} increments. For each, its scope (what is in it and what is left for later) and how it is checke\
 d.
@@ -405,9 +405,9 @@ Ground every claim about the existing code in file:line: a neutral verifier open
 n code that isn't there fails when it is built. Prototypes in your worktree are fine.`;const ss={implement:"the approach\
  and the decisions behind it (the diff lives in your worktree)",investigate:"the complete answer, with evidence",design:"\
 the complete design",plan:"the complete plan, ending with its increments"};const os=e=>j(e).architecture?is:ns[e.mode];const rs=e=>j(
-e).architecture?"the complete design, ending with its milestones":ss[e.mode];function rn(e,t){if(!t||!t.length)return"no\
+e).architecture?"the complete design, ending with its milestones":ss[e.mode];function on(e,t){if(!t||!t.length)return"no\
 t assessed";const n=t.filter(s=>s.status==="met").length;const i=t.filter(s=>s.status==="partial").length;return`${n} me\
-t${i?`, ${i} partial`:""} of ${e.criteria.length||t.length}`}function Ue(e){const t=e.kind==="finding"?`${e.author} → ${e.
+t${i?`, ${i} partial`:""} of ${e.criteria.length||t.length}`}function _e(e){const t=e.kind==="finding"?`${e.author} → ${e.
 target} · ${e.severity}`:`${e.author} · ${e.kind}`;const n=e.fixed&&!X(e)?"FIXED":e.status.toUpperCase();const i=[e.conceded?
 "conceded":"",e.withdrawn?"withdrawn":""].filter(Boolean).join(", ");return`- [${e.id}] ${t} · ${n}${i?` (${i})`:""}: ${w(
 e.statement,260)}`+(e.evidence?` — evidence: ${w(e.evidence,160)}`:"")+(e.note?` — verifier: ${w(e.note,220)}`:"")}function Le(e,t,n){
@@ -415,26 +415,26 @@ const i=[`# Standings and ledger after round ${n}`,"","## Positions"];for(const 
 e,c.L);if(y){i.push(`- ${c.L}${c.L===t?" (you)":""}: out of contention after round ${y.afterRound}, now reviewing. Last \
 position: ${w(p.summary,200)}`);continue}const g=[`${c.L}${c.L===t?" (you)":""}: ${w(p.summary,400)}`];if(e.mode==="impl\
 ement"){g.push(p.stats?`${p.stats.files} files +${p.stats.added}/−${p.stats.removed}`:"diff not measured");g.push(!p.suite?
-"suite not measured":!p.suite.ran?"no suite":p.suite.passed?"suite PASS":"suite FAIL");const m=pt(e,c.L);if(m.total)g.push(
-`published tests ${m.pass}/${m.total}`)}g.push(`criteria ${rn(e,p.criteria)}`);if(p.postWords>e.postWords)g.push(`post ${p.
+"suite not measured":!p.suite.ran?"no suite":p.suite.passed?"suite PASS":"suite FAIL");const m=ht(e,c.L);if(m.total)g.push(
+`published tests ${m.pass}/${m.total}`)}g.push(`criteria ${on(e,p.criteria)}`);if(p.postWords>e.postWords)g.push(`post ${p.
 postWords} words, over the ${e.postWords}-word limit`);if(p.gated)g.push(`DISQUALIFIED this round: ${p.gateReasons.join(
 "; ")}`);i.push(`- ${g.join(" · ")}`)}const s=e.votes[n];if(s&&Object.keys(s).length){i.push("",`## Votes in round ${n}`);
 for(const[c,p]of Object.entries(s)){i.push(`- ${c} → ${p.ship}${p.amendments.length?` (amendments: ${p.amendments.map(
 y=>w(y,160)).join("; ")})`:""}`)}}const r=e.ledger.filter(c=>K(e,c)&&G(e,c.target));i.push("",`## Standing findings (ver\
 ified or unresolved, not yet fixed)${e.inContention?" against positions in contention":""}`);if(!r.length)i.push("- none");
-for(const c of r)i.push(Ue(c));const o=e.ledger.filter(c=>c.status==="judgment"&&!c.withdrawn&&c.round===n);if(o.length){
-i.push("",`## Judgment arguments from round ${n}`);for(const c of o)i.push(Ue(c))}const u=e.ledger.filter(X);i.push("","\
+for(const c of r)i.push(_e(c));const o=e.ledger.filter(c=>c.status==="judgment"&&!c.withdrawn&&c.round===n);if(o.length){
+i.push("",`## Judgment arguments from round ${n}`);for(const c of o)i.push(_e(c))}const u=e.ledger.filter(X);i.push("","\
 ## Refuted or fabricated (don't re-assert without new evidence)");if(!u.length)i.push("- none");for(const c of u.slice(-30))
-i.push(Ue(c));if(u.length>30)i.push(`- … ${u.length-30} older entries omitted`);const d=e.ledger.filter(c=>c.round===n&&
+i.push(_e(c));if(u.length>30)i.push(`- … ${u.length-30} older entries omitted`);const d=e.ledger.filter(c=>c.round===n&&
 (c.kind==="fact"||c.kind==="verification")&&c.status!=="open"&&!X(c));if(d.length){i.push("",`## Other claims checked in\
  round ${n}`);const c=[...d.filter(p=>p.author===t),...d.filter(p=>p.author!==t).slice(0,30)];for(const p of d.filter(y=>c.
-includes(y)))i.push(Ue(p));if(d.length>c.length)i.push(`- … ${d.length-c.length} more`)}if(e.mode==="implement"){const c=e.
+includes(y)))i.push(_e(p));if(d.length>c.length)i.push(`- … ${d.length-c.length} more`)}if(e.mode==="implement"){const c=e.
 ledger.filter(p=>p.kind==="test"&&!p.withdrawn);i.push("","## Published tests (run against every position)");if(!c.length)
 i.push("- none yet");for(const p of c){const y=e.testResults[p.id]||{};i.push(`- [${p.id}] by ${p.author} · ${p.status.
 toUpperCase()}: ${w(p.statement,200)} — ${A(e).map(g=>`${g.L} ${y[g.L]||"–"}`).join(", ")}`)}}const l=e.questions.filter(
-c=>!ft(e,c.id,n));if(l.length){i.push("",`## Open questions for the user (escalated at ${xe(e)}+ seats)`);for(const c of l){
+c=>!pt(e,c.id,n));if(l.length){i.push("",`## Open questions for the user (escalated at ${xe(e)}+ seats)`);for(const c of l){
 i.push(`- [${c.id}] ${w(c.text,300)} — raised by ${c.raisedBy.join(", ")}${c.seconds.length?`; seconded by ${c.seconds.
-join(", ")}`:""}`)}}return i.join("\n")}function Ge(e,t){if(U(e))return"";return`
+join(", ")}`:""}`)}}return i.join("\n")}function Ue(e,t){if(U(e))return"";return`
 Finally, fill \`notes\`: private notes for your next turn, under about 400 words. You start every turn with no memory exce\
 pt your post and these notes, and nobody else sees them. Record what you would otherwise have to rediscover: the key fil\
 e:line locations, what you verified and how${t===0||N(t)?"":", your read on each other position"}, and what to check nex\
@@ -444,9 +444,9 @@ t.`}function ae(e,t){const n=!U(t)&&e.seatNotes[t.L];if(!n)return"";return`
 You wrote these at the end of your last turn. Nobody else sees them.
 
 ${n.text}
-`}const Ke=12;function mt(e){return`at most ${Ke}: every verification claim, plus the facts your position rests on that \
+`}const Ge=12;function ft(e){return`at most ${Ge}: every verification claim, plus the facts your position rests on that \
 bear on an acceptance criterion${e.criteria.length?" (name it in `criterion`; a fact claim without one is not recorded)":
-""}. Neutral verifiers check each one, so leave out incidental facts; they can stay in the post.`}function gt(e){return`\
+""}. Neutral verifiers check each one, so leave out incidental facts; they can stay in the post.`}function mt(e){return`\
 Keep the post under about ${e.postWords} words${e.mode==="implement"?": the diff carries the detail, and the post explai\
 ns it":""}. The count is of prose: fenced code blocks and table rows don't count, so use a table wherever it says someth\
 ing best. The limit is a guide for the writing, not a cap: an over-long post is noted, never refused, so aim for it as y\
@@ -476,34 +476,34 @@ Then write your post to ${D(e,t.L,0)} with these sections:
 ## Risks — what you're least sure of
 ## Assumptions
 
-${gt(e)}
+${mt(e)}
 
-In your output, \`claims\` ${mt(e)}${Ge(t,0)}`}function an(e){return`# How this works
+In your output, \`claims\` ${ft(e)}${Ue(t,0)}`}function rn(e){return`# How this works
 
 You are the implementer of a change that was judged simple: small, contained and unambiguous. After your turn a neutral \
 verifier checks your claims and runs the verification command, and an independent reviewer reads the change. You get one\
  pass to fix what they uphold. If the change turns out not to be simple, the work is handed to a larger process, and say\
 ing so early is the right call, not a failure.
-`}function dn(e){if(!e.diffPath)return"diff (not measured)";if(e.stats&&e.stats.added+e.stats.removed>Ht){return`diff ${e.
+`}function an(e){if(!e.diffPath)return"diff (not measured)";if(e.stats&&e.stats.added+e.stats.removed>Bt){return`diff ${e.
 diffPath}, large (${e.stats.files} files, +${e.stats.added}/−${e.stats.removed}): start with the per-file summary ${e.
 statPath} and read the hunks that matter`}return`diff ${e.diffPath}`}function ds(e,t,n,i){const s=e.pos[t.L];const r=[];
 if(i&&(e.mode!=="implement"||s.delta&&s.deltaRound===n-1)){r.push(`post ${s.post}, starting with its "Changes this round\
 " section`);if(e.mode==="implement"){r.push(s.delta.files?`code changes since round ${n-2}: ${s.deltaPath} (${s.delta.files}\
- files, +${s.delta.added}/−${s.delta.removed})`:`no code changes since round ${n-2}`);r.push(`full ${dn(s)}`)}}else{r.
-push(`post ${s.post}`);if(e.mode==="implement")r.push(dn(s))}if(e.mode==="implement"){r.push(s.snapTag?`any file as of i\
+ files, +${s.delta.added}/−${s.delta.removed})`:`no code changes since round ${n-2}`);r.push(`full ${an(s)}`)}}else{r.
+push(`post ${s.post}`);if(e.mode==="implement")r.push(an(s))}if(e.mode==="implement"){r.push(s.snapTag?`any file as of i\
 ts ${s.snapTag===k(n-1)?"latest":`older ${s.snapTag}`} measured snapshot: \`git -C ${e.run.repoRoot} show refs/council/${e.
 run.runId}/${t.L}-${s.snapTag}:<path>\``:"no snapshot of this version was measured, so read the post")}return r.join(" ·\
- ")}function un(e,t,n){const i=W(e).filter(u=>u.L!==t.L);const s=n>=2&&e.behaviour[t.L].turns.some(u=>u.round===n-1);const r=[
+ ")}function dn(e,t,n){const i=W(e).filter(u=>u.L!==t.L);const s=n>=2&&e.behaviour[t.L].turns.some(u=>u.round===n-1);const r=[
 s?"You reviewed these positions last round. Start from what changed since then, and open the full post or diff only wher\
 e a change touches something you need to re-check, or where you no longer have what you need:":`Before writing anything,\
  read every other ${e.inContention?"contending ":""}seat's latest post${e.mode==="implement"?" and diff":""}:`];for(const u of i)
 r.push(`- ${u.L}: ${ds(e,u,n,s)}`);r.push(`Your own previous post: ${e.pos[t.L].post}`);const o=A(e).filter(u=>u.L!==t.L&&
 !G(e,u.L)&&e.behaviour[u.L].turns.some(d=>d.round===n-1));if(o.length){r.push(`Out of contention, now reviewing: ${o.map(
 u=>u.L).join(", ")}. Skim the "To the council" section of their round-${n-1} posts for points addressed to you: ${o.map(
-u=>D(e,u.L,n-1)).join(", ")}.`)}return r.join("\n")}function ln(e,t,n){if(!G(e,t.L))return us(e,t,n);const i=W(e).map(s=>s.
+u=>D(e,u.L,n-1)).join(", ")}.`)}return r.join("\n")}function un(e,t,n){if(!G(e,t.L))return us(e,t,n);const i=W(e).map(s=>s.
 L);return`# Round ${n} of up to ${e.rounds} — debate
 
-${un(e,t,n)}
+${dn(e,t,n)}
 
 ${Le(e,t.L,n-1)}
 
@@ -522,7 +522,7 @@ th evidence (\`challenges\`), and withdraw your own claims that turned out wrong
 4. Revise your position${e.mode==="implement"?" in your worktree and re-run the verification command":""}. If it changed\
 , cite the ledger IDs that justified it in \`changeBasis\`.
 5. Vote (\`vote\`): the position that should ship, ${e.inContention?`one of ${i.join(", ")}`:"yours or another"}, and th\
-e amendments it needs.${yt(e)}
+e amendments it needs.${gt(e)}
 
 Write your post to ${D(e,t.L,n)} with these sections:
 ## To the council — direct responses, addressed by letter ("B: …")
@@ -530,9 +530,9 @@ Write your post to ${D(e,t.L,n)} with these sections:
 ## Changes this round — what changed and why; other seats read this section first next round
 ## Vote
 
-${gt(e)}
+${mt(e)}
 
-\`claims\` are new claims about your revised position: ${mt(e)}${Ge(t,n)}`}function yt(e){return e.approval?" Then list \
+\`claims\` are new claims about your revised position: ${ft(e)}${Ue(t,n)}`}function gt(e){return e.approval?" Then list \
 in `vote.acceptable` every other position you could also accept shipping, each with the amendments it would need. Only p\
 ositions you would genuinely sign off on; leave it empty if there are none. If no position gets enough first-choice vote\
 s, one that enough seats find acceptable can still carry the round.":""}function us(e,t,n){const i=ke(e,t.L);const s=W(e).
@@ -543,7 +543,7 @@ t voted for it, and you have no verified blocker or major finding against a posi
 e room and others may still adopt ideas from it, but it can no longer ship. This round you review: make the contending p\
 ositions (${s.join(", ")}) better, and help the council choose between them.
 
-${un(e,t,n)}
+${dn(e,t,n)}
 
 ${Le(e,t.L,n-1)}
 
@@ -555,28 +555,28 @@ portant findings with a published test when you can.":""}
 d out wrong (\`withdrawals\`).
 3. Don't revise your own position. Your worktree is no longer measured, so you may use it for experiments. Set \`changed\`\
  to false, and leave \`changeBasis\`, \`concessions\`, \`adopted\` and \`claims\` empty.
-4. Vote (\`vote\`) for one of ${s.join(", ")}, with the amendments it needs.${yt(e)}
+4. Vote (\`vote\`) for one of ${s.join(", ")}, with the amendments it needs.${gt(e)}
 
 Write your post to ${D(e,t.L,n)} with these sections:
 ## To the council — direct responses, addressed by letter ("B: …")
 ## Assessment — where each contending position stands and what it still needs
 ## Vote
 
-Keep the post under about ${Math.min(e.postWords,600)} words.${Ge(t,n)}`}function ye(e,t,n){return`The council continues\
+Keep the post under about ${Math.min(e.postWords,600)} words.${Ue(t,n)}`}function ye(e,t,n){return`The council continues\
 . You are still seat ${t.L}, and the rules, task and workspace from round 0 still apply (the task and acceptance criteri\
 a are also in ${e.run.runDir}/TASK.md). Your worktree is ${t.wt}; the room is ${e.run.room}.${typeof n==="number"&&n>0?`\
- ${tn(e,n)}`:""}
-${ie(e)}${St(e,n)}`}function ls(e,t){return`Your previous turn wrote your post to ${t}, but its structured output was no\
+ ${en(e,n)}`:""}
+${ie(e)}${Zt(e,n)}`}function ls(e,t){return`Your previous turn wrote your post to ${t}, but its structured output was no\
 t accepted.
 Resume that same turn and return its answer now as structured output matching the requested schema.
 Use your existing session and, if needed, read only your own post. Do not restart the task, edit files, run checks, or r\
 ead other seats' work.
 Preserve any denied checks and missing evidence; never claim an unrun check passed.`}function cs(e,t,n){if(U(t)){return`${ye(
-e,t,n)}${e.mode==="implement"?en(e,t.L,n):""}
-${ln(e,t,n)}`}return`${S(e,t.L)}
+e,t,n)}${e.mode==="implement"?St(e,t.L,n):""}
+${un(e,t,n)}`}return`${S(e,t.L)}
 ${M(e,n)}
 ${ge(e,t,n)}${ae(e,t)}
-${ln(e,t,n)}`}function cn(e,t,n){const i=(e.votes[n]||{})[t.L];const s=W(e).map(r=>r.L);return`# Ballot after round ${n}\
+${un(e,t,n)}`}function ln(e,t,n){const i=(e.votes[n]||{})[t.L];const s=W(e).map(r=>r.L);return`# Ballot after round ${n}\
 
 
 The round-${n} posts have been checked, and no position had the votes to ship, though one came within a vote. Votes were\
@@ -589,11 +589,11 @@ Your round-${n} vote: ${i?`${i.ship}${i.amendments.length?` (amendments: ${i.ame
 "none counted"}.
 
 Vote (\`vote\`) for one of ${s.join(", ")}: the position that should ship now, with the amendments it needs. Keep your v\
-ote unless a ruling above gives you reason to change it, and if you change it, name that ruling's ID in \`reason\`.${yt(
+ote unless a ruling above gives you reason to change it, and if you change it, name that ruling's ID in \`reason\`.${gt(
 e)}`}function hs(e,t,n){if(U(t))return`${ye(e,t,`b${n}`)}
-${cn(e,t,n)}`;return`${S(e,t.L)}
+${ln(e,t,n)}`;return`${S(e,t.L)}
 ${M(e,n)}${ae(e,t)}
-${cn(e,t,n)}`}function hn(e,t,n,i){const s=t.L;const r=e.ledger.filter(p=>K(e,p)&&p.target===s);const o=Object.entries((n.
+${ln(e,t,n)}`}function cn(e,t,n,i){const s=t.L;const r=e.ledger.filter(p=>K(e,p)&&p.target===s);const o=Object.entries((n.
 ballot?e.ballots:e.votes)[i]||{}).flatMap(([p,y])=>y.ship===s?y.amendments.map(g=>`${p}: ${g}`):(((y.acceptable||[]).find(
 g=>g.seat===s)||{}).amendments||[]).map(g=>`${p} (accepts it): ${g}`));const u=e.mode==="implement"?ne(e).filter(p=>e.testResults[p.
 id]&&e.testResults[p.id][s]&&e.testResults[p.id][s]!=="pass"):[];const d=(e.pos[s].criteria||[]).filter(p=>p.status!=="m\
@@ -604,7 +604,7 @@ tical"?`voted to ship it or a byte-identical copy of it (${n.same.filter(p=>p!==
 ballot?"in the ballot after":"in"} round ${n.round}.`:`The council did not converge. The scorecard, computed from the le\
 dger rather than from votes, ranks your position first:
 
-${Fn(e)}`;const c=j(e).architecture;return`# Final turn — you write the final ${e.mode==="plan"?"plan":c?"design and i\
+${Nn(e)}`;const c=j(e).architecture;return`# Final turn — you write the final ${e.mode==="plan"?"plan":c?"design and i\
 ts milestone plan":"version"}
 
 ${l}
@@ -640,10 +640,10 @@ Write the final post to ${D(e,s,"F")} with these sections:
 ## Addressed — each finding and amendment, and how
 ## Declined — each one you didn't take, and why
 
-${gt(e)}
+${mt(e)}
 
 List every item from 1 and 2 in \`addressed\` or \`declined\`, by its ID or by quoting the amendment. \`claims\` are claims ab\
-out the final version: ${mt(e)}${Ge(t,"F")}`}const ps=`At most ${zt}. Each milestone is built later by a separate run, w\
+out the final version: ${ft(e)}${Ue(t,"F")}`}const ps=`At most ${Vt}. Each milestone is built later by a separate run, w\
 hich sees only its task, its criteria and the final design, and starts from the code as the milestones before it left it\
 . For each:
    - \`title\`: a few words naming it.
@@ -655,20 +655,20 @@ cope and what is left for later milestones, and what to read.
    - \`working\`: what works once it lands.
    Each milestone must leave the system working, use only what the code has or earlier milestones deliver, and be small \
 enough for one feature build (at most ${be} increments).`;function fs(e,t,n,i){if(U(t))return`${ye(e,t,"F")}
-${hn(e,t,n,i)}`;return`${S(e,t.L)}
+${cn(e,t,n,i)}`;return`${S(e,t.L)}
 ${M(e,"F")}
 ${ge(e,t,"F")}${ae(e,t)}
-${hn(e,t,n,i)}`}function ms(e,t){const n=e.pos[t.L];if(!n.delta||n.deltaRound!=="F")return"";return n.delta.files?`- Cha\
+${cn(e,t,n,i)}`}function ms(e,t){const n=e.pos[t.L];if(!n.delta||n.deltaRound!=="F")return"";return n.delta.files?`- Cha\
 nges since the round-${e.lastRound} version the council last reviewed: ${n.deltaPath} (${n.delta.files} files, +${n.delta.
 added}/−${n.delta.removed})
 `:`- No code changes since the round-${e.lastRound} version the council last reviewed
-`}function pn(e,t,n){return`# Ratification
+`}function hn(e,t,n){return`# Ratification
 
 Seat ${n.L} has written the final version:
 - Post: ${D(e,n.L,"F")}
 ${e.mode==="implement"?`- Diff: ${e.run.room}/final/${n.L}.diff
 ${ms(e,n)}- Worktree: ${n.wt}
-`:""}- Neutral check of the final version: ${Ve(e,n.L)}
+`:""}- Neutral check of the final version: ${Ye(e,n.L)}
 
 ${Le(e,t.L,e.lastRound)}
 
@@ -679,9 +679,9 @@ eld the author gets one chance to fix them. Judgment objections are recorded as 
 r best argument.
 
 Write your review to ${D(e,t.L,"ratify")}.`}function gs(e,t,n){if(U(t))return`${ye(e,t,"ratify")}
-${pn(e,t,n)}`;return`${S(e,t.L)}
+${hn(e,t,n)}`;return`${S(e,t.L)}
 ${M(e,"ratify")}${ae(e,t)}
-${pn(e,t,n)}`}function fn(e,t,n){return`# Fix pass
+${hn(e,t,n)}`}function pn(e,t,n){return`# Fix pass
 
 Two independent adjudicators upheld these objections to your final version:
 ${n.map(i=>`- [${i.id}] from ${i.author}, ${i.severity}: ${w(i.statement,400)} — ${w(i.note,300)}`).join("\n")}
@@ -689,27 +689,27 @@ ${n.map(i=>`- [${i.id}] from ${i.author}, ${i.severity}: ${w(i.statement,400)} �
 Fix them in the final version${e.mode==="implement"?` (worktree ${t.wt}; re-run the verification command)`:""}, and chan\
 ge nothing else. Write the updated final post to ${D(e,t.L,"G")}: complete, not a delta. List each objection in \`address\
 ed\` or \`declined\`.`}function ys(e,t,n){if(U(t))return`${ye(e,t,"G")}
-${fn(e,t,n)}`;return`${S(e,t.L)}
+${pn(e,t,n)}`;return`${S(e,t.L)}
 ${M(e,"G")}
 ${ge(e,t,"G")}${ae(e,t)}
-${fn(e,t,n)}`}function mn(e){return`# How the build works
+${pn(e,t,n)}`}function fn(e){return`# How the build works
 
 ${R(A(e).length,"AI model")} planned this task independently and debated the plans, and the council chose yours. You wro\
 te the final plan, merging in the best of the others. Now you build it in your worktree, one increment per turn: the pla\
 nning stage's rule to leave the worktree as it is no longer applies. After each increment a neutral verifier snapshots y\
 our worktree, runs the verification command and checks your claims. When the build is done, auditors who never saw the p\
 lanning review the whole change, and you get one pass to fix what they uphold.
-`}const wt=e=>(e.mode==="design"||e.mode==="investigate")&&!j(e).architecture;const gn=" Nothing from this run is built,\
- so the command comes out the same whichever result wins and can't tell a right one from a wrong one.";const yn="\n- The \
+`}const yt=e=>(e.mode==="design"||e.mode==="investigate")&&!j(e).architecture;const mn=" Nothing from this run is built,\
+ so the command comes out the same whichever result wins and can't tell a right one from a wrong one.";const gn="\n- The \
 verification command: whether it would catch a solution that breaks what the criteria require, and whether it runs at al\
-l from a worktree.";const wn={coverage:`# Your lens: coverage
+l from a worktree.";const yn={coverage:`# Your lens: coverage
 
 Find what a wrong result could get past, or a right one fail:
 - Cases the criteria miss: empty, zero, negative, boundary, very large and malformed inputs, error paths, and whatever e\
 dges are particular to this code. Ask of each criterion how a solution could meet it and still be wrong.
 - Regressions the criteria would allow: read the callers of the code the task will touch, and the tests that cover it. B\
 ehaviour they depend on that the task doesn't ask to change should be protected by a criterion.
-- Criteria that are wrong about the code: they contradict how it actually works, or assume something it doesn't have.${yn}`,
+- Criteria that are wrong about the code: they contradict how it actually works, or assume something it doesn't have.${gn}`,
 intent:`# Your lens: intent
 
 Find where the criteria fail to say what the task means:
@@ -722,7 +722,7 @@ f taste nobody rules on. Propose a criterion that makes the quality checkable, s
 es or tables, or a named behaviour that must not change.
 - Scope: criteria that ask for more than the task does, and parts of the task no criterion covers. Asking for more is as\
  much a defect as asking for less: an unasked-for feature costs review time and risk.
-- Checkability: criteria nobody could check from a worktree, or that name no evidence where it isn't obvious.`};function $t(e){
+- Checkability: criteria nobody could check from a worktree, or that name no evidence where it isn't obvious.`};function wt(e){
 return`${e.criteria.map(t=>`- ${t.id}: ${t.text}`).join("\n")||"- (none recorded)"}`}function ws(e,t){const n=Array.isArray(
 e.raw.criteria)&&e.raw.criteria.length;return`You are reviewing the specification of a task before anyone starts on it. \
 Several AI models will each do the task independently, and every result will be judged against the acceptance criteria a\
@@ -732,7 +732,7 @@ the process catches it. Your job is to find what is wrong with them. Don't attem
 # Task
 
 ${e.task}
-${ie(e)}${He(e)}${e.context?`
+${ie(e)}${Be(e)}${e.context?`
 # Context from the user
 
 ${e.context}
@@ -744,16 +744,16 @@ ository.",investigate:"The result is an answer, with evidence; nothing in the re
 
 # The acceptance criteria${n?" (written by the user)":" (written by the setup from the task and the code)"}
 
-${$t(e)}
+${wt(e)}
 
 # The verification command
 
 ${e.verify?`\`${e.verify}\`, run from the root of a worktree.${e.mode==="implement"?` At the starting commit it ${e.baselineOk?
-"passes":`fails: ${w(e.baselineNote,300)}`}.`:wt(e)?`${gn} Don't raise findings about it.`:""}`:"(none)"}
+"passes":`fails: ${w(e.baselineNote,300)}`}.`:yt(e)?`${mn} Don't raise findings about it.`:""}`:"(none)"}
 
 The repository is at ${e.run.repoRoot}, at the commit every model will start from. Read it; don't modify anything.
 
-${wt(e)?wn[t.lens].replace(yn,""):wn[t.lens]}
+${yt(e)?yn[t.lens].replace(gn,""):yn[t.lens]}
 
 # Facts and decisions
 
@@ -785,18 +785,18 @@ Don't defer to the reviewer's confidence. Don't modify anything.
 # Task
 
 ${e.task}
-${ie(e)}${He(e)}${e.context?`
+${ie(e)}${Be(e)}${e.context?`
 # Context from the user
 
 ${e.context}
 `:""}
 # The acceptance criteria
 
-${$t(e)}
+${wt(e)}
 
 # The verification command
 
-${e.verify?`\`${e.verify}\`, run from the root of a worktree.${wt(e)?`${gn} Reject findings about it.`:""}`:"(none)"}
+${e.verify?`\`${e.verify}\`, run from the root of a worktree.${yt(e)?`${mn} Reject findings about it.`:""}`:"(none)"}
 
 # Verdicts
 
@@ -832,14 +832,14 @@ acceptance criteria and verification command, and independent adjudicators ruled
 # Task
 
 ${e.task}
-${ie(e)}${He(e)}${e.context?`
+${ie(e)}${Be(e)}${e.context?`
 # Context from the user
 
 ${e.context}
 `:""}
 # The acceptance criteria now
 
-${$t(e)}
+${wt(e)}
 
 # The verification command now
 
@@ -882,7 +882,7 @@ h baselinePasses ${e.baselineOk} and baselineNote "${e.baselineOk?"":w(e.baselin
 - Update the criteria in ${e.run.runDir}/TASK.md to match, and add the assumptions there under their own heading.
 
 Return every criterion, changed or not, in \`criteria\`, and one entry in \`applied\` per finding above, by its ID, saying w\
-hat you changed.`}const vt="\n- The tests: whether they pin down the behaviour the change introduced. Would they fail if \
+hat you changed.`}const $t="\n- The tests: whether they pin down the behaviour the change introduced. Would they fail if \
 the change were reverted, or broken in the obvious ways? Changed behaviour that no test would catch is a finding.";const Ie={
 review:`# What to review
 
@@ -903,7 +903,7 @@ Find what is wrong with this change, or satisfy yourself that nothing is:
 articular to this code.
 - Regressions: behaviour that worked before the change and doesn't now. Read the callers of everything the change touche\
 d, and check every signature, default and contract it altered.
-- Error paths: what happens when something it relies on fails.${vt}
+- Error paths: what happens when something it relies on fails.${$t}
 
 Back every bug with a failing test: one that fails on this version and would pass on a correct one. Publish it (below) a\
 nd cite its ID in the finding's evidence. Where a test can't show it, give a command and the real tail of its output. A \
@@ -939,8 +939,8 @@ the run as evidence, and restore the file afterwards.
 , time or the environment.
 
 A gap is a fact finding when you can show it, and the mutation that survives is the evidence; say which test you would a\
-dd. Publish a test (below) only to demonstrate a bug you found along the way.`};function Ye(e,t,n){return`${e.run.runDir}\
-/snap/${k(n)}-${t.lens}`}function Je(e,t,n){return`${e.run.room}/${k(n)}/${t.lens}.md`}function $n(e,t){return`
+dd. Publish a test (below) only to demonstrate a bug you found along the way.`};function Ke(e,t,n){return`${e.run.runDir}\
+/snap/${k(n)}-${t.lens}`}function Je(e,t,n){return`${e.run.room}/${k(n)}/${t.lens}.md`}function wn(e,t){return`
 # Publishing a test
 - Number your tests T${t.id}1, T${t.id}2, ….
 - Put its files under ${e.run.room}/tests/<ID>/files/<path relative to the repo root>, as new files. Never use the path \
@@ -951,7 +951,7 @@ purpose": "<the behaviour it pins down>"}.
 - Run it in your checkout first and confirm it fails for the reason you give.
 - List it in \`tests\`. A neutral verifier rules on whether it asserts behaviour that the task, or the code as it was befo\
 re the change, requires.
-`}function bs(e,t,n){const i=e.auditedTag;const s=e.pos[n.L];const r=s.stats&&s.stats.added+s.stats.removed>Ht?` (large:\
+`}function bs(e,t,n){const i=e.auditedTag;const s=e.pos[n.L];const r=s.stats&&s.stats.added+s.stats.removed>Bt?` (large:\
  start with the per-file summary ${e.run.room}/${i}/${n.L}.stat)`:"";return`You are an independent ${j(e).changeReviewer}\
 . Another AI wrote the change below to complete a task. You haven't seen how it was made or anything said about it, and \
 that is deliberate: review it with fresh eyes. You have no stake in it.
@@ -960,7 +960,7 @@ ${M(e,"H")}
 # What you are auditing
 
 - The change, as a diff against the starting commit: ${e.run.room}/${i}/${n.L}.diff${r}
-- Your own checkout of the changed code: ${Ye(e,t,"H")}. If it doesn't exist yet, create it with \`${e.cli} materialize \
+- Your own checkout of the changed code: ${Ke(e,t,"H")}. If it doesn't exist yet, create it with \`${e.cli} materialize \
 --run-dir ${_(e.run.runDir)} --seat ${n.L} --label ${i} --name ${k("H")}-${t.lens}\`, which prints its path. Run tests an\
 d experiments there; nobody else uses it.
 - The user's own checkout of the repository: ${e.run.repoRoot}. Read only. The code before the change is the diff's base\
@@ -968,9 +968,9 @@ d experiments there; nobody else uses it.
 
 Don't open anything else under ${e.run.room}: it holds the discussion that produced this change, and reading it would co\
 st you the independence you are here for. Write only to your checkout, to ${e.run.room}/tests/ and to your review${j(e).
-factory?"; the verification helper may also write its jobs and logs":""}.${_e(e,t,n,i)}
+factory?"; the verification helper may also write its jobs and logs":""}.${He(e,t,n,i)}
 
-${t.lens==="correctness"&&e.auditors.some(o=>o.lens==="tests")?Ie.correctness.replace(vt,""):Ie[t.lens]}
+${t.lens==="correctness"&&e.auditors.some(o=>o.lens==="tests")?Ie.correctness.replace($t,""):Ie[t.lens]}
 
 # Scope and severity
 
@@ -985,9 +985,9 @@ Style the codebase itself doesn't follow, and preferences without a reason, are 
 outcome when it is true: an empty list from a careful review is worth more than a padded one.
 
 Blocker and major findings go to two independent adjudicators, and minor fact findings to a neutral verifier. The author\
- gets one pass to fix what is upheld, ${j(e).simple?`and the verifier then checks the fixed version again${Y(e)?"; you t\
+ gets one pass to fix what is upheld, ${j(e).simple?`and the verifier then checks the fixed version again${J(e)?"; you t\
 hen confirm historical acceptance on its evidence bundle":""}`:"and you will then review that fix"}.
-${$n(e,t)}
+${wn(e,t)}
 Write your review to ${Je(e,t,"H")}: your verdict, then each finding with its evidence${t.lens==="design"?", then your p\
 robes":""}. In your output, \`summary\` is the verdict in 2-4 sentences, each finding says what is wrong and what you woul\
 d change, and \`probes\` ${t.lens==="design"?"lists the next changes you traced":"is empty"}.`}function ks(e,t,n){return`\
@@ -997,7 +997,7 @@ The author has since made one fix pass, and the verifier has checked the fixed v
 hed: don't review it again and don't file findings. Leave \`findings\`, \`tests\` and \`probes\` empty, and set \`summary\` to o\
 ne sentence on the evidence.
 
-Write your note to ${Je(e,t,"J")}.`+_e(e,t,n,k("I"))}function vn(e,t,n){if(j(e).simple)return ks(e,t,n);const i=e.pos[n.
+Write your note to ${Je(e,t,"J")}.`+He(e,t,n,k("I"))}function $n(e,t,n){if(j(e).simple)return ks(e,t,n);const i=e.pos[n.
 L];const s=e.ledger.filter(o=>o.author===t.id&&o.round==="H"&&o.kind==="finding");const r=o=>o.judgment&&o.status==="jud\
 gment"?"a suggestion, not adjudicated":`${o.status}${o.fixed?", and the verifier found it fixed":o.status==="verified"?"\
 , and the verifier found it still present":""}`;return`# Re-review: the fix
@@ -1011,7 +1011,7 @@ The author has since made one fix pass:
 delta.removed})`:`the difference between ${e.run.room}/${e.auditedTag}/${n.L}.diff and ${e.run.room}/${k("I")}/${n.L}.di\
 ff`}
 - The author's account of it: ${D(e,n.L,"I")}
-- A checkout of the fixed version: ${Ye(e,t,"J")}. If it doesn't exist yet, create it with \`${e.cli} materialize --run-\
+- A checkout of the fixed version: ${Ke(e,t,"J")}. If it doesn't exist yet, create it with \`${e.cli} materialize --run-\
 dir ${_(e.run.runDir)} --seat ${n.L} --label ${k("I")} --name ${k("J")}-${t.lens}\`.
 
 Review only what the fix changed: defects it introduced, and fixes that don't fix what they claim to. Don't re-file find\
@@ -1019,7 +1019,7 @@ ings the fix left alone, and don't widen the review to code the fix didn't touch
 further fix, so what you find here is reported to the user as it is ruled. File fact findings only, each with evidence (\
 a file:line, or a command and the real tail of its output). Leave \`tests\` and \`probes\` empty.
 
-Write your review to ${Je(e,t,"J")}.`+_e(e,t,n,k("I"))}const bn={grounding:`# Your lens: grounding
+Write your review to ${Je(e,t,"J")}.`+He(e,t,n,k("I"))}const vn={grounding:`# Your lens: grounding
 
 Check that the plan matches the code as it is:
 - Every file, function, interface and behaviour the design or a milestone relies on: open it. Code that isn't there, or \
@@ -1069,9 +1069,9 @@ that works, and honest about what could go wrong.
 Don't open anything else under ${e.run.room}: it holds the discussion that produced this plan, and reading it would cost\
  you the independence you are here for. Don't write any file: your review is your output.${t.vendor==="gemini"?`
 
-${on}`:""}
+${sn}`:""}
 
-${bn[t.lens]}
+${vn[t.lens]}
 
 # Scope and severity
 
@@ -1091,7 +1091,7 @@ Blocker and major findings go to two independent adjudicators, and minor fact fi
 
 In your output, \`summary\` is your verdict in 2-4 sentences. Each finding says what is wrong and what you would change, g\
 ives its evidence (a file:line, or a command and the real tail of its output; for a judgment, the reasoning), and names \
-in \`milestone\` the milestone it is about (0 for the plan as a whole).`}function kn(e,t,n){const i=e.ledger.filter(r=>r.
+in \`milestone\` the milestone it is about (0 for the plan as a whole).`}function bn(e,t,n){const i=e.ledger.filter(r=>r.
 author===t.id&&r.round==="H"&&r.kind==="finding");const s=r=>r.judgment&&r.status==="judgment"?"a suggestion, not adjudi\
 cated":`${r.status}${r.fixed?", and the verifier found it fixed":r.status==="verified"?", and the verifier found it stil\
 l present":""}`;return`# Re-review: the revision
@@ -1112,20 +1112,20 @@ t (0 for the plan as a whole). Don't write any file: your review is your output.
 if(i==="H")return js(e,t,n);if(U(t))return`The review continues. You are still the ${t.lens} reviewer of the same plan; \
 the task and your instructions from before still apply.
 ${ie(e)}
-${kn(e,t,n)}`;return`You are an independent reviewer of a milestone plan another AI wrote for the task below. You haven'\
+${bn(e,t,n)}`;return`You are an independent reviewer of a milestone plan another AI wrote for the task below. You haven'\
 t seen how it was made or anything said about it, and that is deliberate. You have no stake in it. Apart from the files \
 named below, don't open anything under ${e.run.room}: it holds the discussion that produced the plan.
 
 ${M(e,"J")}
-${kn(e,t,n)}`}if(i==="H")return bs(e,t,n);if(U(t))return`The audit continues. You are still the ${t.lens} auditor of the\
+${bn(e,t,n)}`}if(i==="H")return bs(e,t,n);if(U(t))return`The audit continues. You are still the ${t.lens} auditor of the\
  same change; the task and your instructions from before still apply.
 ${ie(e)}
-${vn(e,t,n)}`;return`You are an independent auditor, reviewing a change another AI made to complete a task. You haven't \
+${$n(e,t,n)}`;return`You are an independent auditor, reviewing a change another AI made to complete a task. You haven't \
 seen how it was made or anything said about it, and that is deliberate. You have no stake in it. Apart from the files na\
 med below, don't open anything under ${e.run.room}: it holds the discussion that produced the change.
 
 ${M(e,"J")}
-${vn(e,t,n)}`}function jn(e,t,n){const i=j(e);const s=i.resultReviewer;const r=d=>`- [${d.id}] ${d.kind==="test"?`test${F(
+${$n(e,t,n)}`}function kn(e,t,n){const i=j(e);const s=i.resultReviewer;const r=d=>`- [${d.id}] ${d.kind==="test"?`test${F(
 d.author)?` from the ${F(d.author)} ${s}`:""}`:`${F(d.author)} ${s}, ${d.severity}${d.milestone?`, milestone ${d.milestone}`:
 ""}`}: ${w(d.statement,400)}${d.kind!=="test"&&d.evidence?` (evidence: ${w(d.evidence,300)})`:""}${d.note?` — ruling: ${w(
 d.note,300)}`:""}`;const o=[];if(n.upheld.length)o.push(`Upheld. Fix each one, or decline it with evidence:
@@ -1163,10 +1163,10 @@ Change nothing else: this is the last pass, and ${u?"the verifier will check exa
  review exactly what it changes"}. Work in your worktree (${t.wt}) and re-run the verification command. Write the update\
 d final post to ${D(e,t.L,"I")}: complete, not a delta. List every item above in \`addressed\` or \`declined\`, by its ID.`}
 function Ts(e,t,n){if(U(t))return`${ye(e,t,"I")}
-${jn(e,t,n)}`;return`${j(e).simple?an(e):j(e).feature?mn(e):S(e,t.L)}
+${kn(e,t,n)}`;return`${j(e).simple?rn(e):j(e).feature?fn(e):S(e,t.L)}
 ${M(e,"I")}
 ${ge(e,t,"I")}${ae(e,t)}
-${jn(e,t,n)}`}function xn(e,t,n,i){if(t.snapshotTag)return e.mode==="implement"?`${n}'s reviewed snapshot (diff ${e.run.
+${kn(e,t,n)}`}function jn(e,t,n,i){if(t.snapshotTag)return e.mode==="implement"?`${n}'s reviewed snapshot (diff ${e.run.
 room}/${t.snapshotTag}/${n}.diff; git -C ${e.run.repoRoot} show refs/council/${e.run.runId}/${n}-${t.snapshotTag}:<path>\
 )`:`${n}'s reviewed artifact ${t.artifactPost}`;const s=r=>e.mode==="implement"?`${n}'s round-${r} version (diff ${e.run.
 room}/r${r}/${n}.diff; checkout: \`${e.cli} materialize --run-dir ${_(e.run.runDir)} --seat ${n} --label r${r}\`)`:`${n}\
@@ -1182,16 +1182,16 @@ fore the change that the task didn't ask to change (a regression test); refuted 
 uires. An auditor's test is meant to fail when it demonstrates a bug, so rule on what it asserts, not on whether it pass\
 es.`);else if(t.test)r.push(`Is this a valid test? Read ${e.run.room}/tests/${s.id}/. Verified if it pins down behaviour\
  the task and acceptance criteria actually require and its command runs it; refuted if it asserts behaviour the task doe\
-sn't require or contradicts.`);if(t.validity)r.push(`Is it true? Judge it against ${xn(e,s,s.target,i)}.`);if(t.fixed)r.
+sn't require or contradicts.`);if(t.validity)r.push(`Is it true? Judge it against ${jn(e,s,s.target,i)}.`);if(t.fixed)r.
 push(`fixed: is the defect still present in ${n}'s current version?${t.validity?"":' Its validity was already ruled, so \
 give verdict "n/a".'}`);if(t.challenges.length){r.push(`It has been challenged; weigh these before ruling:
 ${t.challenges.map(o=>`    - ${o.by}: ${O(o.reason,400)}${o.evidence?` (evidence: ${O(o.evidence,300)})`:""}`).join("\n")}`)}
-return`- [${s.id}] ${Zt(e,s)}: "${O(s.statement,600)}"`+(s.evidence?`
+return`- [${s.id}] ${Wt(e,s)}: "${O(s.statement,600)}"`+(s.evidence?`
   Evidence cited: ${O(s.evidence,600)}`:"")+(t.validity&&s.status!=="open"&&s.status!=="judgment"?`
   Earlier ruling: ${s.status}${s.note?` (${O(s.note,300)})`:""}`:"")+`
-  To decide: ${r.join(" ")}`}function bt(e,t){if(t===0)return null;if(typeof t==="number")return`r${t-1}`;if(N(t))return N(
+  To decide: ${r.join(" ")}`}function vt(e,t){if(t===0)return null;if(typeof t==="number")return`r${t-1}`;if(N(t))return N(
 t)>1?k(`K${N(t)-1}`):null;return t==="F"?`r${e.lastRound}`:t==="G"?"final":t==="H"?e.auditedTag:t==="I"?k("H"):null}function Ls(e,t,n,i){
-const s=Me(e,t);const r=k(n);const o=bt(e,n);const u=ne(e).map(y=>y.id);const d=n==="H"||/^review\d+$/.test(n)?e.pos[t].
+const s=Fe(e,t);const r=k(n);const o=vt(e,n);const u=ne(e).map(y=>y.id);const d=n==="H"||/^review\d+$/.test(n)?e.pos[t].
 post:D(e,t,n);const l=j(e).architecture;const c=typeof n==="number"?`round ${n}`:n==="F"?`the final ${e.mode==="plan"?"p\
 lan":l?"design and its milestone plan":"version"}`:N(n)?`build increment ${N(n)} of ${e.build.increments.length}`:n==="H"?
 l?"the final milestone plan, with the independent review's findings":"the final version, with the independent audit's fi\
@@ -1281,10 +1281,10 @@ judicator verifies it.
 `:""}
 # Disputed claims
 
-${n.map(i=>{const s=e.challenges.filter(r=>r.claim===i.id&&r.round===t);return`## [${i.id}] ${Zt(e,i)}
+${n.map(i=>{const s=e.challenges.filter(r=>r.claim===i.id&&r.round===t);return`## [${i.id}] ${Wt(e,i)}
 Claim: ${O(i.statement,800)}
 Evidence cited: ${O(i.evidence,600)||"(none)"}
-Judge it against: ${xn(e,i,i.kind==="finding"?i.target:i.author,-1)}
+Judge it against: ${jn(e,i,i.kind==="finding"?i.target:i.author,-1)}
 Earlier ruling: ${i.status}${i.note?` (${O(i.note,400)})`:""}
 ${s.length?`Challenges:
 ${s.map(r=>`- ${r.by}: ${O(r.reason,600)}${r.evidence?` (evidence: ${O(r.evidence,400)})`:""}`).join("\n")}`:F(i.author)?
@@ -1311,7 +1311,7 @@ wn, including inspections and report reviews (for example "run the coverage targ
 idence in the criterion and cite its source as document and line. Don't drop a requirement because no command can check \
 it. Such required checks don't count toward the number above: add them beyond it rather than leaving out a behavioural c\
 riterion to make room.
-`}function Cs(e){const t=e.letters.join(",");const n=e.letters[0];const i=dt(e);const s=i.some(l=>l.startsWith("openrout\
+`}function Cs(e){const t=e.letters.join(",");const n=e.letters[0];const i=at(e);const s=i.some(l=>l.startsWith("openrout\
 er:"))?x(i.join(",")):i.join(",");const r=[...new Set(i.map(l=>ee[l.split(":")[0]]))];const o=!!e.pairOptions&&e.host!==
 "codex";const u=j(e);const d=u.ensemble?"an ensemble run: independent candidates in separate worktrees, measured and rev\
 iewed before an advisory ranking; no debate or automatic selection":u.pair?"a pair run: one author will design and imple\
@@ -1382,8 +1382,8 @@ e next item" on a checklist of fixes is implement, even when finding the cause t
 When the work would end with a change someone commits, choose implement.
 `}
 ## Step 2 — create the run
-Run: ${e.cli} init --repo ${e.raw.repo?x(e.raw.repo):'"$PWD"'} --seats ${t}${u.factory?" --factory":""}${lt(e)?` --run-i\
-d ${x(lt(e))}`:""}${o?" --started-at <the time you read before you started>":""}${e.plan.map(l=>` --ref ${x(l)}`).join("")}${e.
+Run: ${e.cli} init --repo ${e.raw.repo?x(e.raw.repo):'"$PWD"'} --seats ${t}${u.factory?" --factory":""}${ut(e)?` --run-i\
+d ${x(ut(e))}`:""}${o?" --started-at <the time you read before you started>":""}${e.plan.map(l=>` --ref ${x(l)}`).join("")}${e.
 factory?.briefFile?` --ref ${x(e.factory.briefFile)}`:""} followed by --ref <path> for each other document from step 1
 ${e.host!=="codex"?`Make it one Bash call with timeout 600000 and dangerouslyDisableSandbox: true: init can take several\
  minutes on a large repository, and it creates git worktrees, which the Bash sandbox blocks: it refuses to write the rep\
@@ -1494,9 +1494,9 @@ error "relay: " followed by the tool's message.
 
 =====BEGIN PAYLOAD ${o}=====
 ${r}
-=====END PAYLOAD ${o}=====`}function Ve(e,t){const n=e.pos[t];const i=[];if(e.mode==="implement"){i.push(!n.suite?"suite\
- not measured":!n.suite.ran?"no suite":n.suite.passed?"suite PASS":"suite FAIL");const r=pt(e,t);if(!e.build||r.total)i.
-push(`published tests ${r.pass}/${r.total}`)}i.push(`criteria ${rn(e,n.criteria)}`);const s=e.ledger.filter(r=>K(e,r)&&r.
+=====END PAYLOAD ${o}=====`}function Ye(e,t){const n=e.pos[t];const i=[];if(e.mode==="implement"){i.push(!n.suite?"suite\
+ not measured":!n.suite.ran?"no suite":n.suite.passed?"suite PASS":"suite FAIL");const r=ht(e,t);if(!e.build||r.total)i.
+push(`published tests ${r.pass}/${r.total}`)}i.push(`criteria ${on(e,n.criteria)}`);const s=e.ledger.filter(r=>K(e,r)&&r.
 target===t);i.push(s.length?`still-standing findings: ${s.map(r=>r.id).join(", ")}`:"no standing findings");return i.join(
 " · ")}function Ps(e,t,n,i,s,r=[]){const o=e.pos[t],u=o.assessment;const d=[],l=[];const c=u&&u.round===n&&u.checked;if(!c)
 l.push("the final version was never checked");else{if(e.mode==="implement"&&e.verify&&!u.measured)l.push("the verificati\
@@ -1525,7 +1525,7 @@ i.push("the goal brief snapshot");const s=String(e.raw.verify||"").trim();const 
 e.raw.criteria:[];const u=c=>String(c||"").toLowerCase().replace(/\s+/g," ").trim().replace(/[.;:,!]+$/,"");const d=new Set(
 (e.pair?.decisions||[]).filter(c=>c.kind==="criterion").map(c=>c.about));const l=new Set;o.forEach((c,p)=>{const y=u(c);
 if(!y||d.has(`C${p+1}`))return;const g=(t||[]).findIndex((m,f)=>!l.has(f)&&m&&u(m.text).includes(y));if(g>=0)l.add(g);else
-i.push(`supplied criterion ${p+1} ("${w(c,200)}")`)});return i}const Tn=e=>e.state==="ready"?"ready: the final version w\
+i.push(`supplied criterion ${p+1} ("${w(c,200)}")`)});return i}const xn=e=>e.state==="ready"?"ready: the final version w\
 as checked and nothing known stands against it":`${e.state}: ${[...e.blocked,...e.incomplete].join("; ")}`;function Ns(e,t,n,i){
 const s=new Map;const r=o=>{if(!s.has(o.id))s.set(o.id,{c:o,validity:false,fixed:false,test:false,challenges:[]});return s.
 get(o.id)};for(const o of e.ledger){if(o.withdrawn)continue;if(o.author===t&&o.round===n&&(o.kind==="fact"||o.kind==="ve\
@@ -1535,18 +1535,18 @@ for(const o of i){const u=e.byId[o];const d=r(u);if(u.kind==="test")d.test=true;
 filter(l=>l.claim===o&&l.round===n)}return[...s.values()]}function we(e,t,n,i){const s=new Set(e.criteria.map(d=>d.id));
 const r=(i||[]).filter(d=>d&&d.statement);const o=d=>(String(d.criterion||"").match(/C\d+/g)||[]).some(l=>s.has(l));const u=r.
 filter(d=>d.kind==="verification"||!s.size||o(d));if(u.length<r.length)e.notes.push(`${t} made ${R(r.length-u.length,"fa\
-ct claim")} in ${k(n)} that named no acceptance criterion; not recorded.`);if(u.length>Ke)e.notes.push(`${t} made ${u.length}\
- claims in ${k(n)}; only the first ${Ke} were recorded.`);for(const d of u.slice(0,Ke)){me(e,{round:n,author:t,kind:d.kind===
+ct claim")} in ${k(n)} that named no acceptance criterion; not recorded.`);if(u.length>Ge)e.notes.push(`${t} made ${u.length}\
+ claims in ${k(n)}; only the first ${Ge} were recorded.`);for(const d of u.slice(0,Ge)){me(e,{round:n,author:t,kind:d.kind===
 "verification"?"verification":"fact",target:t,statement:d.statement,evidence:d.evidence,criterion:String(d.criterion||"").
-trim()})}}function Rn(e,t,n,i){if(e.mode!=="implement")return;const s=new RegExp(`^T${n}${t}\\d+$`);for(const r of(i||[]).
+trim()})}}function Tn(e,t,n,i){if(e.mode!=="implement")return;const s=new RegExp(`^T${n}${t}\\d+$`);for(const r of(i||[]).
 slice(0,10)){if(!r||!r.id)continue;if(!s.test(r.id)||e.byId[r.id]){e.notes.push(`Ignored test '${r.id}' from ${t}: bad o\
 r duplicate ID.`);continue}me(e,{id:r.id,round:n,author:t,kind:"test",target:t,statement:r.purpose,evidence:r.command})}}
-function Ln(e,t,n,i){for(const s of(i||[]).slice(0,5)){if(s&&s.question)e.pendingQ.push({round:n,L:t,question:s.question,
+function Rn(e,t,n,i){for(const s of(i||[]).slice(0,5)){if(s&&s.question)e.pendingQ.push({round:n,L:t,question:s.question,
 assumption:s.assumption||""})}}function Ae(e,t,n,i){if(!U(t)&&i&&i.notes)e.seatNotes[t.L]={round:n,text:O(String(i.notes).
-trim(),Ei)}}function ze(e,t,n){for(const i of(n.declined||[]).slice(0,12))if(i&&i.ref)e.declined.push({round:t,ref:String(
+trim(),Ei)}}function Ve(e,t,n){for(const i of(n.declined||[]).slice(0,12))if(i&&i.ref)e.declined.push({round:t,ref:String(
 i.ref),why:i.why||""})}function Fs(e,t,n){e.pos[t.L]={round:0,summary:n.summary||"",opening:n.summary||"",post:D(e,t.L,0),
 confidence:n.confidence,stats:null,diffPath:null,statPath:null,delta:null,deltaPath:null,deltaRound:null,postWords:null,
-suite:null,criteria:null,gated:false,gateReasons:[]};Ae(e,t,0,n);we(e,t.L,0,n.claims);Rn(e,t.L,0,n.tests);Ln(e,t.L,0,n.questions)}
+suite:null,criteria:null,gated:false,gateReasons:[]};Ae(e,t,0,n);we(e,t.L,0,n.claims);Tn(e,t.L,0,n.tests);Rn(e,t.L,0,n.questions)}
 function Ms(e,t,n,i){const s=t.L;const r=!G(e,s);if(!r)e.pos[s]={...e.pos[s],round:n,summary:i.summary||e.pos[s].summary,
 post:D(e,s,n)};Ae(e,t,n,i);for(const l of(i.findings||[]).slice(0,15)){if(!l||!l.statement||!G(e,l.target)||l.target===s)
 continue;me(e,{round:n,author:s,kind:"finding",target:l.target,severity:Z[l.severity]?l.severity:"minor",judgment:l.kind===
@@ -1556,14 +1556,14 @@ claim:c.id,reason:l.reason||"",evidence:l.evidence||""});o.push(c.id)}const u=[]
 const c=e.byId[l];if(c&&c.kind==="finding"&&c.target===s){if(!c.conceded)c.concededIn=n;c.conceded=true;u.push(l)}}for(const l of(i.
 withdrawals||[]).map(E)){const c=e.byId[l];if(c&&c.author===s)c.withdrawn=true}const d=r?[]:(i.adopted||[]).filter(l=>l&&
 te(e,l.from)&&l.from!==s&&l.idea).slice(0,10);for(const l of d)e.adoptions.push({round:n,by:s,from:l.from,idea:l.idea});
-if(!r)we(e,s,n,i.claims);Rn(e,s,n,i.tests);Ln(e,s,n,i.questions);for(const l of(i.seconds||[]).map(E)){const c=e.questions.
-find(p=>p.id===l);if(c&&!c.raisedBy.includes(s)&&!c.seconds.includes(s))c.seconds.push(s)}In(e,e.votes,n,s,i.vote);e.behaviour[s].
+if(!r)we(e,s,n,i.claims);Tn(e,s,n,i.tests);Rn(e,s,n,i.questions);for(const l of(i.seconds||[]).map(E)){const c=e.questions.
+find(p=>p.id===l);if(c&&!c.raisedBy.includes(s)&&!c.seconds.includes(s))c.seconds.push(s)}Ln(e,e.votes,n,s,i.vote);e.behaviour[s].
 turns.push({round:n,reviewing:r,changed:!r&&!!i.changed,note:i.changeNote||"",adopted:d.length,basis:r?[]:(i.changeBasis||
-[]).map(E).filter(l=>e.byId[l]),conceded:u,challenged:o})}function In(e,t,n,i,s){s=s||{};t[n]=t[n]||{};if(G(e,s.ship)){t[n][i]=
+[]).map(E).filter(l=>e.byId[l]),conceded:u,challenged:o})}function Ln(e,t,n,i,s){s=s||{};t[n]=t[n]||{};if(G(e,s.ship)){t[n][i]=
 {ship:s.ship,amendments:(s.amendments||[]).slice(0,8),reason:s.reason||""};if(e.approval){t[n][i].acceptable=Ee((s.acceptable||
 []).filter(r=>r&&G(e,r.seat)&&r.seat!==s.ship),r=>r.seat).map(r=>({seat:r.seat,amendments:(r.amendments||[]).slice(0,8)}))}}else if(te(
 e,s.ship)){e.notes.push(`${i} voted for ${s.ship} in ${t===e.ballots?`the ballot after round ${n}`:`round ${n}`}, which \
-is out of contention; the vote was not counted.`)}}const kt={verified:"verified",refuted:"refuted",fabricated:"fabricate\
+is out of contention; the vote was not counted.`)}}const bt={verified:"verified",refuted:"refuted",fabricated:"fabricate\
 d",unverifiable:"unresolved"};function qs(e,t,n,i,s){const r=e.pos[t];if(!i){r.assessment={round:n,checked:false,measured:false,
 missingCriteria:e.criteria.map(c=>c.id),missingItems:s.map(c=>c.c.id)};e.notes.push(`The check of ${t} in ${k(n)} failed\
 ; its claims stay unchecked.`);return}const o=new Set((i.rulings||[]).map(c=>E(c.claim)));const u=new Set((i.criteria||[]).
@@ -1573,40 +1573,40 @@ criteria.map(c=>c.id).filter(c=>!u.has(c)),missingItems:s.map(c=>c.c.id).filter(
 i.postWords>0)r.postWords=i.postWords;if(Number.isInteger(i.postWords)&&i.postWords>e.postWords)e.longPosts.push({turn:`${k(
 n)}:${t}`,words:i.postWords});if(e.mode==="implement"&&i.measured){r.stats={files:i.diff.files,added:i.diff.added,removed:i.
 diff.removed};r.tree=/^[0-9a-f]{40,64}$/.test(i.diff.tree||"")?{hash:i.diff.tree,round:n}:null;r.diffPath=`${e.run.room}\
-/${k(n)}/${t}.diff`;r.statPath=`${e.run.room}/${k(n)}/${t}.stat`;const c=i.delta;const p=c&&bt(e,n)&&c.since===bt(e,n);r.
+/${k(n)}/${t}.diff`;r.statPath=`${e.run.room}/${k(n)}/${t}.stat`;const c=i.delta;const p=c&&vt(e,n)&&c.since===vt(e,n);r.
 delta=p?{files:c.files,added:c.added,removed:c.removed}:null;r.deltaPath=p?`${e.run.room}/${k(n)}/${t}.delta.diff`:null;
 r.deltaRound=n;r.snapTag=k(n);r.suite={ran:i.suite.ran,passed:i.suite.passed,tail:i.suite.tail,...i.suite.scratchFailed===
 true?{scratchFailed:true}:{}};for(const y of i.crossTests||[]){const g=E(y.test);if(!e.byId[g])continue;e.testResults[g]=
 e.testResults[g]||{};e.testResults[g][t]=y.outcome}}const d=new Map(s.map(c=>[c.c.id,c]));for(const c of i.rulings||[]){
-const p=d.get(E(c.claim));if(!p)continue;const y=p.c;if((p.validity||p.test)&&kt[c.verdict]){y.status=kt[c.verdict];y.note=
+const p=d.get(E(c.claim));if(!p)continue;const y=p.c;if((p.validity||p.test)&&bt[c.verdict]){y.status=bt[c.verdict];y.note=
 c.note||"";y.ruledBy="checker"}if(p.fixed&&y.kind==="finding"){if(c.fixed==="yes"){if(!y.fixed)y.fixedIn=n;y.fixed=true}else if(c.
 fixed==="no")y.fixed=false}}const l=(i.criteria||[]).filter(c=>e.criteria.some(p=>p.id===c.criterion));if(l.length)r.criteria=
-l}function jt(e,t,n){const i=e.panel.map((s,r)=>({m:s,r:n[r]})).filter(s=>s.r);if(!i.length){e.notes.push(`The adjudicat\
+l}function kt(e,t,n){const i=e.panel.map((s,r)=>({m:s,r:n[r]})).filter(s=>s.r);if(!i.length){e.notes.push(`The adjudicat\
 ion panel failed on ${t.join(", ")}; earlier rulings stand.`);return}for(const s of t){const r=e.byId[s];const o=i.map((d,l)=>({
-i:l,v:(d.r.rulings||[]).find(c=>E(c.claim)===s)})).filter(d=>d.v);if(!o.length)continue;const u=o.map(d=>kt[d.v.verdict]||
+i:l,v:(d.r.rulings||[]).find(c=>E(c.claim)===s)})).filter(d=>d.v);if(!o.length)continue;const u=o.map(d=>bt[d.v.verdict]||
 "unresolved");r.status=u.every(d=>d===u[0])?u[0]:"unresolved";r.note=o.map(d=>`adjudicator ${d.i+1}: ${d.v.verdict}, ${w(
 d.v.note,200)}`).join(" | ");r.ruledBy=o.length>1?"panel":"panel (one adjudicator)";if(r.judgment){if(r.status==="unreso\
 lved")r.status="judgment";else{r.judgment=false;r.wasJudgment=true}}}}function Bs(e,t,n){const i=e.pos[t];const s=[];if(e.
 mode==="implement"&&e.baselineOk&&i.suite&&i.suite.ran&&!i.suite.passed)s.push("verification command fails");const r=e.ledger.
 filter(o=>o.author===t&&o.round===n&&o.kind==="verification"&&o.status==="fabricated");if(r.length)s.push(`fabricated ve\
-rification claim ${r.map(o=>o.id).join(", ")}`);i.gated=s.length>0;i.gateReasons=s}function An(e,t){const n=xe(e);return e.
-questions.filter(i=>!ft(e,i.id,t)&&Xi(e,i)>=n)}function Dn(e){const t={};for(const n of W(e)){t[n.L]=e.ledger.filter(i=>K(
+rification claim ${r.map(o=>o.id).join(", ")}`);i.gated=s.length>0;i.gateReasons=s}function In(e,t){const n=xe(e);return e.
+questions.filter(i=>!pt(e,i.id,t)&&Xi(e,i)>=n)}function An(e){const t={};for(const n of W(e)){t[n.L]=e.ledger.filter(i=>K(
 e,i)&&i.target===n.L&&i.status==="verified"&&(i.severity==="blocker"||i.severity==="major")).map(i=>i.id)}return t}function Hs(e,t,n){
 for(const i of A(e)){const s=e.behaviour[i.L];const r=s.turns.find(o=>o.round===t);if(!r)continue;if(r.changed&&!r.adopted&&
 (r.basis.length===0||r.basis.every(o=>X(e.byId[o])))){s.capitulations.push({round:t,note:r.note})}for(const o of n[i.L]||
 []){const u=e.byId[o];if(!(r.conceded.includes(o)||r.challenged.includes(o)||r.basis.includes(o)||u.fixed)){s.ignored.push(
-{round:t,finding:o})}}}}function Cn(e,t,n=e.votes){const i={};for(const[s,r]of Object.entries(n[t]||{})){if(!te(e,s)||!G(
-e,r.ship)||e.pos[r.ship].gated)continue;(i[r.ship]=i[r.ship]||[]).push(s)}return i}function En(e,t){const n={};for(const i of de(
+{round:t,finding:o})}}}}function Dn(e,t,n=e.votes){const i={};for(const[s,r]of Object.entries(n[t]||{})){if(!te(e,s)||!G(
+e,r.ship)||e.pos[r.ship].gated)continue;(i[r.ship]=i[r.ship]||[]).push(s)}return i}function Cn(e,t){const n={};for(const i of de(
 e)){const s=e.pos[i.seat];if(!G(e,i.seat)||s.gated||!s.tree||s.tree.round!==t)continue;(n[s.tree.hash]=n[s.tree.hash]||[]).
-push(i.seat)}return Object.values(n).filter(i=>i.length>1)}function Pn(e,t,n=e.votes){const i=je(e);const s=d=>!qe(e)||ut(
-d.map(l=>Me(e,l))).size>=2;const r=Cn(e,t,n);for(const[d,l]of Object.entries(r)){if(l.length>=i&&s(l))return{W:d,voters:l,
-via:"votes"}}for(const d of En(e,t)){const l=d.flatMap(y=>r[y]||[]);if(l.length<i||!s(l))continue;const c=y=>(r[y]||[]).
+push(i.seat)}return Object.values(n).filter(i=>i.length>1)}function En(e,t,n=e.votes){const i=je(e);const s=d=>!Me(e)||dt(
+d.map(l=>Fe(e,l))).size>=2;const r=Dn(e,t,n);for(const[d,l]of Object.entries(r)){if(l.length>=i&&s(l))return{W:d,voters:l,
+via:"votes"}}for(const d of Cn(e,t)){const l=d.flatMap(y=>r[y]||[]);if(l.length<i||!s(l))continue;const c=y=>(r[y]||[]).
 length;const p=d.reduce((y,g)=>c(g)>c(y)?g:y);return{W:p,voters:l,same:d,via:"identical"}}if(!e.approval)return null;const o=Object.
-entries(n[t]||{}).filter(([d])=>te(e,d));const u=Dn(e);for(const d of de(e)){const l=d.seat;if(!G(e,l)||e.pos[l].gated||
+entries(n[t]||{}).filter(([d])=>te(e,d));const u=An(e);for(const d of de(e)){const l=d.seat;if(!G(e,l)||e.pos[l].gated||
 (u[l]||[]).length)continue;const c=o.filter(([,g])=>g.ship===l).map(([g])=>g);const p=o.filter(([,g])=>g.ship!==l&&(g.acceptable||
 []).some(m=>m.seat===l)).map(([g])=>g);const y=[...c,...p];if(c.some(g=>g!==l)&&y.length>=i&&s(y))return{W:l,voters:y,first:c,
 via:"approval"}}return null}function _s(e){if(e.mode!=="implement")return null;const t=A(e);if(t.length<2)return null;if(e.
-verify&&!t.every(i=>e.pos[i.L].suite&&e.pos[i.L].suite.ran&&e.pos[i.L].suite.passed))return null;const n=En(e,0).find(i=>i.
+verify&&!t.every(i=>e.pos[i.L].suite&&e.pos[i.L].suite.ran&&e.pos[i.L].suite.passed))return null;const n=Cn(e,0).find(i=>i.
 length===t.length);return n?{W:n[0],same:n}:null}function Us(e,t){const n=A(e).map(r=>e.behaviour[r.L].turns.find(o=>o.round===
 t)).filter(Boolean);if(!n.length||n.some(r=>r.changed))return false;const i=e.votes[t]||{},s=e.votes[t-1]||{};return Object.
 keys(i).length>0&&Object.keys(i).every(r=>s[r]&&s[r].ship===i[r].ship)}function Gs(e,t){const n=W(e).map(u=>u.L);if(!e.narrow||
@@ -1616,28 +1616,28 @@ author===u.seat&&K(e,l)&&l.status==="verified"&&r.includes(l.target)&&(l.severit
 s.add(u.seat)}const o=i.filter(u=>!s.has(u.seat));if(!o.length)return null;e.inContention=new Set(n.filter(u=>s.has(u)));
 for(const u of o)e.dropped.push({seat:u.seat,afterRound:t,rank:i.indexOf(u)+1,of:i.length});return`round ${t}: the field\
  narrows to ${[...e.inContention].join(", ")}; ${o.map(u=>u.seat).join(", ")} now review`}function Ks(e,t){const n=e.votes[t]||
-{};return A(e).map(i=>`${i.L}→${n[i.L]?n[i.L].ship:"–"}`).join(" ")}function Qe(e){return e.kind==="finding"?Z[e.severity]||
-1:e.kind==="verification"?3:e.kind==="test"?2:1}function xt(e){return e.seats.map(t=>{const n=t.L;const i=e.ledger.filter(
+{};return A(e).map(i=>`${i.L}→${n[i.L]?n[i.L].ship:"–"}`).join(" ")}function ze(e){return e.kind==="finding"?Z[e.severity]||
+1:e.kind==="verification"?3:e.kind==="test"?2:1}function jt(e){return e.seats.map(t=>{const n=t.L;const i=e.ledger.filter(
 h=>h.author===n&&(h.kind==="fact"||h.kind==="verification"));const s=i.filter(h=>["verified","refuted","fabricated"].includes(
 h.status));const r=i.filter(h=>h.status==="fabricated").length;const o=e.ledger.filter(h=>h.author===n&&h.kind==="findin\
 g"&&!h.judgment);const u=o.filter(h=>h.status==="verified");const d=o.filter(X);const l=Ee(e.challenges.filter(h=>h.by===
 n),h=>h.claim);const c=l.filter(h=>X(e.byId[h.claim]));const p=l.filter(h=>e.byId[h.claim].status==="verified");const y=$e(
-u.map(Qe))+$e(c.map(h=>Qe(e.byId[h.claim])))-1.5*($e(d.map(Qe))+$e(p.map(h=>Qe(e.byId[h.claim]))));const g=Ee(e.adoptions.
+u.map(ze))+$e(c.map(h=>ze(e.byId[h.claim])))-1.5*($e(d.map(ze))+$e(p.map(h=>ze(e.byId[h.claim]))));const g=Ee(e.adoptions.
 filter(h=>h.from===n&&h.by!==n),h=>`${h.by}|${w(h.idea,80).toLowerCase()}`);const m=e.ledger.filter(h=>h.author===n&&h.kind===
 "test");const f=e.behaviour[n];return{seat:n,model:t.name,vendor:t.vendor,active:t.active,claimsChecked:s.length,fabricated:r,
 refutedClaims:i.filter(h=>h.status==="refuted").length,hallucinationRate:s.length?Math.round(r/s.length*100)/100:0,findingsUpheld:u.
 length,findingsRefuted:d.length,findingPrecision:u.length+d.length?Math.round(u.length/(u.length+d.length)*100)/100:null,
 challengesWon:c.length,challengesLost:p.length,refutationScore:Math.round(y*10)/10,ideasAdoptedByOthers:g.length,ideasInFinal:e.
 adoptions.filter(h=>h.from===n&&(h.round==="F"||h.round==="G")).length,testsPublished:m.length,testsValid:m.filter(h=>h.
-status==="verified").length,capitulations:f.capitulations.length,ignoredFindings:f.ignored.length}})}function Tt(e){const t=Object.
-keys(e.votes).map(Number).filter(n=>Object.keys(e.votes[n]).length);return t.length?Math.max(...t):null}function Ys(e){const t=Object.
-fromEntries(xt(e).map(s=>[s.seat,s]));const n=Tt(e);const i=n===null?{}:e.votes[n];return A(e).map(s=>{const r=s.L,o=e.pos[r];
-const u=e.ledger.filter(c=>K(e,c)&&c.target===r);const d=pt(e,r);const l=o.criteria||[];return{seat:r,out:G(e,r)?0:1,outAfter:ke(
+status==="verified").length,capitulations:f.capitulations.length,ignoredFindings:f.ignored.length}})}function xt(e){const t=Object.
+keys(e.votes).map(Number).filter(n=>Object.keys(e.votes[n]).length);return t.length?Math.max(...t):null}function Js(e){const t=Object.
+fromEntries(jt(e).map(s=>[s.seat,s]));const n=xt(e);const i=n===null?{}:e.votes[n];return A(e).map(s=>{const r=s.L,o=e.pos[r];
+const u=e.ledger.filter(c=>K(e,c)&&c.target===r);const d=ht(e,r);const l=o.criteria||[];return{seat:r,out:G(e,r)?0:1,outAfter:ke(
 e,r)?ke(e,r).afterRound:null,gated:o.gated?1:0,gateReasons:o.gateReasons,blockers:u.filter(c=>c.severity==="blocker").length,
 majors:u.filter(c=>c.severity==="major").length,minors:u.filter(c=>c.severity==="minor").length,crossPass:d.pass,crossTotal:d.
 total,crossRate:d.total?d.pass/d.total:1,criteriaScore:$e(l.map(c=>c.status==="met"?1:c.status==="partial"?.5:0)),criteriaTotal:e.
 criteria.length,votesFromOthers:Object.entries(i).filter(([c,p])=>p.ship===r&&c!==r).length,authorHallucination:t[r].hallucinationRate,
-size:o.stats?o.stats.added+o.stats.removed:0}})}const On=[{key:"out",low:true,why:(e,t)=>`contention (${t.seat} had left\
+size:o.stats?o.stats.added+o.stats.removed:0}})}const Pn=[{key:"out",low:true,why:(e,t)=>`contention (${t.seat} had left\
  it after round ${t.outAfter})`},{key:"gated",low:true,why:(e,t)=>`the gate (${t.seat} was disqualified: ${t.gateReasons.
 join("; ")})`},{key:"blockers",low:true,why:(e,t)=>`standing blocker findings (${e.blockers} vs ${t.blockers})`},{key:"m\
 ajors",low:true,why:(e,t)=>`standing major findings (${e.majors} vs ${t.majors})`},{key:"crossRate",low:false,why:(e,t)=>`\
@@ -1646,20 +1646,20 @@ why:(e,t)=>`acceptance criteria met (${e.criteriaScore} vs ${t.criteriaScore} of
 why:(e,t)=>`standing minor findings (${e.minors} vs ${t.minors})`},{key:"votesFromOthers",low:false,why:(e,t)=>`votes fr\
 om other seats (${e.votesFromOthers} vs ${t.votesFromOthers})`},{key:"authorHallucination",low:true,why:(e,t)=>`its auth\
 or's fabrication rate (${e.authorHallucination} vs ${t.authorHallucination})`},{key:"size",low:true,why:(e,t)=>`diff siz\
-e (${e.size} vs ${t.size} lines)`}];function de(e){return Ys(e).sort((t,n)=>{for(const i of On){const s=i.low?t[i.key]-n[i.
-key]:n[i.key]-t[i.key];if(s)return s}return t.seat.localeCompare(n.seat)})}function Nn(e,t){const n=On.find(i=>e[i.key]!==
+e (${e.size} vs ${t.size} lines)`}];function de(e){return Js(e).sort((t,n)=>{for(const i of Pn){const s=i.low?t[i.key]-n[i.
+key]:n[i.key]-t[i.key];if(s)return s}return t.seat.localeCompare(n.seat)})}function On(e,t){const n=Pn.find(i=>e[i.key]!==
 t[i.key]);return n?`${e.seat} ranked above ${t.seat} on ${n.why(e,t)}`:`${e.seat} and ${t.seat} tied on every criterion;\
- seat order put ${e.seat} first`}function Fn(e){const t=de(e);const n=["| Rank | Position | Gate | Standing findings (bl\
+ seat order put ${e.seat} first`}function Nn(e){const t=de(e);const n=["| Rank | Position | Gate | Standing findings (bl\
 ocker/major/minor) | Published tests | Criteria | Votes from others |"+(e.mode==="implement"?" Diff size |":""),"|---|--\
 -|---|---|---|---|---|"+(e.mode==="implement"?"---|":"")];t.forEach((i,s)=>n.push(`| ${s+1} | ${i.seat} | ${i.out?`out o\
 f contention after round ${i.outAfter}`:i.gated?`OUT: ${i.gateReasons.join("; ")}`:"ok"} | ${i.blockers}/${i.majors}/${i.
 minors} | ${i.crossTotal?`${i.crossPass}/${i.crossTotal}`:"–"} | ${i.criteriaScore}/${i.criteriaTotal} | ${i.votesFromOthers}\
- |`+(e.mode==="implement"?` ${i.size} |`:"")));return n.join("\n")}function Js(e){const t=["| Seat | Model | Claims chec\
+ |`+(e.mode==="implement"?` ${i.size} |`:"")));return n.join("\n")}function Ys(e){const t=["| Seat | Model | Claims chec\
 ked | Fabricated | Wrong | Findings upheld/refuted | Challenges won/lost | Refutation score | Ideas adopted (in final) |\
- Capitulations | Ignored findings |","|---|---|---|---|---|---|---|---|---|---|---|"];for(const n of xt(e)){t.push(`| ${n.
+ Capitulations | Ignored findings |","|---|---|---|---|---|---|---|---|---|---|---|"];for(const n of jt(e)){t.push(`| ${n.
 seat} | ${n.model}${n.active?"":" (dropped)"} | ${n.claimsChecked} | ${n.fabricated} | ${n.refutedClaims} | ${n.findingsUpheld}\
 /${n.findingsRefuted} | ${n.challengesWon}/${n.challengesLost} | ${n.refutationScore} | ${n.ideasAdoptedByOthers} (${n.ideasInFinal}\
-) | ${n.capitulations} | ${n.ignoredFindings} |`)}return t.join("\n")}function Rt(e,t,n,i,s){for(const o of(s.findings||
+) | ${n.capitulations} | ${n.ignoredFindings} |`)}return t.join("\n")}function Tt(e,t,n,i,s){for(const o of(s.findings||
 []).slice(0,15)){if(!o||!o.statement)continue;let u=1;while(e.byId[`${t.id}${u}`])u++;const d=me(e,{id:`${t.id}${u}`,round:n,
 author:t.id,kind:"finding",target:i,severity:Z[o.severity]?o.severity:"minor",judgment:o.kind==="judgment",statement:o.statement,
 evidence:o.evidence});if(/^review\d+$/.test(n)){d.snapshotTag=e.reviewedSnapshot;d.artifactPost=e.pos[i]?.post}if(Number.
@@ -1667,9 +1667,9 @@ isInteger(o.milestone)&&o.milestone>0)d.milestone=o.milestone}const r=new RegExp
 /^review\d+$/.test(n))&&e.mode==="implement"?(s.tests||[]).slice(0,10):[]){if(!o||!o.id)continue;if(!r.test(o.id)||e.byId[o.
 id]){e.notes.push(`Ignored test '${o.id}' from the ${t.lens} auditor: bad or duplicate ID.`);continue}me(e,{id:o.id,round:n,
 author:t.id,kind:"test",target:i,statement:o.purpose,evidence:o.command})}return{summary:s.summary||"",probes:(s.probes||
-[]).filter(o=>o&&o.change).slice(0,5),...Y(e)?{evidenceReview:s.evidenceReview||null}:{}}}function Mn(e,t){const n=e.ledger.
+[]).filter(o=>o&&o.change).slice(0,5),...J(e)?{evidenceReview:s.evidenceReview||null}:{}}}function Fn(e,t){const n=e.ledger.
 filter(i=>i.round===t&&F(i.author)&&!i.withdrawn);return{panel:n.filter(i=>i.kind==="finding"&&Z[i.severity]>=2).map(i=>i.
-id),tests:n.filter(i=>i.kind==="test").map(i=>i.id)}}function qn(e,t){const n=e.ledger.filter(r=>r.round==="H"&&r.kind===
+id),tests:n.filter(i=>i.kind==="test").map(i=>i.id)}}function Mn(e,t){const n=e.ledger.filter(r=>r.round==="H"&&r.kind===
 "finding"&&r.target===t&&!r.withdrawn);const i={upheld:n.filter(r=>!r.judgment&&r.status==="verified"),disputed:n.filter(
 r=>!r.judgment&&r.status==="unresolved"),failing:ne(e).filter(r=>e.testResults[r.id]&&e.testResults[r.id][t]&&e.testResults[r.
 id][t]!=="pass"),suggestions:n.filter(r=>r.judgment)};const s=e.pos[t];i.suite=(e.tier==="simple"||e.tier==="feature")&&
@@ -1698,11 +1698,11 @@ id===E(d.finding)).statement),chosen:String(d.chosen),alternative:String(d.alter
 const u=n.filter(d=>d.status==="decision"&&!o.has(d.id)&&!e.spec.assumptions.some(l=>l.id===d.id));if(u.length)e.notes.push(
 `The spec amendment recorded no assumption for ${u.map(d=>d.id).join(", ")}.`);return true}function Ws(e,t){return{version:1,
 executor:t?.executor||null,evaluator:t?.evaluator||null,invocation:t?.invocation||null,candidate:t?.candidate||null,inputs:t?.
-inputs||null}}const Bn=10;function C(e,t){const n=Me(e,t),i=zi(e,t);return n?`${t} (${n.name})`:i?`the ${i.lens} auditor\
- (${i.name})`:String(t)}function Hn(e,t){const n=[];e.ledger.forEach((i,s)=>{if(typeof i.round!=="number")return;const r=Ee(
+inputs||null}}const qn=10;function C(e,t){const n=Fe(e,t),i=zi(e,t);return n?`${t} (${n.name})`:i?`the ${i.lens} auditor\
+ (${i.name})`:String(t)}function Bn(e,t){const n=[];e.ledger.forEach((i,s)=>{if(typeof i.round!=="number")return;const r=Ee(
 e.challenges.filter(l=>l.claim===i.id),l=>l.by);if(i.kind!=="finding"&&!r.length)return;const o=i.kind==="finding"?Z[i.severity]||
-1:ht(i)?2:1;const u=r.length>0||i.ruledBy.startsWith("panel");const d=100*o+(u?10:0)+(t&&(i.target===t||i.author===t)?1:
-0);n.push({c:i,disputes:r,weight:d,i:s})});return n.sort((i,s)=>s.weight-i.weight||i.i-s.i)}function Xe(e,t="the two-ven\
+1:ct(i)?2:1;const u=r.length>0||i.ruledBy.startsWith("panel");const d=100*o+(u?10:0)+(t&&(i.target===t||i.author===t)?1:
+0);n.push({c:i,disputes:r,weight:d,i:s})});return n.sort((i,s)=>s.weight-i.weight||i.i-s.i)}function Qe(e,t="the two-ven\
 dor panel"){if(e.withdrawn)return"withdrawn by its author";if(e.status==="judgment")return"a judgment call: argued, not \
 adjudicated";const n=e.ruledBy.startsWith("panel");const i=n?t:"the neutral checker";const s=e.note?`: ${w(e.note,240)}`:
 "";switch(e.status){case"verified":return`${e.kind==="finding"?"upheld":"verified"} by ${i}${s}`;case"refuted":return`re\
@@ -1713,22 +1713,22 @@ ent (${i.severity})`:i.severity}, ${i.round==="F"?"objection to the final versio
 280)}`);for(const o of t.disputes)s.push(`  - ${C(e,o.by)} disputed it: ${w(o.reason,220)||"(no reason given)"}`)}else{s.
 push(`- **[${i.id}] ${t.disputes.map(o=>C(e,o.by)).join(" and ")} disputed ${C(e,i.author)}'s ${i.kind==="test"?"test":`${i.
 kind} claim`}, round ${t.disputes[0].round}.** ${w(i.statement,220)}`);for(const o of t.disputes)s.push(`  - ${C(e,o.by)}\
-: ${w(o.reason,220)||"(no reason given)"}`)}s.push(`  - Ruling: ${Xe(i,e.host==="codex"?"the independent panel":void 0)}`);
-const r=[];if(i.conceded)r.push(`${i.target} conceded it${i.concededIn!==void 0?` ${qt(i.concededIn)}`:""}`);if(i.fixed)
-r.push(`fixed${i.fixedIn!==void 0?` ${qt(i.fixedIn)}`:""}`);if(n&&K(e,i)&&i.target===n)r.push("still stands against the \
-final version");if(r.length)s.push(`  - Outcome: ${r.join("; ")}`);return s.join("\n")}function _n(e,t){const n=Hn(e,t);
-if(!n.length)return"- No findings were filed and no claims were disputed.";const i=n.slice(0,Bn);const s=n.slice(Bn);const r=i.
+: ${w(o.reason,220)||"(no reason given)"}`)}s.push(`  - Ruling: ${Qe(i,e.host==="codex"?"the independent panel":void 0)}`);
+const r=[];if(i.conceded)r.push(`${i.target} conceded it${i.concededIn!==void 0?` ${Mt(i.concededIn)}`:""}`);if(i.fixed)
+r.push(`fixed${i.fixedIn!==void 0?` ${Mt(i.fixedIn)}`:""}`);if(n&&K(e,i)&&i.target===n)r.push("still stands against the \
+final version");if(r.length)s.push(`  - Outcome: ${r.join("; ")}`);return s.join("\n")}function Hn(e,t){const n=Bn(e,t);
+if(!n.length)return"- No findings were filed and no claims were disputed.";const i=n.slice(0,qn);const s=n.slice(qn);const r=i.
 map(o=>Zs(e,o,t));if(s.length){const o=s.filter(u=>u.c.kind==="finding"&&u.c.severity==="minor").length;r.push(`- … and ${R(
 s.length,"smaller point")} not listed${o?` (${o} of them minor findings)`:""}; the full ledger is in the room.`)}return r.
 join("\n")}function Ss(e,t){const n=[];if(t.gated)n.push(`disqualified: ${t.gateReasons.join("; ")}`);n.push(`standing f\
 indings ${t.blockers} blocker / ${t.majors} major / ${t.minors} minor`);if(e.mode==="implement"&&!e.build)n.push(`publis\
 hed tests ${t.crossTotal?`${t.crossPass}/${t.crossTotal}`:"none"}`);n.push(`criteria ${t.criteriaScore}/${t.criteriaTotal}`);
-return n.join(" · ")}function Un(e,t,n){const i=Tt(e);const s=i===null?{}:e.votes[i];return e.seats.map(r=>{const o=e.pos[r.
+return n.join(" · ")}function _n(e,t,n){const i=xt(e);const s=i===null?{}:e.votes[i];return e.seats.map(r=>{const o=e.pos[r.
 L];if(!o)return`- **${C(e,r.L)}**: failed in round 0 and was dropped.`;const u=ke(e,r.L);const d=t.findIndex(y=>y.seat===
 r.L)+1;const l=!r.active?"dropped after a failed turn":r.L===n?"chosen":u?`left contention after round ${u.afterRound} (\
 ranked ${u.rank} of ${u.of}) and reviewed from then on`:`ranked ${d} of ${t.length} on the scorecard`;const c=s[r.L]&&r.
 L!==n?`; last voted for ${s[r.L].ship}`:"";const p=r.L!==n&&o.summary&&o.summary!==o.opening?` Ended at: ${H(w(o.summary,
-240))}`:"";return`- **${C(e,r.L)}**, ${l}${c}. Opened with: ${H(w(o.opening,240))}${p}`}).join("\n")}function Gn(e,t,n){
+240))}`:"";return`- **${C(e,r.L)}**, ${l}${c}. Opened with: ${H(w(o.opening,240))}${p}`}).join("\n")}function Un(e,t,n){
 const i=[];const s=e.ledger.filter(o=>o.round===0&&(o.kind==="fact"||o.kind==="verification")&&o.status!=="open");const r=e.
 seats.filter(o=>!e.pos[o.L]);i.push(`- **Round 0, blind:** ${e.seats.length} seats worked alone${r.length?` (${r.map(o=>o.
 L).join(", ")} failed and ${r.length===1?"was":"were"} dropped)`:""}. Checkers ruled on ${R(s.length,"claim")}: ${s.filter(
@@ -1743,19 +1743,19 @@ const y=Object.entries(e.votes[o]||{});u.push(`votes ${y.map(([f,h])=>`${f}→${
 const g=Object.entries(e.ballots[o]||{});if(g.length)u.push(`ballot after the checks ${g.map(([f,h])=>`${f}→${h.ship}`).
 join(", ")}`);const m=e.dropped.filter(f=>f.afterRound===o);if(n&&n.round===o)u.push(n.text);else if(m.length)u.push(`no\
  consensus, so the field narrowed: ${m.map(f=>`${f.seat} (ranked ${f.rank} of ${f.of})`).join(", ")} left contention`);else
-u.push("no consensus");i.push(`- **Round ${o}:** ${u.map(Pe).join(". ")}.`)}return i.join("\n")}function Kn(e){if(!e.notes.
+u.push("no consensus");i.push(`- **Round ${o}:** ${u.map(Pe).join(". ")}.`)}return i.join("\n")}function Gn(e){if(!e.notes.
 length)return"";return`
 
 ### Problems during the run
 
 ${e.notes.slice(0,12).map(t=>`- ${w(t,300)}`).join("\n")}`+(e.notes.length>12?`
-- … ${e.notes.length-12} more in \`notes\``:"")}function Yn(e,t,n,i){const s=e.declined.find(u=>u.round==="I"&&E(u.ref)===
+- … ${e.notes.length-12} more in \`notes\``:"")}function Kn(e,t,n,i){const s=e.declined.find(u=>u.round==="I"&&E(u.ref)===
 t.id);const r=(i.addressed||[]).find(u=>E(u.ref)===t.id);const o=[];if(t.kind==="test"){const u=i.testsAtAudit[t.id],d=(e.
-testResults[t.id]||{})[n];o.push(t.status==="open"?"not ruled on":t.status==="verified"?"a valid test":Xe(t,e.host==="co\
+testResults[t.id]||{})[n];o.push(t.status==="open"?"not ruled on":t.status==="verified"?"a valid test":Qe(t,e.host==="co\
 dex"?"the independent panel":void 0));if(u)o.push(`${u} on the audited version${i.fixPass&&d?`, ${d} after the fix`:""}`)}else if(t.
 judgment){o.push(t.ruledBy.startsWith("panel")?`the panel split, so it stays a judgment call: ${w(t.note,200)}`:"a sugge\
 stion to the author, not adjudicated");if(r)o.push(`taken: ${w(r.how,160)}`)}else if(t.status==="open"){o.push(t.round===
-"J"?"not adjudicated (minor, raised after the last fix)":"not ruled on")}else{o.push(Xe(t,e.host==="codex"?"the independ\
+"J"?"not adjudicated (minor, raised after the last fix)":"not ruled on")}else{o.push(Qe(t,e.host==="codex"?"the independ\
 ent panel":void 0));if(t.fixed)o.push(j(e).architecture?"fixed in the revision":"fixed in the audit fix pass");else if(K(
 e,t))o.push("still stands against the final version")}if(s)o.push(`declined by the author: ${w(s.why,200)||"no reason gi\
 ven"}`);return o.join("; ")}function eo(e,t,n){if(!n||!n.ran)return"";if(n.cycles)return`
@@ -1776,15 +1776,15 @@ s?`Reviewers who never saw the debate reviewed the milestone plan, each through 
 `- **${Pe(u.lens)}, ${u.name}:** ${d?H(w(d.summary,500))||"(no summary)":"returned no review."}`);for(const c of d?d.probes:
 [])r.push(`  - Probe: ${w(c.change,160)} → ${c.verdict}: ${w(c.touches,200)}`);const l=e.ledger.filter(c=>c.author===u.
 id&&c.round==="H");for(const c of l){r.push(`  - [${c.id}] ${c.kind==="test"?"test":`${c.severity}${c.judgment||c.status===
-"judgment"?", judgment":""}${c.milestone?`, milestone ${c.milestone}`:""}`}: ${w(c.statement,240)} → ${Yn(e,c,t.L,n)}`)}
+"judgment"?", judgment":""}${c.milestone?`, milestone ${c.milestone}`:""}`}: ${w(c.statement,240)} → ${Kn(e,c,t.L,n)}`)}
 if(d&&!l.length)r.push("  - No findings.")}const o=i?"Fix pass":s?"Revision":"Audit fix pass";r.push(n.fixPass?`- **${o}\
 :** ${t.L} ${s?"revised the plan for what was upheld, and it was checked again":"fixed what was upheld or failing, and t\
 he final version was checked again"}.`:`- **${o}:** not needed: nothing was upheld, disputed or failing.`);if(n.fixPass&&
 !i){const u=e.ledger.filter(c=>c.round==="J");const d=Object.keys(n.rereviews||{});const l=s?"the revision":"the fix";r.
 push(!d.length?`- **Re-review of ${l}:** none (${s?"no reviewer returned":"the fix changed no code, or no auditor return\
 ed"}).`:u.length?`- **Re-review of ${l}** (${d.join(", ")}):
-${u.map(c=>`  - [${c.id}] ${c.severity}: ${w(c.statement,240)} → ${Yn(e,c,t.L,n)}`).join("\n")}`:`- **Re-review of ${l}\
-** (${d.join(", ")}): nothing new.`)}if(Y(e)){const u=Re(e);const d=(n.rereviews||{})[u.lens]||n.reviews[u.lens];const l=d&&
+${u.map(c=>`  - [${c.id}] ${c.severity}: ${w(c.statement,240)} → ${Kn(e,c,t.L,n)}`).join("\n")}`:`- **Re-review of ${l}\
+** (${d.join(", ")}): nothing new.`)}if(J(e)){const u=Re(e);const d=(n.rereviews||{})[u.lens]||n.reviews[u.lens];const l=d&&
 d.evidenceReview;r.push(`- **Historical acceptance, ${u.lens}:** ${H(l?`${l.status}${l.note?`: ${w(l.note,400)}`:""}`:"n\
 ot checked")}`)}return`
 
@@ -1825,13 +1825,13 @@ ates the saved repository and evidence before replaying completed operations. If
 the full questions and answers in context.`:`Before any seat started, the spec review found ${t.length===1?"a question":
 "questions"} about the request that the code and the task don't settle, and this run was told to ask rather than assume \
 (spec: "ask"). Ask the user (AskUserQuestion works well: offer each question's readings as options; the first is the mos\
-t conservative). Then resume the same run: Workflow({name: "${st(e.workflowName)}", resumeFromRunId: <this run's id>, ar\
+t conservative). Then resume the same run: Workflow({name: "${nt(e.workflowName)}", resumeFromRunId: <this run's id>, ar\
 gs: <exactly the args you launched with, as an object; if you passed a plain string, use {task: <that string>}>, plus cl\
 arifications: [<any earlier clarifications, unchanged>, {id, answer}, …]}). The review replays from cache, the criteria \
 are amended to the answers, and the council starts. Workspaces persist on disk, so this works only from this session.`}}
 function ro(e,t,n,i){const s=i.find(p=>p.seat===n.L);const r=i.indexOf(s)+1;const o=[];const u=Object.entries((t.ballot?
 e.ballots:e.votes)[t.round]||{});const d=t.ballot?`in the ballot after round ${t.round}`:`in round ${t.round}`;const l=`\
-consensus needs ${je(e)} of ${A(e).length} seats${qe(e)?`, from ${ct(e)}`:""}`;if(t.kind==="consensus"&&t.via==="approva\
+consensus needs ${je(e)} of ${A(e).length} seats${Me(e)?`, from ${lt(e)}`:""}`;if(t.kind==="consensus"&&t.via==="approva\
 l"){o.push(`- Converged ${d} by approval, an experiment turned on for this run: ${t.first.map(p=>C(e,p)).join(", ")} vot\
 ed for it first, and ${t.voters.filter(p=>!t.first.includes(p)).map(p=>C(e,p)).join(", ")} also accepted it (${l}).`)}else if(t.
 kind==="consensus"&&t.via==="blind"){o.push(`- Converged in round 0, before any debate: ${t.same.map(p=>C(e,p)).join(", ")}\
@@ -1842,8 +1842,8 @@ voters.map(p=>C(e,p)).join(", ")} counted together (${l}). ${n.L} ships as the c
 t on the scorecard.`)}else if(t.kind==="consensus"){o.push(`- Converged ${d}: ${t.voters.map(p=>C(e,p)).join(", ")} vote\
 d to ship it (${l}).`)}else{o.push(`- No consensus after ${R(t.round,"round")}, so the evidence scorecard decided, and i\
 t ranked ${n.L} first.`)}if(u.length){o.push(`- Votes ${d}, with reasons:`);for(const[p,y]of u)o.push(`  - ${C(e,p)} → ${y.
-ship}: ${w(y.reason,240)||"(no reason given)"}`)}if(r===1&&i[1])o.push(`- On the scorecard, ${Nn(s,i[1])}.`);else if(r>1)
-o.push(`- On the scorecard it ranked ${r} of ${i.length}: ${Nn(i[0],s)}. The seats voted for ${n.L} anyway.`);o.push(`- \
+ship}: ${w(y.reason,240)||"(no reason given)"}`)}if(r===1&&i[1])o.push(`- On the scorecard, ${On(s,i[1])}.`);else if(r>1)
+o.push(`- On the scorecard it ranked ${r} of ${i.length}: ${On(i[0],s)}. The seats voted for ${n.L} anyway.`);o.push(`- \
 Its evidence when chosen: ${Ss(e,s)}.`);const c=t.kind==="consensus"?{round:t.round,text:t.via==="blind"?`every version \
 was byte-identical, so the debate was skipped and ${n.L} wrote the final version`:`consensus on ${n.L}${t.via==="approva\
 l"?" by approval":t.via==="identical"?` (identical to ${t.same.filter(p=>p!==n.L).join(", ")})`:""}${t.ballot?" in the b\
@@ -1855,22 +1855,22 @@ kind,criterion:t.criterion,status:t.status,statement:t.statement,evidence:t.evid
 spec.applied.find(n=>n.id===t.id)||{}).change||""})),criteria:e.criteria,criteriaBefore:e.spec.before?e.spec.before.criteria:
 null,assumptions:e.spec.assumptions,answered:e.spec.answered}:null}function uo(e,t){return t.ran?{auditors:e.auditors.map(
 n=>({lens:n.lens,model:n.name,reviewed:!!t.reviews[n.lens],summary:(t.reviews[n.lens]||{}).summary||"",probes:(t.reviews[n.
-lens]||{}).probes||[],...Y(e)?{evidenceReview:((t.rereviews||{})[n.lens]||t.reviews[n.lens]||{}).evidenceReview||null}:{}})),
+lens]||{}).probes||[],...J(e)?{evidenceReview:((t.rereviews||{})[n.lens]||t.reviews[n.lens]||{}).evidenceReview||null}:{}})),
 items:e.ledger.filter(n=>F(n.author)).map(n=>({id:n.id,lens:F(n.author),round:k(n.round),kind:n.kind,severity:n.severity,
 judgment:n.judgment,status:n.fixed?"fixed":n.status,statement:n.statement,evidence:n.evidence,note:n.note})),fixPass:t.fixPass,
 ...t.cycles?{cycles:t.cycles,repairPolicy:t.repairPolicy,stopReason:t.stopReason,gaps:t.gaps}:{}}:null}function lo(e,t){
-const{outcome:n,W:i,rows:s}=t;const{why:r,ending:o,rank:u}=ro(e,n,i,s);const d=[];d.push(`- **Readiness:** ${t.ready?Tn(
+const{outcome:n,W:i,rows:s}=t;const{why:r,ending:o,rank:u}=ro(e,n,i,s);const d=[];d.push(`- **Readiness:** ${t.ready?xn(
 t.ready):"not assessed"}`);d.push(`- **Final version** by ${C(e,i.L)}: ${w(e.pos[i.L].summary,500)}`);const l=e.adoptions.
 filter(g=>g.by===i.L&&(g.round==="F"||g.round==="G"));if(l.length)d.push(`- **Folded in from other seats:** ${l.map(g=>`${C(
 e,g.from)}: ${w(g.idea,160)}`).join("; ")}`);if(e.declined.length)d.push(`- **Declined:** ${e.declined.map(g=>`${w(g.ref,
-80)}: ${w(g.why,160)||"no reason given"}`).join("; ")}`);d.push(`- **Neutral check of the final version:** ${Ve(e,i.L)}`);
+80)}: ${w(g.why,160)||"no reason given"}`).join("; ")}`);d.push(`- **Neutral check of the final version:** ${Ye(e,i.L)}`);
 if(!e.baselineOk)d.push(`- **Baseline:** the verification command already failed before any change, so a failing suite d\
 idn't disqualify positions: ${e.baselineNote}`);const c=t.raters.filter(g=>!t.endorsements.includes(g.L));d.push(`- **Ra\
 tification:** ${t.endorsements.length?`endorsed by ${t.endorsements.map(g=>C(e,g)).join(", ")}`:"no endorsements"}`+(c.length?
 `; not endorsed by ${c.map(g=>{const m=t.reviewNotes.find(f=>f.seat===g.L);return`${C(e,g.L)}${m&&m.note?` (${w(m.note,200)}\
 )`:" (no review)"}`}).join("; ")}`:"")+".");for(const g of t.objections){d.push(`  - Objection [${g.id}] from ${C(e,g.author)}\
 , ${g.judgment?"judgment":g.severity}: ${w(g.statement,200)} → ${g.judgment?"recorded as dissent":g.fixed?"upheld and \
-fixed in the fix pass":g.status==="open"?"not adjudicated (minor)":Xe(g,e.host==="codex"?"the independent panel":void 0)}`)}
+fixed in the fix pass":g.status==="open"?"not adjudicated (minor)":Qe(g,e.host==="codex"?"the independent panel":void 0)}`)}
 const p=[];for(const g of t.remaining)p.push(`standing finding [${g.id}] from ${C(e,g.author)} (${g.severity}, ${g.status}\
 ): ${w(g.statement,200)}`);for(const g of t.dissent.filter(m=>m.kind==="judgment"))p.push(`dissent from ${C(e,g.seat)} (\
 judgment): ${w(g.note,200)}`);for(const g of t.unanswered)p.push(`assumption on [${g.id}] ${w(g.text,160)}: ${Object.entries(
@@ -1879,21 +1879,21 @@ ${p.map(g=>`  - ${g}`).join("\n")}`:"- **Still open:** nothing.");const y=to(e)+
 
 ${r.join("\n")}`,`### The positions
 
-${Un(e,s,i.L)}`,`### How the debate went
+${_n(e,s,i.L)}`,`### How the debate went
 
-${Gn(e,n.round,o)}`,`### The debates
+${Un(e,n.round,o)}`,`### The debates
 
-${_n(e,i.L)}`,`### How it turned out
+${Hn(e,i.L)}`,`### How it turned out
 
-${d.join("\n")}`].join("\n\n")+io(e)+eo(e,i,t.audit)+Kn(e);return{chosen:{seat:i.L,model:i.name,how:n.kind,round:n.round,
-rank:u,voters:n.voters,runnerUp:s.find(g=>g.seat!==i.L)?s.find(g=>g.seat!==i.L).seat:null},debates:Hn(e,i.L).length,markdown:y}}
+${d.join("\n")}`].join("\n\n")+io(e)+eo(e,i,t.audit)+Gn(e);return{chosen:{seat:i.L,model:i.name,how:n.kind,round:n.round,
+rank:u,voters:n.voters,runnerUp:s.find(g=>g.seat!==i.L)?s.find(g=>g.seat!==i.L).seat:null},debates:Bn(e,i.L).length,markdown:y}}
 function co(e,t){const n=de(e);return{markdown:[`### The positions so far
 
-${Un(e,n,null)}`,`### How the debate went
+${_n(e,n,null)}`,`### How the debate went
 
-${Gn(e,t,{round:t,text:"a question about the request reached the escalation threshold"})}`,`### The debates so far
+${Un(e,t,{round:t,text:"a question about the request reached the escalation threshold"})}`,`### The debates so far
 
-${_n(e,null)}`].join("\n\n")+Kn(e)}}function ho(e){const t=e.pair,n=e.pairOptions;const i=s=>t.reviews.filter(r=>r.stage===
+${Hn(e,null)}`].join("\n\n")+Gn(e)}}function ho(e){const t=e.pair,n=e.pairOptions;const i=s=>t.reviews.filter(r=>r.stage===
 s).length;return`- Outcome: the pair strategy, ${n.author.name} authoring and ${n.reviewer.name} reviewing; ${t.reviews.
 length} of at most ${n.maxReviews} reviews (design ${i("design")}${n.design!==false&&n.maxDesignReviews?`, asking the us\
 er after every ${n.maxDesignReviews} without approval`:""}, code ${i("code")}), ended at the ${t.stage} stage${t.polish?
@@ -1914,7 +1914,7 @@ via==="identical"?` by pooling the votes for identical versions ${t.outcome.same
  ${R(e.rounds,"round")} allowed. Endorsed at ratification by ${t.endorsements.length?t.endorsements.join(", "):"nobody"}${t.
 fixPass?"; one fix pass for upheld objections":""}.`,e.dropped.length?`- Left contention: ${e.dropped.map(o=>`${o.seat} \
 after round ${o.afterRound}`).join(", ")}.`:"",`- Claude agent turns: ${n.length} (${Q(n,o=>o.role)}).${i.map(([o,u])=>`\
- ${_t[o]} turns: ${u.length} (${Q(u,d=>d.role)}).`).join("")}`,s.length?`- Turns that returned nothing: ${s.join(", ")}.`:
+ ${Ht[o]} turns: ${u.length} (${Q(u,d=>d.role)}).`).join("")}`,s.length?`- Turns that returned nothing: ${s.join(", ")}.`:
 "",e.relayFailures.length?`- Relay attempts that didn't return a result: ${e.relayFailures.map(o=>`${o.turn} via ${o.model}\
 : ${o.status}${o.errorClass?` [${o.errorClass}]`:""}${o.error?` (${o.error})`:""}`).join("; ")}.`:"",mo(e),e.longPosts.length?
 `- Posts over the ${e.postWords}-word limit: ${e.longPosts.map(o=>`${o.turn} ${o.words} words`).join(", ")}.`:"",`- Ledg\
@@ -1922,7 +1922,7 @@ er: ${R(e.ledger.length,"item")} (${Q(e.ledger,o=>o.status||"open")}), ${R(e.cha
  by the panel. Questions raised: ${e.questions.length}.`,`- Ledger by kind: ${["fact","verification","finding","test"].map(
 o=>[o,e.ledger.filter(u=>u.kind===o)]).filter(([,o])=>o.length).map(([o,u])=>`${o} ${u.length} (${Q(u,d=>d.status)})`).join(
 "; ")}.`,`- Votes by round: ${fo(e)||"none"}.`,e.spec.ran?`- Spec review: ${so(e)}.`:"",t.audit&&t.audit.ran?`- Audit: ${po(
-e,t.audit)}.`:"",t.ready?`- Final readiness: ${Tn(t.ready)}.`:"",e.baselineOk?"":`- The verification command failed at b\
+e,t.audit)}.`:"",t.ready?`- Final readiness: ${xn(t.ready)}.`:"",e.baselineOk?"":`- The verification command failed at b\
 aseline (expected when the task is to fix a failing test): ${e.baselineNote}`,e.notes.length?`- Problems during the run:\
 
 ${e.notes.slice(0,30).map(o=>`  - ${w(o,300)}`).join("\n")}${e.notes.length>30?`
@@ -1938,7 +1938,7 @@ map(u=>u.seat).join("")})`:""}`).join(" ");return`r${n} ${i(e.votes[n])}${e.ball
 u=>u.seconds).sort((u,d)=>u-d);const r=s[Math.floor(s.length/2)];const o=i.slice().sort((u,d)=>d.seconds-u.seconds).slice(
 0,3);return`- ${n} turn times: median ${Math.round(r)}s; slowest ${o.map(u=>`${u.turn} ${Math.round(u.seconds)}s`).join(
 ", ")}.`};return[t("Codex and Gemini",e.vendorTimes.filter(n=>n.vendor!=="openrouter")),t("OpenRouter",e.vendorTimes.filter(
-n=>n.vendor==="openrouter"))].filter(Boolean).join("\n")}function Vn(e,t,n){const i=e.processNotes.length?e.processNotes.
+n=>n.vendor==="openrouter"))].filter(Boolean).join("\n")}function Yn(e,t,n){const i=e.processNotes.length?e.processNotes.
 map(r=>`- ${r.turn} (${r.role}, ${r.who}): ${r.text}`).join("\n"):"- None: no turn reported anything in its way.";const s=n?
 `
 
@@ -2059,16 +2059,16 @@ depends on a plan or document it couldn't find (${w(t,300)||"unspecified"}). Sea
 AD and can't see uncommitted files, so the document has to be passed in. Find it yourself: `+(e.host==="codex"?"look in \
 the repository and the documents named in this conversation. Then rerun the runner with the original args and the docume\
 nt's absolute path in plan. ":`a plan made in this conversation is under ~/.claude/plans/; otherwise look in the reposit\
-ory for the file the user named. Then rerun with object args and its absolute path: Workflow({name: "${st(e.workflowName)}\
+ory for the file the user named. Then rerun with object args and its absolute path: Workflow({name: "${nt(e.workflowName)}\
 ", args: {task: <the task, saying which part to do>, plan: ["/abs/path"], …the other args}}). `)+"Don't paste the docu\
 ment into the task. If you can't tell which document is meant, ask the user."+(n?` Remove the partial run with \`${e.cli}\
- cleanup --run-dir ${_(n)} --all\`.`:"")}}function Lt(e){return e.seats.map(t=>({seat:t.L,model:t.name,vendor:t.vendor,effort:t.
-effort,active:t.active}))}function We(e,t,n,i){return{status:t,reason:n,mode:e.mode,task:e.task,runDir:e.run?e.run.runDir:
+ cleanup --run-dir ${_(n)} --all\`.`:"")}}function Rt(e){return e.seats.map(t=>({seat:t.L,model:t.name,vendor:t.vendor,effort:t.
+effort,active:t.active}))}function Xe(e,t,n,i){return{status:t,reason:n,mode:e.mode,task:e.task,runDir:e.run?e.run.runDir:
 null,notes:e.notes,...i||{},forTheOrchestrator:`The council stopped early (${t}): ${n}. Tell the user plainly; nothing w\
 as applied to their tree.`+(e.run?` Clean up with \`${e.cli} cleanup --run-dir ${_(e.run.runDir)} --all\` unless they wan\
 t to inspect it.`:"")}}function vo(e,t){const n=t.map(l=>`${l.vendor}: ${w(l.error,300)||"failed"}`);const i=t.find(l=>l.
 vendor==="claude-settings");if(i)return bo(e,t,n,i);const s=t.map(l=>l.vendor);const r=l=>s.includes(l.vendor)||s.includes(
-Kt(l));const o=e.lineup.filter(r).map(l=>l.key);const u=e.panel.filter(r).map(l=>l.key);const d=j(e).factory?e.auditors.
+Gt(l));const o=e.lineup.filter(r).map(l=>l.key);const u=e.panel.filter(r).map(l=>l.key);const d=j(e).factory?e.auditors.
 filter(r).map(l=>l.lens):[];return{status:"blocked",reason:`a vendor CLI can't run from this session (${n.join("; ")})`,
 mode:e.mode,task:e.task,runDir:null,preflight:t,notes:e.notes,forTheOrchestrator:e.host==="codex"?`The factory stopped b\
 efore creating worktrees because the CLI preflight failed: ${n.join("; ")}. Report the exact error. Fix the named CLI's \
@@ -2085,10 +2085,10 @@ status:"blocked",reason:`Claude Code's settings don't let the run call ${e.cli} 
 runDir:null,preflight:t,notes:e.notes,forTheOrchestrator:`The run stopped before creating anything: the preflight check \
 found that ${w(i.error,400)}. Tell the user plainly, and give the fix: add "Bash(${e.cli}:*)" to permissions.allow in ~/\
 .claude/settings.json (a plugin can't grant it), then rerun. Don't add the rule yourself unless the user asks.`+(s.length?
-` The same check also found: ${s.join("; ")}; once the rule is in place, a rerun reports whether those remain.`:"")}}function zn(e,t,n){
+` The same check also found: ${s.join("; ")}; once the rule is in place, a rerun reports whether those remain.`:"")}}function Vn(e,t,n){
 return{status:"needs-user",mode:e.mode,task:e.task,round:t,runDir:e.run.runDir,room:e.run.room,questions:n.map(i=>({id:i.
 id,question:i.text,raisedBy:i.raisedBy,secondedBy:i.seconds,assumptions:i.assumptions})),positionsSoFar:A(e).map(i=>({seat:i.
-L,summary:e.pos[i.L].summary,post:e.pos[i.L].post})),report:co(e,t),seats:Lt(e),notes:e.notes,forTheOrchestrator:e.host===
+L,summary:e.pos[i.L].summary,post:e.pos[i.L].post})),report:co(e,t),seats:Rt(e),notes:e.notes,forTheOrchestrator:e.host===
 "codex"?`Questions reached the escalation threshold after ${k(t)}. Show report.markdown and questions[] with each seat's\
  assumptions, then ask the user for answers. Preserve the original args, append {id, answer} to clarifications, and use \
 --resume with this hostRunDir and the updated args file. The host validates the saved repository and evidence before rep\
@@ -2096,7 +2096,7 @@ laying completed operations. If validation fails, start a new run with the full 
 length===1?"A question":"Questions"} reached the escalation threshold (${xe(e)} seats) after ${k(t)}: the council believ\
 es the request itself is ambiguous. First show the user report.markdown, the debate so far, with the seat-to-model revea\
 l, so they can see what prompted the question. Then ask (AskUserQuestion works well; show each seat's assumption as an o\
-ption). Then resume the same run: Workflow({name: "${st(e.workflowName)}", resumeFromRunId: <this run's id>, args: <exac\
+ption). Then resume the same run: Workflow({name: "${nt(e.workflowName)}", resumeFromRunId: <this run's id>, args: <exac\
 tly the args you launched with, as an object; if you passed a plain string, use {task: <that string>}>, plus clarificati\
 ons: [<any earlier clarifications, unchanged>, {id, answer, afterRound: ${t}}, …]}). Completed rounds replay from cache;\
  the debate continues with the answers. Workspaces and Codex and Gemini threads persist on disk, so this works only from\
@@ -2109,13 +2109,13 @@ suite.failureKind}:{},...n.suite.overrides?{overrides:n.suite.overrides}:{}}:nul
 status==="open").map(s=>({id:s.id,severity:s.severity,statement:s.statement})),questions:t.questions||[],delivery:t.delivery||
 null,artifacts:{room:t.room||e.run?.room||null,verification:t.runDir?`${t.runDir}/verification.json`:null,measurement:i?
 `${t.runDir}/jobs/measure-${i[1]}-${i[2]}/status.json`:null},cleanupAfterDelivery:`dark-factory cleanup --run-dir ${x(t.
-runDir)}`}}const Ze=["simple","fix","feature","architecture"];const Se={implementer:"sonnet",reviewer:"astra",maxLines:200,
-maxFiles:8};const jo={...Se,implementer:"astra"};const xo=50;function To(e){const t=e.tier===void 0||e.tier===null||e.tier===
-""?null:String(e.tier).toLowerCase();if(t&&!Ze.includes(t))throw new Error(`factory: unknown tier '${e.tier}'. Known: ${Ze.
-join(", ")}.`);const n=e.simple&&typeof e.simple==="object"?e.simple:{};const i=e.host==="codex"?jo:Se;const s=(r,o)=>Number.
+runDir)}`}}const zn=["simple","fix","feature","architecture"];const We={implementer:"sonnet",reviewer:"astra",maxLines:200,
+maxFiles:8};const jo={...We,implementer:"astra"};const xo=50;function To(e){const t=e.tier===void 0||e.tier===null||e.tier===
+""?null:String(e.tier).toLowerCase();if(t&&!zn.includes(t))throw new Error(`factory: unknown tier '${e.tier}'. Known: ${zn.
+join(", ")}.`);const n=e.simple&&typeof e.simple==="object"?e.simple:{};const i=e.host==="codex"?jo:We;const s=(r,o)=>Number.
 isInteger(Number(r))&&Number(r)>0?Number(r):o;return{tier:t,tierConfirmed:e.tierConfirmed===true,noSplit:e.noSplit===true,
-simple:{implementer:String(n.implementer||i.implementer),reviewer:String(n.reviewer||i.reviewer),maxLines:s(n.maxLines,Se.
-maxLines),maxFiles:s(n.maxFiles,Se.maxFiles)}}}function Ro(e){const t=e.escalation;if(!t)return"";if(t.from==="feature"){
+simple:{implementer:String(n.implementer||i.implementer),reviewer:String(n.reviewer||i.reviewer),maxLines:s(n.maxLines,We.
+maxLines),maxFiles:s(n.maxFiles,We.maxFiles)}}}function Ro(e){const t=e.escalation;if(!t)return"";if(t.from==="feature"){
 return`
 # An earlier attempt
 
@@ -2181,18 +2181,18 @@ rt":!s.check?"not measured":Oo(s.check.suite)}${s.deviations.length?`, ${R(s.dev
 `consensus on ${n.W} in round ${n.round}${n.via==="approval"?" by approval":""}`:`no consensus after ${R(n.round,"round")}\
 ; the scorecard picked ${n.W}`}, with up to ${R(e.rounds,"round")} allowed. No ratification: the review checks the miles\
 tone plan.`,`- Milestones: ${i.length}${i.length?` (${Q(i,s=>s.tier)})`:""} by ${t.W.L}${t.audit&&t.audit.fixPass?", rev\
-ised once after the review":""}.`].join("\n")}function It(e,t,n,i=1e4){if(e===void 0)return t;const s=Number(e);if(!Number.
+ised once after the review":""}.`].join("\n")}function Lt(e,t,n,i=1e4){if(e===void 0)return t;const s=Number(e);if(!Number.
 isSafeInteger(s)||s<1||s>i)throw new Error(`${n} must be an integer from 1 to ${i}.`);return s}function Fo(e){const t=e.
 repair===void 0?null:e.repair;if(t!==null&&(!t||typeof t!=="object"||Array.isArray(t)))throw new Error("repair must be a\
 n object.");if(t?.minor!==void 0&&!["block","report"].includes(t.minor))throw new Error("repair.minor must be block or r\
-eport.");return{maxTurns:It(e.maxTurns,null,"maxTurns"),maxRunMin:It(e.maxRunMin,null,"maxRunMin",10080),repair:t&&{maxPasses:It(
+eport.");return{maxTurns:Lt(e.maxTurns,null,"maxTurns"),maxRunMin:Lt(e.maxRunMin,null,"maxRunMin",10080),repair:t&&{maxPasses:Lt(
 t.maxPasses,2,"repair.maxPasses",20),minor:t.minor||"block"}}}function Zn(e){const t=n=>n.map(i=>({model:i.key,vendor:i.
 vendor,effort:i.effort}));return{workflow:e.factory?"factory":e.workflowName,tier:e.factory?.tier||e.tier,strategy:e.factory?.
 strategy||(e.pairOptions?"pair":"independent"),mode:e.mode,output:e.workflowName==="ensemble"?"measured, independently r\
 eviewed candidates and advisory ranking; no automatic selection":e.mode==="implement"?"reviewed implementation in a work\
 tree; delivery pending":e.tier==="architecture"?"reviewed design and milestones; no implementation":e.mode,participants:t(
 e.lineup),reviewers:t(e.auditors),panel:t(e.panel),specification:t(e.specReviewers),roles:Object.fromEntries(Object.entries(
-e.roles||{}).map(([n,i])=>[n,{model:i.key,vendor:i.vendor}])),requiredCLIs:dt(e).map(n=>n==="gemini"?"agy":n),verification:e.
+e.roles||{}).map(([n,i])=>[n,{model:i.key,vendor:i.vendor}])),requiredCLIs:at(e).map(n=>n==="gemini"?"agy":n),verification:e.
 verify||e.raw.verify||"discovered during setup; not yet run",limits:{...e.controls,repair:e.controls.repair||(e.tier==="\
 simple"?{maxPasses:1,minor:"block"}:null),maxReviews:e.pairOptions?.maxReviews||null,rounds:e.pairOptions?null:e.rounds},
 effort:e.pairOptions?`Setup${e.specReviewers.length?", a spec review":""}, ${e.pairOptions.design===false?"no design sta\
@@ -2208,8 +2208,8 @@ filter(o=>o.judgment),failing:ne(e).filter(o=>e.testResults[o.id]?.[t]&&e.testRe
 length||r.upheld.length||r.disputed.length||r.failing.length||r.suite);return r}function qo(e,t){const n=e.pos[t],i=Sn(e,
 t);return JSON.stringify([n.tree?.hash||n.artifactHash||null,[...i.upheld,...i.disputed].map(s=>[s.id,s.severity,s.status]).
 sort(),(n.criteria||[]).map(s=>[s.criterion,s.status]).sort(),ne(e).map(s=>[s.id,e.testResults[s.id]?.[t]||"missing"]).sort(),
-n.suite?.ran,n.suite?.passed])}const At=(e,t)=>w(e,t).replace(/[.\s]+$/,"");function Dt(e){return`${e.id} (${e.kind==="t\
-est"?"test":`${e.severity}${e.judgment?", judgment":""}`}) ${At(e.statement,140)}`}function ei(e){if(e.withdrawn)return"\
+n.suite?.ran,n.suite?.passed])}const It=(e,t)=>w(e,t).replace(/[.\s]+$/,"");function At(e){return`${e.id} (${e.kind==="t\
+est"?"test":`${e.severity}${e.judgment?", judgment":""}`}) ${It(e.statement,140)}`}function ei(e){if(e.withdrawn)return"\
 withdrawn";if(e.judgment||e.status==="judgment")return"a judgment call";return{verified:e.kind==="finding"?"upheld":"a v\
 alid test",refuted:"refuted",fabricated:"ruled fabricated",unresolved:"unresolved"}[e.status]||"not ruled on"}function Bo(e,t){
 const n=e.pos[t];if(e.mode!=="implement"||!e.verify)return"";return!n?.suite?"The gate was not measured.":!n.suite.ran?"\
@@ -2218,10 +2218,10 @@ The gate did not run.":n.suite.passed?"The gate passed.":"The gate failed."}func
 `failing tests ${t(e.failing)}`,e.criteria?.length&&`${e.criteria.map(n=>n.criterion).join(", ")} unmet`,e.suite&&"the f\
 ailing gate"].filter(Boolean).join("; ")}function _o(e,t,n,i,s=null){const r=`Review ${t} by ${e.auditors.map(d=>d.name).
 join(", ")}`;const o=s?[...s.upheld,...s.disputed].filter(d=>d.fixed||d.withdrawn||d.status==="refuted").map(d=>d.id):[];
-const u=n.length?`${n.map(d=>`${Dt(d)}: ${ei(d)}`).join("; ")}.`:"Nothing new.";return`${r}: ${o.length?`Closed ${o.join(
+const u=n.length?`${n.map(d=>`${At(d)}: ${ei(d)}`).join("; ")}.`:"Nothing new.";return`${r}: ${o.length?`Closed ${o.join(
 ", ")}. `:""}${u} ${i.needed?`To fix: ${Ho(i)}.`:"Nothing to fix."}`}function ti(e,t,n,i,s){const r=(i?.addressed||[]).filter(
 u=>u?.ref).map(u=>E(u.ref));const o=e.declined.filter(u=>u.round===n);return[`${t.name} ${s}.`,r.length&&`Addressed ${r.
-join(", ")}.`,...o.map(u=>`Declined ${E(u.ref)}: ${At(u.why,200)||"no reason given"}.`),Bo(e,t.L)].filter(Boolean).join(
+join(", ")}.`,...o.map(u=>`Declined ${E(u.ref)}: ${It(u.why,200)||"no reason given"}.`),Bo(e,t.L)].filter(Boolean).join(
 " ")}function Uo(e,t,n,i,s,r){const o=e.tier==="architecture";const u=e.ledger.filter(l=>l.kind==="finding"&&F(l.author)&&
 l.target===n.L&&!l.withdrawn);const d=o&&t.lens==="risk"?A(e).filter(l=>l.L!==n.L).map(l=>e.pos[l.L].post):[];return`Ind\
 ependently review the exact ${o?"design and milestone plan":"measured implementation"} below. You have a fresh context. \
@@ -2238,7 +2238,7 @@ ${o?"Read only the named designs and repository; do not write files.":`Write onl
 /tests/, and your review. The verification helper may write its jobs and logs. The user's repository at ${e.run.repoRoot}\
  is read-only.`}
 ${d.length?`Alternative designs, for the risk review only: ${d.join(", ")}. Do not read their debate.`:""}
-${o?bn[t.lens]:t.lens==="correctness"&&e.auditors.some(l=>l.lens==="tests")?Ie.correctness.replace(vt,""):Ie[t.lens]||Ie.
+${o?vn[t.lens]:t.lens==="correctness"&&e.auditors.some(l=>l.lens==="tests")?Ie.correctness.replace($t,""):Ie[t.lens]||Ie.
 correctness}
 ${Go(o)}
 Check every criterion and the ${o?"milestone plan":"changed code"}, including interactions and defects introduced by a r\
@@ -2249,11 +2249,11 @@ Do not duplicate an open finding. If a finding reported fixed is still present, 
 ID and a concrete reproduction; a summary alone cannot block readiness. File new actionable defects with concrete eviden\
 ce and severity. Preferences alone are not findings. Leave optional suggestions in the summary. A neutral checker and pa\
 nel establish closure; an author's claim never closes a finding.
-${o?"Return the review, with milestone numbers. Do not modify files.":`${$n(e,t)}
+${o?"Return the review, with milestone numbers. Do not modify files.":`${wn(e,t)}
 Never reuse an existing test ID: ${ne(e).map(l=>l.id).join(", ")||"(none)"}.
 Write your review to ${Je(e,t,i)}.`}
-${_e(e,t,n,s)}
-${t.vendor==="gemini"?on:""}
+${He(e,t,n,s)}
+${t.vendor==="gemini"?sn:""}
 The process has a bounded repair budget. This review must stand on its evidence even if no further repair remains.`}function Go(e=false){
 return e?`Review the plan, not the whole codebase. Problems the plan neither depends on nor makes worse are out of scope\
 .
@@ -2269,7 +2269,7 @@ r.
 hinders a likely next change.
 - minor: anything else worth the author's time.
 Preferences without a reason are not findings. A careful review may find nothing.`}function Ko(e,t,n,i,s,r){return`${e.tier===
-"architecture"?S(e,t.L):e.tier==="simple"?an(e):e.tier==="feature"?mn(e):S(e,t.L)}
+"architecture"?S(e,t.L):e.tier==="simple"?rn(e):e.tier==="feature"?fn(e):S(e,t.L)}
 ${M(e,i)}
 ${ge(e,t,i)}${ae(e,t)}
 Repair pass ${s} of at most ${r}. Address these obligations, retaining unrelated work:
@@ -2304,8 +2304,8 @@ escalation,requestedImplementation:e.factory?.intake?.mode==="implement"||e.mode
 tokens:null,cost:null,limits:{maxTurns:e.controls.maxTurns,maxRunMin:e.controls.maxRunMin},...e.pair?{userDecisions:{asked:e.
 pair.asked?.length||0,answered:e.pair.decisions?.length||0,unused:(t.unusedAnswers||[]).length}}:{}}}function z(e){if(!Number.
 isFinite(e))return"?";const t=n=>String(n<10?Math.round(n*10)/10:Math.round(n));return e<1e3?String(Math.round(e)):e<1e6?
-`${t(e/1e3)}k`:`${t(e/1e6)}M`}const Yo=e=>Math.round(e/6e4);function ii(e){return`${z(e.input)} in${e.cachedInput?` (${z(
-e.cachedInput)} cached)`:""} / ${z(e.output)} out`}function Jo(e,t){if(!t)return"";if(t.meter!==void 0)return t.meter>0?
+`${t(e/1e3)}k`:`${t(e/1e6)}M`}const Jo=e=>Math.round(e/6e4);function ii(e){return`${z(e.input)} in${e.cachedInput?` (${z(
+e.cachedInput)} cached)`:""} / ${z(e.output)} out`}function Yo(e,t){if(!t)return"";if(t.meter!==void 0)return t.meter>0?
 `Claude output so far ≈ ${z(t.meter)} (budget meter)`:"";const n=t.total,i=(t.missing||[]).length;if(!n||!n.turns&&!i)
 return"";return`tokens so far: ${ii(n)}${i?`; ${R(i,"turn")} not counted yet`:""}`}function Vo(e,t){if(!t)return"";if(t.
 meter!==void 0){return t.meter>0?`
@@ -2315,7 +2315,7 @@ meter!==void 0){return t.meter>0?`
 Claude Code's budget meter counted about ${z(t.meter)} output tokens while this workflow ran (its own agents and anythin\
 g else in the session). Input, cache and per-model counts, Codex and Gemini turns included: \`${e.cli} usage --run-dir ${x(
 e.run?.runDir||"RUN")}\`.`:""}const n=Object.entries(t.byModel||{});const i=t.missing||[];if(!n.length&&!i.length)return"";
-const s=(u,d)=>`| ${u} | ${d.turns} | ${z(d.input)} | ${z(d.cachedInput)} | ${z(d.cacheCreation)} | ${z(d.output)} | ${Yo(
+const s=(u,d)=>`| ${u} | ${d.turns} | ${z(d.input)} | ${z(d.cachedInput)} | ${z(d.cacheCreation)} | ${z(d.output)} | ${Jo(
 d.seconds*1e3)} min |`;const r=n.length?["| Model | Turns | Input | Cached | Cache writes | Output | Turn time |","|---|\
 ---|---|---|---|---|---|",...n.sort((u,d)=>d[1].input-u[1].input).map(([u,d])=>s(u,d)),s("**Total**",t.total)].join("\n"):
 "";const o=i.length?`
@@ -2327,7 +2327,7 @@ s.tokens reads them back from the vendors' logs where it can, and lists the rest
 
 ${r}${o}`}function zo(e){return[e.participants,e.reviewers].map(t=>(t||[]).map(n=>n.model||"?").join("+")).join(" / ")}const si=3;
 function Qo(e,t){const n=[...e].sort((o,u)=>o-u);if(!n.length)return null;const i=(n.length-1)*t,s=Math.floor(i),r=Math.
-ceil(i);return n[s]+(n[r]-n[s])*(i-s)}const et=e=>e.length?{median:Qo(e,.5),low:Math.min(...e),high:Math.max(...e)}:null;
+ceil(i);return n[s]+(n[r]-n[s])*(i-s)}const Ze=e=>e.length?{median:Qo(e,.5),low:Math.min(...e),high:Math.max(...e)}:null;
 function Xo(e,t,n){if(!Array.isArray(n))return{runs:0,basis:null,text:"No history here: this runtime cannot read past ru\
 ns. The standalone runner's --explain (dark-factory-codex --explain) reads them from the repository's .council."};const i=zo(
 t);const s=[["workflow, tier, strategy and lineup",h=>h.tier===t.tier&&h.strategy===t.strategy&&h.lineup===i],["workflow\
@@ -2336,20 +2336,20 @@ P=>P&&P.workflow===t.workflow&&b(P))}));const r=s.find(h=>h.runs.length>=si)||s.
 b:h);const o=r.runs.length;if(!o)return{runs:0,basis:null,text:`No history: no earlier ${t.workflow} run with a recorded\
  result was found.`};const u=r.runs.filter(h=>h.tokens);const d=u.filter(h=>!h.tokens.complete&&!h.tokens.legacy).length,
 l=u.filter(h=>h.tokens.legacy).length;const c=r.runs.filter(h=>Number.isFinite(h.elapsedMs));const p=u.length?{runs:u.length,
-partial:d,older:l,input:et(u.map(h=>h.tokens.input)),cachedInput:et(u.map(h=>h.tokens.cachedInput)),output:et(u.map(h=>h.
-tokens.output))}:null;const y=c.length?et(c.map(h=>h.elapsedMs/6e4)):null;const g=(h,b,P)=>h.low===h.high?"":`, range ${b(
+partial:d,older:l,input:Ze(u.map(h=>h.tokens.input)),cachedInput:Ze(u.map(h=>h.tokens.cachedInput)),output:Ze(u.map(h=>h.
+tokens.output))}:null;const y=c.length?Ze(c.map(h=>h.elapsedMs/6e4)):null;const g=(h,b,P)=>h.low===h.high?"":`, range ${b(
 h.low)}–${b(h.high)} ${P}`;const m=o<si?" (a small sample: a rough guide only)":"";const f=[p?`median ${ii({input:p.input.
 median,cachedInput:p.cachedInput.median,output:p.output.median})}${g(p.input,z,"in")}${p.runs<o?` (${p.runs} of the ${o}\
  have token counts)`:""}${d?`; ${d} of those ${d===1?"misses":"miss"} turns, so the true figures are higher`:""}${l?`; ${l}\
  of those ${l===1?"was":"were"} counted before every turn was, and may miss some`:""}`:"no token counts recorded",y?`med\
 ian ${Math.round(y.median)} min active${g(y,h=>Math.round(h),"min")}`:"no active time recorded"];return{runs:o,basis:`sa\
 me ${r.basis}`,tokens:p,minutes:y,text:`Estimate from ${R(o,`past ${t.workflow} run`)} with the same ${r.basis}${m}: ${f.
-join("; ")}.`}}let a=Ji(Yi(args));const L=typeof factoryRuntime==="undefined"?null:factoryRuntime;const ue={started:wr(),
-turns:0,...a.controls};const De={type:"string",enum:["blocker","major","minor"]};const tt={type:"object",properties:{kind:{
+join("; ")}.`}}let a=Yi(Ji(args));const L=typeof factoryRuntime==="undefined"?null:factoryRuntime;const ue={started:wr(),
+turns:0,...a.controls};const De={type:"string",enum:["blocker","major","minor"]};const Se={type:"object",properties:{kind:{
 type:"string",enum:["fact","verification"],description:'"verification": what you ran and what it showed (tests, builds, \
 scripts). "fact": any other checkable claim.'},statement:{type:"string"},evidence:{type:"string",description:"file:line,\
  a command plus the real tail of its output, or a test ID. Must be checkable."},criterion:{type:"string",description:'Th\
-e acceptance criterion the claim bears on, e.g. "C2". "" only for a verification claim that bears on none.'}}};const Ct={
+e acceptance criterion the claim bears on, e.g. "C2". "" only for a verification claim that bears on none.'}}};const Dt={
 type:"object",properties:{id:{type:"string",description:"The ID you used for its directory, e.g. T1B1."},purpose:{type:"\
 string",description:"The behaviour it pins down."},command:{type:"string",description:"The same command as in its test.j\
 son."}}};const oi={type:"object",properties:{question:{type:"string"},assumption:{type:"string",description:"The reading\
@@ -2358,9 +2358,9 @@ idea:{type:"string"}}};const ai={type:"object",properties:{ship:{type:"string",d
 that should ship: yours or another."},amendments:{type:"array",items:{type:"string"},description:"Changes it needs befor\
 e shipping; may cite ledger IDs."},reason:{type:"string"},...a.approval?{acceptable:{type:"array",description:"Other pos\
 itions you could also accept shipping, each with the amendments it would need. [] if none.",items:{type:"object",properties:{
-seat:{type:"string"},amendments:{type:"array",items:{type:"string"}}}}}}:{}}};const Et=I({type:"object",properties:{summary:{
-type:"string",description:"Your position in 2-4 sentences."},claims:{type:"array",items:tt,description:"At most 12: ever\
-y verification claim, plus the load-bearing facts that bear on an acceptance criterion."},tests:{type:"array",items:Ct,description:"\
+seat:{type:"string"},amendments:{type:"array",items:{type:"string"}}}}}}:{}}};const Ct=I({type:"object",properties:{summary:{
+type:"string",description:"Your position in 2-4 sentences."},claims:{type:"array",items:Se,description:"At most 12: ever\
+y verification claim, plus the load-bearing facts that bear on an acceptance criterion."},tests:{type:"array",items:Dt,description:"\
 Tests you published. Empty unless this is an implement task."},questions:{type:"array",items:oi,description:"Only genuin\
 e ambiguities in the request itself. Usually empty."},confidence:{type:"integer",description:"1-5. An honest low beats a\
  fake high."}}});const di=I({type:"object",properties:{summary:{type:"string",description:"Your current position after t\
@@ -2373,8 +2373,8 @@ ted.'},statement:{type:"string"},evidence:{type:"string"}}}},challenges:{type:"a
 type:"string",description:"The ledger ID you dispute."},reason:{type:"string"},evidence:{type:"string"}}}},concessions:{
 type:"array",items:{type:"string"},description:"IDs of findings against you that you accept."},withdrawals:{type:"array",
 items:{type:"string"},description:"IDs of your own earlier claims or tests that you retract."},adopted:{type:"array",items:ri},
-claims:{type:"array",items:tt,description:"At most 12 new claims about your revised position: verification claims, and f\
-acts that bear on an acceptance criterion."},tests:{type:"array",items:Ct},vote:ai,questions:{type:"array",items:oi},seconds:{
+claims:{type:"array",items:Se,description:"At most 12 new claims about your revised position: verification claims, and f\
+acts that bear on an acceptance criterion."},tests:{type:"array",items:Dt},vote:ai,questions:{type:"array",items:oi},seconds:{
 type:"array",items:{type:"string"},description:"IDs of open user questions (Q1, Q2, …) that you agree genuinely block th\
 e work."}}});const Wo={type:"string",description:"Private notes for your next turn, under about 400 words. Nobody else s\
 ees them."};function Zo(e){return{...e,properties:{...e.properties,notes:Wo},required:[...e.required,"notes"]}}const So={
@@ -2402,18 +2402,18 @@ el new-1, new-2, … shared by new questions that ask the same thing."}}}},newQu
 t",properties:{label:{type:"string"},text:{type:"string"}}}}}});const le=I({type:"object",properties:{summary:{type:"str\
 ing"},addressed:{type:"array",items:{type:"object",properties:{ref:{type:"string"},how:{type:"string"}}}},declined:{type:"\
 array",items:{type:"object",properties:{ref:{type:"string"},why:{type:"string"}}}},adopted:{type:"array",items:ri},claims:{
-type:"array",items:tt}}});const nr=I({type:"object",properties:{vote:ai}});const ir=I({type:"object",properties:{endorse:{
+type:"array",items:Se}}});const nr=I({type:"object",properties:{vote:ai}});const ir=I({type:"object",properties:{endorse:{
 type:"boolean"},objections:{type:"array",items:{type:"object",properties:{severity:De,kind:{type:"string",enum:["fact","\
-judgment"]},statement:{type:"string"},evidence:{type:"string"}}}},note:{type:"string"}}});const Pt=I({type:"object",properties:{
+judgment"]},statement:{type:"string"},evidence:{type:"string"}}}},note:{type:"string"}}});const Et=I({type:"object",properties:{
 summary:{type:"string",description:"Your verdict on the change, in 2-4 sentences."},findings:{type:"array",items:{type:"\
 object",properties:{severity:De,kind:{type:"string",enum:["fact","judgment"],description:'"fact": checkable. "judgment":\
  a trade-off.'},statement:{type:"string",description:"What is wrong, and the change you would make."},evidence:{type:"st\
 ring",description:"A published test ID, a file:line, or a command plus the real tail of its output."}}}},tests:{type:"ar\
-ray",items:Ct,description:"Tests you published, IDs as instructed. Empty if none."},probes:{type:"array",description:"De\
+ray",items:Dt,description:"Tests you published, IDs as instructed. Empty if none."},probes:{type:"array",description:"De\
 sign lens: the next changes you traced. Empty otherwise.",items:{type:"object",properties:{change:{type:"string",description:"\
 A plausible next change to this code."},touches:{type:"string",description:"The files and functions it would have to tou\
 ch in this version."},verdict:{type:"string",enum:["easy","awkward","hard"]}}}}}});const li=I({type:"object",properties:{
-...Pt.properties,evidenceReview:{type:"object",properties:{status:{type:"string",enum:["complete","incomplete","not-assi\
+...Et.properties,evidenceReview:{type:"object",properties:{status:{type:"string",enum:["complete","incomplete","not-assi\
 gned"]},note:{type:"string",description:"Historical criteria checked and evidence used, or what remains missing."}}}}});
 const ci=I({type:"object",properties:{summary:{type:"string",description:"Your verdict on the specification, in 1-3 sent\
 ences."},findings:{type:"array",items:{type:"object",properties:{severity:De,kind:{type:"string",enum:["fact","decision"],
@@ -2433,7 +2433,7 @@ One per decision the user did not answer.",items:{type:"object",properties:{find
 sion's ID, e.g. S3."},question:{type:"string"},chosen:{type:"string",description:"The reading the criteria now follow."},
 alternative:{type:"string"},impact:{type:"string",description:"What would be built differently under the alternative."}}}}}});
 const or=I({type:"object",properties:{status:{type:"string",enum:["ok","dirty","needs-plan","preflight","error"]},error:{
-type:"string"},mode:{type:"string",enum:Ne},runId:{type:"string"},runDir:{type:"string"},repoRoot:{type:"string"},dirty:{
+type:"string"},mode:{type:"string",enum:it},runId:{type:"string"},runDir:{type:"string"},repoRoot:{type:"string"},dirty:{
 type:"array",items:{type:"string"}},verify:{type:"string",description:'The command written to verify.sh, or "".'},baselinePasses:{
 type:"boolean"},baselineNote:{type:"string"},criteria:{type:"array",items:{type:"object",properties:{id:{type:"string"},
 text:{type:"string"}}}},refs:{type:"array",description:'From the "refs" in the init output, as printed.',items:{type:"ob\
@@ -2441,89 +2441,76 @@ ject",properties:{source:{type:"string"},path:{type:"string"},inWorktrees:{type:
 description:'With status "needs-plan": the document the task depends on that you could not find. Otherwise "".'},preflight:{
 type:"array",description:'From the "vendors" in the preflight output: one entry per check (each vendor, and claude-setti\
 ngs), with its key as vendor; [] if there was no preflight step.',items:{type:"object",properties:{vendor:{type:"string"},
-ok:{type:"boolean"},error:{type:"string",description:'Its "error", or "".'}}}}}});const Or=I({type:"object",properties:{
-strategy:{type:"string",enum:["independent","pair"],description:"Pair for scoped implementation with one clear approach \
-and iterative review; independent for competing hypotheses or plans. Architecture and investigations require independent\
-."},status:{type:"string",enum:["ok","needs-plan","needs-split"]},tier:{type:"string",enum:Ze},mode:{type:"string",enum:Ne},
-reasons:{type:"string",description:"Up to three sentences: what in the task or the code decided the tier."},planMissing:{
-type:"string",description:'With status "needs-plan": the document the task depends on that you could not find. Otherwise\
- "".'},signals:{type:"object",properties:{kind:{type:"string",enum:["bug","feature","change","question","design"]},files:{
-type:"integer",description:"Your estimate of the files the change touches; 0 for an investigation or a design."},publicApi:{
-type:"boolean",description:"Does it change a public API or schema?"},crossModule:{type:"boolean"},testsCover:{type:"stri\
-ng",enum:["yes","no","unknown"]},ambiguous:{type:"boolean"},planGiven:{type:"boolean"}}},split:{type:"array",description:'\
-With status "needs-split": the separate pieces of work, in the order to do them. Otherwise [].',items:{type:"object",properties:{
-title:{type:"string",description:"A few words naming the piece."},task:{type:"string",description:"The piece as a task o\
-f its own, complete for someone who has not seen this request."},tier:{type:"string",enum:Ze,description:"Your estimate \
-for this piece alone."},after:{type:"array",items:{type:"integer"},description:"The numbers (from 1) of earlier pieces t\
-his one builds on; [] if none."}}}}}});const rr=I({type:"object",properties:{...Et.properties,tooBig:{type:"object",description:'\
-Set tier when the task is not a simple change; otherwise tier and reason are "".',properties:{tier:{type:"string",enum:[
-"","fix","feature"]},reason:{type:"string"}}}}});const ar=I({type:"object",properties:{...le.properties,increments:{type:"\
-array",description:"The plan's increments, in the order you will build them.",items:{type:"object",properties:{title:{type:"\
-string",description:"A few words naming it."},delivers:{type:"string",description:"What it delivers, and how it is check\
-ed."}}}}}});const dr=I({type:"object",properties:{...le.properties,milestones:{type:"array",description:"The milestone p\
-lan, in the order to build it.",items:{type:"object",properties:{title:{type:"string",description:"A few words naming it\
-."},task:{type:"string",description:"The milestone as a task of its own, complete for a model that has seen none of this\
- run."},criteria:{type:"array",items:{type:"string"},description:"Its draft acceptance criteria, each checkable from a w\
-orktree."},after:{type:"array",items:{type:"integer"},description:"The numbers (from 1) of earlier milestones it builds \
-on; [] if none."},tier:{type:"string",enum:["simple","feature"]},working:{type:"string",description:"What works once it \
-lands."}}}}}});const pi=I({type:"object",properties:{summary:{type:"string",description:"Your verdict on the plan, in 2-\
-4 sentences."},findings:{type:"array",items:{type:"object",properties:{severity:De,kind:{type:"string",enum:["fact","jud\
-gment"],description:'"fact": checkable. "judgment": a trade-off.'},statement:{type:"string",description:"What is wrong, \
-and the change you would make."},evidence:{type:"string",description:"A file:line, or a command plus the real tail of it\
-s output; for a judgment, the reasoning."},milestone:{type:"integer",description:"The number of the milestone it is abou\
-t; 0 for the plan as a whole."}}}}}});const ur=I({type:"object",properties:{summary:{type:"string",description:"What thi\
-s increment did, in 1-3 sentences."},deviations:{type:"array",items:{type:"string"},description:"Each departure from the\
- plan, and why. Empty if none."},claims:{type:"array",items:tt}}});const lr=I({type:"object",properties:{saved:{type:"st\
-ring",description:'The "path" printed by council retro, or "".'},error:{type:"string",description:'What went wrong, or "\
-".'}}});const cr=new Map([Et,di,le,rr,ar,dr,ur].map(e=>[e,Zo(e)]));const fi=e=>({type:"string",description:`Feedback on \
-the ${e} process, not on the task: at most two sentences on anything in this turn's instructions, inputs or tools that g\
-ot in your way, such as an unclear or conflicting instruction, missing context, wasted effort, a limit that cut you shor\
-t, or a command that failed. Name the instruction or input. "" if nothing did; don't invent feedback.`});const hr=fi("co\
-uncil"),pr=fi("pair");function mi(e){if(!a.retro||!e)return e;return{...e,properties:{...e.properties,process:a.pair?pr:
-hr},required:[...e.required||[],"process"]}}const fr=I({type:"object",properties:{worked:{type:"array",description:"Up t\
-o 3 things in the process that worked and should be kept.",items:{type:"object",properties:{what:{type:"string"},evidence:{
-type:"string"}}}},changes:{type:"array",description:"3 to 5 changes to the workflow, most valuable first; fewer if the r\
-un gave little evidence.",items:{type:"object",properties:{change:{type:"string",description:"One change, concrete enoug\
-h to make: a specific prompt, limit, step or command."},why:{type:"string"},evidence:{type:"string",description:"What in\
- this run shows the problem: turn labels such as r1:A, file paths, run facts."},where:{type:"string",description:'Where \
-it would change, e.g. "the debate prompt", "POST_WORDS in council.js", "bin/dark-factory seat-run"; "" if unsure.'}}}},saved:{
-type:"string",description:`The "path" printed by council retro, or "" if it wasn't saved.`},error:{type:"string",description:'\
-What went wrong saving the retro, or "".'}}});function mr(e){return{type:"object",properties:{status:{type:"string",enum:[
-"done","error","sandboxed"]},error:{type:"string",description:'The printed "error" text, copied as it is. "" when status\
- is done.'},errorClass:{type:"string",description:'The printed "errorClass", if there is one; otherwise "".'},seconds:{type:"\
-number",description:'The printed "elapsedSec" when status is done; otherwise 0.'},result:e},required:["status"]}}function gr(e,t){
-return{...e,properties:{...e.properties,turn:{type:"string",enum:[t],description:`Exactly "${t}".`}},required:[...e.required||
-[],"turn"]}}function nt(e,t=""){const n=a.workflowName==="council"?"":Jo(a,wi());log(`${t}${Li(a,e)}${n?` · ${n}`:""}`)}
-const gi=yi();function yi(){try{return typeof budget!=="undefined"&&budget&&typeof budget.spent==="function"?budget.spent():
-null}catch{return null}}function wi(){if(L?.usage){try{return L.usage()}catch{return null}}const e=yi();return e===null||
-gi===null?null:{meter:Math.max(0,e-gi)}}function yr(){if(!L?.history)return null;try{return L.history()}catch{return null}}
-function wr(){if(a.controls.maxRunMin&&!L?.now)throw new Error("maxRunMin requires the standalone dark-factory-codex run\
-ner; the native workflow runtime has no replay-safe clock. Use maxTurns for native runs.");return L?.now?L.now()-(L.elapsedBefore||
-0):null}function $i(e){return e?.code==="CHECKPOINT_MISMATCH"||e?.code==="RUN_LIMIT"||e?.code==="ENGINE_DRIFT"}function Ce(){
-const e=ue;if(e.maxTurns&&e.turns>=e.maxTurns||e.maxRunMin&&L.now()-e.started>=e.maxRunMin*6e4){const t=new Error(e.maxTurns&&
-e.turns>=e.maxTurns?`Run turn budget exhausted (${e.maxTurns}).`:`Run time budget exhausted (${e.maxRunMin} minutes).`);
-e.stop=t.message;t.code="RUN_LIMIT";throw t}e.turns++}async function $r(e){let t;try{t=await e()}catch(n){if(n.code!=="R\
-UN_LIMIT")throw n;t={status:"blocked",stopReason:n.message,task:a.task,runDir:a.run?.runDir||null,final:{readiness:{state:"\
-incomplete",blocked:[],incomplete:[n.message]}}}}if(ue.stop&&t.final?.readiness?.state!=="ready"){t.status="blocked";t.stopReason=
-ue.stop;t.final={...t.final,readiness:{state:"incomplete",blocked:t.final?.readiness?.blocked||[],incomplete:[...t.final?.
-readiness?.incomplete||[],ue.stop]}}}Ii(t);t.plan=t.plan||Zn(a);t.metrics=ni(a,t,ue.started!==null?L.now()-ue.started:null,
-ue.turns);if(a.workflowName!=="council"&&t.report&&typeof t.report.markdown==="string"){const n=Vo(a,wi());if(n)t.report=
-{...t.report,markdown:`${t.report.markdown}${n}`}}if((a.factory||a.pairOptions)&&t.runDir){t.artifactType="dark-factory-\
-result";t.artifactVersion=1;const{summary:n,...i}=t;return{summary:ko(a,t),...i}}return t}function Ot(e,t,n,i){const s=i&&
-typeof i.process==="string"?w(i.process,400):"";if(a.retro&&s&&!/^(none|n\/a|nothing)\.?$/i.test(s))a.processNotes.push(
-{turn:e,role:t,who:n,text:s})}function it(e,t){const n=t&&t.permissionDenials;if(n)a.notes.push(`${e}: ${n.count} tool p\
-ermission denial(s) (${n.tools.join(", ")}). ${t.status==="done"?"The completed submission was accepted for verification\
- and review":"The submission was not accepted"}. Denied checks are not evidence of passing; details: ${n.source}`)}async function J(e,t,n,i){
-Ce();const s=Ut(a,n,t);const{copies:r,...o}=t;const{measures:u,...d}=o;const l=r?t.schema:mi(t.schema);const c=L?await Nt(
+ok:{type:"boolean"},error:{type:"string",description:'Its "error", or "".'}}}}}});const rr=I({type:"object",properties:{
+...Ct.properties,tooBig:{type:"object",description:'Set tier when the task is not a simple change; otherwise tier and re\
+ason are "".',properties:{tier:{type:"string",enum:["","fix","feature"]},reason:{type:"string"}}}}});const ar=I({type:"o\
+bject",properties:{...le.properties,increments:{type:"array",description:"The plan's increments, in the order you will b\
+uild them.",items:{type:"object",properties:{title:{type:"string",description:"A few words naming it."},delivers:{type:"\
+string",description:"What it delivers, and how it is checked."}}}}}});const dr=I({type:"object",properties:{...le.properties,
+milestones:{type:"array",description:"The milestone plan, in the order to build it.",items:{type:"object",properties:{title:{
+type:"string",description:"A few words naming it."},task:{type:"string",description:"The milestone as a task of its own,\
+ complete for a model that has seen none of this run."},criteria:{type:"array",items:{type:"string"},description:"Its dr\
+aft acceptance criteria, each checkable from a worktree."},after:{type:"array",items:{type:"integer"},description:"The n\
+umbers (from 1) of earlier milestones it builds on; [] if none."},tier:{type:"string",enum:["simple","feature"]},working:{
+type:"string",description:"What works once it lands."}}}}}});const pi=I({type:"object",properties:{summary:{type:"string",
+description:"Your verdict on the plan, in 2-4 sentences."},findings:{type:"array",items:{type:"object",properties:{severity:De,
+kind:{type:"string",enum:["fact","judgment"],description:'"fact": checkable. "judgment": a trade-off.'},statement:{type:"\
+string",description:"What is wrong, and the change you would make."},evidence:{type:"string",description:"A file:line, o\
+r a command plus the real tail of its output; for a judgment, the reasoning."},milestone:{type:"integer",description:"Th\
+e number of the milestone it is about; 0 for the plan as a whole."}}}}}});const ur=I({type:"object",properties:{summary:{
+type:"string",description:"What this increment did, in 1-3 sentences."},deviations:{type:"array",items:{type:"string"},description:"\
+Each departure from the plan, and why. Empty if none."},claims:{type:"array",items:Se}}});const lr=I({type:"object",properties:{
+saved:{type:"string",description:'The "path" printed by council retro, or "".'},error:{type:"string",description:'What w\
+ent wrong, or "".'}}});const cr=new Map([Ct,di,le,rr,ar,dr,ur].map(e=>[e,Zo(e)]));const hr=I({type:"object",properties:{
+worked:{type:"array",description:"Up to 3 things in the process that worked and should be kept.",items:{type:"object",properties:{
+what:{type:"string"},evidence:{type:"string"}}}},changes:{type:"array",description:"3 to 5 changes to the workflow, most\
+ valuable first; fewer if the run gave little evidence.",items:{type:"object",properties:{change:{type:"string",description:"\
+One change, concrete enough to make: a specific prompt, limit, step or command."},why:{type:"string"},evidence:{type:"st\
+ring",description:"What in this run shows the problem: turn labels such as r1:A, file paths, run facts."},where:{type:"s\
+tring",description:'Where it would change, e.g. "the debate prompt", "POST_WORDS in council.js", "bin/dark-factory seat-\
+run"; "" if unsure.'}}}},saved:{type:"string",description:`The "path" printed by council retro, or "" if it wasn't saved\
+.`},error:{type:"string",description:'What went wrong saving the retro, or "".'}}});function pr(e){return{type:"object",
+properties:{status:{type:"string",enum:["done","error","sandboxed"]},error:{type:"string",description:'The printed "erro\
+r" text, copied as it is. "" when status is done.'},errorClass:{type:"string",description:'The printed "errorClass", if \
+there is one; otherwise "".'},seconds:{type:"number",description:'The printed "elapsedSec" when status is done; otherwis\
+e 0.'},result:e},required:["status"]}}function fr(e,t){return{...e,properties:{...e.properties,turn:{type:"string",enum:[
+t],description:`Exactly "${t}".`}},required:[...e.required||[],"turn"]}}const fi=e=>({type:"string",description:`Feedbac\
+k on the ${e} process, not on the task: at most two sentences on anything in this turn's instructions, inputs or tools t\
+hat got in your way, such as an unclear or conflicting instruction, missing context, wasted effort, a limit that cut you\
+ short, or a command that failed. Name the instruction or input. "" if nothing did; don't invent feedback.`});const mr=fi(
+"council"),gr=fi("pair");function mi(e){if(!a.retro||!e)return e;return{...e,properties:{...e.properties,process:a.pair?
+gr:mr},required:[...e.required||[],"process"]}}function et(e,t=""){const n=a.workflowName==="council"?"":Yo(a,wi());log(
+`${t}${Li(a,e)}${n?` · ${n}`:""}`)}const gi=yi();function yi(){try{return typeof budget!=="undefined"&&budget&&typeof budget.
+spent==="function"?budget.spent():null}catch{return null}}function wi(){if(L?.usage){try{return L.usage()}catch{return null}}
+const e=yi();return e===null||gi===null?null:{meter:Math.max(0,e-gi)}}function yr(){if(!L?.history)return null;try{return L.
+history()}catch{return null}}function wr(){if(a.controls.maxRunMin&&!L?.now)throw new Error("maxRunMin requires the stan\
+dalone dark-factory-codex runner; the native workflow runtime has no replay-safe clock. Use maxTurns for native runs.");
+return L?.now?L.now()-(L.elapsedBefore||0):null}function $i(e){return e?.code==="CHECKPOINT_MISMATCH"||e?.code==="RUN_LI\
+MIT"||e?.code==="ENGINE_DRIFT"}function Ce(){const e=ue;if(e.maxTurns&&e.turns>=e.maxTurns||e.maxRunMin&&L.now()-e.started>=
+e.maxRunMin*6e4){const t=new Error(e.maxTurns&&e.turns>=e.maxTurns?`Run turn budget exhausted (${e.maxTurns}).`:`Run tim\
+e budget exhausted (${e.maxRunMin} minutes).`);e.stop=t.message;t.code="RUN_LIMIT";throw t}e.turns++}async function $r(e){
+try{return await e()}catch(t){if(t.code!=="RUN_LIMIT")throw t;return{status:"blocked",stopReason:t.message,task:a.task,runDir:a.
+run?.runDir||null,final:{readiness:{state:"incomplete",blocked:[],incomplete:[t.message]}}}}}function vr(e){if(ue.stop&&
+e.final?.readiness?.state!=="ready"){e.status="blocked";e.stopReason=ue.stop;e.final={...e.final,readiness:{state:"incom\
+plete",blocked:e.final?.readiness?.blocked||[],incomplete:[...e.final?.readiness?.incomplete||[],ue.stop]}}}Ii(e);e.plan=
+e.plan||Zn(a);e.metrics=ni(a,e,ue.started!==null?L.now()-ue.started:null,ue.turns);if(a.workflowName!=="council"&&e.report&&
+typeof e.report.markdown==="string"){const t=Vo(a,wi());if(t)e.report={...e.report,markdown:`${e.report.markdown}${t}`}}
+if((a.factory||a.pairOptions)&&e.runDir){e.artifactType="dark-factory-result";e.artifactVersion=1;const{summary:t,...n}=e;
+return{summary:ko(a,e),...n}}return e}async function br(e){return vr(await $r(e))}function Pt(e,t,n,i){const s=i&&typeof i.
+process==="string"?w(i.process,400):"";if(a.retro&&s&&!/^(none|n\/a|nothing)\.?$/i.test(s))a.processNotes.push({turn:e,role:t,
+who:n,text:s})}function tt(e,t){const n=t&&t.permissionDenials;if(n)a.notes.push(`${e}: ${n.count} tool permission denia\
+l(s) (${n.tools.join(", ")}). ${t.status==="done"?"The completed submission was accepted for verification and review":"T\
+he submission was not accepted"}. Denied checks are not evidence of passing; details: ${n.source}`)}async function Y(e,t,n,i){
+Ce();const s=_t(a,n,t);const{copies:r,...o}=t;const{measures:u,...d}=o;const l=r?t.schema:mi(t.schema);const c=L?await Ot(
 e,{...o,schema:l},n,i):await agent(e,{...d,schema:l});a.turnLog.push({turn:t.label,role:n,vendor:L?s.vendor:"claude",ok:!!c});
-Ot(t.label,n,i||(L?s.name:t.model),c);return c}async function Nt(e,t,n,i,s={}){const r=Ut(a,n,t);try{return await L.agent(
-{...t,prompt:e,vendor:r.vendor,model:r.model,effort:r.effort,role:n,who:i||r.name,run:a.run,fresh:true,onResult:o=>{it(t.
+Pt(t.label,n,i||(L?s.name:t.model),c);return c}async function Ot(e,t,n,i,s={}){const r=_t(a,n,t);try{return await L.agent(
+{...t,prompt:e,vendor:r.vendor,model:r.model,effort:r.effort,role:n,who:i||r.name,run:a.run,fresh:true,onResult:o=>{tt(t.
 label,o);if(o.status!=="done")a.notes.push(`${n} turn ${t.label} failed: ${w(o.error||o.status,300)}`)},timeoutMin:vi(n),
-...n==="setup"?{preflightVendors:dt(a),setupRunId:lt(a)}:{},...s})}catch(o){if($i(o))throw o;a.notes.push(`${n} turn ${t.
+...n==="setup"?{preflightVendors:at(a),setupRunId:ut(a)}:{},...s})}catch(o){if($i(o))throw o;a.notes.push(`${n} turn ${t.
 label} failed: ${w(o&&o.message||o,300)}`);return null}}function vi(e){const t=a.raw.timeoutMin;const n=t&&typeof t==="o\
-bject"?t[e]:t;const i=Math.round(Number(n));return i>0?i:null}async function ce(e,t,n,i,s){Ce();const r=_t[e.vendor];if(a.
+bject"?t[e]:t;const i=Math.round(Number(n));return i>0?i:null}async function ce(e,t,n,i,s){Ce();const r=Ht[e.vendor];if(a.
 blocked[e.vendor]){a.notes.push(`${r} turn ${e.key} skipped: the ${ee[e.vendor]} can't run in this session's sandbox.`);
-return null}const o=`${e.key}-${ve(t).split("-")[1]}`;const u=gr(mi(n),o);const d=`${t}
+return null}const o=`${e.key}-${ve(t).split("-")[1]}`;const u=fr(mi(n),o);const d=`${t}
 
 Set \`turn\` in your output to exactly "${o}".
 
@@ -2534,7 +2521,7 @@ OUTPUT_SCHEMA>>>
 push({turn:i,role:e.role,vendor:e.vendor,ok:false});return null};if(L){const{configKey:y,...g}=e;const m=e.vendor==="ope\
 nrouter"?e:g;let f;try{f=await L.turn({...m,prompt:d,schema:u,label:i,phase:s,run:a.run,expect:l,timeoutMin:c});if(e.recoveryPost&&
 f&&f.status==="error"&&f.recoverySession&&!["auth","quota","cancelled","sandboxed","model","leak"].includes(f.errorClass)){
-it(i,{...f,status:"error"});a.notes.push(`${r} turn ${e.key} failed: ${w(f.error||f.status,300)}. Its post exists; reque\
+tt(i,{...f,status:"error"});a.notes.push(`${r} turn ${e.key} failed: ${w(f.error||f.status,300)}. Its post exists; reque\
 sting structured output once from the same session.`);const h=`${ls(a,e.recoveryPost)}
 
 Set \`turn\` in your output to exactly "${o}".
@@ -2546,20 +2533,20 @@ OUTPUT_SCHEMA>>>
 read-only",writable:[],effort:"low",prompt:h,schema:u,label:`${i} (recover output)`,phase:s,run:a.run,expect:ve(h),timeoutMin:Math.
 min(c||3,3)});if(f&&f.status==="done"&&f.result&&f.result.turn===o){a.notes.push(`${r} turn ${e.key}: recovered structur\
 ed output from the existing session; verification and review still apply.`)}}}catch(h){if($i(h))throw h;return p(w(h&&h.
-message||h,300))}if(f&&f.status==="done"&&f.result&&f.result.turn===o){it(i,f);const{turn:h,...b}=f.result;a.turnLog.push(
+message||h,300))}if(f&&f.status==="done"&&f.result&&f.result.turn===o){tt(i,f);const{turn:h,...b}=f.result;a.turnLog.push(
 {turn:i,role:e.role,vendor:e.vendor,ok:true});const P=Number(f.seconds??f.elapsedSec);if(P>0)a.vendorTimes.push({turn:e.
-key,vendor:e.vendor,seconds:P});Ot(i,e.role,e.who,b);return b}it(i,f&&{...f,status:"error"});if(f&&f.status==="sandboxed")
+key,vendor:e.vendor,seconds:P});Pt(i,e.role,e.who,b);return b}tt(i,f&&{...f,status:"error"});if(f&&f.status==="sandboxed")
 a.blocked[e.vendor]=true;return p(f&&f.status==="done"?`the result's turn tag ${f.result?JSON.stringify(f.result.turn):"\
 (no result)"} is not ${o}: an answer to an earlier turn`:f?`${w(f.error||f.status,300)}${f.errorClass?` [${f.errorClass}\
 ]`:""}`:"the runtime returned no result")}for(const y of["haiku","sonnet"]){const g=`${a.run.runDir}/jobs/${e.key}.${y}.\
 prompt.md`;const m=[a.cli,"seat-run","--run-dir",x(a.run.runDir),"--vendor",e.vendor,"--seat",x(e.threadKey),"--job",x(e.
 key),"--model",x(e.model),"--effort",e.effort,"--sandbox",e.sandbox,"--cwd",x(e.cwd),...e.writable.flatMap(P=>["--writab\
 le",x(P)]),"--prompt-file",x(g),"--expect",l,...e.fresh?["--fresh"]:[],...c?["--timeout-min",c]:[],...e.checkout?["--che\
-ckout",x(e.checkout)]:[],...e.vendor==="openrouter"?["--config-key",x(e.configKey||e.threadKey)]:[]].join(" ");const f=await J(
-Es(a,e.vendor,g,m,e.key,d,l),{label:`${i} (relay${y==="haiku"?"":": sonnet"})`,phase:s,schema:mr(u),model:y,effort:"low"},
+ckout",x(e.checkout)]:[],...e.vendor==="openrouter"?["--config-key",x(e.configKey||e.threadKey)]:[]].join(" ");const f=await Y(
+Es(a,e.vendor,g,m,e.key,d,l),{label:`${i} (relay${y==="haiku"?"":": sonnet"})`,phase:s,schema:pr(u),model:y,effort:"low"},
 "relay");if(f&&f.status==="done"&&f.result&&f.result.turn===o){const{turn:P,...v}=f.result;a.turnLog.push({turn:i,role:e.
 role,vendor:e.vendor,ok:true});if(Number(f.seconds)>0)a.vendorTimes.push({turn:e.key,vendor:e.vendor,seconds:Number(f.seconds)});
-Ot(i,e.role,e.who,v);return v}const h=!f?"relay ended":f.status==="done"?"stale":f.status;const b=!f?`the relay agent re\
+Pt(i,e.role,e.who,v);return v}const h=!f?"relay ended":f.status==="done"?"stale":f.status;const b=!f?`the relay agent re\
 turned nothing: Claude Code blocked it, as the auto-mode classifier does to some relays, or it hit a terminal API error.\
  If ${a.run.runDir}/jobs/${e.key} is absent, the ${ee[e.vendor]} never ran`:f.status==="done"?`the result's turn tag ${f.
 result?JSON.stringify(f.result.turn):"(no result)"} is not ${o}: an answer to an earlier turn`:w(f.error,200);a.relayFailures.
@@ -2569,36 +2556,36 @@ andbox, and running it outside was not permitted. Allow it in ~/.claude/settings
 cli}:*)"]}.`);break}if(h==="stale")return p(b);if(h==="error"&&!/^(relay:|hash mismatch)/i.test(f.error||"")){return p(`${w(
 f.error,300)}${f.errorClass?` [${f.errorClass}]`:""}`)}}return p(a.relayFailures.slice(-2).every(y=>y.turn===e.key&&y.status===
 "relay ended")?`Claude Code ended both relay agents (a block or an API error), so the ${r} turn may never have run`:"")}
-const vr=e=>e===0?"solve":typeof e==="number"?"debate":e==="ratify"?"ratify":/^b\d/.test(e)?"ballot":"final";function bi(e,t,n){
-const i=xs(a,e,t,n);const s=`${k(n)} ${e.lens}: ${e.key}`;const r=a.tier==="architecture"?pi:Y(a)?li:Pt;if(e.vendor==="c\
-laude"&&!L)return J(i,{label:s,phase:"Audit",schema:r,model:e.model,effort:e.effort},"auditor",e.name);if(a.tier==="arch\
+const kr=e=>e===0?"solve":typeof e==="number"?"debate":e==="ratify"?"ratify":/^b\d/.test(e)?"ballot":"final";function bi(e,t,n){
+const i=xs(a,e,t,n);const s=`${k(n)} ${e.lens}: ${e.key}`;const r=a.tier==="architecture"?pi:J(a)?li:Et;if(e.vendor==="c\
+laude"&&!L)return Y(i,{label:s,phase:"Audit",schema:r,model:e.model,effort:e.effort},"auditor",e.name);if(a.tier==="arch\
 itecture"){return ce({key:`${k(n)}-${e.lens}`,threadKey:`audit-${e.lens}`,configKey:`audit-${e.lens}`,fresh:n==="H",vendor:e.
 vendor,model:e.model,effort:e.effort,role:"auditor",who:e.name,sandbox:"read-only",cwd:a.run.repoRoot,writable:[],timeoutKind:"\
 audit"},i,r,s,"Audit")}return ce({key:`${k(n)}-${e.lens}`,threadKey:`audit-${e.lens}`,configKey:`audit-${e.lens}`,fresh:n===
-"H",vendor:e.vendor,model:e.model,effort:e.effort,role:"auditor",who:e.name,sandbox:"workspace-write",cwd:Ye(a,e,n),writable:[
+"H",vendor:e.vendor,model:e.model,effort:e.effort,role:"auditor",who:e.name,sandbox:"workspace-write",cwd:Ke(a,e,n),writable:[
 `${a.run.room}/tests`,`${a.run.room}/${k(n)}`,...a.tier?[`${a.run.runDir}/jobs`,`${a.run.runDir}/logs`]:[]],timeoutKind:"\
 audit",checkout:`${t.L}-${n==="H"?a.auditedTag:k("I")}`},i,r,s,"Audit")}function se(e,t,n,i){const s=k(t);const r=`${s}:${e.
-L} ${e.key}`;const o=Te(t);if(e.vendor==="claude"&&!L){return J(n,{label:r,phase:o,schema:cr.get(i)||i,model:e.model,effort:e.
+L} ${e.key}`;const o=Te(t);if(e.vendor==="claude"&&!L){return Y(n,{label:r,phase:o,schema:cr.get(i)||i,model:e.model,effort:e.
 effort},"seat",e.name)}return ce({key:`${e.L}-${s}`,threadKey:e.L,configKey:e.L,fresh:false,vendor:e.vendor,model:e.model,
 effort:e.effort,role:"seat",who:e.name,sandbox:"workspace-write",cwd:e.wt,writable:[a.run.room,...a.tier?[`${a.run.runDir}\
-/jobs`,`${a.run.runDir}/logs`]:[]],timeoutKind:vr(t),...L&&typeof t==="number"?{recoveryPost:D(a,e.L,t)}:{}},n,i,r,o)}function Ft(e,t){
-const n=Is(a,e,t.map(s=>a.byId[s]));const i=k(e);return parallel(a.panel.map(s=>()=>s.vendor==="claude"&&!L?J(n,{label:`\
+/jobs`,`${a.run.runDir}/logs`]:[]],timeoutKind:kr(t),...L&&typeof t==="number"?{recoveryPost:D(a,e.L,t)}:{}},n,i,r,o)}function Nt(e,t){
+const n=Is(a,e,t.map(s=>a.byId[s]));const i=k(e);return parallel(a.panel.map(s=>()=>s.vendor==="claude"&&!L?Y(n,{label:`\
 panel ${i}: ${s.key}`,phase:Te(e),schema:ui,model:s.model,effort:s.effort},"panel",s.name):ce({key:`panel-${fe(a,s)}-${i}`,
 threadKey:`panel-${fe(a,s)}-${i}`,configKey:`panel-${fe(a,s)}`,fresh:true,vendor:s.vendor,model:s.model,effort:s.effort,
 role:"panel",who:s.name,sandbox:"read-only",cwd:a.run.repoRoot,writable:[],timeoutKind:"panel"},n,ui,`panel ${i}: ${s.key}`,
-Te(e))))}function ki(e,t,n,i=false){return J(Ls(a,e,t,n),{label:`check ${k(t)}:${e}${i?" (retry)":""}`,phase:Te(t),schema:er,
+Te(e))))}function ki(e,t,n,i=false){return Y(Ls(a,e,t,n),{label:`check ${k(t)}:${e}${i?" (retry)":""}`,phase:Te(t),schema:er,
 model:a.checkModel,effort:"medium"},"checker")}async function oe(e,t,n={}){const i=a.challenges.filter(m=>m.round===e);const s=[
-...new Set([...i.filter(m=>ht(a.byId[m.claim])).map(m=>m.claim),...n.panel||[]])];const r=[...new Set([...i.filter(m=>!ht(
+...new Set([...i.filter(m=>ct(a.byId[m.claim])).map(m=>m.claim),...n.panel||[]])];const r=[...new Set([...i.filter(m=>!ct(
 a.byId[m.claim])).map(m=>m.claim),...n.tests||[]])];const o=t?[t]:W(a).map(m=>m.L);const u=(de(a).find(m=>o.includes(m.seat))||
 {seat:o[0]}).seat;const d=m=>o.includes(m.target)?m.target:u;const l=t?[]:a.ledger.filter(m=>m.kind==="test"&&m.round===
 e&&!m.withdrawn&&!o.includes(m.author)).map(m=>m.id);const c=o.map(m=>({Y:m,items:Ns(a,m,e,[...r.filter(f=>d(a.byId[f])===
-m),...m===u?l.filter(f=>!r.includes(f)):[]])}));const p=c.map(m=>()=>ki(m.Y,e,m.items));if(s.length)p.push(()=>Ft(e,s));
+m),...m===u?l.filter(f=>!r.includes(f)):[]])}));const p=c.map(m=>()=>ki(m.Y,e,m.items));if(s.length)p.push(()=>Nt(e,s));
 if(s.length)log(`${k(e)}: ${s.length} disputed load-bearing claim(s) to the panel: ${s.join(", ")}`);const y=await parallel(
 p);const g=c.map((m,f)=>f).filter(m=>!y[m]);if(g.length){const m=await parallel(g.map(f=>()=>ki(c[f].Y,e,c[f].items,true)));
 g.forEach((f,h)=>{if(m[h]){y[f]=m[h];a.notes.push(`The check of ${c[f].Y} in ${k(e)} failed once; a second checker compl\
-eted it.`)}})}c.forEach((m,f)=>qs(a,m.Y,e,y[f],m.items));if(s.length)jt(a,s,y[c.length]||[]);for(const m of o)Bs(a,m,e)}
+eted it.`)}})}c.forEach((m,f)=>qs(a,m.Y,e,y[f],m.items));if(s.length)kt(a,s,y[c.length]||[]);for(const m of o)Bs(a,m,e)}
 async function ji(e){const t=a.pendingQ.splice(0);if(!t.length)return;let n=null;if(t.length===1&&!a.questions.length){n=
-{assignments:[{index:0,matches:"new-1"}],newQuestions:[{label:"new-1",text:t[0].question}]}}else{n=await J(As(a,t),{label:`\
+{assignments:[{index:0,matches:"new-1"}],newQuestions:[{label:"new-1",text:t[0].question}]}}else{n=await Y(As(a,t),{label:`\
 questions ${k(e)}`,phase:Te(e),schema:tr,model:"sonnet",effort:"low"},"questions")}if(!n){n={assignments:t.map((d,l)=>({
 index:l,matches:`new-${l+1}`})),newQuestions:t.map((d,l)=>({label:`new-${l+1}`,text:d.question}))}}const i=a.questions.length;
 const s={};const r=d=>{const l={id:`Q${a.questions.length+1}`,text:d,raisedBy:[],seconds:[],assumptions:{},round:e};a.questions.
@@ -2607,115 +2594,115 @@ for(const d of n.assignments||[]){const l=t[d&&d.index];if(!l||o.has(d.index))co
 a.questions.find(p=>p.id===E(d.matches));if(!c)c=r(l.question);if(!c.text)c.text=l.question;if(!c.raisedBy.includes(l.L))
 c.raisedBy.push(l.L);c.seconds=c.seconds.filter(p=>p!==l.L);c.assumptions[l.L]=l.assumption}t.forEach((d,l)=>{if(o.has(l))
 return;const c=r(d.question);c.raisedBy.push(d.L);c.assumptions[d.L]=d.assumption});const u=a.questions.splice(i).filter(
-d=>d.raisedBy.length);u.forEach((d,l)=>{d.id=`Q${i+l+1}`;a.questions.push(d)})}function br(e){const t=ws(a,e);const n=`s\
-pec ${e.lens}: ${e.key}`;if(e.vendor==="claude"&&!L)return J(t,{label:n,phase:"Spec",schema:ci,model:e.model,effort:e.effort},
+d=>d.raisedBy.length);u.forEach((d,l)=>{d.id=`Q${i+l+1}`;a.questions.push(d)})}function jr(e){const t=ws(a,e);const n=`s\
+pec ${e.lens}: ${e.key}`;if(e.vendor==="claude"&&!L)return Y(t,{label:n,phase:"Spec",schema:ci,model:e.model,effort:e.effort},
 "spec",e.name);return ce({key:`spec-${e.lens}`,threadKey:`spec-${e.lens}`,configKey:`spec-${e.lens}`,fresh:true,vendor:e.
 vendor,model:e.model,effort:e.effort,role:"spec",who:e.name,sandbox:"read-only",cwd:a.run.repoRoot,writable:[],timeoutKind:"\
-spec"},t,ci,n,"Spec")}async function kr(){if(!a.specReviewers.length)return null;phase("Spec");a.spec.ran=true;const e=await parallel(
-a.specReviewers.map(r=>()=>br(r)));a.specReviewers.forEach((r,o)=>{if(e[o])Vs(a,r,e[o]);else a.notes.push(`The spec revi\
+spec"},t,ci,n,"Spec")}async function xr(){if(!a.specReviewers.length)return null;phase("Spec");a.spec.ran=true;const e=await parallel(
+a.specReviewers.map(r=>()=>jr(r)));a.specReviewers.forEach((r,o)=>{if(e[o])Vs(a,r,e[o]);else a.notes.push(`The spec revi\
 ew's ${r.lens} reviewer (${r.name}) returned nothing.`)});log(`spec: ${a.specReviewers.map(r=>`${r.lens} ${a.spec.reviews[r.
 lens]?R(a.spec.findings.filter(o=>o.lens===r.lens).length,"finding"):"failed"}`).join(", ")}`);if(!a.spec.findings.length)
-return null;const t=$s(a,a.spec.findings);zs(a,await parallel(a.panel.map(r=>()=>r.vendor==="claude"&&!L?J(t,{label:`pan\
+return null;const t=$s(a,a.spec.findings);zs(a,await parallel(a.panel.map(r=>()=>r.vendor==="claude"&&!L?Y(t,{label:`pan\
 el spec: ${r.key}`,phase:"Spec",schema:hi,model:r.model,effort:r.effort},"panel",r.name):ce({key:`panel-${fe(a,r)}-spec`,
 threadKey:`panel-${fe(a,r)}-spec`,configKey:`panel-${fe(a,r)}`,fresh:true,vendor:r.vendor,model:r.model,effort:r.effort,
 role:"panel",who:r.name,sandbox:"read-only",cwd:a.run.repoRoot,writable:[],timeoutKind:"panel"},t,hi,`panel spec: ${r.key}`,
-"Spec"))));const{todo:n,open:i}=Qs(a);log(`spec: ${a.spec.findings.map(r=>`${r.id} (${r.lens}) ${At(r.statement,120)}: ${r.
-status}`).join("; ")}`);if(a.specAsk&&i.length)return i;if(!n.length)return null;const s=await J(vs(a,n),{label:"spec am\
+"Spec"))));const{todo:n,open:i}=Qs(a);log(`spec: ${a.spec.findings.map(r=>`${r.id} (${r.lens}) ${It(r.statement,120)}: ${r.
+status}`).join("; ")}`);if(a.specAsk&&i.length)return i;if(!n.length)return null;const s=await Y(vs(a,n),{label:"spec am\
 end",phase:"Spec",schema:sr,model:"opus",effort:"medium",measures:true},"spec");if(!s){a.notes.push("The spec amendment \
 failed; the criteria stand as setup wrote them.");return null}if(Xs(a,s,n)){log(`spec: criteria now ${a.criteria.map(r=>r.
-id).join(", ")}${a.spec.assumptions.length?`; assumed ${a.spec.assumptions.map(r=>r.id).join(", ")}`:""}`)}return null}async function jr(e,t={}){
-if(a.controls.repair||a.tier==="simple")return Ir(e,t);const n={ran:false,checked:false,reviews:{},testsAtAudit:{},fixPass:false,
+id).join(", ")}${a.spec.assumptions.length?`; assumed ${a.spec.assumptions.map(r=>r.id).join(", ")}`:""}`)}return null}async function Tr(e,t={}){
+if(a.controls.repair||a.tier==="simple")return Dr(e,t);const n={ran:false,checked:false,reviews:{},testsAtAudit:{},fixPass:false,
 addressed:[],rereviews:{},gaps:[],fixResult:null};if(!a.auditors.length||a.mode!=="implement"&&a.tier!=="architecture")return n;
 phase("Audit");n.ran=true;const i=await parallel(a.auditors.map(h=>()=>bi(h,e,"H")));a.auditors.forEach((h,b)=>{if(i[b])
-n.reviews[h.lens]=Rt(a,h,"H",e.L,i[b]);else{n.gaps.push(`no review from the ${h.lens} auditor`);a.notes.push(`The ${h.lens}\
- auditor (${h.name}) returned no review.`)}});const s=()=>{if(!Y(a))return;n.gaps=n.gaps.filter(P=>!P.startsWith("histor\
+n.reviews[h.lens]=Tt(a,h,"H",e.L,i[b]);else{n.gaps.push(`no review from the ${h.lens} auditor`);a.notes.push(`The ${h.lens}\
+ auditor (${h.name}) returned no review.`)}});const s=()=>{if(!J(a))return;n.gaps=n.gaps.filter(P=>!P.startsWith("histor\
 ical evidence review incomplete:"));const h=Re(a);const b=n.rereviews[h.lens]||n.reviews[h.lens];if(!b||!b.evidenceReview||
 b.evidenceReview.status!=="complete"){n.gaps.push(`historical evidence review incomplete: ${h.lens}${b&&b.evidenceReview&&
-b.evidenceReview.note?` (${w(b.evidenceReview.note,400)})`:""}`)}};s();const r=Mn(a,"H");log(`audit: ${a.auditors.map(h=>`${h.
+b.evidenceReview.note?` (${w(b.evidenceReview.note,400)})`:""}`)}};s();const r=Fn(a,"H");log(`audit: ${a.auditors.map(h=>`${h.
 lens} ${n.reviews[h.lens]?R(a.ledger.filter(b=>b.author===h.id).length,"item"):"failed"}`).join(", ")}${r.panel.length?`\
-; to the panel: ${r.panel.join(", ")}`:""}`);if(!a.ledger.some(h=>h.round==="H")){if(!qn(a,e.L).suite)return n}else{n.checked=
+; to the panel: ${r.panel.join(", ")}`:""}`);if(!a.ledger.some(h=>h.round==="H")){if(!Mn(a,e.L).suite)return n}else{n.checked=
 true;await oe("H",e.L,r);n.testsAtAudit=Object.fromEntries(r.tests.map(h=>[h,(a.testResults[h]||{})[e.L]||null]));log(`a\
-udit: ${a.ledger.filter(h=>h.round==="H").map(h=>`${Dt(h)}: ${ei(h)}`).join("; ")}`)}const o=t.beforeFix?t.beforeFix():null;
-if(o){n.escalate=o;return n}const u=qn(a,e.L);if(!u.needed)return n;n.fixPass=true;log(`audit: ${e.L} gets one fix pass \
+udit: ${a.ledger.filter(h=>h.round==="H").map(h=>`${At(h)}: ${ei(h)}`).join("; ")}`)}const o=t.beforeFix?t.beforeFix():null;
+if(o){n.escalate=o;return n}const u=Mn(a,e.L);if(!u.needed)return n;n.fixPass=true;log(`audit: ${e.L} gets one fix pass \
 (${[[u.upheld,"upheld"],[u.disputed,"disputed"],[u.failing,"failing tests"],[u.suite?[{id:"verify"}]:[],"failing"]].filter(
 ([h])=>h.length).map(([h,b])=>`${b}: ${h.map(P=>P.id).join(", ")}`).join("; ")})`);const d=await se(e,"I",Ts(a,e,u),t.fixSchema||
 le);n.fixResult=d;if(d){a.pos[e.L]={...a.pos[e.L],summary:d.summary||a.pos[e.L].summary,post:D(a,e.L,"I")};Ae(a,e,"I",d);
-we(a,e.L,"I",d.claims);ze(a,"I",d);n.addressed=(d.addressed||[]).filter(h=>h&&h.ref)}else{a.notes.push(`${e.L}'s audit f\
+we(a,e.L,"I",d.claims);Ve(a,"I",d);n.addressed=(d.addressed||[]).filter(h=>h&&h.ref)}else{a.notes.push(`${e.L}'s audit f\
 ix pass failed; the audit's findings stand.`)}await oe("I",e.L);const l=a.pos[e.L];if(!d)return n;log(`audit: ${ti(a,e,"\
-I",d,"made the audit fix pass")}`);const c=t.rereview!==false&&!(l.delta&&l.deltaRound==="I"&&!l.delta.files);const p=Y(
+I",d,"made the audit fix pass")}`);const c=t.rereview!==false&&!(l.delta&&l.deltaRound==="I"&&!l.delta.files);const p=J(
 a)?Re(a):null;if(!c&&!p)return n;const y=a.auditors.filter(h=>n.reviews[h.lens]&&(c||h.id===p?.id));const g=await parallel(
-y.map(h=>()=>bi(h,e,"J")));y.forEach((h,b)=>{if(g[b])n.rereviews[h.lens]=Rt(a,h,"J",e.L,g[b]);else n.gaps.push(`no re-re\
+y.map(h=>()=>bi(h,e,"J")));y.forEach((h,b)=>{if(g[b])n.rereviews[h.lens]=Tt(a,h,"J",e.L,g[b]);else n.gaps.push(`no re-re\
 view of the fix from the ${h.lens} auditor`)});s();const m=a.ledger.filter(h=>h.round==="J"&&h.kind==="finding"&&!h.judgment&&
 Z[h.severity]>=2).map(h=>h.id);const f=a.ledger.filter(h=>h.round==="J");log(`audit: re-review of the fix by ${y.map(h=>h.
-lens).join(", ")}: ${f.length?f.map(Dt).join("; "):"nothing new"}`);if(m.length){log(`audit: the re-review raised ${m.join(
-", ")}; to the panel`);jt(a,m,await Ft("J",m))}return n}async function xr(e){const t=je(a);const n=Object.values(Cn(a,e)).
+lens).join(", ")}: ${f.length?f.map(At).join("; "):"nothing new"}`);if(m.length){log(`audit: the re-review raised ${m.join(
+", ")}; to the panel`);kt(a,m,await Nt("J",m))}return n}async function Rr(e){const t=je(a);const n=Object.values(Dn(a,e)).
 some(d=>d.length>=t-1)||a.approval&&W(a).some(d=>Object.values(a.votes[e]||{}).filter(l=>l.ship===d.L||(l.acceptable||[]).
 some(c=>c.seat===d.L)).length>=t-1);const i=W(a).every(d=>a.pos[d.L].assessment&&a.pos[d.L].assessment.round===e&&a.pos[d.
 L].assessment.checked);if(!n||!i){log(`round ${e}: no ballot (${!n?"no position was one vote short":"not every position \
 was checked"})`);return null}const s=A(a);const r=await parallel(s.map(d=>()=>se(d,`b${e}`,hs(a,d,e),nr)));s.forEach((d,l)=>{
-if(r[l])In(a,a.ballots,e,d.L,r[l].vote);else a.notes.push(`Seat ${d.L} returned no ballot after round ${e}; it abstains.`)});
-const o=Pn(a,e,a.ballots);const u=Object.entries(a.ballots[e]||{}).map(([d,l])=>`${d}→${l.ship}`).join(" ");log(`ballo\
+if(r[l])Ln(a,a.ballots,e,d.L,r[l].vote);else a.notes.push(`Seat ${d.L} returned no ballot after round ${e}; it abstains.`)});
+const o=En(a,e,a.ballots);const u=Object.entries(a.ballots[e]||{}).map(([d,l])=>`${d}→${l.ship}`).join(" ");log(`ballo\
 t after round ${e}: ${u||"no votes"}${o?` → consensus on ${o.W} (${o.voters.join(", ")})`:" → no consensus"}`);return o}
-async function Tr(e){const t=a.factory?Io(a,e):null;if(t&&!Do(a,e))return Rr(Vn(a,Jn(a,e),t));if(!a.retro)return null;const n=Vn(
-a,Jn(a,e),t);const i=ve(n);let s=null;try{Ce();const r=go(a,e.reportMd,n,i);const o={label:"retro",phase:"Retro",schema:fr,
-model:"sonnet",effort:"medium"};s=L?await Nt(r,o,"retro",null,{payload:n,payloadFile:`${a.run.runDir}/retro-data.md`}):await agent(
+async function Lr(e){const t=a.factory?Io(a,e):null;if(t&&!Do(a,e))return Ir(Yn(a,Jn(a,e),t));if(!a.retro)return null;const n=Yn(
+a,Jn(a,e),t);const i=ve(n);let s=null;try{Ce();const r=go(a,e.reportMd,n,i);const o={label:"retro",phase:"Retro",schema:hr,
+model:"sonnet",effort:"medium"};s=L?await Ot(r,o,"retro",null,{payload:n,payloadFile:`${a.run.runDir}/retro-data.md`}):await agent(
 r,o)}catch(r){if(r?.code==="CHECKPOINT_MISMATCH")throw r;s=null}if(L)a.turnLog.push({turn:"retro",role:"retro",vendor:a.
 roles.retro.vendor,ok:!!s});if(!s){return{worked:[],changes:[],saved:"",error:"the retro agent failed",notes:a.processNotes,
 markdown:`### Process retro
 
 The retro agent failed. ${R(a.processNotes.length,"process note")} from the run ${a.processNotes.length===1?"is":"are"} \
 in retro.notes.`}}return{worked:s.worked||[],changes:s.changes||[],saved:s.saved||"",error:s.error||"",notes:a.processNotes,
-markdown:yo(s,a.pair?a.factory?"/factory":"/pair":"")}}async function Rr(e){const t=ve(e);let n=null;try{Ce();const i=Eo(
-a,e,t);const s={label:"record",phase:"Record",schema:lr,model:"haiku",effort:"low"};n=L?await Nt(i,s,"record",null,{payload:e,
+markdown:yo(s,a.pair?a.factory?"/factory":"/pair":"")}}async function Ir(e){const t=ve(e);let n=null;try{Ce();const i=Eo(
+a,e,t);const s={label:"record",phase:"Record",schema:lr,model:"haiku",effort:"low"};n=L?await Ot(i,s,"record",null,{payload:e,
 payloadFile:`${a.run.runDir}/retro-data.md`}):await agent(i,s)}catch(i){if(i?.code==="CHECKPOINT_MISMATCH")throw i;n=null}
 a.turnLog.push({turn:"record",role:"record",vendor:L?a.roles.record.vendor:"claude",ok:!!n});return{recorded:true,saved:n&&
-n.saved||"",error:n?n.error||"":"the record agent failed",notes:a.processNotes,markdown:""}}async function Lr(e,t,n,i){const s=Ye(
-a,e,n);const r=Uo(a,e,t,n,i,s);const o=a.tier==="architecture"?pi:Y(a)?li:Pt;if(e.vendor==="claude"&&!L)return J(r,{label:`${n}\
+n.saved||"",error:n?n.error||"":"the record agent failed",notes:a.processNotes,markdown:""}}async function Ar(e,t,n,i){const s=Ke(
+a,e,n);const r=Uo(a,e,t,n,i,s);const o=a.tier==="architecture"?pi:J(a)?li:Et;if(e.vendor==="claude"&&!L)return Y(r,{label:`${n}\
  ${e.lens}: ${e.key}`,phase:"Audit",schema:o,model:e.model,effort:e.effort},"auditor",e.name);return ce({key:`${n}-${e.lens}`,
 threadKey:`audit-${n}-${e.lens}`,configKey:`audit-${e.lens}`,fresh:true,vendor:e.vendor,model:e.model,effort:e.effort,role:"\
 auditor",who:e.name,sandbox:a.mode==="implement"?"workspace-write":"read-only",cwd:a.mode==="implement"?s:a.run.repoRoot,
 writable:a.mode==="implement"?[`${a.run.room}/tests`,`${a.run.room}/${n}`,`${a.run.runDir}/jobs`,`${a.run.runDir}/logs`]:
-[],...a.mode==="implement"?{checkout:`${t.L}-${i}`}:{},timeoutKind:"audit"},r,o,`${n} ${e.lens}: ${e.key}`,"Audit")}async function Ir(e,t){
+[],...a.mode==="implement"?{checkout:`${t.L}-${i}`}:{},timeoutKind:"audit"},r,o,`${n} ${e.lens}: ${e.key}`,"Audit")}async function Dr(e,t){
 const n=a.controls.repair||{maxPasses:1,minor:"block"};const i={ran:false,checked:false,reviews:{},testsAtAudit:{},fixPass:false,
 addressed:[],rereviews:{},gaps:[],fixResult:null,cycles:[],repairPolicy:n,stopReason:"",finalTag:a.auditedTag,lastCheck:a.
 pos[e.L]?.assessment?.round??null};if(!a.auditors.length||a.mode!=="implement"&&a.tier!=="architecture")return i;i.ran=true;
 if(a.mode!=="implement"&&!a.pos[e.L]?.artifactHash){i.gaps.push("No content hash for the reviewed design.");return i}let s=null,
 r=null;for(let o=0;o<=n.maxPasses;o++){phase("Audit");const u=`review${o}`,d=a.ledger.length;const l=a.pos[e.L].tree?.hash;
-a.reviewedSnapshot=i.finalTag;const c=await parallel(a.auditors.map(h=>()=>Lr(h,e,u,i.finalTag)));const p={};a.auditors.
-forEach((h,b)=>{if(c[b])p[h.lens]=Rt(a,h,u,e.L,c[b]);else i.gaps.push(`no ${u} review from the ${h.lens} auditor`)});if(o===
-0)i.reviews=p;else i.rereviews=p;if(Y(a)){i.gaps=i.gaps.filter(b=>!b.startsWith("historical evidence review incomplete:"));
+a.reviewedSnapshot=i.finalTag;const c=await parallel(a.auditors.map(h=>()=>Ar(h,e,u,i.finalTag)));const p={};a.auditors.
+forEach((h,b)=>{if(c[b])p[h.lens]=Tt(a,h,u,e.L,c[b]);else i.gaps.push(`no ${u} review from the ${h.lens} auditor`)});if(o===
+0)i.reviews=p;else i.rereviews=p;if(J(a)){i.gaps=i.gaps.filter(b=>!b.startsWith("historical evidence review incomplete:"));
 const h=Re(a);if(p[h.lens]?.evidenceReview?.status!=="complete")i.gaps.push(`historical evidence review incomplete: ${h.
-lens}`)}if(a.ledger.length>d||i.lastCheck===null){await oe(u,e.L,Mn(a,u));for(const h of a.ledger.slice(d))if(h.kind==="\
+lens}`)}if(a.ledger.length>d||i.lastCheck===null){await oe(u,e.L,Fn(a,u));for(const h of a.ledger.slice(d))if(h.kind==="\
 finding"&&h.status==="verified")h.fixed=false;i.checked=true;i.lastCheck=u;i.finalTag=u;if(l&&a.pos[e.L].tree?.hash!==l)
-i.gaps.push("The measured snapshot changed during independent review.")}const y=Sn(a,e.L);const g=qo(a,e.L);nt(Object.keys(
+i.gaps.push("The measured snapshot changed during independent review.")}const y=Sn(a,e.L);const g=qo(a,e.L);et(Object.keys(
 p).length?_o(a,o+1,a.ledger.slice(d),y,r):`Review ${o+1}: no reviewer returned a review.`,"audit: ");r=y;i.cycles.push({
 review:u,snapshot:i.finalTag,findings:a.ledger.slice(d).map(h=>h.id),needed:y.needed});if(t.beforeFix){const h=t.beforeFix();
 if(h){i.escalate=h;return i}}if(i.gaps.length||!y.needed)return i;if(g===s||o===n.maxPasses){i.stopReason=g===s?"Repair \
 stalled: the measured artifact and unresolved findings did not change.":`Repair budget exhausted (${n.maxPasses} passes)\
-.`;i.gaps.push(i.stopReason);nt(`Stopped: ${i.stopReason}`,"audit: ");return i}s=g;const m=`repair${o+1}`;const f=await se(
+.`;i.gaps.push(i.stopReason);et(`Stopped: ${i.stopReason}`,"audit: ");return i}s=g;const m=`repair${o+1}`;const f=await se(
 e,m,Ko(a,e,y,m,o+1,n.maxPasses),t.fixSchema||le);i.fixPass=true;i.fixResult=f;if(!f){i.gaps.push("The repair turn failed\
-.");nt(`${e.name}'s repair pass ${o+1} failed.`,"audit: ");return i}a.pos[e.L]={...a.pos[e.L],summary:f.summary||a.pos[e.
-L].summary,post:D(a,e.L,m)};Ae(a,e,m,f);we(a,e.L,m,f.claims);ze(a,m,f);i.addressed.push(...(f.addressed||[]).filter(h=>h?.
-ref));await oe(m,e.L);nt(ti(a,e,m,f,`made repair pass ${o+1} of ${n.maxPasses}`),"audit: ");i.lastCheck=m;i.finalTag=m}return i}
-async function Ar(){const e=await Dr();if(e)return e;const t=await Cr();if(t.stop)return t.stop;const{outcome:n,decisionRows:i,
-decisionTable:s}=t;phase("Synthesize");const r=Me(a,n.W);await Er(r,n,le);phase("Ratify");const o=A(a).filter($=>$.L!==r.
+.");et(`${e.name}'s repair pass ${o+1} failed.`,"audit: ");return i}a.pos[e.L]={...a.pos[e.L],summary:f.summary||a.pos[e.
+L].summary,post:D(a,e.L,m)};Ae(a,e,m,f);we(a,e.L,m,f.claims);Ve(a,m,f);i.addressed.push(...(f.addressed||[]).filter(h=>h?.
+ref));await oe(m,e.L);et(ti(a,e,m,f,`made repair pass ${o+1} of ${n.maxPasses}`),"audit: ");i.lastCheck=m;i.finalTag=m}return i}
+async function Cr(){const e=await Er();if(e)return e;const t=await Pr();if(t.stop)return t.stop;const{outcome:n,decisionRows:i,
+decisionTable:s}=t;phase("Synthesize");const r=Fe(a,n.W);await Or(r,n,le);phase("Ratify");const o=A(a).filter($=>$.L!==r.
 L);const u=await parallel(o.map($=>()=>se($,"ratify",gs(a,$,r),ir)));const d=[],l=[],c=[],p=[];o.forEach(($,V)=>{const T=u[V];
 if(!T){a.notes.push(`Seat ${$.L} did not return a ratification review.`);return}p.push({seat:$.L,endorse:!!T.endorse,note:T.
-note||""});if(T.endorse)d.push($.L);for(const he of(T.objections||[]).slice(0,8)){if(!he||!he.statement)continue;const Pr=me(
+note||""});if(T.endorse)d.push($.L);for(const he of(T.objections||[]).slice(0,8)){if(!he||!he.statement)continue;const Nr=me(
 a,{round:"F",author:$.L,kind:"finding",target:r.L,severity:Z[he.severity]?he.severity:"minor",judgment:he.kind==="judgme\
-nt",statement:he.statement,evidence:he.evidence});c.push(Pr)}if(!T.endorse)l.push({seat:$.L,kind:"did not endorse",note:T.
-note||""})});{const $=Tt(a);const V=$===null?{}:a.votes[$];for(const T of a.ledger){if(T.kind!=="finding"||!T.judgment||
+nt",statement:he.statement,evidence:he.evidence});c.push(Nr)}if(!T.endorse)l.push({seat:$.L,kind:"did not endorse",note:T.
+note||""})});{const $=xt(a);const V=$===null?{}:a.votes[$];for(const T of a.ledger){if(T.kind!=="finding"||!T.judgment||
 T.withdrawn||T.target!==r.L)continue;if(V[T.author]&&V[T.author].ship===r.L)continue;l.push({seat:T.author,kind:"judgmen\
 t",claim:T.id,severity:T.severity,note:T.statement})}}const y=c.filter($=>!$.judgment&&($.severity==="blocker"||$.severity===
 "major"));let g=false;if(y.length){log(`ratify: ${y.length} blocking objection(s) to adjudicate: ${y.map(T=>T.id).join("\
-, ")}`);const $=await Ft("F",y.map(T=>T.id));jt(a,y.map(T=>T.id),$);const V=y.filter(T=>T.status==="verified");if(V.length){
+, ")}`);const $=await Nt("F",y.map(T=>T.id));kt(a,y.map(T=>T.id),$);const V=y.filter(T=>T.status==="verified");if(V.length){
 g=true;log(`ratify: ${V.length} objection(s) upheld; ${r.L} gets one fix pass`);const T=await se(r,"G",ys(a,r,V),le);if(T){
-a.pos[r.L]={...a.pos[r.L],summary:T.summary||a.pos[r.L].summary,post:D(a,r.L,"G")};we(a,r.L,"G",T.claims);ze(a,"G",T)}else{
+a.pos[r.L]={...a.pos[r.L],summary:T.summary||a.pos[r.L].summary,post:D(a,r.L,"G")};we(a,r.L,"G",T.claims);Ve(a,"G",T)}else{
 a.notes.push(`${r.L}'s fix pass failed; the upheld objections stand.`)}await oe("G",r.L)}}a.auditedTag=g?"final2":"final";
-const m=await jr(r);const f=m.finalTag||(m.fixPass?k("I"):a.auditedTag);const h=m.lastCheck||(m.fixPass?"I":m.checked?"H":
-g?"G":"F");const b=a.ledger.filter($=>K(a,$)&&$.target===r.L);const P=a.questions.filter($=>!ft(a,$.id));const v=Ps(a,r.
+const m=await Tr(r);const f=m.finalTag||(m.fixPass?k("I"):a.auditedTag);const h=m.lastCheck||(m.fixPass?"I":m.checked?"H":
+g?"G":"F");const b=a.ledger.filter($=>K(a,$)&&$.target===r.L);const P=a.questions.filter($=>!pt(a,$.id));const v=Ps(a,r.
 L,h,o,u,m.gaps);const q=lo(a,{outcome:n,W:r,rows:i,endorsements:d,raters:o,reviewNotes:p,objections:c,fixPass:g,dissent:l,
-remaining:b,unanswered:P,ready:v,audit:m});if(a.retro)phase("Retro");const B=await Tr({outcome:n,endorsements:d,fixPass:g,
+remaining:b,unanswered:P,ready:v,audit:m});if(a.retro)phase("Retro");const B=await Lr({outcome:n,endorsements:d,fixPass:g,
 ready:v,audit:m,reportMd:q.markdown});return{status:n.kind==="consensus"?"converged":"scorecard",mode:a.mode,task:a.task,
 runDir:a.run.runDir,room:a.run.room,roundsRun:a.lastRound,refs:a.refs,report:q,outcome:{how:n.kind==="consensus"?n.via===
 "blind"?`Converged in round 0, before any debate: ${n.same.join(", ")} wrote byte-identical versions, so ${n.W} ships.`:
@@ -2723,23 +2710,23 @@ runDir:a.run.runDir,room:a.run.room,roundsRun:a.lastRound,refs:a.refs,report:q,o
 ", ")} voted to ship ${n.W}.`:`No consensus after ${n.round} round(s). The scorecard picked ${n.W} as the base.`,base:n.
 W,votesByRound:a.votes,...a.ballot?{ballotsByRound:a.ballots}:{},leftContention:a.dropped},final:{author:r.L,model:r.name,
 summary:a.pos[r.L].summary,post:a.pos[r.L].post,diff:a.mode==="implement"?`${a.run.room}/${f}/${r.L}.diff`:null,snapshotRef:a.
-mode==="implement"?`refs/council/${a.run.runId}/${r.L}-${f}`:null,worktree:r.wt,check:Ve(a,r.L),readiness:v,suite:a.pos[r.
+mode==="implement"?`refs/council/${a.run.runId}/${r.L}-${f}`:null,worktree:r.wt,check:Ye(a,r.L),readiness:v,suite:a.pos[r.
 L].suite,criteria:a.pos[r.L].criteria,endorsedBy:d,reviews:p,notEndorsedBy:o.filter($=>!d.includes($.L)).map($=>$.L),objections:c.
 map($=>({id:$.id,from:$.author,severity:$.severity,kind:$.judgment?"judgment":"fact",status:$.fixed?"fixed":$.status,statement:$.
 statement,note:$.note})),fixPass:g,auditFixPass:m.fixPass,standingFindings:b.map($=>({id:$.id,from:$.author,severity:$.severity,
-status:$.status,statement:$.statement}))},scorecards:{positions:i,seats:xt(a),markdown:`### Positions at the end of the \
+status:$.status,statement:$.statement}))},scorecards:{positions:i,seats:jt(a),markdown:`### Positions at the end of the \
 debate
 
 ${s}
 
 ### Final version (${r.L})
 
-${Ve(a,r.L)}
+${Ye(a,r.L)}
 
 ### Seats
 
-${Js(a)}`},spec:ao(a),audit:uo(a,m),dissent:l,assumptions:P.map($=>({id:$.id,question:$.text,raisedBy:$.raisedBy,secondedBy:$.
-seconds,assumptions:$.assumptions})),clarificationsUsed:a.clarifications,seats:Lt(a),ledger:{claims:a.ledger.length,byStatus:a.
+${Ys(a)}`},spec:ao(a),audit:uo(a,m),dissent:l,assumptions:P.map($=>({id:$.id,question:$.text,raisedBy:$.raisedBy,secondedBy:$.
+seconds,assumptions:$.assumptions})),clarificationsUsed:a.clarifications,seats:Rt(a),ledger:{claims:a.ledger.length,byStatus:a.
 ledger.reduce(($,V)=>{$[V.status]=($[V.status]||0)+1;return $},{})},notes:a.notes,retro:B,forTheOrchestrator:`${v.state===
 "ready"?"":`The final version is ${v.state.toUpperCase()} (final.readiness: ${[...v.blocked,...v.incomplete].join("; ")}\
 ). Say so at the top of your summary, before anything else. `}`+(a.spec.assumptions.length?`Before any work began, the c\
@@ -2766,47 +2753,47 @@ other attribution lines. Use it if the user later asks you to commit"+(B&&B.mark
  asks. `:"")+"Run `git status` in the main tree to confirm no seat touched it. "+(a.mode==="implement"?wo(a,f,r,"The fin\
 al change"):"")+`The room (${a.run.room}) holds the full transcript. When the user is done with it, \`${a.cli} cleanup -\
 -run-dir ${_(a.run.runDir)}\` removes the worktrees and snapshot refs and keeps the transcript; add --all to delete every\
-thing. Codex and Gemini token usage: \`${a.cli} usage --run-dir ${_(a.run.runDir)}\`.`}}async function Dr(){phase("Setup");
-const e=await J(Cs(a),{label:"setup",phase:"Setup",schema:or,model:"opus",effort:"medium"},"setup");if(e&&e.status==="ne\
+thing. Codex and Gemini token usage: \`${a.cli} usage --run-dir ${_(a.run.runDir)}\`.`}}async function Er(){phase("Setup");
+const e=await Y(Cs(a),{label:"setup",phase:"Setup",schema:or,model:"opus",effort:"medium"},"setup");if(e&&e.status==="ne\
 eds-plan")return $o(a,e.planMissing,e.runDir);if(e&&e.status==="preflight"){const s=(e.preflight||[]).filter(r=>r&&!r.ok);
 return vo(a,s.length?s:[{vendor:"?",ok:false,error:e.error||"the preflight check did not pass"}])}if(!e||e.status==="err\
-or"||!e.runDir){return We(a,"failed",e?e.error||"setup returned no run directory":"the setup agent failed")}a.run={runId:e.
-runId,runDir:e.runDir,repoRoot:e.repoRoot,room:`${e.runDir}/room`};if(!a.modeGiven&&Ne.includes(e.mode)&&e.mode!==a.mode){
-log(`setup chose mode ${e.mode} (the task's wording suggested ${a.mode})`);a.mode=e.mode;a.postWords=Bt[a.mode]}if(e.status===
-"dirty"){return We(a,"blocked",`the working tree has uncommitted changes to tracked files (${e.dirty.slice(0,10).join(",\
+or"||!e.runDir){return Xe(a,"failed",e?e.error||"setup returned no run directory":"the setup agent failed")}a.run={runId:e.
+runId,runDir:e.runDir,repoRoot:e.repoRoot,room:`${e.runDir}/room`};if(!a.modeGiven&&it.includes(e.mode)&&e.mode!==a.mode){
+log(`setup chose mode ${e.mode} (the task's wording suggested ${a.mode})`);a.mode=e.mode;a.postWords=qt[a.mode]}if(e.status===
+"dirty"){return Xe(a,"blocked",`the working tree has uncommitted changes to tracked files (${e.dirty.slice(0,10).join(",\
  ")}). Seats work from HEAD and would not see them. Commit or stash first, or rerun with allowDirty: true`,{dirty:e.dirty})}
 a.criteria=(e.criteria||[]).filter(s=>s&&s.id&&s.text);a.refs=(e.refs||[]).filter(s=>s&&typeof s.path==="string"&&s.path.
 startsWith(`${a.run.runDir}/refs/`)).map(s=>({source:String(s.source||""),path:s.path,inWorktrees:!!s.inWorktrees}));if((e.
 refs||[]).length!==a.refs.length)a.notes.push("Setup reported reference documents outside the run's refs/ directory; the\
 y were ignored.");if(a.plan.length&&Wn(a)<a.plan.length)a.notes.push(`${R(a.plan.length,"plan document")} given, but set\
-up snapshotted only ${Wn(a)}.`);a.verify=String(e.verify||"").trim();const t=Os(a,a.criteria,a.verify);if(t.length)return We(
+up snapshotted only ${Wn(a)}.`);a.verify=String(e.verify||"").trim();const t=Os(a,a.criteria,a.verify);if(t.length)return Xe(
 a,"failed",`setup did not keep what was supplied: ${t.join("; ")}. Rerun; if it recurs, check that the supplied criteria\
  and verification command are usable as given`);a.baselineOk=a.mode!=="implement"||!a.verify||e.baselinePasses;if(!a.baselineOk)
-a.baselineNote=w(e.baselineNote,300)||"no reason given";const n=Ri(a.lineup.length,Mt(a.run.runId));a.seats=a.letters.map(
+a.baselineNote=w(e.baselineNote,300)||"no reason given";const n=Ri(a.lineup.length,Ft(a.run.runId));a.seats=a.letters.map(
 (s,r)=>({L:s,...a.lineup[n[r]],wt:`${a.run.runDir}/wt/${s}`,active:true}));for(const s of a.seats)a.behaviour[s.L]={turns:[],
 capitulations:[],ignored:[]};log(`council: mode=${a.mode}, ${a.seats.length} seats, up to ${a.rounds} debate rounds, con\
-sensus at ${je(a)}${qe(a)?` incl. ${ct(a)}`:""}, escalate at ${xe(a)}`);log(`seats (hidden from the seats): ${a.seats.map(
+sensus at ${je(a)}${Me(a)?` incl. ${lt(a)}`:""}, escalate at ${xe(a)}`);log(`seats (hidden from the seats): ${a.seats.map(
 s=>`${s.L}=${s.name}/${s.effort}`).join(", ")}`);log(`room: ${a.run.room} · criteria: ${a.criteria.map(s=>s.id).join(",\
  ")||"none"} · verify: ${a.verify||"none"}`);if(a.refs.length)log(`reference documents: ${a.refs.map(s=>s.source).join(
-", ")}`);const i=await kr();if(i)return oo(a,i);return null}async function Cr(){phase("Solve");const e=await parallel(a.
-seats.map(o=>()=>se(o,0,as(a,o),Et)));a.seats.forEach((o,u)=>{if(e[u])Fs(a,o,e[u]);else{o.active=false;a.notes.push(`Sea\
-t ${o.L} (${o.name}) failed in round 0 and was dropped.`)}});if(A(a).length<2)return{stop:We(a,"failed",a.host==="codex"?
+", ")}`);const i=await xr();if(i)return oo(a,i);return null}async function Pr(){phase("Solve");const e=await parallel(a.
+seats.map(o=>()=>se(o,0,as(a,o),Ct)));a.seats.forEach((o,u)=>{if(e[u])Fs(a,o,e[u]);else{o.active=false;a.notes.push(`Sea\
+t ${o.L} (${o.name}) failed in round 0 and was dropped.`)}});if(A(a).length<2)return{stop:Xe(a,"failed",a.host==="codex"?
 "fewer than two seat submissions were accepted; see turn failures in notes":"fewer than two seats produced a solution",{
-seats:Lt(a)})};await oe(0);await ji(0);let t=An(a,0);if(t.length)return{stop:zn(a,0,t)};let n=null;const i=_s(a);if(i){n=
+seats:Rt(a)})};await oe(0);await ji(0);let t=In(a,0);if(t.length)return{stop:Vn(a,0,t)};let n=null;const i=_s(a);if(i){n=
 {kind:"consensus",W:i.W,voters:[],same:i.same,via:"blind",round:0};log(`round 0: ${i.same.join(", ")} are byte-identical\
  and pass verification → skipping the debate; ${i.W} writes the final version`)}for(let o=1;o<=a.rounds&&!n;o++){phase(
-`Round ${o}`);a.lastRound=o;const u=Dn(a);const d=A(a);const l=await parallel(d.map(y=>()=>se(y,o,cs(a,y,o),di)));d.forEach(
+`Round ${o}`);a.lastRound=o;const u=An(a);const d=A(a);const l=await parallel(d.map(y=>()=>se(y,o,cs(a,y,o),di)));d.forEach(
 (y,g)=>{if(l[g])Ms(a,y,o,l[g]);else a.notes.push(`Seat ${y.L} returned nothing in round ${o}; it keeps its round-${o-1} \
-position and abstains.`)});await oe(o);Hs(a,o,u);await ji(o);t=An(a,o);if(t.length)return{stop:zn(a,o,t)};const c=Pn(a,o);
+position and abstains.`)});await oe(o);Hs(a,o,u);await ji(o);t=In(a,o);if(t.length)return{stop:Vn(a,o,t)};const c=En(a,o);
 log(`round ${o}: ${Ks(a,o)}${c?` → consensus on ${c.W} (${c.voters.join(", ")}${c.via==="approval"?", by approval":c.via===
 "identical"?`, identical to ${c.same.filter(y=>y!==c.W).join(", ")}`:""})`:" → no consensus"}`);if(c){n={kind:"consens\
 us",W:c.W,voters:c.voters,first:c.first,same:c.same,via:c.via,round:o};break}if(o>=2&&Us(a,o)){log("no position or vote \
-changed this round; stopping the debate");break}const p=a.ballot&&o<a.rounds?await xr(o):null;if(p)n={kind:"consensus",W:p.
+changed this round; stopping the debate");break}const p=a.ballot&&o<a.rounds?await Rr(o):null;if(p)n={kind:"consensus",W:p.
 W,voters:p.voters,first:p.first,same:p.same,via:p.via,ballot:true,round:o};else if(o<a.rounds){const y=Gs(a,o);if(y)log(
-y)}}const s=de(a);const r=Fn(a);if(!n){n={kind:"scorecard",W:s[0].seat,voters:[],round:a.lastRound};log(`no consensus af\
-ter ${a.lastRound} round(s); scorecard picks ${n.W} as the base`)}return{outcome:n,decisionRows:s,decisionTable:r}}async function Er(e,t,n){
+y)}}const s=de(a);const r=Nn(a);if(!n){n={kind:"scorecard",W:s[0].seat,voters:[],round:a.lastRound};log(`no consensus af\
+ter ${a.lastRound} round(s); scorecard picks ${n.W} as the base`)}return{outcome:n,decisionRows:s,decisionTable:r}}async function Or(e,t,n){
 const i=await se(e,"F",fs(a,e,t,a.lastRound),n);if(!i){a.notes.push(`Synthesis by ${e.L} failed; the final version is ${e.
 L}'s round-${a.pos[e.L].round} position as it stands.`)}else{a.pos[e.L]={...a.pos[e.L],summary:i.summary||a.pos[e.L].summary,
 post:D(a,e.L,"F")};Ae(a,e,"F",i);for(const s of(i.adopted||[]).filter(r=>r&&te(a,r.from)&&r.from!==e.L&&r.idea)){a.adoptions.
-push({round:"F",by:e.L,from:s.from,idea:s.idea})}we(a,e.L,"F",i.claims);ze(a,"F",i)}await oe("F",e.L);return i}return await $r(
-async()=>a.raw.explain?Mo(a,yr()):Ar())
+push({round:"F",by:e.L,from:s.from,idea:s.idea})}we(a,e.L,"F",i.claims);Ve(a,"F",i)}await oe("F",e.L);return i}return await br(
+async()=>a.raw.explain?Mo(a,yr()):Cr())

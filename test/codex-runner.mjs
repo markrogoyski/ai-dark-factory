@@ -211,7 +211,7 @@ print(json.dumps(out))
   const runtime = createRuntime({ repo: dir, hostRunDir: runDir, timeoutMin: 1,
     env: { ...process.env, PATH: `${bin}:${process.env.PATH}`, CLAUDE_CONFIG_DIR: join(dir, 'claude-home'),
       RECOVERY_TEST_POST: post, RECOVERY_TEST_LOG: log, COUNCIL_JOB_POLL: '0.01' } })
-  const source = [...LIB, 'src/boot.js', 'src/schemas.js', 'src/turns.js'].map(f => readFileSync(join(root, f), 'utf8')).join('\n')
+  const source = [...LIB, 'src/boot.js', 'src/schemas.js', 'src/turns-core.js', 'src/turns.js'].map(f => readFileSync(join(root, f), 'utf8')).join('\n')
   const h = new Function('factoryRuntime', 'args', source + '\nreturn { state: S, seatTurn };')(runtime, { host: 'codex', task: 'Solve independently' })
   h.state.run = run
   const member = { L: 'A', key: 'sonnet', name: 'Claude Sonnet', vendor: 'claude', model: 'sonnet', effort: 'high', wt: dir }
@@ -409,7 +409,7 @@ test('full CLI Simple run uses actual worktrees, helper jobs and verification wi
   for (const cli of ['codex', 'claude']) writeFileSync(join(bin, cli), readFileSync(join(root, 'test/fixtures/codex-cli.cjs')), { mode: 0o755 })
   const result = JSON.parse(execFileSync(process.execPath, [cli, '--cwd', repo, '--tier', 'simple', 'Fix sum to add its operands'], {
     encoding: 'utf8', timeout: 90_000, stdio: ['ignore', 'pipe', 'pipe'],
-    env: { ...process.env, PATH: `${bin}:${process.env.PATH}`, CODEX_HOME: home,
+    env: { ...process.env, PATH: `${bin}:${process.env.PATH}`, CODEX_HOME: home, CLAUDE_CONFIG_DIR: join(dir, 'claude-home'),
       FACTORY_TEST_REPO: repo, FACTORY_TEST_LOG: join(dir, 'calls.jsonl'), COUNCIL_JOB_POLL: '0.01' },
   }))
   assert.equal(result.status, 'done')

@@ -124,10 +124,15 @@ function checkGoldens(name, calls) {
 
 // hooks.retro(prompt) stands in for the retro agent; the default returns RETRO(). hooks.allowThrown: the
 // scenario expects thunks to throw inside parallel(). hooks.workflow: 'factory' runs workflows/factory.js.
+// hooks.meter makes the budget read 5000 + 1000 per agent() call so far.
+// logAgentCounts[i] records how many calls had been made when logs[i] was recorded.
 async function run(name, scenario, args, hooks = {}) {
   const retroOn = !(args && typeof args === 'object' && args.retro === false)
   const calls = []
   const logs = []
+  const logAgentCounts = []
+  let agentCalls = 0
+  const budget = { total: null, spent: () => hooks.meter ? 5000 + 1000 * agentCalls : 0, remaining: () => Infinity }
   const leaks = []
   // The real runtime's parallel() catches a throwing thunk and returns null, and council.js catches
   // some agent() failures itself, so a TypeError in the script (or a failed assertion in a stub)
@@ -136,6 +141,7 @@ async function run(name, scenario, args, hooks = {}) {
   const thrown = new Set()
 
   async function agent(prompt, opts = {}) {
+    agentCalls++
     try { return await agentTurn(prompt, opts) } catch (e) { thrown.add(e); throw e }
   }
 
@@ -195,15 +201,18 @@ async function run(name, scenario, args, hooks = {}) {
   }
   const parallel = async thunks => Promise.all(thunks.map(async t => { try { return await t() } catch (e) { thrown.add(e); return null } }))
   const pipeline = async () => { throw new Error('pipeline not expected') }
-  const phase = t => logs.push(`[phase] ${t}`)
-  const log = m => logs.push(m)
+  const log = message => {
+    logs.push(message)
+    logAgentCounts.push(agentCalls)
+  }
+  const phase = title => log(`[phase] ${title}`)
 
   const savedRandom = Math.random, savedNow = Date.now
   Math.random = () => { throw new Error('Math.random used') }
   Date.now = () => { throw new Error('Date.now used') }
   let result
   try {
-    result = await SCRIPTS[hooks.workflow || 'council'](agent, parallel, pipeline, phase, log, args, { total: null, spent: () => 0, remaining: () => Infinity }, null)
+    result = await SCRIPTS[hooks.workflow || 'council'](agent, parallel, pipeline, phase, log, args, budget, null)
   } finally {
     Math.random = savedRandom; Date.now = savedNow
     if (process.env.SHOW_LOGS) console.log(`\n===== ${name} log =====\n${logs.join('\n')}\n`)
@@ -212,7 +221,7 @@ async function run(name, scenario, args, hooks = {}) {
   assert.deepEqual(leaks, [], `${name}: model identity leaked into seat prompts`)
   if (GOLDEN_RUNS.has(name)) checkGoldens(name, calls)
   if (process.env.SHOW_REPORT && result && result.report) console.log(`\n===== ${name} report =====\n${result.report.markdown}\n`)
-  return { result, calls, logs }
+  return { result, calls, logs, logAgentCounts }
 }
 
 function roleOf(label) {
@@ -2020,23 +2029,26 @@ async function scenarioFactoryFindings() {
 // A Simple run that fails its checks after the fix pass escalates to the Fix tier, in the same run:
 // a fresh setup and a blind two-seat council, told why but not shown the earlier change.
 async function scenarioFactoryEscalate() {
-  let council = false, setupCount = 0
+  const task = 'Fix the retry count in Fetcher::retry'
   const FAIL = { ran: true, passed: false, tail: 'FAIL testRetryLogsCount: expected 2, got 1' }
-  const handler = async (role, prompt) => {
-    switch (role.kind) {
-      case 'intake': return INTAKE('simple')
-      case 'setup': council = ++setupCount > 1
-        return council ? SETUP('test-fix') : SETUP('test-fesc')
-      case 'solve': return council ? solve(role.L) : solve(role.L, NOT_BIG)
-      case 'check': return check(prompt, () => 'verified', () => 'no', () => [], council ? {} : { suite: FAIL })
-      case 'auditfix': return { ...synth(), summary: 'tried again' }
-      case 'debate': return debate(role.L, 'A')
-      case 'synth': return synth()
-      case 'ratify': return ratify(true)
-      default: throw new Error(`unexpected role ${role.kind}`)
+  const escalationHandler = () => {
+    let council = false, setupCount = 0
+    return async (role, prompt) => {
+      switch (role.kind) {
+        case 'intake': return INTAKE('simple')
+        case 'setup': council = ++setupCount > 1
+          return council ? SETUP('test-fix') : SETUP('test-fesc')
+        case 'solve': return council ? solve(role.L) : solve(role.L, NOT_BIG)
+        case 'check': return check(prompt, () => 'verified', () => 'no', () => [], council ? {} : { suite: FAIL })
+        case 'auditfix': return { ...synth(), summary: 'tried again' }
+        case 'debate': return debate(role.L, 'A')
+        case 'synth': return synth()
+        case 'ratify': return ratify(true)
+        default: throw new Error(`unexpected role ${role.kind}`)
+      }
     }
   }
-  const r = await factory('factory-escalate', handler, { task: 'Fix the retry count in Fetcher::retry' })
+  const r = await factory('factory-escalate', escalationHandler(), { task })
   const { result } = r
   const kinds = r.calls.map(c => c.role.kind)
   assert.deepEqual(kinds.slice(0, 6), ['intake', 'setup', 'solve', 'check', 'audit', 'auditfix'], 'Simple: the review is clean, but the failing suite earns the fix pass')
@@ -2061,7 +2073,65 @@ async function scenarioFactoryEscalate() {
   const facts = factsIn(retro)
   assert.deepEqual([facts.tier, facts.escalation.trigger, facts.turns.byRole.intake], ['fix', 'verify-failed', 1])
   assert.ok(r.logs.some(l => /escalating from simple to fix \(verify-failed\)/.test(l)))
+  assert.ok(!r.logs.some(l => l.includes('(budget meter)')), 'a meter that reads 0 adds nothing to the log')
+
+  // With the budget meter running, the Fix tier's milestones count from Factory's start: intake and
+  // the Simple attempt included. A bounded repair policy gives the Fix audit metered milestones.
+  const metered = await factory('factory-escalate-meter', escalationHandler(), { task, repair: { maxPasses: 1 } }, { meter: true })
+  const escalation = metered.logs.findIndex(line => line.startsWith('factory: escalating from simple to fix'))
+  assert.ok(escalation >= 0, metered.logs.join('\n'))
+  const review = metered.logs.findIndex((line, index) => index > escalation && line.startsWith('audit: Review 1'))
+  assert.ok(review > escalation, metered.logs.join('\n'))
+  const agentCalls = metered.logAgentCounts[review]
+  assert.equal(agentCalls, 24, "agent calls through the Fix tier's first review")
+  assert.ok(metered.logs[review].endsWith(` · Claude output so far ≈ ${agentCalls}k (budget meter)`), metered.logs[review])
   return 'still failing after the fix pass → the Fix tier (Opus, Astra) in the same run, blind to the earlier change; one report and retro'
+}
+
+// A Fix-tier run with spec: "ask" stops at the spec review with a resume call that names Factory, and
+// the rerun with the answer replays the review and carries the answer into the run.
+async function scenarioFactorySpecAsk() {
+  const panelIds = prompt => [...prompt.matchAll(/^## \[([A-Za-z0-9]+)\]/gm)].map(m => m[1])
+  const answer = 'Retry 5xx too.'
+  const amendmentAnswer = `The user's answer: ${answer}`
+  const handler = async (role, prompt) => {
+    switch (role.kind) {
+      case 'intake': return INTAKE('fix')
+      case 'setup': return SETUP('test-fask')
+      case 'spec': return role.tag === 'intent'
+        ? { summary: 'One real ambiguity about which errors are retried.', findings: [
+            { severity: 'major', kind: 'decision', criterion: 'C2', statement: 'Should 5xx responses be retried, or only timeouts?', evidence: 'the task says "transient failures"', change: '', readings: ['only timeouts', 'timeouts and 5xx'] }] }
+        : CLEAN_SPEC()
+      case 'panel': return { rulings: panelIds(prompt).map(id => ({ finding: `[${id}]`, verdict: 'decision', note: `${role.member} on ${id}` })) }
+      case 'specamend': return {
+        criteria: [{ id: 'C1', text: 'handles empty input' }, { id: 'C2', text: 'tests pass' }, { id: 'C3', text: 'no API change' },
+                   { id: 'C4', text: prompt.includes(amendmentAnswer) ? 'timeouts and 5xx responses are retried' : 'only timeouts are retried' }],
+        verify: 'make test', baselinePasses: true, baselineNote: '', applied: [{ finding: 'S1', change: 'added C4' }], assumptions: [],
+      }
+      case 'solve': return solve(role.L)
+      case 'check': return check(prompt, () => 'verified', () => 'no', () => [], ALL_MET)
+      case 'debate': return debate(role.L, 'A')
+      case 'synth': return synth()
+      case 'ratify': return ratify(true)
+      default: throw new Error(`unexpected role ${role.kind}`)
+    }
+  }
+  const args = { task: 'Make the HTTP client retry transient failures', tier: 'fix', strategy: 'independent', spec: 'ask' }
+  const asked = await factory('factory-spec-ask', handler, args, { spec: true })
+  assert.equal(asked.result.status, 'needs-user', JSON.stringify(asked.result).slice(0, 400))
+  assert.equal(asked.result.round, 'spec')
+  assert.ok(asked.result.forTheOrchestrator.includes('Workflow({name: "dark-factory:factory", resumeFromRunId: <this run\'s id>, args: <exactly the args you launched with'), asked.result.forTheOrchestrator)
+  assert.ok(!asked.calls.some(c => ['solve', 'specamend'].includes(c.role.kind)), 'nothing is built or amended before the answer')
+  assert.equal(asked.result.questions.length, 1)
+  const [question] = asked.result.questions
+  const answered = await factory('factory-spec-answered', handler, { ...args, clarifications: [{ id: question.id, answer }] }, { spec: true })
+  const replayed = call => ({ label: call.label, raw: call.raw ?? call.prompt })
+  assert.deepEqual(answered.calls.slice(0, asked.calls.length).map(replayed), asked.calls.map(replayed), 'the rerun replays the earlier calls, labels and raw prompts unchanged')
+  const amendment = answered.calls.find(call => call.role.kind === 'specamend')
+  assert.ok(amendment?.prompt.includes(amendmentAnswer), 'the clarification reaches the spec amendment')
+  const firstSolve = answered.calls.find(call => call.role.kind === 'solve')
+  assert.ok(firstSolve?.prompt.includes(answer), 'the clarification reaches the first seat solve')
+  return `the Fix tier's spec question names dark-factory:factory in its resume call; the answered rerun replays and builds (${answered.result.status})`
 }
 
 // The other ways Simple hands up, each stopped at the higher tier's setup (a dirty tree) to keep it short.
@@ -2496,7 +2566,7 @@ function scenarioHeadlessPrompts() {
 
 const ONLY = process.env.SIM_ONLY ? process.env.SIM_ONLY.split(',') : null    // SIM_ONLY=scenarioAgy,scenarioBallot
 for (const [name, fn] of Object.entries({ scenarioConsensus, scenarioDeadlock, scenarioEscalation, scenarioFailures, scenarioDirty, scenarioFocus, scenarioSandbox, scenarioPlan, scenarioPlanMissing, scenarioRefs, scenarioTranscript, scenarioRetroOff, scenarioRetroSave, scenarioLineup, scenarioAgy, scenarioLateEscalation, scenarioModeAndGuidance, scenarioInitDocs, scenarioRelayErrors, scenarioPreflight, scenarioOpenRouter, scenarioReadiness, scenarioApproval, scenarioBallot, scenarioSeatRunErrors, scenarioMeasure, scenarioPreflightCli, scenarioBlind, scenarioAudit, scenarioSpec,
-  scenarioFactorySimple, scenarioSetupKeeps, scenarioFactoryFindings, scenarioFactoryEscalate, scenarioFactoryHandUp, scenarioFactoryTier, scenarioFactoryRoute, scenarioFactorySplit,
+  scenarioFactorySimple, scenarioSetupKeeps, scenarioFactoryFindings, scenarioFactoryEscalate, scenarioFactorySpecAsk, scenarioFactoryHandUp, scenarioFactoryTier, scenarioFactoryRoute, scenarioFactorySplit,
   scenarioFactoryFeature, scenarioFactoryFeatureHard, scenarioFactoryArchitecture, scenarioFactoryFeatureToArchitecture, scenarioFactsSave, scenarioHeadlessPrompts })) {
   if (ONLY && !ONLY.includes(name)) continue
   try {

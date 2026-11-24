@@ -126,8 +126,10 @@ workflows it loaded. Read and diff `src/`, not the built files.
   state queries, every prompt, ingestion and rulings, consensus, narrowing, ranking, readiness
   and the report. Per-tier rules are in `tiers.js` (shared: routing, pushback, escalation, run
   facts), `tier-simple.js`, `tier-feature.js` and `tier-architecture.js`.
-- `src/boot.js`, `schemas.js`, `turns.js` and `council.js` are the half that uses `agent()`,
-  `parallel()` and `log()`: agent turns and relays, checks, and the round loop (`councilRun()`).
+- `src/boot.js`, `schemas.js`, `turns-core.js`, `turns.js` and `council.js` are the half that uses
+  `agent()`, `parallel()` and `log()`: request control (`turns-core.js`: milestones, the turn budget
+  and clock, `controlledRun()`, `ask()`), agent turns and relays, checks, and the round loop
+  (`councilRun()`).
   Its stages `councilSetup()`, `debateStage()` and `synthesize()` are reused by `featureRun()`
   and `architectureRun()`. The Architecture tier's review is `runAudit()`, with its own prompts
   and a revision that returns the milestones.

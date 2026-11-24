@@ -215,31 +215,7 @@ const SETUP_SCHEMA = strict({ type: 'object', properties: {
   } } },
 } })
 
-// The factory's intake, and the Simple tier's one implementer, who can say the task isn't simple.
-const INTAKE_SCHEMA = strict({ type: 'object', properties: {
-  strategy: { type: 'string', enum: ['independent', 'pair'], description: 'Pair for scoped implementation with one clear approach and iterative review; independent for competing hypotheses or plans. Architecture and investigations require independent.' },
-  status:      { type: 'string', enum: ['ok', 'needs-plan', 'needs-split'] },
-  tier:        { type: 'string', enum: TIERS },
-  mode:        { type: 'string', enum: MODES },
-  reasons:     { type: 'string', description: 'Up to three sentences: what in the task or the code decided the tier.' },
-  planMissing: { type: 'string', description: 'With status "needs-plan": the document the task depends on that you could not find. Otherwise "".' },
-  signals: { type: 'object', properties: {
-    kind:        { type: 'string', enum: ['bug', 'feature', 'change', 'question', 'design'] },
-    files:       { type: 'integer', description: 'Your estimate of the files the change touches; 0 for an investigation or a design.' },
-    publicApi:   { type: 'boolean', description: 'Does it change a public API or schema?' },
-    crossModule: { type: 'boolean' },
-    testsCover:  { type: 'string', enum: ['yes', 'no', 'unknown'] },
-    ambiguous:   { type: 'boolean' },
-    planGiven:   { type: 'boolean' },
-  } },
-  split: { type: 'array', description: 'With status "needs-split": the separate pieces of work, in the order to do them. Otherwise [].', items: { type: 'object', properties: {
-    title: { type: 'string', description: 'A few words naming the piece.' },
-    task:  { type: 'string', description: 'The piece as a task of its own, complete for someone who has not seen this request.' },
-    tier:  { type: 'string', enum: TIERS, description: 'Your estimate for this piece alone.' },
-    after: { type: 'array', items: { type: 'integer' }, description: 'The numbers (from 1) of earlier pieces this one builds on; [] if none.' },
-  } } },
-} })
-
+// The Simple tier's one implementer, who can say the task isn't simple.
 const SIMPLE_SOLVE_SCHEMA = strict({ type: 'object', properties: {
   ...SOLVE_SCHEMA.properties,
   tooBig: { type: 'object', description: 'Set tier when the task is not a simple change; otherwise tier and reason are "".', properties: {
@@ -295,21 +271,6 @@ const RECORD_SCHEMA = strict({ type: 'object', properties: {
 } })
 
 const NOTE_SCHEMAS = new Map([SOLVE_SCHEMA, DEBATE_SCHEMA, SYNTH_SCHEMA, SIMPLE_SOLVE_SCHEMA, PLAN_SYNTH_SCHEMA, ARCH_SYNTH_SCHEMA, BUILD_SCHEMA].map(x => [x, withNotes(x)]))
-
-// While the workflow is being tuned, every agent can say what in its turn got in the way. Notes
-// are collected as they happen, not asked for at the end: Claude seats are fresh agents each turn
-// and wouldn't remember. The retro agent turns them into suggested changes. A pair run, standalone
-// or the factory's pair strategy, names the process it is in.
-const processProp = name => ({ type: 'string', description:
-  `Feedback on the ${name} process, not on the task: at most two sentences on anything in this turn's instructions, inputs or tools that got in your way, ` +
-  'such as an unclear or conflicting instruction, missing context, wasted effort, a limit that cut you short, or a command that failed. ' +
-  'Name the instruction or input. "" if nothing did; don\'t invent feedback.' })
-const PROCESS_PROP = processProp('council'), PAIR_PROCESS_PROP = processProp('pair')
-
-function withProcess(schema) {
-  if (!S.retro || !schema) return schema
-  return { ...schema, properties: { ...schema.properties, process: S.pair ? PAIR_PROCESS_PROP : PROCESS_PROP }, required: [...(schema.required || []), 'process'] }
-}
 
 const RETRO_SCHEMA = strict({ type: 'object', properties: {
   worked: { type: 'array', description: 'Up to 3 things in the process that worked and should be kept.', items: { type: 'object', properties: {

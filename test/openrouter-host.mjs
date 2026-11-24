@@ -32,7 +32,7 @@ const ENSEMBLE_STUBS = 'async function councilSetup() { return null }\nasync fun
 function harness({ boot = 'src/boot.js', args, runtime, agent, extra = '' }) {
   const bootSource = readFileSync(join(root, boot), 'utf8')
   const lib = [...LIB, ...PAIR_LIB].map(f => readFileSync(join(root, f), 'utf8')).join('\n')
-  const rest = ['src/schemas.js', 'src/ensemble-schemas.js', 'src/pair-schemas.js', 'src/turns.js', 'src/repair.js', 'src/pair.js', 'src/main-ensemble.js']
+  const rest = ['src/schemas.js', 'src/ensemble-schemas.js', 'src/pair-schemas.js', 'src/turns-core.js', 'src/turns.js', 'src/repair.js', 'src/pair.js', 'src/main-ensemble.js']
     .map(f => readFileSync(join(root, f), 'utf8').replace(/^return await .*$/m, '')).join('\n')
   const load = new Function('factoryRuntime', 'agent', 'parallel', 'log', 'phase', 'args', `${lib}\n${bootSource}\n${rest}\n${extra}
     return { get S() { return S }, seatTurn, panelRun, auditTurn, specTurn, runSpecReview, boundedReview, externalTurn, ensembleReview, ensembleRun,
