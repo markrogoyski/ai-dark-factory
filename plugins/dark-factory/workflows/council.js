@@ -2186,17 +2186,17 @@ includes(t))throw new Error(`factory: unknown tier '${e.tier}'. Known: ${wt.join
 "object"?e.simple:{};const i=e.host==="codex"?co:$t;const s=(o,r)=>Number.isInteger(Number(o))&&Number(o)>0?Number(o):r;
 return{tier:t,tierConfirmed:e.tierConfirmed===true,noSplit:e.noSplit===true,simple:{implementer:String(n.implementer||i.
 implementer),reviewer:String(n.reviewer||i.reviewer),maxLines:s(n.maxLines,$t.maxLines),maxFiles:s(n.maxFiles,$t.maxFiles)}}}
-function po(e,t,n){const i={...e};delete i.tier;delete i.tierConfirmed;delete i.noSplit;delete i.simple;if(e.host==="cod\
-ex"&&t==="simple"&&e.simple)i.simple=e.simple;if(!i.mode&&n&&Ee.includes(n.mode))i.mode=n.mode;if(t==="architecture")i.mode=
-"design";if(t==="simple"||t==="feature")i.mode="implement";const s=e.host==="codex"?lo:uo;if(s[t]&&!Oe(i.seats).length)i.
-seats=s[t];return i}function mo(e,t){const n=t.L||e.letters[0];const i=e.pos[n]||{};const s=e.ledger.filter(r=>(r.round===
-"H"||/^review\d+$/.test(r.round))&&r.kind==="finding"&&!r.withdrawn&&!r.fixed&&(r.status==="verified"||(t.findings||[]).
-includes(r.id)));const o=se(e).filter(r=>e.testResults[r.id]&&e.testResults[r.id][n]&&e.testResults[r.id][n]!=="pass");return{
-from:e.tier||"simple",to:t.to,trigger:t.trigger,why:t.why,runDir:e.run?e.run.runDir:"",earlier:e.factory&&e.factory.escalation||
-null,criteria:e.criteria.map(r=>`${r.id}: ${r.text}`),findings:s.map(r=>`${r.severity}${r.judgment?", judgment":""}: ${m(
-r.statement,300)}${r.evidence?` (evidence: ${m(r.evidence,200)})`:""}`),tests:o.map(r=>`${e.run.room}/tests/${r.id}/ (${m(
-r.statement,160)})`),suiteTail:i.suite&&i.suite.ran&&!i.suite.passed?m(i.suite.tail,600):""}}function go(e){const t=e.escalation;
-if(!t)return"";if(t.from==="feature"){return`
+function po(e,t,n){const i={...e};delete i.tier;delete i.tierConfirmed;delete i.noSplit;delete i.simple;if(t==="simple"&&
+e.simple)i.simple=e.simple;if(!i.mode&&n&&Ee.includes(n.mode))i.mode=n.mode;if(t==="architecture")i.mode="design";if(t===
+"simple"||t==="feature")i.mode="implement";const s=e.host==="codex"?lo:uo;if(s[t]&&!Oe(i.seats).length)i.seats=s[t];return i}
+function mo(e,t){const n=t.L||e.letters[0];const i=e.pos[n]||{};const s=e.ledger.filter(r=>(r.round==="H"||/^review\d+$/.
+test(r.round))&&r.kind==="finding"&&!r.withdrawn&&!r.fixed&&(r.status==="verified"||(t.findings||[]).includes(r.id)));const o=se(
+e).filter(r=>e.testResults[r.id]&&e.testResults[r.id][n]&&e.testResults[r.id][n]!=="pass");return{from:e.tier||"simple",
+to:t.to,trigger:t.trigger,why:t.why,runDir:e.run?e.run.runDir:"",earlier:e.factory&&e.factory.escalation||null,criteria:e.
+criteria.map(r=>`${r.id}: ${r.text}`),findings:s.map(r=>`${r.severity}${r.judgment?", judgment":""}: ${m(r.statement,300)}${r.
+evidence?` (evidence: ${m(r.evidence,200)})`:""}`),tests:o.map(r=>`${e.run.room}/tests/${r.id}/ (${m(r.statement,160)})`),
+suiteTail:i.suite&&i.suite.ran&&!i.suite.passed?m(i.suite.tail,600):""}}function go(e){const t=e.escalation;if(!t)return"";
+if(t.from==="feature"){return`
 # An earlier attempt
 
 This task was first planned as one feature, and was handed up because ${t.why}. You are not shown that plan, on purpose:\

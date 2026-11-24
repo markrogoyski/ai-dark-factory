@@ -105,6 +105,14 @@ describe('Codex host configuration', () => {
     assert.deepEqual(L.externalVendors(config), ['claude', 'codex'])
   })
 
+  test('the Claude host keeps the caller\'s Simple models and limits through intake too', () => {
+    const raw = { task: 'Fix parser', simple: { implementer: 'opus', reviewer: 'sol', maxLines: 37, maxFiles: 2 } }
+    const config = L.parseConfig(L.tierArgs(raw, 'simple', { mode: 'implement' }), { workflow: 'factory', tier: 'simple' })
+    assert.deepEqual(config.simple, raw.simple)
+    assert.deepEqual([config.lineup[0].key, config.auditors[0].key], ['opus', 'sol'])
+    assert.equal(L.tierArgs(raw, 'feature', { mode: 'implement' }).simple, undefined)
+  })
+
   test('escalation retains host/roles but adopts the higher tier seats', () => {
     const raw = { task: 'Fix parser', host: 'codex', roles: { setup: 'astra' }, simple: { implementer: 'luna' } }
     const featureArgs = L.tierArgs(raw, 'feature', { mode: 'implement' })

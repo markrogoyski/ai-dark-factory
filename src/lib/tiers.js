@@ -39,9 +39,9 @@ function parseFactory(raw) {
 function tierArgs(raw, tier, intake) {
   const a = { ...raw }
   delete a.tier; delete a.tierConfirmed; delete a.noSplit; delete a.simple
-  // Preserve the Codex caller's Simple limits and models when intake rebuilds its state.
+  // Preserve the caller's Simple limits and models when intake rebuilds its state.
   // Other tiers still get their own defaults, including after an escalation.
-  if (raw.host === 'codex' && tier === 'simple' && raw.simple) a.simple = raw.simple
+  if (tier === 'simple' && raw.simple) a.simple = raw.simple
   if (!a.mode && intake && MODES.includes(intake.mode)) a.mode = intake.mode
   if (tier === 'architecture') a.mode = 'design'
   if (tier === 'simple' || tier === 'feature') a.mode = 'implement'

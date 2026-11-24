@@ -2251,23 +2251,23 @@ includes(t))throw new Error(`factory: unknown tier '${e.tier}'. Known: ${Ue.join
 "object"?e.simple:{};const i=e.host==="codex"?La:Jt;const r=(o,s)=>Number.isInteger(Number(o))&&Number(o)>0?Number(o):s;
 return{tier:t,tierConfirmed:e.tierConfirmed===true,noSplit:e.noSplit===true,simple:{implementer:String(n.implementer||i.
 implementer),reviewer:String(n.reviewer||i.reviewer),maxLines:r(n.maxLines,Jt.maxLines),maxFiles:r(n.maxFiles,Jt.maxFiles)}}}
-function lr(e,t,n){const i={...e};delete i.tier;delete i.tierConfirmed;delete i.noSplit;delete i.simple;if(e.host==="cod\
-ex"&&t==="simple"&&e.simple)i.simple=e.simple;if(!i.mode&&n&&Ve.includes(n.mode))i.mode=n.mode;if(t==="architecture")i.mode=
-"design";if(t==="simple"||t==="feature")i.mode="implement";const r=e.host==="codex"?Ia:Aa;if(r[t]&&!ze(i.seats).length)i.
-seats=r[t];return i}function Ut(e){const t=e&&Ue.includes(e.tier)?e.tier:"feature";if((t==="simple"||t==="feature")&&e&&
-e.mode&&e.mode!=="implement")return e.mode==="design"?"architecture":"fix";return t}function Da(e){const t=e&&e.status===
-"needs-split"&&Array.isArray(e.split)?e.split.filter(n=>n&&String(n.task||"").trim()):[];if(t.length<2)return[];return t.
-map((n,i)=>({n:i+1,title:y(n.title,120)||`Piece ${i+1}`,task:String(n.task).trim(),tier:Ue.includes(n.tier)?n.tier:"feat\
-ure",after:[...new Set((Array.isArray(n.after)?n.after:[]).filter(r=>Number.isInteger(r)&&r>=1&&r<=i))]}))}function Ea(e,t){
-const n=e.factory;if(!n.asked||n.tierConfirmed)return null;const i=Ut(t);return i===n.asked?null:{asked:n.asked,recommended:i}}
-function qa(e,t){const n=t.L||e.letters[0];const i=e.pos[n]||{};const r=e.ledger.filter(s=>(s.round==="H"||/^review\d+$/.
-test(s.round))&&s.kind==="finding"&&!s.withdrawn&&!s.fixed&&(s.status==="verified"||(t.findings||[]).includes(s.id)));const o=ye(
-e).filter(s=>e.testResults[s.id]&&e.testResults[s.id][n]&&e.testResults[s.id][n]!=="pass");return{from:e.tier||"simple",
-to:t.to,trigger:t.trigger,why:t.why,runDir:e.run?e.run.runDir:"",earlier:e.factory&&e.factory.escalation||null,criteria:e.
-criteria.map(s=>`${s.id}: ${s.text}`),findings:r.map(s=>`${s.severity}${s.judgment?", judgment":""}: ${y(s.statement,300)}${s.
-evidence?` (evidence: ${y(s.evidence,200)})`:""}`),tests:o.map(s=>`${e.run.room}/tests/${s.id}/ (${y(s.statement,160)})`),
-suiteTail:i.suite&&i.suite.ran&&!i.suite.passed?y(i.suite.tail,600):""}}function Oa(e){const t=e.escalation;if(!t)return"";
-if(t.from==="feature"){return`
+function lr(e,t,n){const i={...e};delete i.tier;delete i.tierConfirmed;delete i.noSplit;delete i.simple;if(t==="simple"&&
+e.simple)i.simple=e.simple;if(!i.mode&&n&&Ve.includes(n.mode))i.mode=n.mode;if(t==="architecture")i.mode="design";if(t===
+"simple"||t==="feature")i.mode="implement";const r=e.host==="codex"?Ia:Aa;if(r[t]&&!ze(i.seats).length)i.seats=r[t];return i}
+function Ut(e){const t=e&&Ue.includes(e.tier)?e.tier:"feature";if((t==="simple"||t==="feature")&&e&&e.mode&&e.mode!=="im\
+plement")return e.mode==="design"?"architecture":"fix";return t}function Da(e){const t=e&&e.status==="needs-split"&&Array.
+isArray(e.split)?e.split.filter(n=>n&&String(n.task||"").trim()):[];if(t.length<2)return[];return t.map((n,i)=>({n:i+1,title:y(
+n.title,120)||`Piece ${i+1}`,task:String(n.task).trim(),tier:Ue.includes(n.tier)?n.tier:"feature",after:[...new Set((Array.
+isArray(n.after)?n.after:[]).filter(r=>Number.isInteger(r)&&r>=1&&r<=i))]}))}function Ea(e,t){const n=e.factory;if(!n.asked||
+n.tierConfirmed)return null;const i=Ut(t);return i===n.asked?null:{asked:n.asked,recommended:i}}function qa(e,t){const n=t.
+L||e.letters[0];const i=e.pos[n]||{};const r=e.ledger.filter(s=>(s.round==="H"||/^review\d+$/.test(s.round))&&s.kind==="\
+finding"&&!s.withdrawn&&!s.fixed&&(s.status==="verified"||(t.findings||[]).includes(s.id)));const o=ye(e).filter(s=>e.testResults[s.
+id]&&e.testResults[s.id][n]&&e.testResults[s.id][n]!=="pass");return{from:e.tier||"simple",to:t.to,trigger:t.trigger,why:t.
+why,runDir:e.run?e.run.runDir:"",earlier:e.factory&&e.factory.escalation||null,criteria:e.criteria.map(s=>`${s.id}: ${s.
+text}`),findings:r.map(s=>`${s.severity}${s.judgment?", judgment":""}: ${y(s.statement,300)}${s.evidence?` (evidence: ${y(
+s.evidence,200)})`:""}`),tests:o.map(s=>`${e.run.room}/tests/${s.id}/ (${y(s.statement,160)})`),suiteTail:i.suite&&i.suite.
+ran&&!i.suite.passed?y(i.suite.tail,600):""}}function Oa(e){const t=e.escalation;if(!t)return"";if(t.from==="feature"){return`\
+
 # An earlier attempt
 
 This task was first planned as one feature, and was handed up because ${t.why}. You are not shown that plan, on purpose:\

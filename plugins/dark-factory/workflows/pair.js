@@ -560,10 +560,9 @@ const n=e.simple&&typeof e.simple==="object"?e.simple:{};const r=e.host==="codex
 Number(o))&&Number(o)>0?Number(o):s;return{tier:t,tierConfirmed:e.tierConfirmed===true,noSplit:e.noSplit===true,simple:{
 implementer:String(n.implementer||r.implementer),reviewer:String(n.reviewer||r.reviewer),maxLines:i(n.maxLines,ae.maxLines),
 maxFiles:i(n.maxFiles,ae.maxFiles)}}}function Ir(e,t,n){const r={...e};delete r.tier;delete r.tierConfirmed;delete r.noSplit;
-delete r.simple;if(e.host==="codex"&&t==="simple"&&e.simple)r.simple=e.simple;if(!r.mode&&n&&re.includes(n.mode))r.mode=
-n.mode;if(t==="architecture")r.mode="design";if(t==="simple"||t==="feature")r.mode="implement";const i=e.host==="codex"?
-jr:Rr;if(i[t]&&!X(r.seats).length)r.seats=i[t];return r}function Dr(e){const t=e.escalation;if(!t)return"";if(t.from==="\
-feature"){return`
+delete r.simple;if(t==="simple"&&e.simple)r.simple=e.simple;if(!r.mode&&n&&re.includes(n.mode))r.mode=n.mode;if(t==="arc\
+hitecture")r.mode="design";if(t==="simple"||t==="feature")r.mode="implement";const i=e.host==="codex"?jr:Rr;if(i[t]&&!X(
+r.seats).length)r.seats=i[t];return r}function Dr(e){const t=e.escalation;if(!t)return"";if(t.from==="feature"){return`
 # An earlier attempt
 
 This task was first planned as one feature, and was handed up because ${t.why}. You are not shown that plan, on purpose:\
