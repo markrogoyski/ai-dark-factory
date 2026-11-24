@@ -994,17 +994,20 @@ async function live(configDir, file) {
   return probeExitCode(checks, { claudeRan: Boolean(cli) })
 }
 
+// Every model that would default to Codex Astra is pinned to Sol (Simple review, Pair reviewer,
+// Fix seats, panel and spec coverage); candidate and control get the same args, so parity holds.
 const FACTORY_ARGS = {
   'L2-i': {
-    tier: 'simple', strategy: 'independent', maxTurns: 2,
+    tier: 'simple', strategy: 'independent', maxTurns: 2, simple: { reviewer: 'sol' },
     task: 'Fix the off-by-one in math.cjs count: it should return the input. Add a focused test.',
   },
   'L2-ii': {
-    tier: 'simple', strategy: 'pair', mode: 'implement', pair: { spec: false, maxDesignReviews: 1, maxReviews: 3 },
+    tier: 'simple', strategy: 'pair', mode: 'implement', pair: { reviewer: 'sol', spec: false, maxDesignReviews: 1, maxReviews: 3 },
     task: 'Change the increment implementation in math.cjs to advance by two. Decide how to preserve the public caller behavior, check downstream callers, and add a focused test.',
   },
   'L2-iii': {
-    tier: 'fix', strategy: 'independent', mode: 'implement', spec: 'ask', audit: false,
+    tier: 'fix', strategy: 'independent', mode: 'implement', spec: { coverage: 'sol', ask: true }, audit: false,
+    seats: ['opus', 'sol'], panel: ['opus', 'sol'],
     task: 'Fix retry.cjs to retry transient failures and add a focused test. The retry policy for HTTP 5xx versus timeouts is a product decision reserved for the maintainer. The repository cannot settle that choice. Ask before implementing.',
   },
 }
@@ -1013,7 +1016,7 @@ const FACTORY_ANSWERS = {
   'L2-iii': { answer: 'Retry both timeouts and HTTP 5xx, but do not retry other HTTP responses.' },
 }
 
-function factoryArgs(id, verify) {
+export function factoryArgs(id, verify) {
   const scenario = id === 'L3' ? 'L2-ii' : id === 'L2-iv' ? 'L2-i' : id
   const args = { brief: false, tierConfirmed: true, noSplit: true, retro: false, verify, ...FACTORY_ARGS[scenario] }
   if (id === 'L2-iv') delete args.maxTurns

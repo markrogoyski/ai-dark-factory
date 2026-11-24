@@ -9,7 +9,7 @@ import { setTimeout as delay } from 'node:timers/promises'
 import {
   L2_REQUIRED, beforeCancelDir, createStreamParser, factoryExitCode, judgeBootThrow, judgeCancel, judgeEnvelope, judgeMeter, judgeReplay,
   parseManualTranscript, parseStream, probeExitCode, probeObservation, resumeAfterStop, scratchEnv, terminalFor, workflowJournal,
-  writeVerdict,
+  writeVerdict, factoryArgs,
 } from '../tools/workflow-check.mjs'
 import { factoryResultFor } from '../tools/workflow-evidence.mjs'
 import { compareLegs, judgeFirstLeg, judgeResume, snapshotRunDirectory } from '../tools/factory-evidence.mjs'
@@ -1015,9 +1015,9 @@ test('Factory CLI guards and proves paired native resumes and the same-session L
   assert.deepEqual(budget.args, budgetResume.args)
   const [pair, pairResume, fix, fixResume] = [launches[4], launches[5], launches[8], launches[9]].map(row => row.launch)
   assert.equal(pair.args.strategy, 'pair')
-  assert.deepEqual(pair.args.pair, { spec: false, maxDesignReviews: 1, maxReviews: 3 })
+  assert.deepEqual(pair.args.pair, { reviewer: 'sol', spec: false, maxDesignReviews: 1, maxReviews: 3 })
   assert.deepEqual(pairResume.args.clarifications.map(({ id, implement }) => [id, implement]), [['Q1', true]])
-  assert.deepEqual([fix.args.tier, fix.args.strategy, fix.args.spec, fix.args.audit], ['fix', 'independent', 'ask', false])
+  assert.deepEqual([fix.args.tier, fix.args.strategy, fix.args.spec, fix.args.audit], ['fix', 'independent', { coverage: 'sol', ask: true }, false])
   assert.deepEqual(fixResume.args.clarifications.map(({ id }) => id), ['S1'])
   const [startUpgrade, resumeUpgrade] = launches.slice(12, 14)
   assert.deepEqual(startUpgrade.launch.args, pair.args)
@@ -1235,4 +1235,25 @@ test('Manual Factory CLI judges two interactive captures and rejects stale or in
   const incomplete = run(...options)
   assert.equal(incomplete.status, 1, incomplete.stdout + incomplete.stderr)
   assert.equal(readJson(live.verdict).l2.checks['L2-iv'].status, 'fail')
+})
+
+test('no Factory scenario runs Codex Astra: every default Astra model is pinned to Sol', async () => {
+  const { loadLib } = await import('./lib.mjs')
+  const L = loadLib()
+  for (const id of [...L2_REQUIRED]) {
+    const args = { task: 'x', ...factoryArgs(id, 'true') }
+    assert.doesNotMatch(JSON.stringify(args), /astra/, id)
+    let models
+    if (args.strategy === 'pair') {
+      const config = L.factoryPairConfig({ raw: args, retro: false, roles: {} })
+      models = [config.pairOptions.author, config.pairOptions.reviewer, ...config.specReviewers]
+    } else {
+      // The Simple tier has no panel; every other tier rules with one.
+      const config = L.parseConfig(L.tierArgs(args, args.tier), { workflow: 'factory', tier: args.tier })
+      models = [...config.lineup, ...(args.tier === 'simple' ? [] : config.panel), ...config.auditors, ...config.specReviewers]
+    }
+    const keys = models.map(m => m.key)
+    assert.ok(keys.length > 1, id)
+    assert.ok(!keys.includes('astra'), `${id}: ${keys.join(', ')}`)
+  }
 })
