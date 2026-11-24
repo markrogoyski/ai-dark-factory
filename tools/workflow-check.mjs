@@ -612,7 +612,10 @@ function startSession({ cwd, env, plugin, artifacts, guard }) {
   }
   async function invoke(input, timeout) {
     const firstCall = stream.calls.length, firstResult = stream.results.length
-    guard?.permit(input)
+    // Claude Code rejects an unknown workflow name before PreToolUse hooks run, so a listing
+    // probe never reaches the guard; it cannot launch anything, and its listing is checked.
+    const guarded = guard && !isListingProbe(input) ? guard : null
+    guarded?.permit(input)
     try {
       sendUser(inputPrompt(input))
       const call = await waitFor(() => {
@@ -622,10 +625,10 @@ function startSession({ cwd, env, plugin, artifacts, guard }) {
         if (driver) throw new Error(`Claude did not make the requested Workflow call: ${textOf(driver.event.errors ?? driver.event.result) || stderr.trim()}`)
         return null
       }, `could not invoke ${input.name}`, timeout)
-      guard?.verify(call)
+      guarded?.verify(call)
       return call
     } finally {
-      guard?.clear()
+      guarded?.clear()
     }
   }
   async function control(request) {
@@ -1048,6 +1051,8 @@ function factoryConfig(configDir, root) {
   return config
 }
 
+const isListingProbe = input => /:missing-[0-9a-f-]{36}$/.test(input?.name ?? '')
+
 // A missing matcher, "*" (every tool) or one that does not compile may still match Workflow.
 const matchesWorkflow = matcher => {
   if (!matcher || matcher === '*') return true
@@ -1189,7 +1194,8 @@ async function captureManualFactory(file, phase) {
   }
   const guard = factoryWorkflowGuard(join(dirname(file), 'guard'), { existing: true })
   const permit = request => { guard.permit(request); console.log(inputPrompt(request)) }
-  const newListing = () => permit({ name: `${FACTORY_PLUGIN}:missing-${randomUUID()}` })
+  // A listing probe never reaches the guard (see isListingProbe), so it needs no permit.
+  const newListing = () => console.log(inputPrompt({ name: `${FACTORY_PLUGIN}:missing-${randomUUID()}` }))
   if (phase === 'list') {
     newListing()
     return 0
@@ -1203,7 +1209,7 @@ async function captureManualFactory(file, phase) {
   switch (phase) {
     case 'start':
       if (original) throw new Error('The interactive Factory leg has already started')
-      guard.verify(manualListing(stream, copy, sessionId, EXPECTED, 0, Infinity))
+      manualListing(stream, copy, sessionId, EXPECTED, 0, Infinity)
       guard.clear()
       permit(input)
       break
@@ -1244,7 +1250,7 @@ async function captureManualFactory(file, phase) {
     case 'resume': {
       const prefix = readFileSync(join(capture, 'session.jsonl'), 'utf8')
       if (!original || extra || !text.startsWith(prefix)) throw new Error('Missing original stopped Factory transcript')
-      guard.verify(manualListing(stream, copy, sessionId, EXPECTED, prefix.split('\n').length - 1, Infinity))
+      manualListing(stream, copy, sessionId, EXPECTED, prefix.split('\n').length - 1, Infinity)
       guard.clear()
       permit({ ...input, resumeFromRunId: original.output.runId })
       break

@@ -966,7 +966,6 @@ for (const [scenario, diagnostic] of [
   ['missing-permission', /Add "Bash\(dark-factory:\*\)" to permissions.allow/],
   ['missing-provider', /codex: codex is not on PATH/],
   ['installed', /empty scratch plugin inventory/],
-  ['no-receipt', /Missing correlated Factory Workflow guard receipt/],
   ['independent-workflow', /conflict with guarded Workflow requests/],
   // A matcher of "*", one that does not compile, or none at all may match Workflow.
   ['star-hook', /conflict with guarded Workflow requests/],
@@ -983,6 +982,17 @@ for (const [scenario, diagnostic] of [
   })
 }
 
+// A listing probe never reaches the hook natively, so disabled hooks show first at the guarded
+// Factory call: it stops there, unlaunched, and the partial verdict fails L2-i.
+test('Factory CLI stops at the first Factory call that has no guard receipt', t => {
+  const { run, rows, l2 } = runFactoryStub(t, 'no-receipt')
+  assert.match(run.stderr, /Missing correlated Factory Workflow guard receipt/)
+  assert.ok(rows.some(row => row.unguarded), JSON.stringify(rows))
+  assert.ok(!rows.some(row => row.launch), JSON.stringify(rows))
+  assert.equal(l2.checks['L2-i'].status, 'fail')
+  assert.match(l2.checks['L2-i'].reason, /guard receipt/)
+})
+
 test('Factory CLI guards and proves paired native resumes and the same-session L3 reload', t => {
   const { run, config, l2, rows } = runFactoryStub(t, 'guard')
   assert.equal(run.stderr, '')
@@ -992,7 +1002,10 @@ test('Factory CLI guards and proves paired native resumes and the same-session L
     { 'L2-i': 'pass', 'L2-ii': 'pass', 'L2-iii': 'pass', 'L2-iv': 'pass', L3: 'pass' })
   assert.ok(rows.filter(row => row.argv).every(row => row.config === config))
   assert.equal(rows.filter(row => row.guard === 2 && row.toolUseId === 'unsolicited').length, 20)
-  assert.equal(rows.filter(row => row.guard === 2 && row.toolUseId === 'duplicate').length, 20)
+  // Listing probes never reach the guard; every Factory call is claimed once and refused a second time.
+  assert.ok(!rows.some(row => 'guard' in row && row.input.name.includes(':missing-')))
+  assert.equal(rows.filter(row => row.guard === 2 && row.toolUseId === 'duplicate').length,
+    rows.filter(row => row.guard === 0).length)
 
   const fresh = launches.filter(row => !row.launch.resumeFromRunId)
   assert.equal(new Set(fresh.map(row => row.cwd)).size, 9)
@@ -1002,7 +1015,7 @@ test('Factory CLI guards and proves paired native resumes and the same-session L
   for (const [index, row] of launches.entries()) {
     const { args, resumeFromRunId } = row.launch
     assert.deepEqual([args.brief, args.tierConfirmed, args.noSplit, args.retro], [false, true, true, false])
-    const preceding = rows[rows.indexOf(row) - 1]
+    const preceding = rows.slice(0, rows.indexOf(row)).findLast(item => 'guard' in item && item.toolUseId !== 'duplicate')
     assert.equal(preceding.guard, 0)
     assert.equal(preceding.session, row.session)
     assert.deepEqual(preceding.input, row.launch)

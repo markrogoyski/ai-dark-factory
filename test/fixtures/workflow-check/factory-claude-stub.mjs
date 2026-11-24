@@ -96,13 +96,20 @@ if (argv[0] === '--version') {
     if (listing && scenario === 'guard') {
       assert.equal(hook({ name: 'dark-factory:factory', args: { task: 'Unexpected' } }, 'unsolicited'), 2)
     }
-    if (scenario !== 'no-receipt') assert.equal(hook(input, toolUseId), 0)
-    if (listing && scenario === 'guard') assert.equal(hook(input, 'duplicate'), 2)
+    // As natively, an unknown workflow name is rejected before PreToolUse hooks run.
+    if (!listing && scenario !== 'no-receipt') assert.equal(hook(input, toolUseId), 0)
+    if (!listing && scenario === 'guard') assert.equal(hook(input, 'duplicate'), 2)
     emit({ type: 'assistant', message: { content: [{ type: 'tool_use', id: toolUseId, name: 'Workflow', input }] } })
     const reply = (body, data, isError = false) => emit({
       type: 'user', message: { content: [{ type: 'tool_result', tool_use_id: toolUseId, content: body, is_error: isError }] },
       tool_use_result: data,
     })
+    // no-receipt: no hook ran, so the unlisted Workflow call is refused without a permission prompt.
+    if (!listing && scenario === 'no-receipt') {
+      trace({ unguarded: input, session })
+      reply('Fixture: Workflow requires permission.', undefined, true)
+      continue
+    }
     if (listing) {
       // The scratch copy changes after the checker created it.
       if (scenario === 'altered-copy') appendFileSync(join(plugin, 'workflows', 'factory.js'), '\n// altered\n')
