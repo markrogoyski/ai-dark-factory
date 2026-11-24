@@ -8,7 +8,7 @@
 //   node test/static.mjs
 
 import { readFileSync, readdirSync } from 'node:fs'
-import { LIB, PAIR_LIB, RUN_PLAN_LIB, POLICY_LIB, POLICY_EXPORTS, TARGETS } from '../tools/sources.mjs'
+import { LIB, PAIR_LIB, HANDOFF_LIB, RUN_PLAN_LIB, POLICY_LIB, POLICY_EXPORTS, TARGETS } from '../tools/sources.mjs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import assert from 'node:assert/strict'
@@ -93,7 +93,7 @@ for (const file of readdirSync(join(root, 'plugins', 'dark-factory', 'workflows'
 
 // src/lib: top-level functions are found by their column-0 `function` line up to the column-0 `}`.
 // A body that mentions `S` must have it as a parameter (a nested callback may not shadow it).
-for (const file of new Set([...LIB, ...PAIR_LIB, ...RUN_PLAN_LIB, ...POLICY_LIB])) {
+for (const file of new Set([...LIB, ...PAIR_LIB, ...HANDOFF_LIB, ...RUN_PLAN_LIB, ...POLICY_LIB])) {
   const lines = readFileSync(join(root, file), 'utf8').split('\n')
   const bad = []
 

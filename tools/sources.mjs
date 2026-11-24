@@ -32,6 +32,7 @@ const PAIR_FLOW = 'src/pair.js'
 // The debate engine: the council runs it, and the factory's tiers and the ensemble build on it.
 const DEBATE = [SCHEMAS, TURNS_CORE, TURNS, REPAIR, COUNCIL_FLOW]
 export const PAIR_LIB = ['src/lib/pair.js', 'src/lib/pair-prompts.js']
+export const HANDOFF_LIB = ['src/lib/handoff.js']
 export const RUN_PLAN_LIB = ['src/lib/run-plan.js']
 export const POLICY_LIB = [...new Set([...LIB, ...PAIR_LIB, 'src/lib/provider-policy.js'])]
 export const POLICY_EXPORTS = ['engineIdentityIssues', 'launchReport', 'launchRequirements', 'pairAnswerMessage', 'pairResumeAnswerCheck', 'pinnedOperationIssues', 'promptHash', 'provenanceFacts', 'providerConfiguration', 'reachableProviders', 'withdrawResume']
