@@ -1,15 +1,18 @@
 import assert from 'node:assert/strict'
-import { spawnSync } from 'node:child_process'
-import { chmodSync, cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
+import { spawn, spawnSync } from 'node:child_process'
+import { chmodSync, cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { homedir, tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { test } from 'node:test'
 import { fileURLToPath } from 'node:url'
+import { setTimeout as delay } from 'node:timers/promises'
 import {
-  beforeCancelDir, createStreamParser, judgeBootThrow, judgeCancel, judgeEnvelope, judgeMeter, judgeReplay,
+  L2_REQUIRED, beforeCancelDir, createStreamParser, factoryExitCode, judgeBootThrow, judgeCancel, judgeEnvelope, judgeMeter, judgeReplay,
   parseManualTranscript, parseStream, probeExitCode, probeObservation, resumeAfterStop, scratchEnv, terminalFor, workflowJournal,
   writeVerdict,
 } from '../tools/workflow-check.mjs'
+import { factoryResultFor } from '../tools/workflow-evidence.mjs'
+import { compareLegs, judgeFirstLeg, judgeResume, snapshotRunDirectory } from '../tools/factory-evidence.mjs'
 
 const fixtures = fileURLToPath(new URL('./fixtures/workflow-check/', import.meta.url))
 const tool = fileURLToPath(new URL('../tools/workflow-check.mjs', import.meta.url))
@@ -665,7 +668,7 @@ test('make installed propagates a failed reload probe after the loader passes', 
   const { env, root } = stubClaude(t, 'reload-missing')
   const checkout = join(root, 'installed-fixture'), tools = join(checkout, 'tools')
   mkdirSync(tools, { recursive: true })
-  for (const file of ['workflow-check.mjs', 'loader-check.mjs', 'sources.mjs']) {
+  for (const file of ['workflow-check.mjs', 'workflow-evidence.mjs', 'handoff-protocol.mjs', 'loader-check.mjs', 'sources.mjs']) {
     cpSync(fileURLToPath(new URL('../tools/' + file, import.meta.url)), join(tools, file))
   }
   cpSync(fileURLToPath(new URL('../Makefile', import.meta.url)), join(checkout, 'Makefile'))
@@ -677,4 +680,559 @@ test('make installed propagates a failed reload probe after the loader passes', 
   assert.match(run.stdout, /loader: Claude Code loads all 5 workflows/)
   assert.match(run.stdout, /L1-i: fail \(v2 marker was absent/)
   assert.equal(readJson(join(tools, 'native-verdict.json')).l1.checks['L1-j'].status, 'pass')
+})
+
+function factoryEvidence(t, id, variant = 1) {
+  const repo = realpathSync(temporary(t))
+  const head = 'a'.repeat(40)
+  const setupId = `2026112${variant}-123456`
+  const runDir = join(repo, '.council', setupId)
+  const room = join(runDir, 'room')
+  const parent = `wf_${variant}abc1234`
+  const workflowDir = join('subagents', 'workflows', parent)
+  const isPair = id === 'L2-ii' || id === 'L3'
+  const isFix = id === 'L2-iii'
+  const isCancel = id === 'L2-iv'
+  const route = { tier: isFix ? 'fix' : 'simple', strategy: isPair ? 'pair' : 'independent' }
+  const args = { task: 'Fixture task', brief: false, tierConfirmed: true, noSplit: true, ...route }
+  const metrics = { workflow: 'factory', ...route, turns: 2 }
+  if (id === 'L2-i') args.maxTurns = 2
+  if (isFix) args.spec = 'ask'
+  mkdirSync(join(room, 'empty'), { recursive: true })
+  writeFileSync(join(runDir, 'run.json'), JSON.stringify({ head, runId: setupId, repoRoot: repo, runDir, room }))
+  for (const time of [`2026-11-2${variant}T12:34:56Z`, `2026-11-2${variant}T13:34:56Z`]) {
+    writeFileSync(join(room, `task-${parent}-${time}.log`), '')
+  }
+  const call = {
+    session: `session-${variant}`, toolUseId: 'tool-first', input: { name: 'dark-factory:factory', args },
+    line: 1, resultLine: 2, output: { taskId: 'initial-task', runId: parent, status: 'async_launched' },
+  }
+  const started = (label, key, agentId) => ({ type: 'started', label, key, agentId, directory: workflowDir })
+  const end = ({ key, agentId, directory }, result) => ({ type: 'result', key, agentId, directory, result })
+  const intake = started('intake', 'intake-key', `agent${variant}1`)
+  const setup = started('setup', 'setup-key', `agent${variant}2`)
+  const rows = [
+    intake, end(intake, { status: 'ok' }), setup, end(setup, { status: 'ok', runDir, runId: setupId, repoRoot: repo }),
+  ]
+  const resumeText = `Call Workflow({name: "dark-factory:factory", resumeFromRunId: <this run's id>}). Read ${room}/A.md.`
+  const questionId = isFix ? 'S1' : 'Q1'
+  const questions = [{ id: questionId, question: 'Which option?', ...(isPair ? { kind: 'design' } : {}) }]
+  const answer = { id: questionId, answer: 'Keep the fixture scope.', ...(isPair ? { implement: true } : {}) }
+  let result = { status: 'blocked', stopReason: 'Run turn budget exhausted (2).', runDir, metrics }
+  if (isPair) result = { status: 'needs-user', workflow: 'factory', ...route, stage: 'design', resumable: true, questions, resumeSteps: resumeText, runDir, metrics: { ...metrics, turns: 7 } }
+  if (isFix) result = { status: 'needs-user', round: 'spec', questions, forTheOrchestrator: resumeText, runDir, metrics: { ...metrics, turns: 9 } }
+  const status = isCancel ? 'killed' : 'completed'
+  const solve = started('r0:A sonnet', 'solve-key', `agent${variant}3`)
+  if (isCancel) rows.push(solve)
+  const first = {
+    call, rows, directory: snapshotRunDirectory(runDir, { repo, head }),
+    state: { runId: parent, taskId: 'initial-task', status, result: isCancel ? undefined : result },
+    terminal: { line: 3, session: call.session, taskId: 'initial-task', status: isCancel ? 'stopped' : status },
+    ...(isCancel ? { active: { start: solve, transcript: true } } : {}),
+  }
+
+  let nextResult = result
+  const resumedRows = [...rows]
+  const workflowProgress = [intake, setup].map(({ label, agentId }, index) =>
+    ({ type: 'workflow_agent', index: index + 1, label, agentId, state: 'done', cached: true }))
+  if (isPair || isFix || isCancel) {
+    const next = started(isPair ? 'resume-check Q1' : isFix ? 'spec amend' : solve.label,
+      isCancel ? solve.key : 'continuation-key', `agent${variant}4`)
+    resumedRows.push(next, end(next, isFix ? { criteria: [{ id: 'C1' }] } : { status: 'ok' }))
+    workflowProgress.push({ type: 'workflow_agent', index: 3, label: next.label, agentId: next.agentId, state: 'done' })
+    nextResult = { status: 'done', runDir, metrics: { ...metrics, turns: 12 } }
+    if (isPair) nextResult.decisions = [answer]
+    if (isFix) nextResult.spec = { answered: [questionId] }
+  }
+  const resumedCall = {
+    ...call, line: 4, resultLine: 5, toolUseId: 'tool-resumed',
+    input: { ...call.input, args: isPair || isFix ? { ...args, clarifications: [answer] } : args, resumeFromRunId: parent },
+    output: { ...call.output, taskId: 'resume-task' },
+  }
+  const resumed = {
+    call: resumedCall, rows: resumedRows, directory: snapshotRunDirectory(runDir, { repo, head }),
+    state: { runId: parent, taskId: 'resume-task', status: 'completed', result: nextResult, workflowProgress },
+    terminal: { line: 6, session: call.session, taskId: 'resume-task', status: 'completed' },
+  }
+  return { first, resumed, repo, runDir, head }
+}
+
+for (const id of ['L2-i', 'L2-ii', 'L2-iii', 'L2-iv', 'L3']) {
+  test(`${id} judges the intended stop and resume and marks a wrong boundary inconclusive`, t => {
+    const { first, resumed } = factoryEvidence(t, id)
+    const original = judgeFirstLeg(id, first)
+    const continued = judgeResume(id, first, resumed)
+    assert.equal(original.status, 'pass', original.reason)
+    assert.equal(continued.status, 'pass', continued.reason)
+    assert.deepEqual(continued.observed.replayed.map(agent => agent.label), ['intake', 'setup'])
+    assert.equal(continued.observed.newStarts.length, id === 'L2-i' ? 0 : 1)
+    const wrong = structuredClone(first)
+    if (id === 'L2-i') wrong.state.result.stopReason = 'another budget'
+    else if (id === 'L2-iii') wrong.state.result.round = 'design'
+    else if (id === 'L2-iv') {
+      wrong.rows.pop()
+      delete wrong.active
+    } else wrong.state.result.questions[0].kind = id === 'L3' ? 'spec' : 'setup'
+    const missed = judgeFirstLeg(id, wrong)
+    assert.equal(missed.status, 'inconclusive')
+    assert.equal(compareLegs({ first: original, resume: continued }, { first: missed }).status, 'inconclusive')
+    assert.equal(factoryExitCode({ [id]: missed }), 1)
+  })
+}
+
+test('Factory result extraction requires the current native task and detects contradictory output', t => {
+  const { resumed } = factoryEvidence(t, 'L2-i')
+  const { call, terminal, state } = resumed
+  assert.equal(factoryResultFor(call, { ...state, taskId: 'initial-task' }, terminal), null)
+  assert.equal(factoryResultFor(call, { ...state, result: undefined }, { ...terminal, session: 'elsewhere', result: state.result }), null)
+  assert.deepEqual(factoryResultFor(call, { ...state, result: undefined }, { ...terminal, result: JSON.stringify(state.result) }), state.result)
+  assert.throws(() => factoryResultFor(call, state, { ...terminal, result: { ...state.result, status: 'done' } }), /Conflicting Factory results/)
+  assert.throws(() => factoryResultFor(call, state, { ...terminal, status: 'failed' }), /Conflicting native Factory task state/)
+})
+
+test('Factory stops require successful setup and the on-disk run record under the fixture', t => {
+  const { first, repo, runDir, head } = factoryEvidence(t, 'L2-i')
+  assert.throws(() => snapshotRunDirectory(runDir, { repo, head: 'different' }), /seed HEAD/)
+  assert.throws(() => snapshotRunDirectory(join(repo, 'missing'), { repo, head }), /ENOENT/)
+  assert.throws(() => snapshotRunDirectory(repo, { repo, head }), /outside its fixture/)
+  first.rows[3].result.status = 'preflight'
+  assert.equal(judgeFirstLeg('L2-i', first).status, 'inconclusive')
+})
+
+test('a Factory resume must keep its own directory before comparing across fixtures', t => {
+  const own = factoryEvidence(t, 'L2-ii', 1)
+  const other = factoryEvidence(t, 'L2-ii', 2)
+  const resumed = {
+    ...own.resumed, directory: other.resumed.directory,
+    state: { ...own.resumed.state, result: { ...own.resumed.state.result, runDir: other.runDir } },
+  }
+  assert.match(judgeResume('L2-ii', own.first, resumed).reason, /reuse its original setup directory/)
+})
+
+test('Factory parity normalizes IDs, timestamps and content hashes, ignores wt/, and compares L2-i layouts in full', t => {
+  const control = factoryEvidence(t, 'L2-i', 1)
+  const candidate = factoryEvidence(t, 'L2-i', 2)
+  const leg = data => ({ first: judgeFirstLeg('L2-i', data.first), resume: judgeResume('L2-i', data.first, data.resumed) })
+  const resnap = data => {
+    data.first.directory = snapshotRunDirectory(data.runDir, { repo: data.repo, head: data.head })
+    data.resumed.directory = snapshotRunDirectory(data.runDir, { repo: data.repo, head: data.head })
+  }
+  for (const [data, sha, edit] of [[control, 'a'.repeat(64), 'one'], [candidate, 'b'.repeat(64), 'other']]) {
+    mkdirSync(join(data.runDir, 'wt', 'A', edit), { recursive: true })
+    mkdirSync(join(data.runDir, 'evidence', `A-base-${sha}`), { recursive: true })
+    resnap(data)
+  }
+  assert.deepEqual(compareLegs(leg(control), leg(candidate)), { status: 'pass' })
+  rmSync(join(candidate.runDir, 'room', 'empty'), { recursive: true })
+  resnap(candidate)
+  const layout = compareLegs(leg(control), leg(candidate))
+  assert.deepEqual(layout.differences.map(item => item.field), ['first.runDirectory', 'resume.runDirectory'])
+  const entries = layout.differences[0].inline
+  assert.equal(entries.filter(entry => entry.path.includes('<timestamp>')).length, 2)
+  assert.ok(entries.some(entry => entry.path === join('evidence', 'A-base-<sha>')))
+  assert.ok(!entries.some(entry => entry.path.split('/')[0] === 'wt'))
+  assert.ok(entries.some(entry => entry.type === 'directory' && entry.path === join('room', 'empty')))
+  const turns = leg(control)
+  turns.resume.observed.metrics.turns = 3
+  assert.deepEqual(compareLegs(leg(control), turns).differences.map(item => item.field), ['resume.turns'])
+})
+
+test('Factory parity ignores model-dependent stop counts, turns, later agents and worktree files', t => {
+  const control = factoryEvidence(t, 'L2-ii', 1)
+  const candidate = factoryEvidence(t, 'L3', 2)
+  control.first.state.result.stopReason = 'The design used its review allowance, with 1 design finding open (1 major).'
+  candidate.first.state.result.stopReason = 'The design used its review allowance, with 3 design findings open (2 major).'
+  mkdirSync(join(candidate.runDir, 'wt', 'A', 'src'), { recursive: true })
+  mkdirSync(join(candidate.runDir, 'room', 'pair-code-2'), { recursive: true })
+  candidate.resumed.directory = snapshotRunDirectory(candidate.runDir, { repo: candidate.repo, head: candidate.head })
+  const leg = (id, data) => ({ first: judgeFirstLeg(id, data.first), resume: judgeResume(id, data.first, data.resumed) })
+  const inline = leg('L2-ii', control), split = leg('L3', candidate)
+  split.resume.observed.metrics.turns += 9
+  split.resume.observed.newStarts.push({ position: 4, label: 'review pair-code-2 (relay)' })
+  assert.deepEqual(compareLegs(inline, split), { status: 'pass' })
+})
+
+test('Factory parity fails on status, stop kind, resume target, replayed prefix and first fresh agent', t => {
+  const { first, resumed } = factoryEvidence(t, 'L2-ii')
+  const control = { first: judgeFirstLeg('L2-ii', first), resume: judgeResume('L2-ii', first, resumed) }
+  const changes = [
+    ['resume.status', leg => { leg.resume.observed.status = 'blocked' }],
+    ['first.stop', leg => { leg.first.observed.stop.stage = 'implement' }],
+    ['first.stop', leg => { leg.first.observed.stop.questionKinds = ['criterion'] }],
+    ['first.resumeNamesFactory', leg => { leg.first.observed.resumeText = 'Call Workflow({name: "dark-factory:pair"}).' }],
+    ['resume.replayed', leg => { leg.resume.observed.replayed = leg.resume.observed.replayed.slice(0, 1) }],
+    ['resume.firstFresh', leg => { leg.resume.observed.newStarts[0].label = 'pair-code-1' }],
+    ['resume.route', leg => { leg.resume.observed.route.limits = { maxTurns: 5, maxRunMin: null } }],
+    ['resume.plan', leg => { leg.resume.observed.plan = { reviewers: [], limits: { maxReviews: null } } }],
+  ]
+  for (const [field, change] of changes) {
+    const candidate = structuredClone(control)
+    change(candidate)
+    const compared = compareLegs(control, candidate)
+    assert.equal(compared.status, 'fail', field)
+    assert.deepEqual(compared.differences.map(item => item.field), [field])
+  }
+  // A first leg always starts with intake, so its first fresh label is not compared.
+  const relabelled = structuredClone(control)
+  relabelled.first.observed.newStarts[0].label = 'other'
+  assert.deepEqual(compareLegs(control, relabelled), { status: 'pass' })
+})
+
+test('Factory parity compares the resume target of native instructions from a later council round', t => {
+  const { first, resumed } = factoryEvidence(t, 'L2-iii')
+  const result = resumed.state.result
+  result.status = 'needs-user'
+  result.round = 1
+  result.forTheOrchestrator = 'Resume with Workflow({name: "dark-factory:factory", resumeFromRunId: <id>}) and the answer.'
+  const initial = judgeFirstLeg('L2-iii', first)
+  const control = judgeResume('L2-iii', first, resumed)
+  result.forTheOrchestrator = 'Resume with the answer to the follow-up question.'
+  const candidate = judgeResume('L2-iii', first, resumed)
+  assert.deepEqual(compareLegs({ first: initial, resume: control }, { first: initial, resume: candidate })
+    .differences.map(item => item.field), ['resume.resumeNamesFactory'])
+})
+
+test('Factory replay rejects a restarted prefix, an incomplete continuation and a canceled resume', t => {
+  const { first, resumed } = factoryEvidence(t, 'L2-ii')
+  const [intake] = first.rows
+  const reran = structuredClone(resumed)
+  reran.rows.push({ ...intake, agentId: 'reran' })
+  assert.match(judgeResume('L2-ii', first, reran).reason, /restarted a prior position/)
+  const missing = structuredClone(resumed)
+  missing.rows.pop()
+  assert.match(judgeResume('L2-ii', first, missing).reason, /incomplete/)
+  const canceled = structuredClone(resumed)
+  canceled.state.status = 'killed'
+  canceled.terminal.status = 'stopped'
+  assert.equal(judgeResume('L2-ii', first, canceled).status, 'fail')
+  const rewritten = structuredClone(resumed)
+  rewritten.rows[1].result.status = 'error'
+  assert.match(judgeResume('L2-ii', first, rewritten).reason, /does not extend/)
+})
+
+test('Factory cancellation requires the captured attempt and a completed restart of that position', t => {
+  const { first, resumed } = factoryEvidence(t, 'L2-iv')
+  const noTranscript = { ...first, active: { ...first.active, transcript: false } }
+  assert.equal(judgeFirstLeg('L2-iv', noTranscript).status, 'inconclusive')
+  const wrong = structuredClone(resumed)
+  wrong.rows.at(-2).key = wrong.rows.at(-1).key = 'other-key'
+  assert.match(judgeResume('L2-iv', first, wrong).reason, /did not restart and complete/)
+  assert.equal(judgeResume('L2-iv', first, resumed).status, 'pass')
+})
+
+function runFactoryStub(t, scenario) {
+  const root = realpathSync(temporary(t))
+  const config = join(root, 'scratch-config')
+  const bin = join(root, 'bin')
+  const trace = join(root, 'trace.jsonl')
+  const verdict = join(root, 'verdict.json')
+  const cli = join(bin, 'claude')
+  mkdirSync(config)
+  mkdirSync(bin)
+  cpSync(join(fixtures, 'factory-claude-stub.mjs'), cli)
+  chmodSync(cli, 0o755)
+  for (const executable of ['node', 'git', 'python3', 'sh', 'env']) {
+    const found = spawnSync('/bin/sh', ['-c', 'command -v "$1"', 'which', executable], { encoding: 'utf8' })
+    assert.equal(found.status, 0, found.stderr)
+    symlinkSync(found.stdout.trim(), join(bin, executable))
+  }
+  if (scenario !== 'missing-provider') {
+    writeFileSync(join(bin, 'codex'), '#!/bin/sh\necho codex-fixture\n', { mode: 0o755 })
+  }
+  const l1 = { nameForm: 'qualified', checks: {} }
+  writeFileSync(verdict, JSON.stringify({ l1 }))
+  const settings = join(config, 'settings.json')
+  const allow = scenario === 'missing-permission' ? [] : ['Bash(dark-factory:*)']
+  if (scenario === 'independent-workflow') allow.push('Workflow')
+  const hooks = { 'star-hook': '*', 'invalid-hook': '[', 'unmatched-hook': undefined }
+  const initialSettings = JSON.stringify({ permissions: { allow }, ...(Object.hasOwn(hooks, scenario)
+    ? { hooks: { PreToolUse: [{ matcher: hooks[scenario], hooks: [{ type: 'command', command: 'true' }] }] } } : {}) })
+  writeFileSync(settings, initialSettings)
+  const env = { ...process.env, PATH: bin, TMPDIR: root, CODEX_HOME: join(root, 'codex'), GIT_DIR: '/wrong-git',
+    DF_PROBE_TRACE: trace, DF_PROBE_SCENARIO: scenario }
+  const run = spawnSync(process.execPath, [tool, '--factory', '--config-dir', config, '--verdict', verdict],
+    { env, cwd: root, encoding: 'utf8', timeout: 45_000 })
+  assert.ifError(run.error)
+  assert.equal(run.status, ['guard', 'model-variance'].includes(scenario) ? 0 : 1, run.stdout + run.stderr)
+  assert.equal(readFileSync(settings, 'utf8'), initialSettings)
+  assert.deepEqual(readJson(verdict).l1, l1)
+  return { run, config, env, verdict, l2: readJson(verdict).l2, rows: existsSync(trace) ? readRows(trace) : [] }
+}
+
+for (const [scenario, diagnostic] of [
+  ['duplicate', /Expected one dark-factory workflow set/],
+  ['missing-marker', /Expected one dark-factory workflow set and marker/],
+  ['wrong-marker', /loaded .*candidate-ffffffffffff/],
+  ['missing-permission', /Add "Bash\(dark-factory:\*\)" to permissions.allow/],
+  ['missing-provider', /codex: codex is not on PATH/],
+  ['installed', /empty scratch plugin inventory/],
+  ['no-receipt', /Missing correlated Factory Workflow guard receipt/],
+  ['independent-workflow', /conflict with guarded Workflow requests/],
+  // A matcher of "*", one that does not compile, or none at all may match Workflow.
+  ['star-hook', /conflict with guarded Workflow requests/],
+  ['invalid-hook', /conflict with guarded Workflow requests/],
+  ['unmatched-hook', /conflict with guarded Workflow requests/],
+  // The scratch copy's bytes are checked again at the precondition, after createPluginCopy.
+  ['altered-copy', /Workflow bytes differ from the expected hashes/],
+]) {
+  test(`Factory CLI rejects ${scenario} before launching Factory`, t => {
+    const { run, rows, l2 } = runFactoryStub(t, scenario)
+    assert.match(run.stderr, diagnostic)
+    assert.ok(!rows.some(row => row.launch), JSON.stringify(rows))
+    assert.equal(l2, undefined)
+  })
+}
+
+test('Factory CLI guards and proves paired native resumes and the same-session L3 reload', t => {
+  const { run, config, l2, rows } = runFactoryStub(t, 'guard')
+  assert.equal(run.stderr, '')
+  const launches = rows.filter(row => row.launch)
+  assert.equal(launches.length, 18)
+  assert.deepEqual(Object.fromEntries(Object.entries(l2.checks).map(([id, check]) => [id, check.status])),
+    { 'L2-i': 'pass', 'L2-ii': 'pass', 'L2-iii': 'pass', 'L2-iv': 'pass', L3: 'pass' })
+  assert.ok(rows.filter(row => row.argv).every(row => row.config === config))
+  assert.equal(rows.filter(row => row.guard === 2 && row.toolUseId === 'unsolicited').length, 20)
+  assert.equal(rows.filter(row => row.guard === 2 && row.toolUseId === 'duplicate').length, 20)
+
+  const fresh = launches.filter(row => !row.launch.resumeFromRunId)
+  assert.equal(new Set(fresh.map(row => row.cwd)).size, 9)
+  assert.equal(new Set(fresh.map(row => row.session)).size, 9)
+  const heads = new Set(fresh.map(row => execGitHead(row.cwd)))
+  assert.equal(heads.size, 1)
+  for (const [index, row] of launches.entries()) {
+    const { args, resumeFromRunId } = row.launch
+    assert.deepEqual([args.brief, args.tierConfirmed, args.noSplit, args.retro], [false, true, true, false])
+    const preceding = rows[rows.indexOf(row) - 1]
+    assert.equal(preceding.guard, 0)
+    assert.equal(preceding.session, row.session)
+    assert.deepEqual(preceding.input, row.launch)
+    const listing = rows.slice(0, rows.indexOf(row)).findLast(item => item.listing && item.session === row.session)
+    assert.ok(listing.listing.includes('dark-factory:' + row.marker))
+    if (resumeFromRunId) assert.equal(resumeFromRunId, launches[index - 1].runId)
+  }
+  const [budget, budgetResume] = launches.map(row => row.launch)
+  assert.equal(budget.args.maxTurns, 2)
+  assert.deepEqual(budget.args, budgetResume.args)
+  const [pair, pairResume, fix, fixResume] = [launches[4], launches[5], launches[8], launches[9]].map(row => row.launch)
+  assert.equal(pair.args.strategy, 'pair')
+  assert.deepEqual(pair.args.pair, { spec: false, maxDesignReviews: 1, maxReviews: 3 })
+  assert.deepEqual(pairResume.args.clarifications.map(({ id, implement }) => [id, implement]), [['Q1', true]])
+  assert.deepEqual([fix.args.tier, fix.args.strategy, fix.args.spec, fix.args.audit], ['fix', 'independent', 'ask', false])
+  assert.deepEqual(fixResume.args.clarifications.map(({ id }) => id), ['S1'])
+  const [startUpgrade, resumeUpgrade] = launches.slice(12, 14)
+  assert.deepEqual(startUpgrade.launch.args, pair.args)
+  assert.deepEqual(resumeUpgrade.launch.args, pairResume.args)
+  assert.equal(startUpgrade.session, resumeUpgrade.session)
+  assert.equal(startUpgrade.mode, 'inline')
+  assert.equal(resumeUpgrade.mode, 'candidate')
+  const reload = rows.find(row => row.command === '/reload-plugins')
+  assert.equal(reload.session, startUpgrade.session)
+  assert.equal(reload.previous, startUpgrade.marker)
+  assert.equal(reload.marker, resumeUpgrade.marker)
+  assert.ok(rows.indexOf(startUpgrade) < rows.indexOf(reload) && rows.indexOf(reload) < rows.indexOf(resumeUpgrade))
+  assert.deepEqual(l2.sha256, resumeUpgrade.sha256)
+  assert.equal(rows.filter(row => row.edit).length, 5)
+  for (const [start, resume] of [launches.slice(14, 16), launches.slice(16, 18)]) {
+    const active = rows.find(row => row.session === start.session && row.active)
+    const stop = rows.find(row => row.session === start.session && row.request?.subtype === 'stop_task')
+    const refused = rows.find(row => row.session === start.session && row.resumeRefused)
+    const restart = rows.find(row => row.session === start.session && row.restarted)
+    assert.ok(rows.indexOf(start) < rows.indexOf(active) && rows.indexOf(active) < rows.indexOf(stop))
+    assert.ok(rows.indexOf(stop) < rows.indexOf(refused) && rows.indexOf(refused) < rows.indexOf(resume))
+    assert.ok(rows.indexOf(resume) < rows.indexOf(restart))
+    assert.deepEqual(refused.resumeRefused, resume.launch)
+    const { maxTurns, ...uncapped } = budget.args
+    assert.deepEqual(start.launch.args, uncapped)
+    assert.deepEqual(resume.launch.args, uncapped)
+  }
+})
+
+function execGitHead(cwd) {
+  const run = spawnSync('git', ['rev-parse', 'HEAD'], { cwd, encoding: 'utf8' })
+  assert.equal(run.status, 0, run.stderr)
+  return run.stdout.trim()
+}
+
+test('Factory CLI refuses the L3 resume when reload still lists the inline build', t => {
+  const { run, rows, l2 } = runFactoryStub(t, 'stale-reload')
+  const reload = rows.find(row => row.command === '/reload-plugins')
+  assert.ok(reload)
+  assert.match(run.stderr, /Expected one dark-factory workflow set and marker/)
+  assert.equal(rows.filter(row => row.session === reload.session && row.launch).length, 1)
+  assert.deepEqual(Object.fromEntries(Object.entries(l2.checks).map(([id, check]) => [id, check.status])),
+    { 'L2-i': 'pass', 'L2-ii': 'pass', 'L2-iii': 'pass', L3: 'fail', 'L2-iv': 'pending' })
+  assert.match(l2.checks.L3.reason, /^Stopped: Expected one dark-factory workflow set/)
+})
+
+test('a precondition failure at a later leg writes the finished checks and exits nonzero', t => {
+  const { run, rows, l2 } = runFactoryStub(t, 'late-precondition')
+  assert.match(run.stderr, /Expected one dark-factory workflow set and marker/)
+  assert.ok(!rows.some(row => row.launch && row.cwd.split('/').includes('L2-ii-inline')))
+  assert.equal(l2.checks['L2-i'].status, 'pass')
+  assert.equal(l2.checks['L2-ii'].status, 'fail')
+  for (const id of ['L2-iii', 'L2-iv', 'L3']) assert.equal(l2.checks[id].status, 'pending', id)
+  assert.match(run.stdout, /L2-i: pass/)
+})
+
+test('Factory CLI records inconclusive stops and retains evidence for a parity mismatch', t => {
+  const first = runFactoryStub(t, 'wrong-boundary')
+  assert.equal(first.l2.checks['L2-ii'].status, 'inconclusive')
+  assert.equal(first.l2.checks.L3.status, 'inconclusive')
+  assert.match(first.run.stdout, /L2-ii: inconclusive/)
+  const changed = runFactoryStub(t, 'parity')
+  assert.equal(changed.l2.checks['L2-ii'].status, 'fail')
+  assert.match(changed.l2.checks['L2-ii'].reason, /Parity differs in resume\.status$/)
+  const [, artifacts] = /Factory artifacts: ([^\n]+)/.exec(changed.run.stdout)
+  for (const mode of ['inline', 'candidate']) {
+    assert.ok(existsSync(join(artifacts, `L2-ii-${mode}`, 'resume.json')))
+  }
+})
+
+test('Factory CLI records a first launch refusal after the preconditions as an inconclusive check', t => {
+  const { run, rows, l2 } = runFactoryStub(t, 'launch-refusal')
+  assert.ok(rows.some(row => row.refused), 'the checker must reach a guarded Factory invocation after the listing')
+  assert.equal(l2.checks['L2-i'].status, 'inconclusive', run.stdout + run.stderr)
+  assert.match(l2.checks['L2-i'].reason, /native Workflow refused to launch/)
+  assert.equal(l2.checks['L2-ii'].status, 'pass')
+})
+
+// L3's inline first stop reports more findings than the control's; the candidate's resumes take
+// more turns and rounds, with other later agents, worktree files and evidence hashes.
+test('Factory CLI passes legs that differ only in model-dependent stop counts, turns, later agents and files', t => {
+  const { run, rows, l2 } = runFactoryStub(t, 'model-variance')
+  assert.ok(rows.some(row => row.mode === 'candidate' && row.launch?.resumeFromRunId &&
+    row.cwd.split('/').includes('L3-inline')), 'the upgraded candidate must actually resume')
+  for (const id of L2_REQUIRED) assert.equal(l2.checks[id].status, 'pass', `${id}: ${run.stdout}`)
+})
+
+test('Factory CLI fails parity when the candidate resume lost a configured arg but still ends done', t => {
+  const { l2 } = runFactoryStub(t, 'dropped-arg')
+  for (const id of ['L2-ii', 'L2-iii', 'L3']) {
+    assert.equal(l2.checks[id].status, 'fail', id)
+    assert.match(l2.checks[id].reason, /Parity differs in resume\.plan$/, id)
+  }
+  for (const id of ['L2-i', 'L2-iv']) assert.equal(l2.checks[id].status, 'pass', id)
+})
+
+test('the Factory run exits 0 only when every required check passes', () => {
+  const allPass = () => Object.fromEntries(L2_REQUIRED.map(id => [id, { status: 'pass' }]))
+  assert.equal(factoryExitCode(allPass()), 0)
+  for (const id of L2_REQUIRED) {
+    for (const status of ['fail', 'inconclusive', 'pending', 'skipped']) {
+      assert.equal(factoryExitCode({ ...allPass(), [id]: { status } }), 1, `${id} ${status}`)
+    }
+    const checks = allPass()
+    delete checks[id]
+    assert.equal(factoryExitCode(checks), 1, `missing ${id}`)
+  }
+})
+
+test('Factory CLI reports a missed cancellation window and a failed restart', t => {
+  const early = runFactoryStub(t, 'early-cancel')
+  assert.equal(early.l2.checks['L2-iv'].status, 'inconclusive')
+  assert.match(early.run.stdout, /ended before the first post-setup agent/)
+  assert.ok(!early.rows.some(row => row.request?.subtype === 'stop_task'))
+  const restart = runFactoryStub(t, 'failed-restart')
+  assert.equal(restart.l2.checks['L2-iv'].status, 'fail')
+  assert.match(restart.run.stdout, /Interrupted agent did not restart and complete/)
+})
+
+async function manualFactorySession(t, harness, metaFile) {
+  const meta = readJson(metaFile)
+  const env = { ...harness.env, CLAUDE_CONFIG_DIR: meta.config, PATH: join(meta.copy.path, 'bin') + ':' + harness.env.PATH }
+  delete env.GIT_DIR
+  const runCommand = phase => spawnSync(process.execPath, [tool, '--factory', '--capture', metaFile, phase],
+    { env, cwd: meta.cwd, encoding: 'utf8', timeout: 15_000 })
+  const capture = phase => {
+    const run = runCommand(phase)
+    assert.equal(run.status, 0, run.stdout + run.stderr)
+    return run.stdout.trim()
+  }
+  // Start the stub with the same invocation settings printed for the maintainer.
+  const launch = harness.run.stdout.split('\n').find(line => line.includes('--session-id') && line.includes(meta.sessionId))
+  assert.ok(launch)
+  const child = spawn('/bin/sh', ['-c', launch.trim()], { env, stdio: 'pipe' })
+  t.after(() => child.kill())
+  const stream = createStreamParser()
+  let stderr = ''
+  child.stdin.on('error', error => { stderr += error.message })
+  child.stdout.setEncoding('utf8').on('data', chunk => stream.push(chunk))
+  child.stderr.setEncoding('utf8').on('data', chunk => { stderr += chunk })
+  const waitFor = async check => {
+    for (let tries = 0; tries < 250; tries++) {
+      const observation = check()
+      if (observation) return observation
+      if (child.exitCode !== null) break
+      await delay(20)
+    }
+    assert.fail('Interactive stub did not produce expected evidence: ' + stderr)
+  }
+  const send = frame => child.stdin.write(JSON.stringify(frame) + '\n')
+  const prompt = phase => send({ type: 'user', message: { role: 'user', content: capture(phase) } })
+  prompt('list')
+  await waitFor(() => stream.calls.some(call => call.input.name.includes(':missing-')))
+  prompt('start')
+  const original = await waitFor(() => stream.calls.find(call => call.input.name === 'dark-factory:factory'))
+  await waitFor(() => readRows(harness.env.DF_PROBE_TRACE).some(row => row.active && row.session === meta.sessionId))
+  capture('active')
+  send({ type: 'control_request', request_id: 'manual-ui', request: { subtype: 'stop_task', task_id: original.output.taskId } })
+  await waitFor(() => terminalFor(original, stream.terminals))
+  prompt('stopped')
+  await waitFor(() => stream.calls.filter(call => call.input.name.includes(':missing-')).length === 2)
+  prompt('resume')
+  const resumed = await waitFor(() => stream.calls.find(call => call.input.resumeFromRunId))
+  await waitFor(() => terminalFor(resumed, stream.terminals))
+  child.stdin.end()
+  return capture('path')
+}
+
+test('Manual Factory CLI judges two interactive captures and rejects stale or incomplete evidence', async t => {
+  const live = runFactoryStub(t, 'unsupported-factory')
+  assert.equal(live.l2.checks['L2-iv'].status, 'pending')
+  assert.match(live.run.stdout, /Manual L2-iv \(inline\)/)
+  assert.match(live.run.stdout, /--control "\$\(/)
+  const [, root] = /Factory artifacts: ([^\n]+)/.exec(live.run.stdout)
+  const [control, candidate] = await Promise.all(['inline', 'candidate'].map(mode =>
+    manualFactorySession(t, live, join(root, 'manual-' + mode, 'capture.json'))))
+  const run = (...args) => spawnSync(process.execPath, [tool, '--factory', '--manual', 'L2-iv', ...args,
+    '--verdict', live.verdict], { env: live.env, encoding: 'utf8' })
+  const options = ['--control', control, '--candidate', candidate]
+  const saved = readFileSync(live.verdict, 'utf8')
+  for (const partial of [['--control', control], ['--candidate', candidate]]) {
+    const missing = run(...partial)
+    assert.equal(missing.status, 1)
+    assert.match(missing.stderr, /requires both --control and --candidate/)
+    assert.equal(readFileSync(live.verdict, 'utf8'), saved, 'a usage error leaves the verdict untouched')
+  }
+  const passed = run(...options)
+  assert.equal(passed.status, 0, passed.stdout + passed.stderr)
+  assert.match(passed.stdout, /L2-iv: pass/)
+  const got = readJson(live.verdict)
+  assert.equal(got.l2.checks['L2-iv'].mode, 'manual')
+  for (const id of ['L2-i', 'L2-ii', 'L2-iii', 'L3']) assert.deepEqual(got.l2.checks[id], live.l2.checks[id])
+
+  // A passing manual L2-iv still exits nonzero while another l2 check has not passed.
+  const complete = readFileSync(live.verdict, 'utf8')
+  writeFileSync(live.verdict, JSON.stringify({ ...got, l2: { ...got.l2, checks: { ...got.l2.checks, L3: { status: 'fail' } } } }))
+  const partial = run(...options)
+  assert.equal(partial.status, 1, partial.stdout + partial.stderr)
+  assert.match(partial.stdout, /L2-iv: pass/)
+  assert.match(partial.stderr, /l2 is not complete: L3 fail/)
+  writeFileSync(live.verdict, complete)
+
+  const sidecar = join(candidate + '.l2-iv-before', 'stopped.json')
+  const save = readFileSync(sidecar, 'utf8')
+  const stale = JSON.parse(save)
+  stale.meta.provenance.sha256.inline['factory.js'] = '0'.repeat(64)
+  writeFileSync(sidecar, JSON.stringify(stale))
+  const refused = run(...options)
+  assert.equal(refused.status, 1, refused.stdout + refused.stderr)
+  assert.match(refused.stdout, /Stale candidate cancellation provenance/)
+  assert.equal(readJson(live.verdict).l2.checks['L2-iv'].status, 'fail')
+
+  writeFileSync(sidecar, save)
+  rmSync(join(candidate + '.l2-iv-before', 'active-agent.jsonl'))
+  const incomplete = run(...options)
+  assert.equal(incomplete.status, 1, incomplete.stdout + incomplete.stderr)
+  assert.equal(readJson(live.verdict).l2.checks['L2-iv'].status, 'fail')
 })

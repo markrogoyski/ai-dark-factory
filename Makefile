@@ -53,7 +53,7 @@ HOST_TESTS = factory-brief host-logic codex-runner codex-install checkpoint run-
   provider-policy provider-settings provider-routing live-compatibility engine-imports \
   engine-loader-bindings engine-loader-controls engine-publication validation-overhead \
   pin-diagnostics engine-links engine-descriptors provider-refusal launch-prepare \
-  openrouter-host pinned-openrouter bench usage release-check prune loader-check native-gate workflow-check candidates
+  openrouter-host pinned-openrouter bench usage release-check prune loader-check native-gate workflow-check candidates factory-evidence
 
 host-test:
 	$(NODE) --test $(HOST_TESTS:%=test/%.mjs)

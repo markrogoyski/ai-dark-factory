@@ -3,15 +3,14 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'nod
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { test } from 'node:test'
-import { fileURLToPath, pathToFileURL } from 'node:url'
-import { L1_RECORDED, L1_REQUIRED } from '../tools/workflow-check.mjs'
+import { fileURLToPath } from 'node:url'
+import { HANDOFF_SOURCE as HANDOFF, handoffProtocol } from '../tools/handoff-protocol.mjs'
+import { L1_RECORDED, L1_REQUIRED, L2_REQUIRED, writeFactoryVerdict } from '../tools/workflow-check.mjs'
 
 const BUILT = 'plugins/dark-factory/workflows'
-const HANDOFF = 'src/lib/handoff.js'
 const VERDICT = 'tools/native-verdict.json'
 const FREE_CALL = /(^|[^A-Za-z0-9_$.])workflow\(/
 const LEAVES = ['council', 'pair', 'ensemble', 'run-plan']
-const L2_REQUIRED = ['L2-i', 'L2-ii', 'L2-iii', 'L2-iv', 'L3']
 const NAME_FORMS = ['qualified', 'bare']
 
 function readOptional(file) {
@@ -34,13 +33,6 @@ const observedShape = {
 
 function recorded(id, check) {
   return (passing(check) || check?.status === 'fail') && observedShape[id](check.observed)
-}
-
-async function handoffLibrary(root) {
-  const manifest = join(root, 'tools/sources.mjs')
-  const { LIB, PAIR_LIB } = await import(pathToFileURL(manifest).href)
-  const source = [...new Set([...LIB, ...PAIR_LIB, HANDOFF])].map(file => readFileSync(join(root, file), 'utf8')).join('\n')
-  return new Function(`'use strict';\n${source}\nreturn { HANDOFF_VERSION, childWorkflow }`)()
 }
 
 function checkL1(l1, issues) {
@@ -66,13 +58,11 @@ async function checkL2(root, l2, issues) {
     if (!passing(l2.checks?.[id])) issues.push(`G2: ${id} is not passing`)
   }
   try {
-    const { HANDOFF_VERSION, childWorkflow } = await handoffLibrary(root)
-    if (HANDOFF_VERSION === undefined || l2.protocol !== HANDOFF_VERSION) {
+    const { protocol, nameForm } = await handoffProtocol(root)
+    if (protocol === undefined || l2.protocol !== protocol) {
       issues.push('G2: l2.protocol differs from HANDOFF_VERSION')
     }
-    const names = ['pair', 'independent'].map(strategy => childWorkflow({ strategy }))
-    if (!NAME_FORMS.includes(l2.nameForm) || !names.every(name =>
-      nonemptyString(name) && (name.includes(':') ? 'qualified' : 'bare') === l2.nameForm)) {
+    if (!nameForm || l2.nameForm !== nameForm) {
       issues.push('G2: l2.nameForm differs from childWorkflow')
     }
   } catch (error) {
@@ -223,6 +213,50 @@ test('G2 requires l2 with every required and extra check passing', async t => {
   l2.checks.extra = { status: 'fail' }
   save()
   assert.deepEqual(await gateIssues(root), ['G2: extra is not passing'])
+})
+
+test('the Factory verdict writer preserves L1 and G2 accepts its output', async t => {
+  const { root, handoff, verdict, save } = fixture(t)
+  handoff(7, 'strategy')
+  verdict.l1.nameForm = 'bare'
+  delete verdict.l2
+  save()
+  const file = join(root, VERDICT)
+  const cli = 'fixture CLI'
+  const checks = Object.fromEntries(L2_REQUIRED.map(id => [id, pass({ check: id })]))
+  const sha256 = { 'factory.js': 'a'.repeat(64), 'council.js': 'b'.repeat(64), 'pair.js': 'c'.repeat(64) }
+  const expected = { l1: JSON.parse(readFileSync(file, 'utf8')).l1, l2: { cli, protocol: 7, nameForm: 'bare', checks, sha256 } }
+  assert.deepEqual(await writeFactoryVerdict(file, { cli, checks, sha256 }, { root }), expected)
+  assert.deepEqual(JSON.parse(readFileSync(file, 'utf8')), expected)
+  assert.deepEqual(await gateIssues(root), [])
+
+  await assert.rejects(writeFactoryVerdict(file, { cli, checks, sha256: {} }, { root }), /invalid candidate SHA-256/)
+  handoff(7, "'df:' + strategy")
+  await assert.rejects(writeFactoryVerdict(file, { cli, checks, sha256 }, { root }), /differs from the L1 verdict/)
+  assert.deepEqual(JSON.parse(readFileSync(file, 'utf8')), expected)
+})
+
+test('an unsupported automatic cancel reuses only matching manual Factory evidence', async t => {
+  const { root } = fixture(t)
+  const file = join(root, VERDICT)
+  const cli = 'fixture CLI'
+  const sha256 = { 'factory.js': 'a'.repeat(64), 'council.js': 'b'.repeat(64), 'pair.js': 'c'.repeat(64) }
+  const inlineSha256 = { ...sha256, 'factory.js': 'd'.repeat(64) }
+  const write = (cancel, overrides) => writeFactoryVerdict(file, {
+    cli, sha256, inlineSha256, checks: { 'L2-iv': cancel }, ...overrides,
+  }, { root })
+  const manual = { status: 'pass', mode: 'manual' }
+  const pending = { status: 'pending' }
+  await write(manual)
+  assert.equal((await write(pending)).l2.checks['L2-iv'].mode, 'manual')
+  for (const overrides of [
+    { cli: 'other CLI' },
+    { sha256: { ...sha256, 'pair.js': 'e'.repeat(64) } },
+    { inlineSha256: { ...inlineSha256, 'council.js': '0'.repeat(64) } },
+  ]) {
+    await write(manual)
+    assert.equal((await write(pending, overrides)).l2.checks['L2-iv'].status, 'pending')
+  }
 })
 
 test('G2 reads the protocol and both name forms from the target tree', async t => {

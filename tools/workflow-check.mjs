@@ -1,14 +1,23 @@
 // Check native Workflow behavior with isolated df-probe plugins.
 //   node tools/workflow-check.mjs [--config-dir <dir>] [--verdict <path>]
 //   node tools/workflow-check.mjs --manual L1-j --transcript <file> [--verdict <path>]
+//   node tools/workflow-check.mjs --factory --config-dir <dir> [--verdict <path>]
+//   node tools/workflow-check.mjs --factory --manual L2-iv --control <file> --candidate <file> [--verdict <path>]
+// --factory judges each leg on its own (its stop, a resume in its own setup directory, an all-cached
+// replay), then compares the candidate with its independent inline control on the handoff protocol
+// only: status, stop kind, resume target, replayed prefix, first fresh agent and run layout
+// (compareLegs in factory-evidence.mjs).
 import { isDeepStrictEqual } from 'node:util'
 import { spawn, spawnSync } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
-import { appendFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import { appendFileSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { homedir, tmpdir } from 'node:os'
-import { basename, dirname, extname, isAbsolute, join, relative, resolve, sep } from 'node:path'
+import { basename, delimiter, dirname, extname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { setTimeout as delay } from 'node:timers/promises'
 import { fileURLToPath } from 'node:url'
+import { handoffProtocol } from './handoff-protocol.mjs'
+import { L2_REQUIRED, RUN_ID, factoryResultFor, journalGrowth, launched } from './workflow-evidence.mjs'
+export { L2_REQUIRED }
 
 // L1 verdict IDs shared by the probe and the offline gate.
 export const L1_REQUIRED = Object.freeze(['L1-a', 'L1-b1', 'L1-b3', 'L1-c', 'L1-d', 'L1-d2', 'L1-i', 'L1-j'])
@@ -18,12 +27,14 @@ const CANCEL = 'L1-j'
 const CANCEL_WORKFLOW = 'df-probe:cancel'
 const UPGRADE_WORKFLOW = 'df-probe:upgrade'
 const UPGRADE_MARKER = 'upgrade-v2'
-const RUN_ID = /^wf_[A-Za-z0-9_-]+$/
 const VERDICT = fileURLToPath(new URL('./native-verdict.json', import.meta.url))
 const REPO = fileURLToPath(new URL('../', import.meta.url))
 const PLUGIN = 'df-probe'
 const MARKET = 'df-probe-local'
 const DEADLINE_MS = 180_000
+const FACTORY_DEADLINE_MS = 30 * 60_000
+const FACTORY_PLUGIN = 'dark-factory'
+const FACTORY_WORKFLOW = `${FACTORY_PLUGIN}:factory`
 
 function json(text) {
   try { return JSON.parse(text) } catch { return null }
@@ -99,12 +110,6 @@ export function parseStream(text) {
   stream.finish()
   const { calls, terminals, controls, results } = stream
   return { calls, terminals, controls, results }
-}
-
-function launched(call) {
-  const output = call?.output
-  return !call?.error && output?.status === 'async_launched' &&
-    typeof output.taskId === 'string' && output.taskId !== '' && RUN_ID.test(output.runId ?? '')
 }
 
 export function terminalFor(call, terminals) {
@@ -209,17 +214,6 @@ function cancelScope(before, after, runIds, nonce) {
 
 // The rows each directory gained after the stopped snapshot, or null when one no longer
 // begins with its snapshot rows.
-function journalGrowth(before, after) {
-  const fresh = []
-  for (const directory of new Set([...before, ...after].map(row => row.directory))) {
-    const old = before.filter(row => row.directory === directory)
-    const now = after.filter(row => row.directory === directory)
-    if (!isDeepStrictEqual(now.slice(0, old.length), old)) return null
-    fresh.push(...now.slice(old.length))
-  }
-  return fresh
-}
-
 // before is the stopped session's journals. after is the same session's journals once the resume completes.
 export function judgeCancel({ original, resumed, stop, before, after }) {
   const fail = reason => ({ status: 'fail', reason })
@@ -344,6 +338,33 @@ function updateVerdict(file, update) {
     rmSync(scratch, { recursive: true, force: true })
   }
   return next
+}
+
+export async function writeFactoryVerdict(file, { cli, checks, sha256, inlineSha256 }, { root = REPO } = {}) {
+  const { protocol, nameForm } = await handoffProtocol(root)
+  if (!Number.isSafeInteger(protocol) || !nameForm) throw new Error('Invalid Factory handoff protocol or child name form')
+  if (typeof cli !== 'string' || !cli.trim()) throw new Error('Missing Claude CLI version')
+  const hashes = Object.fromEntries(['factory.js', 'council.js', 'pair.js'].map(name => {
+    const hash = sha256?.[name]
+    if (typeof hash !== 'string' || !/^[a-f0-9]{64}$/.test(hash)) throw new Error(`Missing or invalid candidate SHA-256 for ${name}`)
+    return [name, hash]
+  }))
+  const outcomes = Object.fromEntries(L2_REQUIRED.map(id => [id, checks?.[id] ?? { status: 'pending' }]))
+  return updateVerdict(file, previous => {
+    if (previous.l1?.nameForm !== nameForm) throw new Error('Factory child workflow name form differs from the L1 verdict')
+    if (inlineSha256) {
+      const provenance = { cli, protocol, nameForm, sha256: { inline: inlineSha256, candidate: hashes } }
+      const cancel = outcomes['L2-iv']
+      const old = previous.l2?.checks?.['L2-iv']
+      outcomes['L2-iv'] = cancel.status === 'pending' && old?.mode === 'manual' &&
+        old.status === 'pass' && isDeepStrictEqual(old.provenance, provenance) ? old : { ...cancel, provenance }
+    }
+    return { ...previous, l2: { cli, protocol, nameForm, checks: outcomes, sha256: hashes } }
+  })
+}
+
+export function factoryExitCode(checks) {
+  return L2_REQUIRED.every(id => checks?.[id]?.status === 'pass') ? 0 : 1
 }
 
 export function probeExitCode(checks, { claudeRan = true } = {}) {
@@ -529,13 +550,17 @@ function claudeCommand(args, options) {
   return run.stdout.trim()
 }
 
-function pluginInventory(options, allowed) {
+function installedPlugins(options) {
   const installed = json(claudeCommand(['plugin', 'list', '--json'], options))
   if (!Array.isArray(installed) || installed.some(plugin =>
     typeof plugin?.id !== 'string' || typeof plugin.enabled !== 'boolean')) {
     throw new Error('Cannot verify isolated Claude plugin inventory')
   }
-  const enabled = installed.filter(plugin => plugin.enabled)
+  return installed
+}
+
+function pluginInventory(options, allowed) {
+  const enabled = installedPlugins(options).filter(plugin => plugin.enabled)
   if (enabled.some(plugin => plugin.id !== allowed)) throw new Error('Probe configuration contains a foreign enabled plugin')
   return enabled
 }
@@ -551,11 +576,12 @@ function sessionDirectory(config, session) {
   return null
 }
 
-function startSession({ cwd, env, plugin, artifacts }) {
+function startSession({ cwd, env, plugin, artifacts, guard }) {
   const path = join(artifacts, randomUUID())
   const stream = createStreamParser()
+  const permissions = guard?.args ?? ['--allowedTools', 'Workflow', '--tools', 'Workflow']
   const child = spawn('claude', ['-p', '--model', 'haiku', '--output-format', 'stream-json', '--input-format', 'stream-json',
-    '--verbose', '--allowedTools', 'Workflow', '--tools', 'Workflow', '--plugin-dir', plugin], { cwd, env, stdio: 'pipe' })
+    '--verbose', ...permissions, '--plugin-dir', plugin], { cwd, env, stdio: 'pipe' })
   let stderr = '', failure, exited = false
   const done = new Promise(resolve => child.once('close', () => { exited = true; stream.finish(); resolve() }))
   child.on('error', error => { failure = error })
@@ -586,16 +612,21 @@ function startSession({ cwd, env, plugin, artifacts }) {
   }
   async function invoke(input, timeout) {
     const firstCall = stream.calls.length, firstResult = stream.results.length
-    sendUser('Call Workflow exactly once with this input: ' + JSON.stringify(input) +
-      '. Use no other tools. After invoking it, reply "done".')
-    const call = await waitFor(() => {
-      const matched = stream.calls.slice(firstCall).find(row => isDeepStrictEqual(row.input, input))
-      if (matched) return matched
-      const driver = stream.results.slice(firstResult).find(row => row.event.is_error)
-      if (driver) throw new Error(`Claude did not make the requested Workflow call: ${textOf(driver.event.errors ?? driver.event.result) || stderr.trim()}`)
-      return null
-    }, `could not invoke ${input.name}`, timeout)
-    return call
+    guard?.permit(input)
+    try {
+      sendUser(inputPrompt(input))
+      const call = await waitFor(() => {
+        const matched = stream.calls.slice(firstCall).find(row => isDeepStrictEqual(row.input, input))
+        if (matched) return matched
+        const driver = stream.results.slice(firstResult).find(row => row.event.is_error)
+        if (driver) throw new Error(`Claude did not make the requested Workflow call: ${textOf(driver.event.errors ?? driver.event.result) || stderr.trim()}`)
+        return null
+      }, `could not invoke ${input.name}`, timeout)
+      guard?.verify(call)
+      return call
+    } finally {
+      guard?.clear()
+    }
   }
   async function control(request) {
     const request_id = randomUUID()
@@ -741,8 +772,8 @@ async function shadowing(root, options) {
   })
 }
 
-async function loadedWorkflows(session) {
-  const call = await session.invoke({ name: `${PLUGIN}:missing-${randomUUID()}` })
+async function loadedWorkflows(session, plugin = PLUGIN) {
+  const call = await session.invoke({ name: `${plugin}:missing-${randomUUID()}` })
   const available = /not found\. Available: ([^<\n]*)/.exec(call.text)?.[1]
   if (!call.error || !available) throw new Error('No native loaded-workflow listing')
   return { sessionId: call.session, names: available.split(',').map(name => name.trim()) }
@@ -776,7 +807,7 @@ function cancelInput(child, words) {
 
 // A stop notification can precede the old runner's exit. Each request keeps the normal
 // invocation deadline; only that refusal is retried, for retryMs after the first one.
-export async function resumeAfterStop(session, input, original, retryMs = 30_000) {
+export async function resumeAfterStop(session, input, original, retryMs = 30_000, observeResume = observe) {
   const { runId, taskId } = original.output
   const resume = { ...input, resumeFromRunId: runId }
   let end
@@ -784,7 +815,7 @@ export async function resumeAfterStop(session, input, original, retryMs = 30_000
     const call = await session.invoke(resume)
     if (call.session !== original.session) throw new Error('Cancellation resumed in a different session')
     if (!call.error || !call.text.includes(`Workflow ${runId} `) ||
-        !call.text.includes(`run has not exited yet (task ${taskId})`)) return observe(session, resume, call)
+        !call.text.includes(`run has not exited yet (task ${taskId})`)) return observeResume(session, resume, call)
     end ??= Date.now() + retryMs
     if (Date.now() >= end) throw new Error('Original workflow did not exit in time to resume')
     await delay(250)
@@ -927,6 +958,17 @@ async function runProbes(options, root, checks, file) {
   return nameForm
 }
 
+function scratchConfig(configDir, root) {
+  const config = realpathSync(configDir)
+  const defaultConfig = join(homedir(), '.claude')
+  const normal = existsSync(defaultConfig) ? realpathSync(defaultConfig) : defaultConfig
+  const repo = realpathSync(REPO)
+  if (!statSync(config).isDirectory() || inside(root, config) || inside(config, normal) || inside(config, repo) || inside(repo, config)) {
+    throw new Error('--config-dir must be a dedicated Claude configuration outside the default config, checkout and probe directories')
+  }
+  return config
+}
+
 async function live(configDir, file) {
   const root = realpathSync(mkdtempSync(join(tmpdir(), 'df-workflow-check-')))
   const cwd = join(root, 'cwd'), plugin = join(root, PLUGIN), artifacts = join(root, 'artifacts')
@@ -934,15 +976,8 @@ async function live(configDir, file) {
   let cli = null, nameForm = null
   try {
     let config = join(root, 'config')
-    if (configDir) {
-      config = realpathSync(configDir)
-      const defaultConfig = join(homedir(), '.claude')
-      const normal = existsSync(defaultConfig) ? realpathSync(defaultConfig) : defaultConfig
-      const repo = realpathSync(REPO)
-      if (!statSync(config).isDirectory() || inside(root, config) || inside(config, normal) || inside(config, repo) || inside(repo, config)) {
-        throw new Error('--config-dir must be a dedicated Claude configuration outside the default config, checkout and probe directories')
-      }
-    } else mkdirSync(config)
+    if (configDir) config = scratchConfig(configDir, root)
+    else mkdirSync(config)
     mkdirSync(cwd)
     mkdirSync(artifacts)
     const options = { cwd, plugin, artifacts, env: scratchEnv(config, Boolean(configDir)) }
@@ -959,7 +994,626 @@ async function live(configDir, file) {
   return probeExitCode(checks, { claudeRan: Boolean(cli) })
 }
 
+const FACTORY_ARGS = {
+  'L2-i': {
+    tier: 'simple', strategy: 'independent', maxTurns: 2,
+    task: 'Fix the off-by-one in math.cjs count: it should return the input. Add a focused test.',
+  },
+  'L2-ii': {
+    tier: 'simple', strategy: 'pair', mode: 'implement', pair: { spec: false, maxDesignReviews: 1, maxReviews: 3 },
+    task: 'Change the increment implementation in math.cjs to advance by two. Decide how to preserve the public caller behavior, check downstream callers, and add a focused test.',
+  },
+  'L2-iii': {
+    tier: 'fix', strategy: 'independent', mode: 'implement', spec: 'ask', audit: false,
+    task: 'Fix retry.cjs to retry transient failures and add a focused test. The retry policy for HTTP 5xx versus timeouts is a product decision reserved for the maintainer. The repository cannot settle that choice. Ask before implementing.',
+  },
+}
+const FACTORY_ANSWERS = {
+  'L2-ii': { answer: 'Preserve caller.cjs next as advancing by one. Update and test the increment implementation and its caller.', implement: true },
+  'L2-iii': { answer: 'Retry both timeouts and HTTP 5xx, but do not retry other HTTP responses.' },
+}
+
+function factoryArgs(id, verify) {
+  const scenario = id === 'L3' ? 'L2-ii' : id === 'L2-iv' ? 'L2-i' : id
+  const args = { brief: false, tierConfirmed: true, noSplit: true, retro: false, verify, ...FACTORY_ARGS[scenario] }
+  if (id === 'L2-iv') delete args.maxTurns
+  return args
+}
+
+function factoryConfig(configDir, root) {
+  if (!configDir) throw new Error('Pass --config-dir with a dedicated Claude configuration and authenticate it first')
+  const config = scratchConfig(configDir, root)
+  for (let path = dirname(realpathSync(REPO)); path !== dirname(path); path = dirname(path)) {
+    if (existsSync(join(path, '.git')) && inside(config, path)) {
+      throw new Error('--config-dir must be outside the main checkout')
+    }
+  }
+  const file = join(config, 'settings.json')
+  const settings = existsSync(file) && json(readFileSync(file, 'utf8'))
+  const allow = settings?.permissions?.allow
+  if (!Array.isArray(allow) || !allow.includes('Bash(dark-factory:*)')) {
+    throw new Error(`Add "Bash(dark-factory:*)" to permissions.allow in scratch ${file}`)
+  }
+  validateFactoryGuardSettings(settings, file)
+  // Managed settings still apply when project and local settings are omitted.
+  for (const dir of ['/etc/claude-code', '/Library/Application Support/ClaudeCode']) {
+    const fragments = join(dir, 'managed-settings.d')
+    const files = [join(dir, 'managed-settings.json')]
+    if (existsSync(fragments)) files.push(...readdirSync(fragments).filter(name => name.endsWith('.json')).map(name => join(fragments, name)))
+    for (const path of files.filter(existsSync)) validateFactoryGuardSettings(json(readFileSync(path, 'utf8')), path)
+  }
+  return config
+}
+
+// A missing matcher, "*" (every tool) or one that does not compile may still match Workflow.
+const matchesWorkflow = matcher => {
+  if (!matcher || matcher === '*') return true
+  try { return new RegExp(matcher).test('Workflow') } catch { return true }
+}
+
+function validateFactoryGuardSettings(settings, file) {
+  const allow = settings?.permissions?.allow ?? []
+  const hooks = settings?.hooks?.PreToolUse ?? []
+  if (!isObject(settings) || !Array.isArray(allow) || !Array.isArray(hooks) ||
+      settings.disableAllHooks === true || settings.allowManagedHooksOnly === true ||
+      settings.allowManagedPermissionRulesOnly === true || settings.permissions?.defaultMode === 'bypassPermissions' ||
+      allow.some(rule => typeof rule === 'string' && /^(?:\*|Workflow(?:\s*\(.*\))?)$/.test(rule.trim())) ||
+      hooks.some(hook => matchesWorkflow(hook?.matcher))) {
+    throw new Error(`Settings in ${file} conflict with guarded Workflow requests. Use a dedicated configuration that allows the checker hook.`)
+  }
+}
+
+function factoryPreflight(copy, { cwd, env }) {
+  const helper = join(copy.path, 'bin', 'dark-factory')
+  const run = spawnSync(helper, ['preflight', '--vendors', 'codex', '--claude-settings'], {
+    cwd, env, timeout: 90_000, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'],
+  })
+  if (run.error) throw run.error
+  const report = json(run.stdout.trim())
+  const checks = ['codex', 'claude-settings'].map(name => [name, report?.vendors?.[name]])
+  if (run.status !== 0 || report?.status !== 'ok' || checks.some(([, check]) => check?.ok !== true)) {
+    const failures = checks.filter(([, check]) => check?.ok !== true)
+      .map(([name, check]) => `${name}: ${check?.error ?? 'no passing preflight result'}`)
+    throw new Error(`Factory setup preflight failed: ${failures.join('; ') || run.stderr.trim() || report?.status}`)
+  }
+}
+
+function verifyFactoryListing(loaded, copy, baselineSession, expected) {
+  const marker = `${FACTORY_PLUGIN}:${copy.marker}`
+  const names = loaded.names.filter(name => name.startsWith(FACTORY_PLUGIN + ':'))
+  if (!loaded.sessionId || (baselineSession && loaded.sessionId !== baselineSession) ||
+      !isDeepStrictEqual(names.sort(), [...expected, marker].sort())) {
+    throw new Error(`Expected one dark-factory workflow set and marker ${marker}; loaded ${names.join(', ') || 'none'}. Check the scratch plugin and reload.`)
+  }
+}
+
+function verifyFactoryCopy(copy, workflowHashes) {
+  const onDisk = Object.fromEntries(Object.keys(copy.sha256).map(name => [name, readFileSync(join(copy.path, 'workflows', name))]))
+  if (!isDeepStrictEqual(workflowHashes(onDisk), copy.sha256)) {
+    throw new Error(`Workflow bytes differ from the expected hashes in ${copy.path}. Recreate the scratch plugin.`)
+  }
+  if (!existsSync(join(copy.path, 'workflows', copy.marker + '.js'))) {
+    throw new Error(`Expected marker ${copy.marker} is missing on disk in ${copy.path}`)
+  }
+}
+
+async function checkFactoryLoad(session, copy, baselineSession, expected, workflowHashes) {
+  const loaded = await loadedWorkflows(session, FACTORY_PLUGIN)
+  verifyFactoryListing(loaded, copy, baselineSession, expected)
+  verifyFactoryCopy(copy, workflowHashes)
+  return loaded
+}
+
+function inspectFactory(session, call, listing) {
+  const dir = sessionDirectory(session.config, call.session)
+  return { call, dir, state: stateFor(dir, call.output), terminal: terminalFor(call, session.stream.terminals), listing }
+}
+
+const endedFactory = status => status === 'completed' || status === 'failed' || stopped(status)
+
+const factoryCaptureDir = transcript => transcript + '.l2-iv-before'
+const readJsonFile = path => JSON.parse(readFileSync(path, 'utf8'))
+const writeCapture = (path, data) => writeFileSync(path, JSON.stringify(data, null, 2) + '\n', { flag: 'wx', mode: 0o600 })
+const inputPrompt = input => 'Call Workflow exactly once with this input: ' + JSON.stringify(input) +
+  '. Use no other tools. After invoking it, reply "done".'
+
+function manualFactoryInstructions({ options, guard, copy, dir, provenance, root, head, input, gitVariables }) {
+  const sessionId = randomUUID()
+  const config = options.env.CLAUDE_CONFIG_DIR
+  const file = join(dir, 'capture.json')
+  writeCapture(file, { config, sessionId, cwd: options.cwd, root, head, copy, provenance, input, guardDir: join(dir, 'guard') })
+  const unset = ['CLAUDE_SECURESTORAGE_CONFIG_DIR', ...gitVariables].flatMap(name => ['-u', name])
+  const launch = ['env', ...unset, `CLAUDE_CONFIG_DIR=${config}`,
+    `PATH=${options.env.PATH}`, 'claude', '--model', 'haiku', ...guard.args.filter((_, index, args) =>
+      args[index] !== '--permission-prompts' && args[index - 1] !== '--permission-prompts'),
+    '--plugin-dir', copy.path, '--session-id', sessionId].map(quote).join(' ')
+  const command = [process.execPath, fileURLToPath(import.meta.url), '--factory', '--capture', file].map(quote).join(' ')
+  console.log(`\nManual L2-iv (${copy.mode})
+1. Open this isolated interactive session:
+   cd ${quote(options.cwd)} && ${launch}
+2. In a separate shell run ${command} list. Paste the printed listing prompt into Claude.
+3. After the listing, run ${command} start and paste the printed Factory prompt.
+4. While the first solve agent is running, run ${command} active. Continue only after it records the transcript.
+5. In /workflows, select the whole Factory run and press x. Wait until stopped, then run
+   ${command} stopped
+   Paste the printed listing prompt into the same Claude session.
+6. Run ${command} resume after that listing, paste its printed resume prompt and wait for completion.
+7. Use the judging command below after both sessions finish.`)
+  return `"$(${command} path)"`
+}
+
+function manualTranscriptPath({ config, sessionId }) {
+  if (!/^[A-Za-z0-9_-]+$/.test(sessionId)) throw new Error('Invalid manual session ID')
+  const projects = join(config, 'projects')
+  const paths = readdirSync(projects).map(project => join(projects, project, sessionId + '.jsonl')).filter(existsSync)
+  if (paths.length !== 1) throw new Error('Cannot locate the unique interactive Factory transcript')
+  return paths[0]
+}
+
+function manualListing(stream, copy, sessionId, expected, after, before) {
+  const calls = stream.calls.filter(call => call.session === sessionId && call.line > after && call.resultLine < before &&
+    call.input?.name?.startsWith(FACTORY_PLUGIN + ':missing-') && call.error)
+  const call = calls.at(-1)
+  const names = /not found\. Available: ([^<\n]*)/.exec(call?.text ?? '')?.[1]?.split(',').map(name => name.trim()) ?? []
+  verifyFactoryListing({ sessionId: call?.session, names }, copy, sessionId, expected)
+  return call
+}
+
+const factoryCalls = stream => stream.calls.filter(call => call.input?.name === FACTORY_WORKFLOW && launched(call))
+
+async function captureManualFactory(file, phase) {
+  const meta = readJsonFile(file)
+  if (phase === 'path') {
+    console.log(manualTranscriptPath(meta))
+    return 0
+  }
+  const [{ factoryWorkflowGuard }, { factoryCancelBoundary, judgeFirstLeg, snapshotRunDirectory },
+    { fixtureEnvironment, fixtureVerify }, { workflowHashes }, { EXPECTED }] = await Promise.all([
+    import('./factory-workflow-guard.mjs'), import('./factory-evidence.mjs'), import('./factory-fixture.mjs'),
+    import('./candidate.mjs'), import('./loader-check.mjs'),
+  ])
+  const { config, root, cwd, head, copy, input, sessionId } = meta
+  if (!isDeepStrictEqual(input, { name: FACTORY_WORKFLOW, args: factoryArgs('L2-iv', fixtureVerify) })) {
+    throw new Error('Manual capture has unexpected Factory arguments')
+  }
+  const env = fixtureEnvironment(scratchEnv(factoryConfig(config, root), true))
+  env.PATH = join(copy.path, 'bin') + delimiter + env.PATH
+  verifyFactoryCopy(copy, workflowHashes)
+  if (['list', 'start', 'resume'].includes(phase)) {
+    if (installedPlugins({ cwd, env }).length) throw new Error('Manual Factory needs an empty scratch plugin inventory')
+    factoryPreflight(copy, { cwd, env })
+    if (claudeCommand(['--version'], { cwd, env }) !== meta.provenance.cli) throw new Error('Claude CLI changed since manual setup')
+  }
+  const guard = factoryWorkflowGuard(join(dirname(file), 'guard'), { existing: true })
+  const permit = request => { guard.permit(request); console.log(inputPrompt(request)) }
+  const newListing = () => permit({ name: `${FACTORY_PLUGIN}:missing-${randomUUID()}` })
+  if (phase === 'list') {
+    newListing()
+    return 0
+  }
+  const transcript = manualTranscriptPath(meta)
+  const text = readFileSync(transcript, 'utf8')
+  const stream = parseStream(text)
+  const [original, extra] = factoryCalls(stream)
+  const capture = factoryCaptureDir(transcript)
+  const dir = transcript.slice(0, -extname(transcript).length)
+  switch (phase) {
+    case 'start':
+      if (original) throw new Error('The interactive Factory leg has already started')
+      guard.verify(manualListing(stream, copy, sessionId, EXPECTED, 0, Infinity))
+      guard.clear()
+      permit(input)
+      break
+    case 'active': {
+      if (!original || extra || !isDeepStrictEqual(original.input, input) || original.session !== sessionId ||
+          terminalFor(original, stream.terminals) || endedFactory(stateFor(dir, original.output)?.status)) {
+        throw new Error('The original Factory invocation is not running')
+      }
+      guard.verify(original)
+      const rows = sessionJournal(dir, true)
+      const active = activeFactoryAgent(dir, rows, factoryCancelBoundary)
+      if (!active) throw new Error('First post-setup agent transcript is not active. Retry before canceling.')
+      mkdirSync(capture, { mode: 0o700 })
+      writeFileSync(join(capture, 'active-agent.jsonl'), active.transcript, { flag: 'wx', mode: 0o600 })
+      writeCapture(join(capture, 'active.json'), { rows, taskId: original.output.taskId })
+      console.log('Captured the active Factory agent. Cancel the parent now.')
+      break
+    }
+    case 'stopped': {
+      if (!original || extra || !text.endsWith('\n')) throw new Error('Wait for the stopped session transcript before resuming')
+      const state = stateFor(dir, original.output)
+      const terminal = terminalFor(original, stream.terminals)
+      const rows = sessionJournal(dir)
+      const active = readJsonFile(join(capture, 'active.json'))
+      const boundary = factoryCancelBoundary(active.rows)
+      if (!boundary || active.taskId !== original.output.taskId || !journalGrowth(active.rows, rows) ||
+          !statSync(join(capture, 'active-agent.jsonl')).size) throw new Error('Missing active Factory attempt evidence')
+      const directory = snapshotRunDirectory(boundary.runDir, { repo: cwd, head })
+      const first = judgeFirstLeg('L2-iv', { call: original, state, terminal, rows, directory,
+        active: { start: boundary.start, transcript: true } })
+      if (first.status !== 'pass') throw new Error(first.reason)
+      writeFileSync(join(capture, 'session.jsonl'), text, { flag: 'wx', mode: 0o600 })
+      writeCapture(join(capture, 'stopped.json'), { meta, state, rows, directory })
+      guard.clear()
+      newListing()
+      break
+    }
+    case 'resume': {
+      const prefix = readFileSync(join(capture, 'session.jsonl'), 'utf8')
+      if (!original || extra || !text.startsWith(prefix)) throw new Error('Missing original stopped Factory transcript')
+      guard.verify(manualListing(stream, copy, sessionId, EXPECTED, prefix.split('\n').length - 1, Infinity))
+      guard.clear()
+      permit({ ...input, resumeFromRunId: original.output.runId })
+      break
+    }
+    default:
+      throw new Error('Factory capture phase must be list, start, active, stopped, resume or path')
+  }
+  return 0
+}
+
+async function judgeManualFactory(transcript, mode, provenance) {
+  const [{ factoryCancelBoundary, judgeFirstLeg, judgeResume, snapshotRunDirectory },
+    { fixtureVerify }, { workflowHashes }, { EXPECTED }, { factoryWorkflowGuard }] = await Promise.all([
+    import('./factory-evidence.mjs'), import('./factory-fixture.mjs'), import('./candidate.mjs'),
+    import('./loader-check.mjs'), import('./factory-workflow-guard.mjs'),
+  ])
+  const capture = factoryCaptureDir(transcript)
+  const { meta, state, rows, directory } = readJsonFile(join(capture, 'stopped.json'))
+  const { copy, input, sessionId, cwd, head, guardDir } = meta
+  const args = factoryArgs('L2-iv', fixtureVerify)
+  if (!isDeepStrictEqual(meta.provenance, provenance) || copy.mode !== mode ||
+      !isDeepStrictEqual(copy.sha256, provenance.sha256[mode]) ||
+      copy.marker !== `candidate-${copy.sha256['factory.js'].slice(0, 12)}`) {
+    throw new Error(`Stale ${mode} cancellation provenance; use captures from this live verdict`)
+  }
+  verifyFactoryCopy(copy, workflowHashes)
+  if (realpathSync(transcript) !== realpathSync(manualTranscriptPath(meta))) throw new Error('Transcript is outside its recorded scratch session')
+  const text = readFileSync(transcript, 'utf8')
+  const prefix = readFileSync(join(capture, 'session.jsonl'), 'utf8')
+  if (!prefix.trim() || !prefix.endsWith('\n') || !text.startsWith(prefix)) {
+    throw new Error('Stopped capture does not match the transcript prefix')
+  }
+  const stream = parseStream(text)
+  const [original, resumed, extra] = factoryCalls(stream)
+  const stopLine = prefix.split('\n').length - 1
+  if (extra || !original || !resumed || original.session !== sessionId || original.resultLine > stopLine ||
+      resumed.line <= stopLine || !isDeepStrictEqual(input, { name: FACTORY_WORKFLOW, args }) ||
+      !isDeepStrictEqual(original.input, input)) throw new Error('Expected one pinned Factory launch and resume around the stopped capture')
+  manualListing(stream, copy, sessionId, EXPECTED, 0, original.line)
+  manualListing(stream, copy, sessionId, EXPECTED, stopLine, resumed.line)
+  factoryWorkflowGuard(guardDir, { existing: true }).verify(resumed)
+  const active = readJsonFile(join(capture, 'active.json'))
+  const boundary = factoryCancelBoundary(active.rows)
+  if (!boundary || active.taskId !== original.output.taskId || !journalGrowth(active.rows, rows) ||
+      !lstatSync(join(capture, 'active-agent.jsonl')).isFile() || !statSync(join(capture, 'active-agent.jsonl')).size) {
+    throw new Error('Missing active agent capture before the parent stopped')
+  }
+  const terminal = terminalFor(original, stream.terminals)
+  if (terminal && terminal.line > stopLine) throw new Error('Factory stopped after the saved boundary')
+  const first = { call: original, terminal, state, rows, directory, active: { start: boundary.start, transcript: true } }
+  const firstCheck = judgeFirstLeg('L2-iv', first)
+  if (firstCheck.status !== 'pass') return { first: firstCheck }
+  const dir = transcript.slice(0, -extname(transcript).length)
+  const afterState = stateFor(dir, resumed.output)
+  const afterTerminal = terminalFor(resumed, stream.terminals)
+  const result = factoryResultFor(resumed, afterState, afterTerminal)
+  if (!result) throw new Error('Missing completed Factory resume result')
+  const after = { call: resumed, state: afterState, terminal: afterTerminal, rows: sessionJournal(dir),
+    directory: snapshotRunDirectory(result.runDir, { repo: cwd, head }) }
+  return { first: firstCheck, resume: judgeResume('L2-iv', first, after), repo: directory.repo, head: directory.head,
+    session: sessionId }
+}
+
+async function manualFactory(argv) {
+  const options = {}
+  if (argv[0] !== 'L2-iv') throw new Error('Specify --manual L2-iv for Factory cancellation')
+  for (let index = 1; index < argv.length; index += 2) {
+    const [flag, value] = argv.slice(index, index + 2)
+    if (!['--control', '--candidate', '--verdict'].includes(flag) || Object.hasOwn(options, flag)) throw new Error(`Unexpected option ${flag}`)
+    if (!value || value.startsWith('--')) throw new Error(`Missing value for ${flag}`)
+    options[flag] = value
+  }
+  if (!options['--control'] || !options['--candidate']) throw new Error('Manual L2-iv requires both --control and --candidate transcripts')
+  const file = options['--verdict'] ?? VERDICT
+  const { l2 } = readJsonFile(file)
+  const provenance = l2?.checks?.['L2-iv']?.provenance
+  const { workflowBytes, workflowHashes } = await import('./candidate.mjs')
+  const current = await handoffProtocol(REPO)
+  const currentHashes = { inline: workflowHashes(workflowBytes('inline')), candidate: workflowHashes(workflowBytes()) }
+  if (!provenance || l2.cli !== provenance.cli || current.protocol !== l2.protocol || current.nameForm !== l2.nameForm ||
+      l2.protocol !== provenance.protocol || l2.nameForm !== provenance.nameForm ||
+      !isDeepStrictEqual(provenance.sha256, currentHashes) || !isDeepStrictEqual(l2.sha256, currentHashes.candidate)) {
+    throw new Error('Run the live Factory checker on the current builds before recording manual L2-iv')
+  }
+  let check
+  try {
+    const control = await judgeManualFactory(options['--control'], 'inline', provenance)
+    const candidate = await judgeManualFactory(options['--candidate'], 'candidate', provenance)
+    const { compareLegs } = await import('./factory-evidence.mjs')
+    if (control.resume?.status === 'pass' && candidate.resume?.status === 'pass' &&
+        (control.repo === candidate.repo || control.session === candidate.session || control.head !== candidate.head)) {
+      throw new Error('Manual Factory legs must use distinct fixtures and sessions at the same seed HEAD')
+    }
+    check = compareLegs(control, candidate)
+  } catch (error) {
+    check = { status: 'fail', reason: error.message }
+  }
+  updateVerdict(file, previous => {
+    if (!isDeepStrictEqual(previous.l2, l2) || previous.l1?.nameForm !== current.nameForm) {
+      throw new Error('Factory verdict changed during manual verification; rerun the command')
+    }
+    return { ...previous, l2: { ...l2, checks: { ...l2.checks, 'L2-iv': { ...check, mode: 'manual', provenance } } } }
+  })
+  console.log(`L2-iv: ${check.status}${check.reason ? ` (${check.reason})` : ''}`)
+  if (check.differences) console.log(JSON.stringify(check.differences))
+  if (check.status !== 'pass') return 1
+  // A passing L2-iv does not complete an l2 whose other checks have not passed.
+  const checks = { ...l2.checks, 'L2-iv': check }
+  const incomplete = L2_REQUIRED.filter(id => checks[id]?.status !== 'pass').map(id => `${id} ${checks[id]?.status ?? 'missing'}`)
+  if (incomplete.length) {
+    console.error(`l2 is not complete: ${incomplete.join(', ')}`)
+    return 1
+  }
+  return 0
+}
+
+// A Workflow refusal or a failed request after the preconditions pass is evidence for the judge,
+// not a fatal error: it leaves the scenario without its stop. A guard failure stays fatal.
+async function launchFactory(session, input, listing) {
+  try {
+    const call = await session.invoke(input)
+    if (launched(call) && call.session === listing.sessionId) return { call }
+    return { call, observationError: `Factory did not launch in the checked session: ${call.text || 'no task'}` }
+  } catch (error) {
+    if (/guard receipt/.test(error.message)) throw error
+    return { call: null, observationError: `Factory did not launch: ${error.message}` }
+  }
+}
+
+async function observeFactory(session, input, listing, call) {
+  if (!call) {
+    const launch = await launchFactory(session, input, listing)
+    if (launch.observationError) return launch
+    call = launch.call
+  } else if (!launched(call) || call.session !== listing.sessionId) {
+    return { call, observationError: `Factory did not launch in the checked session: ${call.text || 'no task'}` }
+  }
+  try {
+    return await session.waitFor(() => {
+      const snapshot = inspectFactory(session, call, listing)
+      const { dir, state, terminal } = snapshot
+      if ((terminal && terminal.status !== 'completed') || (endedFactory(state?.status) && state.status !== 'completed')) {
+        return { ...snapshot, observationError: state?.error ?? `Native Factory task ended with status ${terminal?.status ?? state.status}` }
+      }
+      if (state?.status !== 'completed') return null
+      const result = factoryResultFor(call, state, terminal)
+      return result && { ...snapshot, result, rows: sessionJournal(dir) }
+    }, 'waiting for the native Factory result', FACTORY_DEADLINE_MS)
+  } catch (error) {
+    return { ...inspectFactory(session, call, listing), observationError: error.message }
+  }
+}
+
+function activeFactoryAgent(dir, rows, factoryCancelBoundary) {
+  const active = factoryCancelBoundary(rows)
+  if (!active || !/^[A-Za-z0-9_-]+$/.test(active.start.agentId)) return null
+  const file = join(dir, active.start.directory, `agent-${active.start.agentId}.jsonl`)
+  if (!existsSync(file) || !lstatSync(file).isFile()) return null
+  const transcript = readFileSync(file)
+  return transcript.length ? { ...active, transcript } : null
+}
+
+async function stopFactory(session, call, listing, factoryCancelBoundary, saveActive, captureDirectory) {
+  const active = await session.waitFor(() => {
+    const snapshot = inspectFactory(session, call, listing)
+    if (endedFactory(snapshot.state?.status) || snapshot.terminal) return { missed: true }
+    if (!snapshot.dir) return null
+    const rows = sessionJournal(snapshot.dir, true)
+    const active = activeFactoryAgent(snapshot.dir, rows, factoryCancelBoundary)
+    if (!active) return null
+    saveActive(active)
+    return active
+  }, 'waiting for the first post-setup Factory agent', FACTORY_DEADLINE_MS)
+  if (active.missed) return { observationError: 'Factory ended before the first post-setup agent could be canceled', call }
+  const response = await session.control({ subtype: 'stop_task', task_id: call.output.taskId })
+  if (response.subtype === 'error' && /stop_task.*(?:not supported|unavailable)/i.test(response.error ?? '')) {
+    return { unsupported: true, observationError: response.error, call }
+  }
+  if (response.subtype !== 'success') {
+    const snapshot = inspectFactory(session, call, listing)
+    return { ...snapshot, observationError: response.error || 'Claude refused stop_task' }
+  }
+  return session.waitFor(() => {
+    const snapshot = inspectFactory(session, call, listing)
+    if ([snapshot.state?.status, snapshot.terminal?.status].some(status => status === 'completed' || status === 'failed')) {
+      return { ...snapshot, observationError: 'Factory ended before cancellation took effect' }
+    }
+    if (!stopped(snapshot.state?.status)) return null
+    return captureDirectory({
+      ...snapshot, active: { start: active.start, transcript: true }, rows: sessionJournal(snapshot.dir),
+    }, active.runDir)
+  }, 'waiting for the stopped Factory task', 30_000)
+}
+
+async function liveFactory(configDir, file) {
+  const [{ createPluginCopy, replacePluginWorkflows, scratchBase, workflowBytes, workflowHashes },
+    { compareLegs, factoryCancelBoundary, judgeFirstLeg, judgeResume, snapshotRunDirectory },
+    { fixtureEnvironment, fixtureSeed, fixtureVerify, GIT_REPO_ENV }, { factoryWorkflowGuard }, { EXPECTED }] = await Promise.all([
+    import('./candidate.mjs'), import('./factory-evidence.mjs'), import('./factory-fixture.mjs'),
+    import('./factory-workflow-guard.mjs'), import('./loader-check.mjs'),
+  ])
+  const root = mkdtempSync(join(scratchBase(), 'df-factory-check-'))
+  console.log(`Factory artifacts: ${root}`)
+  const config = factoryConfig(configDir, root)
+  const env = fixtureEnvironment(scratchEnv(config, true))
+  const options = { cwd: root, env }
+  if (installedPlugins(options).length) throw new Error('Factory needs an empty scratch plugin inventory. Use a configuration without installed plugins.')
+  const cli = claudeCommand(['--version'], options)
+  const { protocol, nameForm } = await handoffProtocol(REPO)
+  if (!nameForm || json(readFileSync(file, 'utf8'))?.l1?.nameForm !== nameForm) {
+    throw new Error('Use an L1 verdict whose child workflow name form matches the candidate')
+  }
+  const bytes = { inline: workflowBytes('inline'), candidate: workflowBytes() }
+  const fixture = fixtureSeed(root, env)
+  const checks = {}
+  let started = false
+  const provenance = { cli, protocol, nameForm, sha256: {
+    inline: workflowHashes(bytes.inline), candidate: workflowHashes(bytes.candidate),
+  } }
+
+  function prepare(id, mode, tag = id) {
+    const dir = join(root, `${tag}-${mode}`)
+    mkdirSync(dir)
+    const cwd = fixture.clone(join(dir, 'repo'))
+    const copy = createPluginCopy(mode, bytes[mode])
+    const legEnv = { ...env, PATH: join(copy.path, 'bin') + delimiter + env.PATH }
+    const options = { cwd, env: legEnv, plugin: copy.path, artifacts: dir }
+    const guard = factoryWorkflowGuard(join(dir, 'guard'))
+    return { options, guard, copy, dir }
+  }
+
+  async function leg(id, mode) {
+    const { options, guard, dir, copy: initialCopy } = prepare(id, mode)
+    const { cwd } = options
+    let copy = initialCopy
+    const scenario = id === 'L3' ? 'L2-ii' : id
+    const args = factoryArgs(id, fixtureVerify)
+    const input = { name: FACTORY_WORKFLOW, args }
+    return inSession({ ...options, guard }, async session => {
+      const precondition = async expectedSession => {
+        factoryConfig(configDir, root)
+        if (installedPlugins(options).length) throw new Error('Factory needs an empty scratch plugin inventory. Remove installed scratch plugins.')
+        factoryPreflight(copy, options)
+        return checkFactoryLoad(session, copy, expectedSession, EXPECTED, workflowHashes)
+      }
+      const captureDirectory = (snapshot, runDir = snapshot.result?.runDir) => {
+        if (runDir) {
+          try {
+            snapshot.directory = snapshotRunDirectory(runDir, { repo: cwd, head: fixture.head })
+          } catch (error) {
+            snapshot.directoryError = error.message
+          }
+        }
+        return snapshot
+      }
+      const save = (phase, snapshot) => {
+        writeFileSync(join(dir, `${phase}.json`), JSON.stringify({ ...snapshot, copy }, null, 2) + '\n')
+        return snapshot
+      }
+      const listing = await precondition()
+      started = true
+      let initial
+      if (id === 'L2-iv') {
+        const launch = await launchFactory(session, input, listing)
+        const { call } = launch
+        if (launch.observationError) initial = launch
+        else {
+          try {
+            initial = await stopFactory(session, call, listing, factoryCancelBoundary,
+              active => writeFileSync(join(dir, 'active-agent.jsonl'), active.transcript), captureDirectory)
+          } catch (error) {
+            initial = { ...inspectFactory(session, call, listing), observationError: error.message }
+          }
+        }
+        save('first', initial)
+        if (initial.unsupported) return { unsupported: true, reason: initial.observationError }
+      } else {
+        initial = save('first', captureDirectory(await observeFactory(session, input, listing)))
+      }
+      const first = judgeFirstLeg(id, initial)
+      if (first.status !== 'pass') return { first }
+      if (id === 'L2-iv') {
+        let resumeListing
+        let resumed
+        try {
+          resumed = await resumeAfterStop({
+            invoke: async request => {
+              resumeListing = await precondition(initial.call.session)
+              return session.invoke(request)
+            },
+          }, input, initial.call, 30_000, (_, request, call) => observeFactory(session, request, resumeListing, call))
+        } catch (error) {
+          resumed = { observationError: error.message }
+        }
+        save('resume', captureDirectory(resumed))
+        return { first, resume: judgeResume(id, initial, resumed) }
+      }
+      if (id === 'L3') {
+        copy = replacePluginWorkflows(copy, bytes.candidate)
+        session.sendUser('/reload-plugins')
+      }
+      const answer = FACTORY_ANSWERS[scenario]
+      const resumedArgs = answer ? {
+        ...args, clarifications: initial.result.questions.map(({ id }) => ({ id, ...answer })),
+      } : args
+      const resumeListing = await precondition(initial.call.session)
+      const resumed = save('resume', captureDirectory(await observeFactory(session, {
+        name: FACTORY_WORKFLOW, args: resumedArgs, resumeFromRunId: initial.call.output.runId,
+      }, resumeListing)))
+      return { first, resume: judgeResume(id, initial, resumed) }
+    })
+  }
+
+  // A failure before any Factory launch leaves no verdict. One at a resume or a later leg (a
+  // precondition that no longer holds) writes the checks finished so far, fails the check in
+  // progress, leaves the rest pending and exits nonzero.
+  const inline = {}
+  let current, halted = null
+  try {
+    for (const id of Object.keys(FACTORY_ARGS)) {
+      current = id
+      inline[id] = await leg(id, 'inline')
+      checks[id] = compareLegs(inline[id], await leg(id, 'candidate'))
+    }
+    // L3's first stop and L2-ii's are independent inline runs: each is judged on its own, and only
+    // the upgraded resume's protocol is compared with the control's.
+    current = 'L3'
+    checks.L3 = compareLegs(inline['L2-ii'], await leg('L3', 'inline'), { phases: ['resume'] })
+    current = 'L2-iv'
+    const control = await leg('L2-iv', 'inline')
+    const candidate = control.unsupported ? null : await leg('L2-iv', 'candidate')
+    const unsupported = control.unsupported ? control : candidate?.unsupported ? candidate : null
+    checks['L2-iv'] = unsupported && (control.unsupported || (control.first?.status === 'pass' && control.resume?.status === 'pass'))
+      ? { status: 'pending', reason: unsupported.reason }
+      : compareLegs(control, candidate)
+  } catch (error) {
+    if (!started) throw error
+    halted = error
+    checks[current] = { status: 'fail', reason: `Stopped: ${error.message}` }
+    for (const id of L2_REQUIRED) checks[id] ??= { status: 'pending', reason: `Not run: the live check stopped at ${current}` }
+  }
+  const { l2 } = await writeFactoryVerdict(file, { cli, checks, sha256: provenance.sha256.candidate, inlineSha256: provenance.sha256.inline })
+  if (!halted && l2.checks['L2-iv'].status === 'pending') {
+    const captures = ['inline', 'candidate'].map(mode => {
+      const { options, guard, copy, dir } = prepare('L2-iv', mode, 'manual')
+      return manualFactoryInstructions({ options, guard, copy, dir, provenance, root, head: fixture.head, gitVariables: GIT_REPO_ENV, input: {
+        name: FACTORY_WORKFLOW, args: factoryArgs('L2-iv', fixtureVerify),
+      } })
+    })
+    const judge = [process.execPath, fileURLToPath(import.meta.url), '--factory', '--manual', 'L2-iv'].map(quote).join(' ')
+    console.log(`${judge} --control ${captures[0]} --candidate ${captures[1]} --verdict ${quote(resolve(file))}`)
+  }
+  for (const id of L2_REQUIRED) {
+    const { status, reason, differences } = l2.checks[id]
+    console.log(`${id}: ${status}${reason ? ` (${reason})` : ''}`)
+    if (differences) console.log(JSON.stringify(differences))
+  }
+  if (halted) {
+    console.error(halted.message)
+    return 1
+  }
+  return factoryExitCode(l2.checks)
+}
+
 async function main(argv) {
+  const factory = argv[0] === '--factory'
+  if (factory) argv = argv.slice(1)
+  if (factory && argv[0] === '--manual') return manualFactory(argv.slice(1))
+  if (factory && argv[0] === '--capture') {
+    if (argv.length !== 3) throw new Error('Usage: --factory --capture FILE PHASE')
+    return captureManualFactory(argv[1], argv[2])
+  }
   if (argv[0] !== '--manual') {
     let config, file = VERDICT
     for (let index = 0; index < argv.length; index += 2) {
@@ -969,7 +1623,7 @@ async function main(argv) {
       else if (flag === '--verdict') file = value
       else throw new Error(`Unknown option: ${flag}`)
     }
-    return live(config, file)
+    return factory ? liveFactory(config, file) : live(config, file)
   }
   const [mode, checkId, flag, transcript, verdictFlag, file, ...rest] = argv
   if (mode !== '--manual' || checkId !== CANCEL || flag !== '--transcript' || !transcript ||
