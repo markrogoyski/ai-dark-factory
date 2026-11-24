@@ -10,6 +10,7 @@ import { dirname, join } from 'node:path'
 import assert from 'node:assert/strict'
 import { rmSync } from 'node:fs'
 import { loadLib } from './lib.mjs'
+import { routedHandoff, workflowHost, factoryFromHandoff } from './fixtures/workflow-host.mjs'
 
 const here = dirname(fileURLToPath(import.meta.url))
 // bin/dark-factory polls on a timer; shorten it so the CLI scenarios don't sit sleeping. Children inherit this.
@@ -124,15 +125,22 @@ function checkGoldens(name, calls) {
 
 // hooks.retro(prompt) stands in for the retro agent; the default returns RETRO(). hooks.allowThrown: the
 // scenario expects thunks to throw inside parallel(). hooks.workflow: 'factory' runs workflows/factory.js.
-// hooks.meter makes the budget read 5000 + 1000 per agent() call so far.
+// hooks.meter makes the budget read 5000 + 1000 per agent() call so far. hooks.via: 'route' runs Factory's
+// source only up to routing (routedHandoff), and the result is {handoff, result}; 'factory' runs it to
+// routing and then the built children a delegating Factory would (factoryFromHandoff), and children
+// records them. answers records what the scenario answered, in order, for a replay of the run.
 // logAgentCounts[i] records how many calls had been made when logs[i] was recorded.
 async function run(name, scenario, args, hooks = {}) {
   const retroOn = !(args && typeof args === 'object' && args.retro === false)
   const calls = []
   const logs = []
   const logAgentCounts = []
+  const answers = []
+  let children = null
   let agentCalls = 0
-  const budget = { total: null, spent: () => hooks.meter ? 5000 + 1000 * agentCalls : 0, remaining: () => Infinity }
+  const budget = hooks.budget || { total: null, spent: () => hooks.meter ? 5000 + 1000 * agentCalls : 0, remaining: () => Infinity }
+  // collect: false keeps a rerun's prompts out of the suite-wide lists below.
+  const collect = hooks.collect !== false
   const leaks = []
   // The real runtime's parallel() catches a throwing thunk and returns null, and council.js catches
   // some agent() failures itself, so a TypeError in the script (or a failed assertion in a stub)
@@ -158,7 +166,7 @@ async function run(name, scenario, args, hooks = {}) {
       const expect = prompt.match(/--expect (\S+)/)[1]
       assert.equal(promptHash(p), expect, `${label}: relay --expect does not match its payload`)
       assert.equal(m[1], expect, `${label}: payload markers don't carry the hash`)
-      RELAY_PROMPTS.push(prompt)
+      if (collect) RELAY_PROMPTS.push(prompt)
       assert.ok(p.includes('<<<OUTPUT_SCHEMA'), `${label}: payload has no output schema`)
       assert.equal(opts.model, opts.model === 'sonnet' ? 'sonnet' : 'haiku')
       // Codex's structured output is strict: every property required.
@@ -173,13 +181,13 @@ async function run(name, scenario, args, hooks = {}) {
     const role = roleOf(label)
     if (role.kind === 'record') {
       assert.equal(calls.filter(c => ['retro', 'record'].includes(c.role.kind)).length, 0, 'one retro or record per run')
-      RECORD_PROMPTS.push(prompt)
+      if (collect) RECORD_PROMPTS.push(prompt)
       calls.push({ label, role, prompt, opts })
       return { saved: '/x/retros/f.facts.json', error: '' }
     }
     if (role.kind === 'retro') {
       assert.equal(calls.filter(c => c.role.kind === 'retro').length, 0, 'one retro per run')
-      RETRO_PROMPTS.push(prompt)
+      if (collect) RETRO_PROMPTS.push(prompt)
       calls.push({ label, role, prompt, opts })
       return hooks.retro ? hooks.retro(prompt, opts) : RETRO()
     }
@@ -190,8 +198,13 @@ async function run(name, scenario, args, hooks = {}) {
       leaks.push(`${label}: ${p.match(MODEL_LEAK)[0]}`)
     }
     calls.push({ label, role, prompt: p, raw: prompt, opts })
-    const out = ['audit', 'reaudit'].includes(role.kind) && !hooks.audit ? CLEAN_AUDIT()
-      : role.kind === 'spec' && !hooks.spec ? CLEAN_SPEC() : await scenario(role, p, opts)
+    const scripted = !(['audit', 'reaudit'].includes(role.kind) && !hooks.audit) && !(role.kind === 'spec' && !hooks.spec)
+    let out
+    if (!scripted) out = role.kind === 'spec' ? CLEAN_SPEC() : CLEAN_AUDIT()
+    else {
+      try { out = await scenario(role, p, opts) } catch (error) { answers.push({ label, prompt: p, error }); throw error }
+      answers.push({ label, prompt: p, out: out === undefined ? undefined : structuredClone(out) })
+    }
     if (out === null) return null
     if (out && out.relayStatus) return out.relayStatus             // a relay that failed, as the relay reports it
     if (out && (relay ? schemaIn(p) : s).properties?.evidenceReview && !out.evidenceReview) out.evidenceReview = {
@@ -212,7 +225,11 @@ async function run(name, scenario, args, hooks = {}) {
   Date.now = () => { throw new Error('Date.now used') }
   let result
   try {
-    result = await SCRIPTS[hooks.workflow || 'council'](agent, parallel, pipeline, phase, log, args, budget, null)
+    const host = { agent, parallel, pipeline, phase, log, budget }
+    result = hooks.via === 'route' ? await routedHandoff(host, args)
+      : hooks.via === 'child' ? await childRun(host, args)
+      : hooks.via === 'factory' ? await factoryFromHandoff(host, args).then(out => { children = out; return out.result })
+      : await SCRIPTS[hooks.workflow || 'council'](agent, parallel, pipeline, phase, log, args, budget, null)
   } finally {
     Math.random = savedRandom; Date.now = savedNow
     if (process.env.SHOW_LOGS) console.log(`\n===== ${name} log =====\n${logs.join('\n')}\n`)
@@ -221,7 +238,16 @@ async function run(name, scenario, args, hooks = {}) {
   assert.deepEqual(leaks, [], `${name}: model identity leaked into seat prompts`)
   if (GOLDEN_RUNS.has(name)) checkGoldens(name, calls)
   if (process.env.SHOW_REPORT && result && result.report) console.log(`\n===== ${name} report =====\n${result.report.markdown}\n`)
-  return { result, calls, logs, logAgentCounts }
+  return { result, calls, logs, logAgentCounts, answers, children }
+}
+
+// Factory up to routing, then the built child it would hand the tier to, from the envelope:
+// {handoff, result}, the result being the child's raw response (or Factory's own stop before routing).
+async function childRun(host, args) {
+  const routed = await routedHandoff(host, args)
+  if (!routed.handoff) return routed
+  const name = loadLib().childWorkflow(routed.handoff)
+  return { handoff: routed.handoff, result: await workflowHost(host).workflow(name, { factoryHandoff: routed.handoff }) }
 }
 
 function roleOf(label) {
@@ -285,27 +311,30 @@ const ratify = (endorse = true, objections = []) => ({ endorse, objections, note
 
 // ---------------------------------------------------------------- scenario 1: consensus
 
-async function scenarioConsensus() {
-  const { result, calls, logs } = await run('consensus', async (role, prompt) => {
-    switch (role.kind) {
-      case 'setup': return SETUP('test-consensus')
-      case 'solve': return solve(role.L, { process: `Solve note from ${role.L}.`, ...(role.L === 'A'
-        ? { tests: [{ id: 'T0A1', purpose: 'empty input returns []', command: 'phpunit T0A1Test.php' }] } : {}) })
-      case 'check': return { ...check(prompt, () => 'verified', () => 'no',
-        () => prompt.includes('--tests T0A1') ? [{ test: 'T0A1', outcome: ['A', 'B'].includes(role.L) ? 'pass' : 'fail', note: '' }] : []),
-        process: role.tag === 'r1' && role.L === 'A' ? 'None.' : '' }
-      case 'debate': {
-        const ship = role.L === 'D' ? 'D' : 'B'
-        const extra = role.L === 'C' ? { findings: [{ target: 'D', severity: 'major', kind: 'fact', statement: 'D breaks on empty input', evidence: 'T0A1 fails on D' }],
-                                          adopted: [{ from: 'B', idea: 'guard clause' }],
-                                          process: 'The digest cut the ledger at 25 items,\n so I re-read room/r0 to find 0D2.' } : {}
-        return debate(role.L, ship, extra)
-      }
-      case 'synth': return synth()
-      case 'ratify': return ratify(true)
-      default: throw new Error(`unexpected role ${role.kind}`)
+const consensusHandler = async (role, prompt) => {
+  switch (role.kind) {
+    case 'setup': return SETUP('test-consensus')
+    case 'solve': return solve(role.L, { process: `Solve note from ${role.L}.`, ...(role.L === 'A'
+      ? { tests: [{ id: 'T0A1', purpose: 'empty input returns []', command: 'phpunit T0A1Test.php' }] } : {}) })
+    case 'check': return { ...check(prompt, () => 'verified', () => 'no',
+      () => prompt.includes('--tests T0A1') ? [{ test: 'T0A1', outcome: ['A', 'B'].includes(role.L) ? 'pass' : 'fail', note: '' }] : []),
+      process: role.tag === 'r1' && role.L === 'A' ? 'None.' : '' }
+    case 'debate': {
+      const ship = role.L === 'D' ? 'D' : 'B'
+      const extra = role.L === 'C' ? { findings: [{ target: 'D', severity: 'major', kind: 'fact', statement: 'D breaks on empty input', evidence: 'T0A1 fails on D' }],
+                                        adopted: [{ from: 'B', idea: 'guard clause' }],
+                                        process: 'The digest cut the ledger at 25 items,\n so I re-read room/r0 to find 0D2.' } : {}
+      return debate(role.L, ship, extra)
     }
-  }, 'Fix the empty-input crash in Parser::parse')
+    case 'synth': return synth()
+    case 'ratify': return ratify(true)
+    default: throw new Error(`unexpected role ${role.kind}`)
+  }
+}
+const CONSENSUS_TASK = 'Fix the empty-input crash in Parser::parse'
+
+async function scenarioConsensus() {
+  const { result, calls, logs } = await run('consensus', consensusHandler, CONSENSUS_TASK)
 
   assert.equal(result.status, 'converged', JSON.stringify(result.outcome))
   assert.equal(result.final.author, 'B')
@@ -1898,27 +1927,65 @@ const INTAKE = (tier, o = {}) => ({
 })
 const NOT_BIG = { tooBig: { tier: '', reason: '' } }
 // Tier-specific scenarios exercise the direct intake path. The clean Simple golden includes shaping.
-const factory = (name, handler, args, hooks = {}) => run(name, handler,
-  name === 'factory-simple' ? args : typeof args === 'string' ? '--no-brief ' + args : { brief: false, ...args },
-  { ...hooks, workflow: 'factory' })
+// Every run that reaches routing is also run the way a delegating Factory would run it (childAB).
+const factory = async (name, handler, args, hooks = {}) => {
+  const a = name === 'factory-simple' ? args : typeof args === 'string' ? '--no-brief ' + args : { brief: false, ...args }
+  const first = await run(name, handler, a, { ...hooks, workflow: 'factory' })
+  if (first.logs.some(l => /^factory: tier /.test(l))) await childAB(name, first, a, hooks)
+  return first
+}
+
+// The child A/B: a run of inline Factory against the same run through the built children, Factory
+// stopping at routing and handing the tier over in an envelope (factoryFromHandoff). Both arms
+// replay the first run's answers, so a scenario that counts its calls answers each arm alike, and
+// both run with the budget meter on, so the usage section and the meter's log lines are compared
+// too. The prompts, the logs and the result must be the same, and one child runs per tier: one plus
+// one per escalation line. Neither arm adds to the suite-wide prompt lists.
+const AB_RUNS = new Map()
+async function childAB(name, first, args, hooks = {}) {
+  const replay = () => {
+    const left = first.answers.slice()
+    return async (role, p, opts) => {
+      const i = left.findIndex(x => x.label === (opts.label || '') && x.prompt === p)
+      assert.ok(i >= 0, `${name} A/B: the first run gave no answer to ${opts.label}`)
+      const [x] = left.splice(i, 1)
+      if (x.error) throw x.error
+      return x.out === undefined ? undefined : structuredClone(x.out)
+    }
+  }
+  const arm = via => run(`ab-${via}:${name}`, replay(), args, { ...hooks, workflow: 'factory', meter: true, collect: false, via })
+  const inline = await arm('inline')
+  const child = await arm('factory')
+  const prompts = r => r.calls.map(c => [c.label, c.raw ?? c.prompt])
+  assert.ok(inline.calls.length > 0 && child.children.ran.length > 0, `${name} A/B: nothing ran`)
+  assert.deepEqual(prompts(inline), prompts(first), `${name} A/B: the replay asks what the first run asked`)
+  assert.deepEqual(prompts(child), prompts(inline), `${name} A/B: prompts`)
+  assert.deepEqual(child.logs, inline.logs, `${name} A/B: logs`)
+  assert.equal(JSON.stringify(child.result), JSON.stringify(inline.result), `${name} A/B: result`)
+  const escalations = inline.logs.filter(l => /^factory: escalating from /.test(l)).length
+  assert.equal(child.children.ran.length, 1 + escalations, `${name} A/B: one child per tier`)
+  const runs = AB_RUNS.get(name) || []
+  AB_RUNS.set(name, [...runs, child.children.handoffs.map(h => h.tier)])
+}
 const factsIn = prompt => JSON.parse(prompt.match(/## Run facts \(data\)\n\n```json\n([\s\S]*?)\n```/)[1])
 const LOG_TASK = 'Add a debug log line with the retry count in Fetcher::retry'
 
-async function scenarioFactorySimple() {
-  const handler = async (role, prompt) => {
-    switch (role.kind) {
-      case 'brief-shape':
-      case 'brief-challenge':
-        return { brief: { outcome: 'Log the retry count at debug level.', purpose: 'Let operators identify repeated retries.', scope: 'Fetcher retries.',
-          nonGoals: 'Changing the retry policy.', acceptanceExamples: ['The second retry logs 2.'], verification: 'Observe the retry log.',
-          delegated: ['testing', 'implementation', 'internal design'] }, questions: [], briefFile: '/tmp/proj/.council/brief-one/BRIEF.json' }
-      case 'intake': return INTAKE('simple')
-      case 'setup': return { ...SETUP('test-fsimple'), refs: [{ source: '/tmp/proj/.council/brief-one/BRIEF.json', path: '/tmp/proj/.council/test-fsimple/refs/BRIEF.json', inWorktrees: false }], criteria: [{ id: 'C1', text: 'logs the retry count at debug level' }] }
-      case 'solve': return solve(role.L, NOT_BIG)
-      case 'check': return check(prompt, () => 'verified', () => 'no', () => [], { criteria: [{ criterion: 'C1', status: 'met', note: '' }] })
-      default: throw new Error(`unexpected role ${role.kind}`)
-    }
+const simpleHandler = async (role, prompt) => {
+  switch (role.kind) {
+    case 'brief-shape':
+    case 'brief-challenge':
+      return { brief: { outcome: 'Log the retry count at debug level.', purpose: 'Let operators identify repeated retries.', scope: 'Fetcher retries.',
+        nonGoals: 'Changing the retry policy.', acceptanceExamples: ['The second retry logs 2.'], verification: 'Observe the retry log.',
+        delegated: ['testing', 'implementation', 'internal design'] }, questions: [], briefFile: '/tmp/proj/.council/brief-one/BRIEF.json' }
+    case 'intake': return INTAKE('simple')
+    case 'setup': return { ...SETUP('test-fsimple'), refs: [{ source: '/tmp/proj/.council/brief-one/BRIEF.json', path: '/tmp/proj/.council/test-fsimple/refs/BRIEF.json', inWorktrees: false }], criteria: [{ id: 'C1', text: 'logs the retry count at debug level' }] }
+    case 'solve': return solve(role.L, NOT_BIG)
+    case 'check': return check(prompt, () => 'verified', () => 'no', () => [], { criteria: [{ criterion: 'C1', status: 'met', note: '' }] })
+    default: throw new Error(`unexpected role ${role.kind}`)
   }
+}
+async function scenarioFactorySimple() {
+  const handler = simpleHandler
   const { result, calls } = await factory('factory-simple', handler, { task: LOG_TASK })
   assert.deepEqual([result.status, result.tier, result.factory.chosenBy, result.final.readiness.state], ['done', 'simple', 'intake', 'ready'])
   assert.deepEqual(calls.map(c => c.role.kind), ['brief-shape', 'brief-challenge', 'intake', 'setup', 'solve', 'check', 'audit', 'record'], 'no spec review, debate, ratification or model retro')
@@ -1942,7 +2009,39 @@ async function scenarioFactorySimple() {
   assert.deepEqual([facts.workflow, facts.tier, facts.chosenBy, facts.escalation, facts.readiness, facts.signals.files], ['factory', 'simple', 'intake', null, 'ready', 1])
   assert.ok(call('record').prompt.includes('retro --facts-only --run-dir'))
   assert.equal(result.retro.recorded, true)
-  return 'goal brief and challenge → intake → one Sonnet change, the neutral check, one Astra review; facts recorded, no model retro (8 turns)'
+
+  // The envelope Factory would hand a child at routing carries the whole pre-route state: the
+  // settled brief, the diagnostic history of the shaping, challenge and intake turns, and their count.
+  const note = 'The shaping prompt named no repository to read.'
+  const shaped = async (role, prompt, opts) => role.kind === 'brief-shape' ? { ...await handler(role, prompt, opts), process: note } : handler(role, prompt, opts)
+  const routed = await run('factory-simple-route', shaped, { task: LOG_TASK }, { workflow: 'factory', via: 'route', meter: true })
+  const h = routed.result.handoff
+  assert.equal(routed.result.result, null)
+  assert.deepEqual(routed.calls.map(c => c.role.kind), ['brief-shape', 'brief-challenge', 'intake'])
+  assert.ok(!routed.logs.some(l => /^factory: tier /.test(l)), 'routing is where the envelope is taken')
+  assert.deepEqual([h.tier, h.control.turns, h.control.meterStart], ['simple', 3, 5000])
+  assert.deepEqual([h.factory.brief.state, h.factory.brief.brief.outcome, h.factory.briefFile], ['settled', 'Log the retry count at debug level.', '/tmp/proj/.council/brief-one/BRIEF.json'])
+  assert.deepEqual(['tier', 'chosenBy', 'asked', 'recommended'].map(k => h.factory[k]), ['tier', 'chosenBy', 'asked', 'recommended'].map(k => result.factory[k]), 'the record the inline run reported')
+  assert.deepEqual(h.carried.turnLog.map(t => t.turn), ['brief shape', 'brief challenge', 'intake'])
+  assert.deepEqual(Object.keys(h.carried), ['turnLog', 'processNotes', 'notes', 'relayFailures', 'vendorTimes'])
+  assert.ok(Object.values(h.carried).every(Array.isArray))
+  assert.deepEqual(h.carried.processNotes, [{ turn: 'brief shape', role: 'intake', who: 'opus', text: note }])
+  const lib = loadLib()
+  assert.equal(lib.readHandoff({ factoryHandoff: h }, lib.childWorkflow(h).replace('dark-factory:', '')), h, 'the child accepts it')
+
+  // A shaped explanation stops after routing, with nothing run in the child.
+  const explainArgs = { task: LOG_TASK, explain: true }
+  const explained = await run('factory-simple-explain', handler, explainArgs, { workflow: 'factory' })
+  assert.deepEqual([explained.result.status, explained.calls.map(c => c.role.kind)], ['explained', ['brief-shape', 'brief-challenge', 'intake']])
+  await childAB('factory-simple-explain', explained, explainArgs)
+  // A turn budget spent by intake stops each route at its first turn: Simple and the Fix council
+  // alike come back blocked, with no tier wrapper.
+  for (const [name, tier] of [['factory-simple-limit', 'simple'], ['factory-fix-limit', 'fix']]) {
+    const limited = await factory(name, async role => role.kind === 'intake' ? INTAKE(tier) : handler(role), { task: LOG_TASK, maxTurns: 1 })
+    assert.deepEqual([limited.result.status, limited.result.stopReason, 'factory' in limited.result, 'forTheOrchestrator' in limited.result], ['blocked', 'Run turn budget exhausted (1).', false, false], name)
+    assert.deepEqual(limited.calls.map(c => c.role.kind), ['intake'], name)
+  }
+  return 'goal brief and challenge → intake → one Sonnet change, the neutral check, one Astra review; facts recorded, no model retro (8 turns); the routed envelope carries the shaped state'
 }
 
 // The criteria and the verification command the user supplied are checked against what setup
@@ -2564,10 +2663,58 @@ function scenarioHeadlessPrompts() {
   return 'headless permission guidance and recovery prompt match reviewed goldens'
 }
 
+// A direct /council run, whatever shape its args take, runs as it did before the council could take a
+// Factory handoff: a string, {task}, and {task, factoryHandoff} (two keys, so not a handoff) give the
+// same prompts, logs and result, and those prompts are the reviewed consensus goldens.
+async function scenarioDirectCouncil() {
+  const routed = await run('direct-envelope', async () => INTAKE('fix'), { task: CONSENSUS_TASK, brief: false }, { workflow: 'factory', via: 'route' })
+  const factoryHandoff = routed.result.handoff
+  assert.equal(factoryHandoff.strategy, 'independent')
+  const runs = {
+    string: await run('direct-string', consensusHandler, CONSENSUS_TASK),
+    task: await run('direct-task', consensusHandler, { task: CONSENSUS_TASK }),
+    handoff: await run('direct-handoff', consensusHandler, { task: CONSENSUS_TASK, factoryHandoff }),
+  }
+  const seen = r => ({ prompts: r.calls.map(c => [c.label, c.raw ?? c.prompt]), logs: r.logs, result: JSON.parse(JSON.stringify(r.result)) })
+  assert.equal(runs.string.result.status, 'converged')
+  for (const [shape, r] of Object.entries(runs)) assert.deepEqual(seen(r), seen(runs.string), `${shape} args`)
+  checkGoldens('consensus', runs.string.calls)
+  return 'string, {task} and {task, factoryHandoff} councils run alike, on the consensus goldens'
+}
+
+// The council child's raw response to a Factory handoff, before Factory adds anything. A run that
+// ends with a report says usage: true whatever the meter read (nonzero, zero or unavailable), and the
+// child appends no token section itself: Factory does, measured from its own start. An explanation
+// has no report of its own, so it says usage: false even though the brief gives it markdown.
+async function scenarioChildUsage() {
+  const meters = {
+    nonzero: { meter: true },
+    zero: { budget: { total: null, spent: () => 0, remaining: () => Infinity } },
+    unavailable: { budget: {} },
+  }
+  const inline = await run('child-usage-inline', simpleHandler, { task: LOG_TASK }, { workflow: 'factory', collect: false, meter: true })
+  assert.ok(inline.result.report.markdown.includes('### Token use'), 'inline Factory appends the section the child leaves to it')
+  for (const [name, hooks] of Object.entries(meters)) {
+    const r = await run(`child-usage-${name}`, simpleHandler, { task: LOG_TASK }, { via: 'child', collect: false, ...hooks })
+    const out = r.result.result
+    assert.deepEqual(Object.keys(out), ['factoryChild', 'final', 'usage'], name)
+    assert.deepEqual([out.factoryChild, out.usage, out.final.status, out.final.tier, out.final.final.readiness.state], [1, true, 'done', 'simple', 'ready'], name)
+    assert.deepEqual(r.calls.map(c => c.role.kind), ['brief-shape', 'brief-challenge', 'intake', 'setup', 'solve', 'check', 'audit', 'record'], name)
+    assert.ok(out.final.report.markdown.includes('### Simple change, by Claude Sonnet') && out.final.report.markdown.includes('Brief file: '), name)
+    assert.ok(!out.final.report.markdown.includes('### Token use'), `${name}: the child adds no token section`)
+  }
+  const explained = await run('child-usage-explain', simpleHandler, { task: LOG_TASK, explain: true }, { via: 'child', collect: false, meter: true })
+  const out = explained.result.result
+  assert.deepEqual([out.factoryChild, out.usage, out.final.status], [1, false, 'explained'])
+  assert.ok(out.final.report.markdown.startsWith('### How the run went\n\n') && !out.final.report.markdown.includes('### Token use'), 'the brief gives the explanation its only markdown')
+  assert.deepEqual(explained.calls.map(c => c.role.kind), ['brief-shape', 'brief-challenge', 'intake'], 'an explanation runs no turn in the child')
+  return 'a reported council child run says usage: true at any meter reading and adds no token section; a brief-shaped explanation says usage: false'
+}
+
 const ONLY = process.env.SIM_ONLY ? process.env.SIM_ONLY.split(',') : null    // SIM_ONLY=scenarioAgy,scenarioBallot
 for (const [name, fn] of Object.entries({ scenarioConsensus, scenarioDeadlock, scenarioEscalation, scenarioFailures, scenarioDirty, scenarioFocus, scenarioSandbox, scenarioPlan, scenarioPlanMissing, scenarioRefs, scenarioTranscript, scenarioRetroOff, scenarioRetroSave, scenarioLineup, scenarioAgy, scenarioLateEscalation, scenarioModeAndGuidance, scenarioInitDocs, scenarioRelayErrors, scenarioPreflight, scenarioOpenRouter, scenarioReadiness, scenarioApproval, scenarioBallot, scenarioSeatRunErrors, scenarioMeasure, scenarioPreflightCli, scenarioBlind, scenarioAudit, scenarioSpec,
   scenarioFactorySimple, scenarioSetupKeeps, scenarioFactoryFindings, scenarioFactoryEscalate, scenarioFactorySpecAsk, scenarioFactoryHandUp, scenarioFactoryTier, scenarioFactoryRoute, scenarioFactorySplit,
-  scenarioFactoryFeature, scenarioFactoryFeatureHard, scenarioFactoryArchitecture, scenarioFactoryFeatureToArchitecture, scenarioFactsSave, scenarioHeadlessPrompts })) {
+  scenarioFactoryFeature, scenarioFactoryFeatureHard, scenarioFactoryArchitecture, scenarioFactoryFeatureToArchitecture, scenarioFactsSave, scenarioHeadlessPrompts, scenarioDirectCouncil, scenarioChildUsage })) {
   if (ONLY && !ONLY.includes(name)) continue
   try {
     console.log(`ok   ${name}: ${await fn()}`)
@@ -2577,4 +2724,21 @@ for (const [name, fn] of Object.entries({ scenarioConsensus, scenarioDeadlock, s
     if (process.env.VERBOSE) console.log(e.stack)
   }
 }
+// Every routing scenario took the child A/B, and the ones that hand up took the hand-up loop.
+const AB_REQUIRED = {
+  scenarioFactorySimple: ['factory-simple', 'factory-simple-explain', 'factory-simple-limit', 'factory-fix-limit'],
+  scenarioFactoryFindings: ['factory-findings'],
+  scenarioFactoryEscalate: ['factory-escalate', 'factory-escalate-meter'],
+  scenarioFactoryHandUp: ['factory-handup'],
+  scenarioFactoryTier: ['factory-tier-kept', 'factory-tier-string'],
+  scenarioFactoryFeature: ['factory-feature'],
+  scenarioFactoryFeatureHard: ['factory-feature-hard'],
+  scenarioFactoryArchitecture: ['factory-architecture'],
+  scenarioFactoryFeatureToArchitecture: ['factory-feature-arch'],
+}
+const AB_HANDUPS = ['factory-escalate', 'factory-escalate-meter', 'factory-handup', 'factory-feature-arch']
+const missed = Object.entries(AB_REQUIRED).filter(([scenario]) => !ONLY || ONLY.includes(scenario)).flatMap(([, names]) => names)
+  .filter(name => !AB_RUNS.has(name) || (AB_HANDUPS.includes(name) && AB_RUNS.get(name).some(tiers => tiers.length < 2)))
+if (missed.length) { failed++; console.log(`FAIL child A/B: not compared, or no hand-up taken: ${missed.join(', ')}`) }
+else console.log(`ok   child A/B: ${[...AB_RUNS.values()].flat().length} runs compared (${[...AB_RUNS].map(([n, runs]) => `${n} ${runs.map(t => t.join('>')).join(', ')}`).join('; ')})`)
 process.exit(failed ? 1 : 0)

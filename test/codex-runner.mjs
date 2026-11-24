@@ -6,7 +6,7 @@ import { join, resolve, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { execFileSync, spawn, spawnSync } from 'node:child_process'
 import { parseCLI, resultExitCode, validateResult, createLimiter, createRuntime, runWorkflow, keepAwake, briefResult } from '../plugins/dark-factory/lib/codex-runner.mjs'
-import { LIB } from '../tools/sources.mjs'
+import { LIB, HANDOFF_LIB } from '../tools/sources.mjs'
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const cli = join(root, 'plugins/dark-factory/bin/dark-factory-codex')
@@ -211,7 +211,7 @@ print(json.dumps(out))
   const runtime = createRuntime({ repo: dir, hostRunDir: runDir, timeoutMin: 1,
     env: { ...process.env, PATH: `${bin}:${process.env.PATH}`, CLAUDE_CONFIG_DIR: join(dir, 'claude-home'),
       RECOVERY_TEST_POST: post, RECOVERY_TEST_LOG: log, COUNCIL_JOB_POLL: '0.01' } })
-  const source = [...LIB, 'src/boot.js', 'src/schemas.js', 'src/turns-core.js', 'src/turns.js'].map(f => readFileSync(join(root, f), 'utf8')).join('\n')
+  const source = [...LIB, ...HANDOFF_LIB, 'src/boot.js', 'src/schemas.js', 'src/turns-core.js', 'src/turns.js'].map(f => readFileSync(join(root, f), 'utf8')).join('\n')
   const h = new Function('factoryRuntime', 'args', source + '\nreturn { state: S, seatTurn };')(runtime, { host: 'codex', task: 'Solve independently' })
   h.state.run = run
   const member = { L: 'A', key: 'sonnet', name: 'Claude Sonnet', vendor: 'claude', model: 'sonnet', effort: 'high', wt: dir }

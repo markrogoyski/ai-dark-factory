@@ -3701,6 +3701,24 @@ Explicit constraints: ${JSON.stringify({ mode: S.raw.mode, criteria: S.raw.crite
 Inspect the repository${S.raw.repo ? ' at ' + S.raw.repo : ''} and the documents relevant to this request. Read only, apart from saving the requested brief. Preserve the user's wording and decisions. If a required document cannot be found, name it in planMissing where provided. Include "testing", "implementation" and "internal design" in delegated. Keep the brief short.`
 }
 
+function nonemptyBriefText(value) {
+  return typeof value === 'string' && !!value.trim()
+}
+
+function validBriefContent(b) {
+  return b && ['outcome', 'purpose', 'scope', 'nonGoals', 'verification'].every(key => nonemptyBriefText(b[key])) &&
+    Array.isArray(b.acceptanceExamples) && b.acceptanceExamples.length && b.acceptanceExamples.every(nonemptyBriefText) &&
+    Array.isArray(b.delegated) && b.delegated.every(nonemptyBriefText)
+}
+
+// A goal brief document as Factory saves it, in the given state, with the user's decisions:
+// everything goalBriefBlock renders.
+function validBriefDocument(doc, state) {
+  return doc?.version === 1 && doc.state === state &&
+    Array.isArray(doc.decisions) && doc.decisions.every(d => d && [d.id, d.question, d.answer].every(nonemptyBriefText)) &&
+    !!validBriefContent(doc.brief)
+}
+
 function goalBriefBlock(S, full = false) {
   const doc = S.factory?.brief
   if (!doc) return ''

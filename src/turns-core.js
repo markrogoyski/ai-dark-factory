@@ -35,7 +35,8 @@ function budgetSpent() {
 function runUsage() {
   if (hostRuntime?.usage) { try { return hostRuntime.usage() } catch { return null } }
   const spent = budgetSpent()
-  return spent === null || meterStart === null ? null : { meter: Math.max(0, spent - meterStart) }
+  const start = requestControl.delegated ? requestControl.meterStart : meterStart
+  return spent === null || start === null ? null : { meter: Math.max(0, spent - start) }
 }
 
 // The past runs --explain compares with, from the runtime; null where none can be read.
@@ -86,7 +87,7 @@ function finishRun(result) {
   result.plan = result.plan || executionPlan(S)
   result.metrics = evaluationFacts(S, result, requestControl.started !== null ? hostRuntime.now() - requestControl.started : null, requestControl.turns)
   // The run's token use by model, at its end (retro included), in the report; not for the council.
-  if (S.workflowName !== 'council' && result.report && typeof result.report.markdown === 'string') {
+  if (!requestControl.delegated && S.workflowName !== 'council' && result.report && typeof result.report.markdown === 'string') {
     const section = usageSection(S, runUsage())
     if (section) result.report = { ...result.report, markdown: `${result.report.markdown}${section}` }
   }

@@ -67,7 +67,27 @@ function handoffCap(value) {
   return value === null || (Number.isSafeInteger(value) && value > 0)
 }
 
-function handoffDefect(h, workflow) {
+// The goal brief the child renders into its prompts and report, as Factory accepted it before
+// routing: absent, or a settled brief document with its saved file.
+function handoffBriefDefect(factory) {
+  if (factory.brief === undefined) return factory.briefFile === undefined ? '' : 'factory.briefFile without factory.brief'
+  if (!validBriefDocument(factory.brief, 'settled')) return 'factory.brief must be a settled goal brief'
+  const file = factory.briefFile
+  if (typeof file !== 'string' || !file.startsWith('/') || !file.endsWith('/BRIEF.json')) return 'factory.briefFile must be the absolute path of a settled brief'
+  return ''
+}
+
+// A time start and cap need the standalone runner's clock: Factory records the start exactly when
+// its host has one, and a child runs on the same host.
+function handoffClockDefect(control, clock) {
+  if (clock) return control.started === null ? 'control.started must be set on a host with a clock' : ''
+  if (control.started !== null) return 'control.started needs a clock, which the native workflow runtime lacks'
+  if (control.maxRunMin !== null) return 'control.maxRunMin needs a clock, which the native workflow runtime lacks'
+  return ''
+}
+
+// clock: whether the host reading the envelope has the standalone runner's clock.
+function handoffDefect(h, workflow, clock) {
   if (!handoffRecord(h)) return 'envelope must be an object'
   const keys = Reflect.ownKeys(h)
   if (keys.some(key => !HANDOFF_FIELDS.includes(key))) return 'unknown envelope field'
@@ -96,6 +116,8 @@ function handoffDefect(h, workflow) {
   }
   const escalationDefect = handoffChainDefect(factory.escalation, h.tier)
   if (escalationDefect) return escalationDefect
+  const briefDefect = handoffBriefDefect(factory)
+  if (briefDefect) return briefDefect
 
   const carriedDefect = handoffCarriedDefect(h.carried)
   if (carriedDefect) return carriedDefect
@@ -109,16 +131,16 @@ function handoffDefect(h, workflow) {
   if (control.meterStart !== null && (!Number.isFinite(control.meterStart) || control.meterStart < 0)) {
     return 'control.meterStart must be finite and non-negative or null'
   }
-  return ''
+  return handoffClockDefect(control, !!clock)
 }
 
-function readHandoff(args, workflow) {
+function readHandoff(args, workflow, clock) {
   if (!handoffRecord(args)) return null
   const keys = Reflect.ownKeys(args)
   if (keys.length !== 1 || keys[0] !== 'factoryHandoff') return null
 
   const handoff = args.factoryHandoff
-  const why = handoffDefect(handoff, workflow)
+  const why = handoffDefect(handoff, workflow, clock)
   if (why) throw new Error(`${workflow}: malformed factory handoff (${why}); this input comes only from dark-factory:factory.`)
   return handoff
 }
@@ -218,4 +240,10 @@ function nextHandoff(h, up) {
     carried: carriedState(up.carried),
     control: { ...h.control, turns: up.turns },
   }
+}
+
+// Whether Factory adds its usage section to a child's final result: inline, finishRun appends it
+// only to a report with markdown.
+function hasReport(result) {
+  return typeof result?.report?.markdown === 'string'
 }

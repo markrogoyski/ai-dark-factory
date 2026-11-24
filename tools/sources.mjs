@@ -43,9 +43,9 @@ export const TARGETS = {
   ensemble: { output: 'plugins/dark-factory/workflows/ensemble.js', order: [
     'src/00-meta-ensemble.js', ...LIB, 'src/boot-ensemble.js', SCHEMAS, 'src/ensemble-schemas.js', TURNS_CORE, TURNS, REPAIR, COUNCIL_FLOW, 'src/main-ensemble.js'] },
   council: { output: 'plugins/dark-factory/workflows/council.js', order: [
-    'src/00-meta.js', ...LIB, BOOT, ...DEBATE, 'src/main-council.js'] },
+    'src/00-meta.js', ...LIB, ...HANDOFF_LIB, BOOT, ...DEBATE, 'src/simple.js', 'src/feature.js', 'src/architecture.js', 'src/delegated.js', 'src/main-council.js'] },
   factory: { output: 'plugins/dark-factory/workflows/factory.js', order: [
     'src/00-meta-factory.js', ...LIB, ...PAIR_LIB, 'src/boot-factory.js', ...DEBATE, PAIR_SCHEMAS, PAIR_FLOW, 'src/simple.js', 'src/feature.js', 'src/architecture.js', 'src/brief.js', 'src/main-factory.js'] },
   pair: { output: 'plugins/dark-factory/workflows/pair.js', order: [
-    'src/00-meta-pair.js', ...LIB, ...PAIR_LIB, 'src/boot-pair.js', SCHEMAS, PAIR_SCHEMAS, TURNS_CORE, TURNS, PAIR_FLOW, 'src/main-pair.js'] },
+    'src/00-meta-pair.js', ...LIB, ...PAIR_LIB, ...HANDOFF_LIB, 'src/boot-pair.js', SCHEMAS, PAIR_SCHEMAS, TURNS_CORE, TURNS, PAIR_FLOW, 'src/main-pair.js'] },
 }

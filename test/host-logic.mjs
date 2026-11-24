@@ -5,14 +5,14 @@ import { readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { loadLib } from './lib.mjs'
-import { LIB } from '../tools/sources.mjs'
+import { LIB, HANDOFF_LIB } from '../tools/sources.mjs'
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..')
 const L = loadLib()
 const schema = { type: 'object', properties: { summary: { type: 'string' } }, required: ['summary'], additionalProperties: false }
 
 function harness(runtime, args = { task: 'Fix the parser', host: 'codex' }) {
-  const source = [...LIB, 'src/boot.js', 'src/schemas.js', 'src/turns-core.js', 'src/turns.js'].map(f => readFileSync(join(root, f), 'utf8')).join('\n')
+  const source = [...LIB, ...HANDOFF_LIB, 'src/boot.js', 'src/schemas.js', 'src/turns-core.js', 'src/turns.js'].map(f => readFileSync(join(root, f), 'utf8')).join('\n')
   const load = new Function('factoryRuntime', 'agent', 'parallel', 'log', 'phase', 'args', source +
     '\nreturn { state: S, control: requestControl, controlledRun, ask, seatTurn, externalTurn, panelRun, recordFacts, runRetro };')
   return load(runtime, () => { throw new Error('unexpected Claude runtime call') }, jobs => Promise.all(jobs.map(f => f())), () => {}, () => {}, args)

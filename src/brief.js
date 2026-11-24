@@ -65,22 +65,10 @@ function acceptBrief(saved, state) {
   const doc = saved?.document
   const filename = state === 'settled' ? '/BRIEF.json' : '/BRIEF.provisional.json'
   if (typeof saved?.briefFile !== 'string' || !saved.briefFile.startsWith('/') || !saved.briefFile.endsWith(filename) ||
-      doc?.version !== 1 || doc.state !== state ||
-      !Array.isArray(doc.decisions) || !doc.decisions.every(d => d && [d.id, d.question, d.answer].every(nonemptyBriefText)) ||
-      !validBriefContent(doc.brief)) return failure(S, 'failed', saved?.error || 'Factory could not read or save a valid goal brief.')
+      !validBriefDocument(doc, state)) return failure(S, 'failed', saved?.error || 'Factory could not read or save a valid goal brief.')
   S.factory.brief = { ...doc, brief: { ...doc.brief, delegated: delegatedWithPolicy(doc.brief.delegated) } }
   S.factory.briefFile = saved.briefFile
   return null
-}
-
-function nonemptyBriefText(value) {
-  return typeof value === 'string' && !!value.trim()
-}
-
-function validBriefContent(b) {
-  return b && ['outcome', 'purpose', 'scope', 'nonGoals', 'verification'].every(key => nonemptyBriefText(b[key])) &&
-    Array.isArray(b.acceptanceExamples) && b.acceptanceExamples.length && b.acceptanceExamples.every(nonemptyBriefText) &&
-    Array.isArray(b.delegated) && b.delegated.every(nonemptyBriefText)
 }
 
 // Delegating testing, implementation and internal design is the factory's policy, not something

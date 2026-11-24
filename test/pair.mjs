@@ -9,6 +9,7 @@ import { fileURLToPath } from 'node:url'
 import { loadLib } from './lib.mjs'
 import { validateResult, briefResult } from '../plugins/dark-factory/lib/codex-runner.mjs'
 import { contract, mapping, challenges, replay, helperRecord } from './fixtures/pair-contract.mjs'
+import { routedHandoff, workflowHost, factoryFromHandoff } from './fixtures/workflow-host.mjs'
 
 const L = loadLib()
 const root = new URL('../', import.meta.url)
@@ -55,15 +56,29 @@ const baseRecord = () => helperRecord({ status: 'done', error: '', snapshot: {
   ref: 'refs/council/pair-test/A-base', tree: 'b'.repeat(40), diff: '/repo/.council/pair-test/room/base/A.diff',
 }, suite: { ran: true, passed: true, command: 'node test.cjs', failureKind: '', log: '/repo/.council/pair-test/logs/suite-A-base.log' } })
 
-// options.meter makes the budget read 5000 + 1000 per native or hosted agent dispatch.
+// options.meter makes the budget read 5000 + 1000 per native or hosted agent dispatch; options.budget
+// replaces the meter. options.clock gives the hosted runtime a clock that moves on that many
+// milliseconds at each read. options.child runs Factory up to routing, then the built child it routes to,
+// and returns the child's raw response. options.brief answers the goal brief turns. A factory: true
+// run is also compared with the same run through the Pair child (factoryAB).
 async function run(options = {}) {
-  const calls = [], measurements = [], phases = [], baselines = [], events = [], logs = []
-  let reviewNumber = 0, agentCalls = 0
-  const budget = options.meter ? { total: null, spent: () => 5000 + 1000 * agentCalls, remaining: () => Infinity } : {}
+  const first = await runOnce(options)
+  if (options.factory) await factoryAB(options)
+  return first
+}
+
+// options.via: 'child' plays a Factory that delegates: it runs Factory up to routing, then the
+// built Pair child from the envelope, and adds the usage section itself (factoryFromHandoff).
+// dispatches records each dispatch where it leaves the workflow, as [transport, label, prompt]: a
+// native agent() before the relay is unpacked, and the hosted runtime's agent and turn.
+async function runOnce(options = {}) {
+  const calls = [], measurements = [], phases = [], baselines = [], events = [], logs = [], dispatches = []
+  let reviewNumber = 0, agentCalls = 0, clockReads = 0
+  const budget = options.budget || (options.meter ? { total: null, spent: () => 5000 + 1000 * agentCalls, remaining: () => Infinity } : {})
   async function respond(prompt, schema, meta) {
     let value = defaults(schema)
     // A native stop's record turn is 'stop'; the check before a continuation is 'resume'.
-    const kind = 'runDir' in schema.properties ? 'setup' : 'design' in schema.properties ? 'author'
+    const kind = options.brief && 'brief' in schema.properties ? 'brief' : 'runDir' in schema.properties ? 'setup' : 'design' in schema.properties ? 'author'
       : 'version' in schema.properties ? 'review' : 'snapshot' in schema.properties ? 'measure' : 'worked' in schema.properties ? 'retro'
       : 'findings' in schema.properties ? 'spec'
       : 'reason' in schema.properties && 'status' in schema.properties ? (String(meta.label).startsWith('stop ') ? 'stop' : 'resume')
@@ -74,6 +89,7 @@ async function run(options = {}) {
     if (kind === 'setup') Object.assign(value, setup(), typeof options.setup === 'function' ? options.setup(call) : options.setup)
     else if (kind === 'intake') Object.assign(value, { status: 'ok', tier: 'simple', mode: 'implement', strategy: 'pair', reasons: 'A scoped change.' })
     else if (kind === 'record') Object.assign(value, { saved: '/x/retros/facts.json' })
+    else if (kind === 'brief') Object.assign(value, options.brief(call))
     else if (kind === 'author') {
       Object.assign(value, { status: 'done', summary: 'Implemented the behavior.', design: 'Implement the behavior and cover it with tests.', notes: 'Continue with the boundary case.' })
       Object.assign(value, { testContract: contract(), replayMapping: mapping() })
@@ -108,6 +124,7 @@ async function run(options = {}) {
   }
   async function agent(prompt, opts) {
     agentCalls++
+    dispatches.push(['native', opts.label, prompt])
     const match = prompt.match(/=====BEGIN PAYLOAD \S+=====\n([\s\S]*)\n=====END PAYLOAD/)
     if (!match || opts.label === 'retro') return respond(prompt, opts.schema, opts)
     const payload = match[1]
@@ -118,10 +135,12 @@ async function run(options = {}) {
   const runtime = options.native ? undefined : {
     agent: request => {
       agentCalls++
+      dispatches.push(['agent', request.label, request.prompt])
       return respond(request.prompt, request.schema, request)
     },
     turn: async request => {
       agentCalls++
+      dispatches.push(['turn', request.label, request.prompt])
       const value = await respond(request.prompt, request.schema, request)
       return value && { status: 'done', result: value }
     }, measure: async request => {
@@ -133,10 +152,41 @@ async function run(options = {}) {
       const full = helperRecord(await measure(request))
       return options.record ? options.record(full) : full
     },
+    ...(options.clock ? { now: () => options.clock * clockReads++ } : {}),
   }
-  const result = await (options.factory ? executeFactory : execute)(agent, () => { throw new Error('Pair must not launch a panel') }, null,
-    title => phases.push(title), line => logs.push(line), { task: 'Implement the behavior', repo: '/repo', ...(options.factory ? { brief: false } : {}), ...(options.native ? {} : { host: 'codex' }), ...options.args }, budget, null, runtime)
-  return { result, calls, measurements, phases, baselines, events, logs, agentCalls }
+  const panel = () => { throw new Error('Pair must not launch a panel') }
+  const phase = title => phases.push(title), log = line => logs.push(line)
+  const args = { task: 'Implement the behavior', repo: '/repo', ...(options.factory || options.child ? { brief: false } : {}), ...(options.native ? {} : { host: 'codex' }), ...options.args }
+  const host = { agent, parallel: panel, pipeline: null, phase, log, budget, factoryRuntime: runtime }
+  let result, ran = null
+  if (options.child) {
+    const routed = await routedHandoff(host, args)
+    result = routed.handoff ? await workflowHost(host).workflow(L.childWorkflow(routed.handoff), { factoryHandoff: routed.handoff }) : routed.result
+  } else if (options.via === 'child') ({ result, ran } = await factoryFromHandoff(host, args))
+  else result = await (options.factory ? executeFactory : execute)(agent, panel, null, phase, log, args, budget, null, runtime)
+  return { result, calls, measurements, phases, baselines, events, logs, agentCalls, dispatches, ran }
+}
+
+// The Pair A/B: a Factory Pair run, inline on factory.js against the same run through the built
+// Pair child, once with the budget meter on (so the usage section and the meter's log lines are
+// compared) and once as the run itself was metered. Both arms answer from the same options, on the
+// same host; everything each records must be equal, and exactly one child, Pair, must run.
+// A hosted request carries callbacks (onResult), a new closure on each run, compared by name.
+const comparable = v => typeof v === 'function' ? `[function ${v.name}]` : Array.isArray(v) ? v.map(comparable)
+  : v && typeof v === 'object' ? Object.fromEntries(Object.entries(v).map(([k, x]) => [k, comparable(x)])) : v
+let abComparisons = 0
+async function factoryAB(options) {
+  for (const meter of new Set([true, !!options.meter])) {
+    const why = `Factory Pair A/B (${options.native ? 'native' : 'hosted'}, meter ${meter}, args ${JSON.stringify(options.args || {})})`
+    const inline = await runOnce({ ...options, meter })
+    const child = await runOnce({ ...options, meter, via: 'child' })
+    assert.ok(inline.dispatches.length > 0, `${why}: nothing was dispatched`)
+    assert.deepEqual(child.dispatches, inline.dispatches, `${why}: dispatches`)
+    for (const key of ['calls', 'measurements', 'logs', 'phases', 'events', 'baselines', 'agentCalls']) assert.deepEqual(comparable(child[key]), comparable(inline[key]), `${why}: ${key}`)
+    assert.equal(JSON.stringify(child.result), JSON.stringify(inline.result), `${why}: result`)
+    assert.deepEqual(child.ran.map(r => r.name), ['dark-factory:pair'], `${why}: the children run`)
+    abComparisons++
+  }
 }
 
 test('pair selects the author and opposite-vendor reviewer without council roles', () => {
@@ -2526,3 +2576,101 @@ for (const native of [true, false]) {
     assert.doesNotMatch(plain.result.report.markdown, /### Token use/)
   })
 }
+
+// A direct /pair run, on either host and with runtime: "cli", runs as it did before Pair could take
+// a Factory handoff: {task, factoryHandoff} (two keys, so not a handoff) gives the same dispatches,
+// measurements, logs and result as {task} on each host, and the CLI transport passes the stray key
+// on to the standalone runner with nothing else changed. {task} itself is checked by the tests above.
+const pairSeen = r => comparable({ calls: r.calls.map(c => [c.label, c.kind, c.model, c.prompt]), measurements: r.measurements, phases: r.phases,
+  baselines: r.baselines, events: r.events, logs: r.logs, agentCalls: r.agentCalls, result: JSON.parse(JSON.stringify(r.result)) })
+// The Pair child's raw response to a Factory handoff, before Factory adds anything. A run that ends
+// with a report says usage: true whatever the meter read, and the child appends no token section
+// itself. An explanation has no report of its own, so it says usage: false even when the goal brief
+// gives it markdown.
+test('the Pair child returns its final result raw, with the usage flag Factory reads', async () => {
+  const meters = { nonzero: { meter: true }, zero: { budget: { total: null, spent: () => 0, remaining: () => Infinity } }, unavailable: { budget: {} } }
+  for (const native of [true, false]) {
+    for (const [name, meter] of Object.entries(meters)) {
+      const why = `${native ? 'native' : 'hosted'} ${name}`
+      const { result: out, events } = await run({ native, child: true, ...meter })
+      assert.deepEqual(Object.keys(out), ['factoryChild', 'final', 'usage'], why)
+      assert.deepEqual([out.factoryChild, out.usage, out.final.status, out.final.workflow, out.final.tier, out.final.strategy], [1, true, 'done', 'factory', 'simple', 'pair'], why)
+      assert.equal(events[0], 'intake', why)
+      assert.ok(!out.final.report.markdown.includes('### Token use'), `${why}: the child adds no token section`)
+    }
+  }
+  const brief = { outcome: 'The behavior works.', purpose: 'Users need it.', scope: 'The behavior.', nonGoals: 'Anything else.',
+    acceptanceExamples: ['It works.'], verification: 'Run the tests.', delegated: ['testing', 'implementation', 'internal design'] }
+  const { result: out, events } = await run({ native: true, child: true, meter: true, args: { brief: undefined, explain: true },
+    // The shaper returns the draft; the challenger, no questions and the saved file.
+    brief: call => 'questions' in call.schema.properties ? { brief, questions: [], briefFile: '/repo/.council/brief-x/BRIEF.json' } : { brief } })
+  assert.deepEqual([out.factoryChild, out.usage, out.final.status], [1, false, 'explained'])
+  assert.deepEqual(events, ['brief', 'brief', 'intake'], 'an explanation runs no turn in the child')
+  assert.ok(out.final.report.markdown.startsWith('### How the run went\n\n') && !out.final.report.markdown.includes('### Token use'), 'the brief gives the explanation its only markdown')
+})
+
+test('direct /pair runs, with or without a stray factoryHandoff key, run alike', async () => {
+  const intake = async () => ({ status: 'ok', tier: 'simple', mode: 'implement', strategy: 'pair', reasons: 'A scoped change.', planMissing: '', signals: {}, split: [] })
+  const { handoff: factoryHandoff } = await routedHandoff({ agent: intake, parallel: null, pipeline: null, phase: () => {}, log: () => {}, budget: {} }, { task: 'Implement the behavior', brief: false })
+  assert.equal(factoryHandoff.strategy, 'pair')
+  for (const native of [true, false]) {
+    const host = native ? 'native' : 'hosted'
+    const plain = await run({ native })
+    const stray = await run({ native, args: { factoryHandoff } })
+    assert.equal(plain.result.status, 'done', host)
+    assert.deepEqual(pairSeen(stray), pairSeen(plain), host)
+  }
+  const transport = async args => {
+    const calls = []
+    const agent = async (prompt, opts) => { calls.push([opts.label, opts.model, prompt]); return { result: JSON.stringify({ status: 'done', host: 'codex' }), error: '' } }
+    const result = await execute(agent, () => { throw new Error('no panel') }, null, () => {}, () => {}, args, {}, null, undefined)
+    return { calls, result }
+  }
+  const cli = await transport({ task: 'Implement the behavior', repo: '/repo', runtime: 'cli' })
+  const stray = await transport({ task: 'Implement the behavior', repo: '/repo', runtime: 'cli', factoryHandoff })
+  const ARGS_LINE = /^\{.*\}$/m
+  const runnerArgs = call => JSON.parse(call[2].match(ARGS_LINE)[0])
+  assert.deepEqual([cli.calls.length, stray.calls.length], [1, 1])
+  assert.deepEqual(runnerArgs(stray.calls[0]), { ...runnerArgs(cli.calls[0]), factoryHandoff })
+  const withoutArgs = call => [call[0], call[1], call[2].replace(ARGS_LINE, '<args>')]
+  assert.deepEqual(stray.calls.map(withoutArgs), cli.calls.map(withoutArgs))
+  assert.deepEqual(stray.result, cli.result)
+})
+
+// Factory's usage section names the helper of the run that wrote it: inside Factory's Pair, a
+// nested pair.cli overrides the top-level cli, so a delegating Factory reads the CLI from the
+// child's effective state, not from its own args.
+test('Factory Pair\'s usage section names the nested Pair helper', async () => {
+  const { result, calls } = await run({ native: true, factory: true, meter: true, args: { cli: 'factory-helper', pair: { cli: 'pair-helper' } } })
+  assert.equal(result.status, 'done')
+  assert.ok(calls.some(c => c.prompt.includes('pair-helper measure --run-dir')), 'the Pair turns use the nested helper')
+  assert.match(result.report.markdown, /### Token use[\s\S]*`pair-helper usage --run-dir '\/repo\/\.council\/pair-test'`/)
+  assert.doesNotMatch(result.report.markdown, /factory-helper/)
+})
+
+// Factory's turn and time budgets cover the whole run: the Pair child counts on from the turns
+// Factory spent before routing and reads the time from Factory's start, so it stops inside Pair
+// where inline Factory stops. On the hosted runtime, each clock read moves on half a minute.
+for (const native of [true, false]) {
+  test(`Factory Pair's turn budget stops the run inside Pair (${native ? 'native' : 'hosted'})`, async () => {
+    // The native run spends more turns than the hosted one before its first review.
+    const maxTurns = native ? 7 : 5
+    const { result, events } = await run({ native, factory: true, args: { maxTurns } })
+    assert.deepEqual([result.status, result.stopReason], ['blocked', `Run turn budget exhausted (${maxTurns}).`])
+    assert.equal(events[0], 'intake')
+    assert.ok(events.includes('author') && events.includes('review'), events.join(' '))
+  })
+}
+test('Factory Pair\'s time budget stops the hosted run inside Pair', async () => {
+  const { result, events } = await run({ factory: true, clock: 30000, args: { maxRunMin: 3 } })
+  assert.deepEqual([result.status, result.stopReason], ['blocked', 'Run time budget exhausted (3 minutes).'])
+  assert.equal(events[0], 'intake')
+  assert.ok(events.includes('author') && events.includes('review'), events.join(' '))
+})
+
+// Every run above made with factory: true was also run through the Pair child (factoryAB): the
+// unmetered runs once at the meter's on setting and once at their own, the metered ones (the
+// nested-helper run among them) once. Keep this test last.
+test('every Factory Pair run was compared with its run through the Pair child', () => {
+  assert.equal(abComparisons, 25)
+})

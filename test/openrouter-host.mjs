@@ -8,7 +8,7 @@ import { execFileSync } from 'node:child_process'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
-import { LIB, PAIR_LIB } from '../tools/sources.mjs'
+import { LIB, PAIR_LIB, HANDOFF_LIB } from '../tools/sources.mjs'
 import { createRuntime } from '../plugins/dark-factory/lib/codex-runner.mjs'
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..')
@@ -31,7 +31,7 @@ function fill(schema, key = '', top = true) {
 const ENSEMBLE_STUBS = 'async function councilSetup() { return null }\nasync function runChecks() {}'
 function harness({ boot = 'src/boot.js', args, runtime, agent, extra = '' }) {
   const bootSource = readFileSync(join(root, boot), 'utf8')
-  const lib = [...LIB, ...PAIR_LIB].map(f => readFileSync(join(root, f), 'utf8')).join('\n')
+  const lib = [...LIB, ...PAIR_LIB, ...HANDOFF_LIB].map(f => readFileSync(join(root, f), 'utf8')).join('\n')
   const rest = ['src/schemas.js', 'src/ensemble-schemas.js', 'src/pair-schemas.js', 'src/turns-core.js', 'src/turns.js', 'src/repair.js', 'src/pair.js', 'src/main-ensemble.js']
     .map(f => readFileSync(join(root, f), 'utf8').replace(/^return await .*$/m, '')).join('\n')
   const load = new Function('factoryRuntime', 'agent', 'parallel', 'log', 'phase', 'args', `${lib}\n${bootSource}\n${rest}\n${extra}

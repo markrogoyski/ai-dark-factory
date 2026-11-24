@@ -156,7 +156,7 @@ test('boot-shaped Factory controls round-trip for both strategies with and witho
       for (const chosenBy of ['intake', 'pinned', 'overruled']) {
         state.factory.chosenBy = chosenBy
         const envelope = roundTrip(L.factoryHandoff(state, control))
-        assert.deepEqual(L.readHandoff({ factoryHandoff: envelope }, workflow), envelope)
+        assert.deepEqual(L.readHandoff({ factoryHandoff: envelope }, workflow, started !== null), envelope)
       }
     }
   }
@@ -164,7 +164,7 @@ test('boot-shaped Factory controls round-trip for both strategies with and witho
 
 test('nested extensions and non-negative integer turns survive the reader', () => {
   const envelope = routedHandoff()
-  Object.assign(envelope.factory, { brief: { task: 'Fix the parser' }, briefFile: '/r/brief.json' })
+  Object.assign(envelope.factory, { brief: { ...settledBrief(), extra: { nested: true } }, briefFile: '/r/.council/brief-x/BRIEF.json' })
   Object.assign(envelope.factory.args, { futureOption: true })
   Object.assign(envelope.carried, { extra: [] })
   Object.assign(envelope.control, { extra: 'preserved', turns: Number.MAX_SAFE_INTEGER + 1 })
@@ -172,9 +172,16 @@ test('nested extensions and non-negative integer turns survive the reader', () =
   assert.equal(L.readHandoff({ factoryHandoff: carried }, 'council'), carried)
 })
 
-function assertMalformedHandoff(factoryHandoff, workflow, reason, label) {
+// A settled goal brief document, as Factory saves it before routing.
+function settledBrief() {
+  return { version: 1, state: 'settled', decisions: [{ id: 'B1', question: 'Which inputs?', answer: 'Empty input only.' }], brief: {
+    outcome: 'Empty input parses.', purpose: 'Callers pass empty files.', scope: 'The parser.', nonGoals: 'Other inputs.',
+    acceptanceExamples: ['An empty file parses to nothing.'], verification: 'Run the parser tests.', delegated: ['testing', 'implementation', 'internal design'] } }
+}
+
+function assertMalformedHandoff(factoryHandoff, workflow, reason, label, clock) {
   assert.throws(
-    () => L.readHandoff({ factoryHandoff }, workflow),
+    () => L.readHandoff({ factoryHandoff }, workflow, clock),
     { message: `${workflow}: malformed factory handoff (${reason}); this input comes only from dark-factory:factory.` },
     label,
   )
@@ -482,7 +489,7 @@ function checkEscalation(envelope, handUp, turns, notes) {
   }
   assert.deepEqual(envelope, previousEnvelope)
 
-  const received = L.readHandoff({ factoryHandoff: roundTrip(next) }, 'council')
+  const received = L.readHandoff({ factoryHandoff: roundTrip(next) }, 'council', next.control.started !== null)
   const state = L.handoffState(received)
   const inline = L.newState(L.parseConfig(L.tierArgs(factory.args, handUp.to, factory.intake), {
     workflow: attempt.workflowName, tier: handUp.to, escalation: brief,
@@ -508,4 +515,72 @@ test('Simple to Fix and Simple to Feature to Architecture keep the inline escala
     to: 'architecture', trigger: 'too-many-increments', why: 'The design needs milestones',
   }, 8, [...simpleNotes, 'Feature attempt: Note from feature'])
   assert.deepEqual(architecture.factory.escalation.earlier, feature.factory.escalation)
+})
+
+// The child renders the carried brief into its prompts and report, so the reader takes it only as
+// Factory accepted it before routing: absent, or settled with its saved file.
+test('the reader takes a carried goal brief only as Factory saved it', () => {
+  const withBrief = (brief, briefFile = '/r/.council/brief-x/BRIEF.json') => {
+    const envelope = roundTrip(routedHandoff())
+    Object.assign(envelope.factory, { brief, briefFile })
+    return envelope
+  }
+  const good = withBrief(settledBrief())
+  assert.equal(L.readHandoff({ factoryHandoff: good }, 'council'), good)
+  const broken = (change) => { const doc = settledBrief(); change(doc); return doc }
+  const rows = [
+    ['no acceptance examples', withBrief(broken(d => { delete d.brief.acceptanceExamples })), 'factory.brief must be a settled goal brief'],
+    ['empty acceptance examples', withBrief(broken(d => { d.brief.acceptanceExamples = [] })), 'factory.brief must be a settled goal brief'],
+    ['blank outcome', withBrief(broken(d => { d.brief.outcome = ' ' })), 'factory.brief must be a settled goal brief'],
+    ['delegated not a list', withBrief(broken(d => { d.brief.delegated = 'testing' })), 'factory.brief must be a settled goal brief'],
+    ['provisional', withBrief(broken(d => { d.state = 'provisional' })), 'factory.brief must be a settled goal brief'],
+    ['wrong version', withBrief(broken(d => { d.version = 2 })), 'factory.brief must be a settled goal brief'],
+    ['decision without an answer', withBrief(broken(d => { d.decisions[0].answer = '' })), 'factory.brief must be a settled goal brief'],
+    ['decisions not a list', withBrief(broken(d => { d.decisions = null })), 'factory.brief must be a settled goal brief'],
+    ['null brief', withBrief(null), 'factory.brief must be a settled goal brief'],
+    ['relative file', withBrief(settledBrief(), 'brief-x/BRIEF.json'), 'factory.briefFile must be the absolute path of a settled brief'],
+    ['provisional file', withBrief(settledBrief(), '/r/.council/brief-x/BRIEF.provisional.json'), 'factory.briefFile must be the absolute path of a settled brief'],
+  ]
+  const fileless = withBrief(settledBrief())
+  delete fileless.factory.briefFile
+  rows.push(['missing file', fileless, 'factory.briefFile must be the absolute path of a settled brief'])
+  const orphan = roundTrip(routedHandoff())
+  orphan.factory.briefFile = '/r/.council/brief-x/BRIEF.json'
+  rows.push(['file without brief', orphan, 'factory.briefFile without factory.brief'])
+  for (const [label, envelope, reason] of rows) assertMalformedHandoff(envelope, 'council', reason, label)
+})
+
+// Only the standalone runner has a clock. Factory records its start exactly when its host has one,
+// and its child runs on the same host, so a start or a time cap must match the reader's host.
+test('the reader matches the control clock to the host', () => {
+  const at = (control, clock) => {
+    const envelope = roundTrip(routedHandoff({ args: control.maxRunMin ? { maxRunMin: control.maxRunMin } : {} }))
+    Object.assign(envelope.control, control)
+    return [envelope, clock]
+  }
+  for (const [envelope, clock] of [at({ started: null }, false), at({ started: 0 }, true), at({ started: 1000, maxRunMin: 30 }, true)]) {
+    assert.equal(L.readHandoff({ factoryHandoff: envelope }, 'council', clock), envelope)
+  }
+  const rows = [
+    ['native start', at({ started: 1000 }, false), 'control.started needs a clock, which the native workflow runtime lacks'],
+    ['native start and cap', at({ started: 1000, maxRunMin: 30 }, false), 'control.started needs a clock, which the native workflow runtime lacks'],
+    ['native cap', at({ maxRunMin: 30 }, false), 'control.maxRunMin needs a clock, which the native workflow runtime lacks'],
+    ['clocked host, no start', at({ started: null }, true), 'control.started must be set on a host with a clock'],
+    ['clocked host, cap without start', at({ started: null, maxRunMin: 30 }, true), 'control.started must be set on a host with a clock'],
+  ]
+  for (const [label, [envelope, clock], reason] of rows) {
+    for (const workflow of ['council', 'pair']) {
+      const routed = workflow === 'pair' ? Object.assign(envelope, { strategy: 'pair', factory: { ...envelope.factory, strategy: 'pair' } }) : envelope
+      assertMalformedHandoff(roundTrip(routed), workflow, reason, `${workflow} ${label}`, clock)
+    }
+  }
+})
+
+// Inline, finishRun appends Factory's usage section to a report whose markdown is a string, even an
+// empty one, and to nothing else.
+test('hasReport is true exactly for a report with string markdown', () => {
+  for (const result of [{ report: { markdown: '' } }, { report: { markdown: '### Done' } }]) assert.equal(L.hasReport(result), true, JSON.stringify(result))
+  for (const result of [{ report: {} }, { report: null }, { report: { markdown: 5 } }, { report: { markdown: null } }, {}, null, undefined]) {
+    assert.equal(L.hasReport(result), false, JSON.stringify(result))
+  }
 })

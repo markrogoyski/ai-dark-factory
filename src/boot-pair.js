@@ -9,8 +9,9 @@ function pairTransport(input, hosted) {
   if (resume !== undefined && (typeof resume !== 'string' || !resume.trim())) throw new Error('pair: resume takes the hostRunDir of an earlier runtime: "cli" run.')
   return { args: rest, cli: { resume: resume || '' } }
 }
-const transport = pairTransport(args, typeof factoryRuntime !== 'undefined')
-let S = newState(parsePairConfig(transport.args))
 const hostRuntime = typeof factoryRuntime === 'undefined' ? null : factoryRuntime
-S.pair = newPairState()
-const requestControl = { started: requestClock(), turns: 0, ...S.controls }
+const delegated = readHandoff(args, 'pair', !!hostRuntime?.now)
+const transport = delegated ? { args: null, cli: null } : pairTransport(args, typeof factoryRuntime !== 'undefined')
+let S = delegated ? handoffPairState(delegated) : newState(parsePairConfig(transport.args))
+if (!delegated) S.pair = newPairState()
+const requestControl = delegated ? handoffControl(delegated) : { started: requestClock(), turns: 0, ...S.controls }
