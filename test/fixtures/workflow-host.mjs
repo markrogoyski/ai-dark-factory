@@ -6,6 +6,7 @@
 import { readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { FACTORY_CHILDREN } from '../../plugins/dark-factory/lib/codex-runner.mjs'
 import { TARGETS, HANDOFF_LIB, PAIR_LIB } from '../../tools/sources.mjs'
 import { loadLib } from '../lib.mjs'
 
@@ -18,7 +19,7 @@ const unmeta = text => text.replace(/^export const meta\s*=/m, 'const meta =')
 // host: {agent, parallel, pipeline, phase, log, budget, factoryRuntime}, shared with every child.
 // Only the named children load; any other name throws, and so does a child's own workflow() call.
 // ran records each child run as {name, args}, args as the caller passed them.
-export function workflowHost(host, { dir = join(root, 'plugins', 'dark-factory', 'workflows'), children = ['council', 'pair'] } = {}) {
+export function workflowHost(host, { dir = join(root, 'plugins', 'dark-factory', 'workflows'), children = FACTORY_CHILDREN } = {}) {
   const ran = []
   const scripts = new Map()
   const nested = () => { throw new Error('workflow() cannot be called inside a child workflow') }
@@ -31,6 +32,11 @@ export function workflowHost(host, { dir = join(root, 'plugins', 'dark-factory',
     return scripts.get(m[1])(host.agent, host.parallel, host.pipeline, host.phase, host.log, copy, host.budget, nested, host.factoryRuntime)
   }
   return { workflow, ran }
+}
+
+export function runHosted(script, host, args, opts) {
+  return script(host.agent, host.parallel, host.pipeline, host.phase, host.log, args, host.budget,
+    workflowHost(host, opts).workflow, host.factoryRuntime)
 }
 
 // Factory's source from src/, in the factory target's order, with the handoff library after the

@@ -1,12 +1,15 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync, realpathSync, existsSync, utimesSync, symlinkSync, chmodSync } from 'node:fs'
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync, realpathSync, existsSync, utimesSync, symlinkSync, chmodSync, cpSync, readdirSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve, dirname } from 'node:path'
-import { fileURLToPath } from 'node:url'
+import { fileURLToPath, pathToFileURL } from 'node:url'
 import { execFileSync, spawn, spawnSync } from 'node:child_process'
-import { parseCLI, resultExitCode, validateResult, createLimiter, createRuntime, runWorkflow, keepAwake, briefResult } from '../plugins/dark-factory/lib/codex-runner.mjs'
+import { setTimeout as delay } from 'node:timers/promises'
+import { parseCLI, resultExitCode, validateResult, createLimiter, createRuntime, runWorkflow, keepAwake, briefResult, FACTORY_CHILDREN } from '../plugins/dark-factory/lib/codex-runner.mjs'
+import { readEventLog } from '../plugins/dark-factory/lib/checkpoint.mjs'
 import { LIB, HANDOFF_LIB } from '../tools/sources.mjs'
+import { loadLib } from './lib.mjs'
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const cli = join(root, 'plugins/dark-factory/bin/dark-factory-codex')
@@ -702,4 +705,600 @@ test('resume: a runner Pair stop whose worktree changed is refused before any tu
   assert.equal(refused.status, 'failed')
   assert.equal(refused.error, 'Checkpoint worktree or snapshot changed, possibly by an interrupted write. Start a new run; no files were reset.')
   assert.equal(calls().length, before, 'no CLI launched')
+})
+
+function copyChildPlugin(t, bodies) {
+  const dir = temporary(t), repo = join(dir, 'repo'), plugin = join(dir, 'plugin')
+  initRepo(repo)
+  cpSync(join(root, 'plugins', 'dark-factory'), plugin, {
+    recursive: true, filter: path => !path.endsWith('/__pycache__'),
+  })
+  for (const [name, body] of Object.entries(bodies)) {
+    writeFileSync(join(plugin, 'workflows', `${name}.js`), `export const meta = { name: '${name}', description: 'Fixture workflow' }\n${body}\n`)
+  }
+  return { dir, repo, plugin, runnerURL: pathToFileURL(join(plugin, 'lib', 'codex-runner.mjs')).href }
+}
+
+async function childWorkflowFixture(t, bodies) {
+  const { repo, runnerURL } = copyChildPlugin(t, bodies)
+  const runner = await import(runnerURL)
+  return (workflow = 'factory', args = {}) => runner.runWorkflow(
+    { ...runner.parseCLI(['--cwd', repo, '--workflow', workflow, 'Exercise child workflow dispatch']), args },
+    { prepare: async () => null, progress: () => {}, runtime: { execute: () => assert.fail('Unexpected CLI launch') } },
+  )
+}
+
+function workflowEvents(result) {
+  return readFileSync(result.hostEvents, 'utf8').trim().split('\n').map(line => JSON.parse(line))
+    .filter(event => event.type.startsWith('workflow.') || event.type === 'log')
+    .map(event => [event.type, event.name ?? event.message])
+}
+
+test('the Factory runner registry matches the handoff child workflows', () => {
+  assert.deepEqual(FACTORY_CHILDREN, [...new Set(Object.values(loadLib().HANDOFF_CHILD))].sort())
+})
+
+test('Factory runs both children with fresh args and the same host bindings', async t => {
+  const run = await childWorkflowFixture(t, {
+    factory: `
+const input = { tag: 'one', nested: { values: [1] } }
+budget.host = { agent, parallel, pipeline, phase, log, factoryRuntime }
+budget.error = Object.assign(new Error('Child broke'), { code: 'CHILD_BROKE' })
+const first = await workflow('dark-factory:council', input)
+const second = await workflow('dark-factory:pair', { tag: 'two' })
+const third = await workflow('dark-factory:council', { tag: 'three' })
+let caught
+try {
+  await workflow('dark-factory:council', { reject: true })
+} catch (error) {
+  caught = { same: error === budget.error, message: error.message, code: error.code }
+}
+return { status: 'done', first, second, third, input, sameReturn: second === budget.pairResult, caught }
+`,
+    council: `
+if (args.reject) throw budget.error
+log(meta.name + ' ' + args.tag)
+args.nested?.values.push(2)
+const bindings = { agent, parallel, pipeline, phase, log, factoryRuntime }
+return { child: meta.name, tag: args.tag, values: args.nested?.values ?? [],
+  sharedHost: Object.keys(bindings).every(key => bindings[key] === budget.host[key]) }
+`,
+    pair: `
+log(meta.name + ' ' + args.tag)
+return budget.pairResult = { child: meta.name, tag: args.tag }
+`,
+  })
+  const result = await run()
+  assert.equal(result.status, 'done', result.error)
+  assert.deepEqual(result.first, { child: 'council', tag: 'one', values: [1, 2], sharedHost: true })
+  assert.deepEqual(result.second, { child: 'pair', tag: 'two' })
+  assert.deepEqual(result.third, { child: 'council', tag: 'three', values: [], sharedHost: true })
+  assert.deepEqual(result.input, { tag: 'one', nested: { values: [1] } })
+  assert.equal(result.sameReturn, true)
+  assert.deepEqual(result.caught, { same: true, message: 'Child broke', code: 'CHILD_BROKE' })
+  assert.equal(JSON.parse(readFileSync(join(result.hostRunDir, 'host.json'), 'utf8')).workflow, 'factory')
+  const events = workflowEvents(result)
+  assert.deepEqual(events.slice(0, 9), [
+    ['workflow.started', 'dark-factory:council'], ['log', 'council one'], ['workflow.completed', 'dark-factory:council'],
+    ['workflow.started', 'dark-factory:pair'], ['log', 'pair two'], ['workflow.completed', 'dark-factory:pair'],
+    ['workflow.started', 'dark-factory:council'], ['log', 'council three'], ['workflow.completed', 'dark-factory:council'],
+  ])
+  assert.deepEqual(events.slice(9).filter(([type]) => type === 'workflow.started'), [
+    ['workflow.started', 'dark-factory:council'],
+  ])
+})
+
+test('Factory child calls preserve structured values and omitted args', async t => {
+  const run = await childWorkflowFixture(t, {
+    factory: `
+const input = { day: new Date('2025-01-01T00:00:00Z'), counts: new Map([['a', 1]]), missing: undefined }
+const copy = await workflow('dark-factory:pair', input)
+const omitted = await workflow('dark-factory:pair')
+return { status: 'done', copy, omitted, originalCount: input.counts.get('a') }
+`,
+    pair: `
+if (args === undefined) return 'omitted'
+args.counts.set('a', 2)
+return { day: args.day.getTime(), count: args.counts.get('a'),
+  hasUndefined: Object.hasOwn(args, 'missing') && args.missing === undefined }
+`,
+  })
+  const result = await run()
+  assert.equal(result.status, 'done', result.error)
+  assert.deepEqual(result.copy, { day: Date.UTC(2025, 0, 1), count: 2, hasUndefined: true })
+  assert.equal(result.omitted, 'omitted')
+  assert.equal(result.originalCount, 1)
+})
+
+test('Factory rejects unknown and non-string workflow names before starting a child', async t => {
+  const run = await childWorkflowFixture(t, {
+    factory: `
+const cycle = {}
+cycle.self = cycle
+const hostile = { toString() { throw new Error('coerced') }, toJSON() { throw new Error('serialized') } }
+const names = ['council', 'pair', 'dark-factory:factory', 'dark-factory:ensemble', 'dark-factory:run-plan',
+  'dark-factory:missing', 'dark-factory:', 'dark-factory:pair\\n', null, undefined, 1n, Symbol('child'),
+  cycle, hostile, ['dark-factory:pair'], () => {}]
+const errors = []
+for (const name of names) {
+  try { await workflow(name, {}) } catch (error) { errors.push(error.message) }
+}
+return { status: 'done', errors }
+`,
+    council: 'return {}',
+    pair: 'return {}',
+  })
+  const result = await run()
+  assert.equal(result.status, 'done', result.error)
+  assert.deepEqual(result.errors, [
+    'council', 'pair', 'dark-factory:factory', 'dark-factory:ensemble', 'dark-factory:run-plan',
+    'dark-factory:missing', 'dark-factory:', 'dark-factory:pair\n', 'null', 'undefined', '1', 'Symbol(child)',
+    'object', 'object', 'object', 'function',
+  ].map(name => 'Unknown workflow: ' + name))
+  assert.deepEqual(workflowEvents(result), [])
+})
+
+test('runner refuses nested calls and direct Council or Pair callers', async t => {
+  const run = await childWorkflowFixture(t, {
+    factory: "return await workflow('dark-factory:council', {})",
+    council: "return await workflow(args.target ?? 'dark-factory:pair', {})",
+    pair: "return await workflow(args.target ?? 'dark-factory:council', {})",
+  })
+  const factory = await run()
+  assert.equal(factory.status, 'failed')
+  assert.equal(factory.error, 'workflow() cannot be called inside a child workflow')
+  assert.deepEqual(workflowEvents(factory).filter(([type]) => type === 'workflow.started'), [
+    ['workflow.started', 'dark-factory:council'],
+  ])
+  for (const [name, child] of [['council', 'dark-factory:pair'], ['pair', 'dark-factory:council']]) {
+    for (const target of [child, 'dark-factory:unknown', 'dark-factory:ensemble', 'council']) {
+      const result = await run(name, { target })
+      assert.equal(result.status, 'failed', name + ' calling ' + target)
+      assert.equal(result.error, `workflow() is available on this runner only to dark-factory:factory, not dark-factory:${name}`)
+      assert.deepEqual(workflowEvents(result), [])
+    }
+  }
+})
+
+test('an uncaught child error reaches the runner failure handling', async t => {
+  const run = await childWorkflowFixture(t, {
+    factory: "return await workflow('dark-factory:pair', {})",
+    pair: "throw Object.assign(new Error('Pair child failed'), { code: 'CHILD_BROKE' })",
+  })
+  const result = await run()
+  assert.equal(result.status, 'failed')
+  assert.equal(result.error, 'Pair child failed')
+})
+
+test('Factory keeps its launch child scripts across a live rebuild', async t => {
+  const { plugin, repo, runnerURL } = copyChildPlugin(t, {
+    factory: `
+log('ready to delegate')
+const first = await workflow('dark-factory:pair', {})
+log('ready to delegate again')
+const second = await workflow('dark-factory:pair', {})
+return { status: 'done', first, second, council: await workflow('dark-factory:council', {}) }
+`,
+    pair: "return 'launch Pair'",
+    council: "return 'launch Council'",
+  })
+  const runner = await import(runnerURL)
+  const { liveIdentity } = await import(pathToFileURL(join(plugin, 'lib', 'engine.mjs')).href)
+  const launchDigest = liveIdentity().packageDigest
+  const replacement = "export const meta = { name: 'pair' }\nlog('replacement ran')\nreturn 'new Pair'\n"
+  const pairPath = join(plugin, 'workflows', 'pair.js')
+  const result = await runner.runWorkflow(runner.parseCLI(['--cwd', repo, 'Use the launch workflows']), {
+    prepare: async () => null,
+    progress(line) {
+      const { type, message } = JSON.parse(line)
+      if (type === 'log' && message === 'ready to delegate') writeFileSync(pairPath, replacement)
+      if (type === 'log' && message === 'ready to delegate again') rmSync(pairPath)
+    },
+  })
+  assert.equal(result.status, 'done', result.error)
+  assert.deepEqual([result.first, result.second, result.council], ['launch Pair', 'launch Pair', 'launch Council'])
+  assert.ok(!existsSync(pairPath), 'the second dispatch used the launch script after the file was removed')
+  assert.ok(!workflowEvents(result).some(([, value]) => value === 'replacement ran'))
+  assert.equal(result.provenance.executor.packageDigest, launchDigest)
+  assert.notEqual(liveIdentity().packageDigest, launchDigest)
+})
+
+test('Factory refuses a package change during launch preparation before writing any run state', async t => {
+  const { plugin, repo, runnerURL } = copyChildPlugin(t, {
+    factory: "log('Factory ran'); return { status: 'done' }",
+  })
+  const runner = await import(runnerURL)
+  const hostBase = join(repo, '.council')
+  await assert.rejects(runner.runWorkflow(runner.parseCLI(['--cwd', repo, 'Check startup drift']), {
+    prepare: async () => {
+      writeFileSync(join(plugin, 'workflows', 'pair.js'), 'return null\n')
+      return null
+    },
+    progress: () => {},
+  }), { code: 'ENGINE_DRIFT', message: 'Engine package changed during Factory launch' })
+  // The refusal comes before host.json, args.json, events or a result: a paused run that is
+  // resumed into it keeps its saved arguments and needs-user result.
+  const hosts = readdirSync(hostBase).filter(name => name.startsWith('host-'))
+  assert.equal(hosts.length, 1)
+  assert.deepEqual(readdirSync(join(hostBase, hosts[0])), [])
+})
+
+test('Factory follows a symlinked workflows directory to its inventoried files', async t => {
+  const { plugin, repo, runnerURL } = copyChildPlugin(t, {
+    factory: "return { status: 'done', child: await workflow('dark-factory:pair', {}) }",
+    pair: "return 'Pair through a linked directory'",
+  })
+  cpSync(join(plugin, 'workflows'), join(plugin, 'workflow-files'), { recursive: true })
+  rmSync(join(plugin, 'workflows'), { recursive: true })
+  symlinkSync('workflow-files', join(plugin, 'workflows'))
+  const runner = await import(runnerURL)
+  const result = await runner.runWorkflow(runner.parseCLI(['--cwd', repo, 'Run through a linked directory']), {
+    prepare: async () => null, progress: () => {},
+  })
+  assert.equal(result.status, 'done', result.error)
+  assert.equal(result.child, 'Pair through a linked directory')
+})
+
+test('a refusal before the run starts reaches --output with its code', async t => {
+  const dir = temporary(t), output = join(dir, 'result.json')
+  const runner = await import(pathToFileURL(join(root, 'plugins', 'dark-factory', 'lib', 'codex-runner.mjs')).href)
+  const write = process.stdout.write
+  process.stdout.write = () => true
+  try { await runner.main(['--resume', join(dir, 'no-such-run'), '--output', output]) } finally {
+    process.stdout.write = write
+    process.exitCode = undefined
+  }
+  const result = JSON.parse(readFileSync(output, 'utf8'))
+  assert.equal(result.status, 'failed')
+  assert.equal(result.code, 'ENOENT')
+  assert.match(result.error, /no-such-run/)
+})
+
+test('Factory follows an internal workflow symlink to its inventoried file', async t => {
+  const { plugin, repo, runnerURL } = copyChildPlugin(t, {
+    factory: "return { status: 'done', child: await workflow('dark-factory:pair', {}) }",
+    pair: "return 'linked Pair'",
+  })
+  const workflows = join(plugin, 'workflows')
+  for (const name of ['factory', 'pair']) {
+    writeFileSync(join(workflows, `${name}-target.js`), readFileSync(join(workflows, `${name}.js`)))
+    rmSync(join(workflows, `${name}.js`))
+    symlinkSync(`${name}-target.js`, join(workflows, `${name}.js`))
+  }
+  const runner = await import(runnerURL)
+  const result = await runner.runWorkflow(runner.parseCLI(['--cwd', repo, 'Run linked workflows']), {
+    prepare: async () => null, progress: () => {},
+  })
+  assert.equal(result.status, 'done', result.error)
+  assert.equal(result.child, 'linked Pair')
+})
+
+test('Factory checks for a complete compilable workflow set before running the parent', async t => {
+  const { plugin, repo, runnerURL } = copyChildPlugin(t, {
+    factory: "log('Factory ran'); return { status: 'done' }",
+    pair: 'return )',
+  })
+  const runner = await import(runnerURL)
+  const run = () => runner.runWorkflow(runner.parseCLI(['--cwd', repo, 'Check Factory workflow files']), {
+    prepare: async () => null, progress: () => {},
+  })
+  const invalid = await run()
+  assert.equal(invalid.status, 'failed')
+  assert.match(invalid.error, /Unexpected token/)
+  assert.deepEqual(workflowEvents(invalid), [])
+
+  rmSync(join(plugin, 'workflows', 'pair.js'))
+  await assert.rejects(run(), { code: 'ENGINE_DRIFT', message: 'Factory requires a built workflow file: pair.js' })
+})
+
+const fixtureAgent = `
+const ask = (label, extra = {}) => factoryRuntime.agent({
+  label, role: 'seat', prompt: 'fixture ' + label, vendor: 'codex', model: 'test',
+  schema: { type: 'object', properties: { label: { type: 'string' } }, required: ['label'], additionalProperties: false },
+  ...extra,
+})
+`
+
+function childProcessFixture(t, bodies) {
+  const scripts = { pair: 'return null', ...bodies }
+  const { dir, repo, runnerURL } = copyChildPlugin(t,
+    Object.fromEntries(Object.entries(scripts).map(([name, body]) => [name, fixtureAgent + body])))
+  const trace = join(dir, 'turns.jsonl'), worker = join(dir, 'turn.mjs'), driver = join(dir, 'driver.mjs')
+  writeFileSync(worker, String.raw`
+import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { join } from 'node:path'
+import { setTimeout as delay } from 'node:timers/promises'
+
+const [trace, hold, ...argv] = process.argv.slice(2)
+const option = name => argv[argv.indexOf(name) + 1]
+const prompt = readFileSync(option('--prompt-file'), 'utf8')
+const label = /^fixture ([\w-]+)$/m.exec(prompt)[1]
+const schema = JSON.parse(prompt.split('<<<OUTPUT_SCHEMA\n')[1].split('\nOUTPUT_SCHEMA>>>')[0])
+const job = option('--job'), runDir = option('--run-dir')
+const jobDir = join(runDir, 'jobs', job)
+const mark = stage => appendFileSync(trace, JSON.stringify({ stage, label, job, jobDir, pid: process.pid }) + '\n')
+mkdirSync(jobDir, { recursive: true })
+mark('enter')
+
+if (label === hold) {
+  const deadline = Date.now() + 15_000
+  while (!existsSync(join(runDir, 'release-' + hold))) {
+    if (Date.now() >= deadline) throw new Error('Fixture turn was never released: ' + label)
+    await delay(10)
+  }
+}
+
+const result = { turn: schema.properties.turn.enum[0], label }
+if (label === 'child-setup') {
+  const repoRoot = option('--cwd'), runId = 'child-run'
+  const childDir = join(repoRoot, '.council', runId)
+  const run = { repoRoot, runDir: childDir, runId }
+  mkdirSync(childDir)
+  writeFileSync(join(childDir, 'run.json'), JSON.stringify(run))
+  Object.assign(result, run)
+}
+appendFileSync(join(runDir, 'usage.jsonl'), JSON.stringify({
+  job, vendor: 'codex', model: 'test', seconds: 1, usage: { input_tokens: 7, output_tokens: 3 },
+}) + '\n')
+mark('exit')
+console.log(JSON.stringify({ status: 'done', result }))
+`)
+  writeFileSync(driver, String.raw`
+import { spawn } from 'node:child_process'
+
+const [runnerURL, worker, trace, hold, repo, ...flags] = process.argv.slice(2)
+const { parseCLI, runWorkflow } = await import(runnerURL)
+const result = await runWorkflow(parseCLI(['--cwd', repo, ...flags]), {
+  progress: () => {}, prepare: async () => null,
+  runtime: { execute: (argv, { signal }) => new Promise((resolve, reject) => {
+    if (argv[0] !== 'seat-run') throw new Error('Unexpected helper call: ' + argv[0])
+    // The test owns the read end of fd 3. The worker keeps it open if the driver dies first.
+    const proc = spawn(process.execPath, [worker, trace, hold, ...argv], {
+      signal, timeout: 18_000, stdio: ['ignore', 'pipe', 'pipe', 3],
+    })
+    let stdout = '', stderr = ''
+    proc.stdout.setEncoding('utf8').on('data', chunk => { stdout += chunk })
+    proc.stderr.setEncoding('utf8').on('data', chunk => { stderr += chunk })
+    proc.once('error', reject)
+    proc.once('close', code => {
+      if (code !== 0) return reject(new Error('Fixture turn failed: ' + stderr))
+      try { resolve(JSON.parse(stdout)) } catch (error) { reject(error) }
+    })
+  }) },
+})
+console.log(JSON.stringify(result))
+`)
+
+  function launch(flags, hold = '') {
+    const proc = spawn(process.execPath, [driver, runnerURL, worker, trace, hold, repo, ...flags], {
+      stdio: ['ignore', 'pipe', 'pipe', 'pipe'], timeout: 25_000, killSignal: 'SIGKILL',
+    })
+    let stdout = '', stderr = ''
+    proc.stdout.setEncoding('utf8').on('data', chunk => { stdout += chunk })
+    proc.stderr.setEncoding('utf8').on('data', chunk => { stderr += chunk })
+    proc.stdio[3].resume()
+    const exited = new Promise(resolve => proc.once('exit', (code, signal) => resolve({ code, signal })))
+    const closed = new Promise(resolve => {
+      proc.on('error', error => { stderr += error.message })
+      proc.once('close', (code, signal) => resolve({ code, signal, stdout, stderr }))
+    })
+    t.after(async () => {
+      proc.kill('SIGKILL')
+      await closed
+    })
+    return { proc, exited, closed, async result() {
+      const outcome = await closed
+      assert.equal(outcome.code, 0, outcome.stderr)
+      return JSON.parse(outcome.stdout)
+    } }
+  }
+  const marks = () => readEventLog(trace)
+  const hostDir = () => {
+    const host = readdirSync(join(repo, '.council')).find(name => name.startsWith('host-'))
+    assert.ok(host, 'Expected a host directory')
+    return join(repo, '.council', host)
+  }
+  return { launch, marks, hostDir }
+}
+
+async function waitForChildFixture(driver, description, probe) {
+  const deadline = Date.now() + 10_000
+  while (Date.now() < deadline) {
+    if (!driver.proc.pid || driver.proc.exitCode !== null || driver.proc.signalCode !== null) {
+      const { stderr } = await driver.closed
+      assert.fail('Driver exited before ' + description + '\n' + stderr)
+    }
+    const value = probe()
+    if (value) return value
+    await delay(10)
+  }
+  assert.fail('Timed out waiting for ' + description)
+}
+
+function peakFixtureProcesses(marks) {
+  const active = new Set()
+  let peak = 0
+  for (const { stage, pid } of marks) {
+    if (stage === 'enter') {
+      assert.ok(!active.has(pid), 'Unexpected duplicate process entry')
+      active.add(pid)
+      peak = Math.max(peak, active.size)
+    } else {
+      assert.equal(stage, 'exit')
+      assert.ok(active.delete(pid), 'Process exited without an entry marker')
+    }
+  }
+  assert.equal(active.size, 0)
+  return peak
+}
+
+test('child runtime: Factory and Council share a process limiter', async t => {
+  for (const concurrency of [1, 2]) {
+    await t.test('concurrency ' + concurrency, async t => {
+      const fixture = childProcessFixture(t, {
+        factory: `
+const { existsSync } = await import('node:fs')
+const { join } = await import('node:path')
+const { setTimeout: delay } = await import('node:timers/promises')
+const parent = ask('parent')
+const startChild = join(args.repo, '.council', args.hostRunId, 'start-child')
+const deadline = Date.now() + 10_000
+while (!existsSync(startChild)) {
+  if (Date.now() >= deadline) throw new Error('Parent fixture never started')
+  await delay(10)
+}
+const child = workflow('dark-factory:council', {})
+return { status: 'done', results: await parallel([() => parent, () => child]) }
+`,
+        council: `
+const turn = ask('child')
+log('child agent requested')
+return await turn
+`,
+      })
+      const driver = fixture.launch(['--concurrency', String(concurrency), 'Test contention'], 'parent')
+      await waitForChildFixture(driver, 'parent CLI entry', () => fixture.marks().find(mark => mark.label === 'parent'))
+      const host = fixture.hostDir(), eventLog = join(host, 'events.jsonl')
+      writeFileSync(join(host, 'start-child'), '')
+      await waitForChildFixture(driver, 'child agent request', () =>
+        readEventLog(eventLog).some(event => event.type === 'log' && event.message === 'child agent requested'))
+      if (concurrency === 2) {
+        await waitForChildFixture(driver, 'child CLI entry', () => fixture.marks().some(mark => mark.label === 'child'))
+      } else {
+        assert.deepEqual(readEventLog(eventLog).filter(event => event.type === 'turn.started').map(event => event.label), ['parent'])
+      }
+      assert.ok(!fixture.marks().some(mark => mark.label === 'parent' && mark.stage === 'exit'))
+      writeFileSync(join(host, 'release-parent'), '')
+      const result = await driver.result()
+      assert.equal(result.status, 'done', result.error)
+      assert.deepEqual(result.results, [{ label: 'parent' }, { label: 'child' }])
+      const marks = fixture.marks()
+      assert.deepEqual(marks.filter(mark => mark.stage === 'enter').map(mark => mark.label), ['parent', 'child'])
+      assert.equal(peakFixtureProcesses(marks), concurrency)
+      if (concurrency === 1) {
+        assert.deepEqual(readEventLog(eventLog).filter(event => ['turn.started', 'turn.completed'].includes(event.type))
+          .map(event => [event.type, event.label]), [
+          ['turn.started', 'parent'], ['turn.completed', 'parent'], ['turn.started', 'child'], ['turn.completed', 'child'],
+        ])
+      }
+    })
+  }
+})
+
+test('child runtime: a Council agent spends the last turn in the Factory cap', async t => {
+  const fixture = childProcessFixture(t, {
+    factory: `
+const parent = await ask('parent')
+const child = await workflow('dark-factory:council', {})
+return { status: 'done', parent, child }
+`,
+    council: `
+const allowed = await ask('child-allowed')
+try { await ask('child-over-cap') } catch (error) {
+  return { allowed, refused: { code: error.code, message: error.message } }
+}
+throw new Error('The cap should have refused the second child agent')
+`,
+  })
+  const result = await fixture.launch(['--max-turns', '2', 'Test the shared cap']).result()
+  const message = 'Run turn budget exhausted (2).'
+  assert.equal(result.status, 'blocked', result.error)
+  assert.equal(result.stopReason, message)
+  assert.deepEqual(result.parent, { label: 'parent' })
+  assert.deepEqual(result.child, { allowed: { label: 'child-allowed' }, refused: { code: 'RUN_LIMIT', message } })
+  assert.equal(result.metrics.turns, 2)
+  assert.equal(JSON.parse(readFileSync(join(result.hostRunDir, 'host.json'), 'utf8')).spentTurns, 2)
+  assert.deepEqual(fixture.marks().filter(mark => mark.stage === 'enter').map(mark => mark.label), ['parent', 'child-allowed'])
+})
+
+test('child runtime: child directories feed Factory accounting and summary output', async t => {
+  const fixture = childProcessFixture(t, {
+    factory: `
+const child = await workflow('dark-factory:council', {})
+return { status: 'done', ...child, directories: factoryRuntime.runDirectories() }
+`,
+    council: `
+const run = await ask('child-setup', {
+  role: 'setup', setupRunId: 'child-run',
+  schema: { type: 'object', properties: {
+    label: { type: 'string' }, repoRoot: { type: 'string' }, runDir: { type: 'string' }, runId: { type: 'string' },
+  }, required: ['label', 'repoRoot', 'runDir', 'runId'], additionalProperties: false },
+})
+await ask('child-seat', { run })
+return { runDir: run.runDir, summary: { status: 'done' } }
+`,
+  })
+  const result = await fixture.launch(['Test directory accounting']).result()
+  assert.equal(result.status, 'done', result.error)
+  const childDir = join(dirname(result.hostRunDir), 'child-run')
+  assert.deepEqual(result.directories, [result.hostRunDir, childDir])
+  const childJob = fixture.marks().find(mark => mark.stage === 'enter' && mark.label === 'child-seat').job
+  const jobsIn = runDir => readEventLog(join(runDir, 'usage.jsonl')).map(row => row.job)
+  assert.deepEqual(jobsIn(childDir), [childJob])
+  assert.ok(!jobsIn(result.hostRunDir).includes(childJob))
+  const tokens = JSON.parse(readFileSync(join(result.hostRunDir, 'tokens.json'), 'utf8'))
+  assert.equal(tokens.records, 2)
+  const childTurn = tokens.turns.find(turn => turn.job === childJob)
+  assert.equal(childTurn.input, 7)
+  assert.equal(childTurn.output, 3)
+  assert.equal(result.summaryFile, join(childDir, 'summary.json'))
+  assert.equal(JSON.parse(readFileSync(result.summaryFile, 'utf8')).status, 'done')
+})
+
+test('child runtime: SIGKILL during Council replays completed child calls on resume', async t => {
+  const fixture = childProcessFixture(t, {
+    factory: `
+const parent = await ask('parent')
+const pair = await workflow('dark-factory:pair', {})
+const council = await workflow('dark-factory:council', {})
+return { status: 'done', parent, pair, council }
+`,
+    pair: "return await ask('pair')",
+    council: `
+const first = await ask('council-first')
+const interrupted = await ask('council-interrupted')
+return { first, interrupted }
+`,
+  })
+  const driver = fixture.launch(['Test replay across child workflow calls'], 'council-interrupted')
+  const held = await waitForChildFixture(driver, 'interrupted Council CLI entry', () =>
+    fixture.marks().find(mark => mark.label === 'council-interrupted' && mark.stage === 'enter'))
+  const host = fixture.hostDir()
+  const completed = ['parent', 'pair', 'council-first']
+  try {
+    const checkpoint = JSON.parse(readFileSync(join(host, 'checkpoint.json'), 'utf8'))
+    assert.deepEqual(checkpoint.entries.map(entry => [entry.method, entry.label]),
+      completed.map(label => ['agent', label]))
+    assert.deepEqual(fixture.marks().filter(mark => mark.stage === 'exit').map(mark => mark.label), completed)
+    assert.equal(driver.proc.kill('SIGKILL'), true)
+    assert.equal((await driver.exited).signal, 'SIGKILL')
+  } finally {
+    process.kill(held.pid, 'SIGKILL')
+    // Close waits for the inherited pipe, so the held worker has stopped by this point.
+    await driver.closed
+  }
+
+  const resumed = await fixture.launch(['--resume', host]).result()
+  assert.equal(resumed.status, 'done', resumed.error)
+  assert.equal(resumed.hostRunDir, host)
+  assert.deepEqual([resumed.parent, resumed.pair, resumed.council], [
+    { label: 'parent' }, { label: 'pair' },
+    { first: { label: 'council-first' }, interrupted: { label: 'council-interrupted' } },
+  ])
+  const marks = fixture.marks()
+  const launches = marks.filter(mark => mark.stage === 'enter')
+  assert.deepEqual(launches.map(mark => mark.label), [...completed, 'council-interrupted', 'council-interrupted'])
+  const resumedKey = held.job + '-resume1'
+  const events = readEventLog(join(host, 'events.jsonl'))
+  assert.deepEqual(events.filter(event => event.type === 'checkpoint.replayed').map(event => [event.method, event.label]),
+    completed.map(label => ['agent', label]))
+  assert.deepEqual(launches.filter(mark => mark.job.endsWith('-resume1')).map(mark => mark.jobDir),
+    [join(host, 'jobs', resumedKey)])
+  assert.deepEqual(readdirSync(join(host, 'jobs'), { withFileTypes: true })
+    .filter(entry => entry.isDirectory() && entry.name.endsWith('-resume1')).map(entry => entry.name), [resumedKey])
+  assert.equal(JSON.parse(readFileSync(join(host, 'host.json'), 'utf8')).workflow, 'factory')
+  const switched = await fixture.launch(['--resume', host, '--workflow', 'pair']).closed
+  assert.equal(switched.code, 1)
+  assert.match(switched.stderr, /Cannot change workflow on resume\./)
+  assert.deepEqual(fixture.marks(), marks)
 })

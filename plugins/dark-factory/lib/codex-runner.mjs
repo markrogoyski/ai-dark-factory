@@ -3,11 +3,11 @@ import { accountRun, liveUsage } from './usage.mjs'
 import { runHistory } from './history.mjs'
 import { digest, fingerprint, loadCheckpoint, journalRuntime, readEventLog, writeJsonAtomic } from './checkpoint.mjs'
 import { spawn, execFileSync } from 'node:child_process'
-import { appendFileSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync, realpathSync, existsSync, readdirSync, lstatSync, openSync, closeSync, unlinkSync } from 'node:fs'
+import { appendFileSync, mkdirSync, mkdtempSync, readFileSync, readlinkSync, writeFileSync, realpathSync, existsSync, readdirSync, lstatSync, openSync, closeSync, unlinkSync } from 'node:fs'
 import { dirname, join, resolve, relative, isAbsolute } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { platform as osPlatform } from 'node:os'
-import { environmentPin, guardEngine, liveIdentity, runProvenance, validateAdmissions, inspectSeat, isolationIssues, drift } from './engine.mjs'
+import { environmentPin, guardEngine, liveIdentity, runProvenance, validateAdmissions, inspectSeat, isolationIssues, drift, inventoryDigest, packageInventory } from './engine.mjs'
 
 const plugin = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const helper = join(plugin, 'bin', 'dark-factory')
@@ -15,6 +15,40 @@ const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor
 import { parseCLI, positiveInteger } from './cli-options.mjs'
 import { pairResumeAnswerCheck, promptHash, withdrawResume } from './policy.mjs'
 export { parseCLI } from './cli-options.mjs'
+
+export const FACTORY_CHILDREN = ['council', 'pair']
+
+function workflowSource(name, expectedHash, file = join(plugin, 'workflows', `${name}.js`)) {
+  const bytes = readFileSync(file)
+  if (expectedHash && digest(bytes) !== expectedHash) throw drift(`Workflow changed during Factory launch: ${name}.js`)
+  return bytes.toString('utf8').replace(/^export const meta\s*=/m, 'const meta =')
+}
+
+function compileWorkflow(source) {
+  return new AsyncFunction('agent', 'parallel', 'pipeline', 'phase', 'log', 'args', 'budget', 'workflow', 'factoryRuntime', source)
+}
+
+// Factory's own script and its children's, read once at launch and checked byte for byte against
+// the package identity recorded for this run. Runs before anything of the run is written, so a
+// refusal leaves a paused run's arguments and result as they were. A path through internal
+// symlinks (the inventory admits them, for the file or a directory above it) is checked by the
+// bytes of the regular file it resolves to, and a link that is the file itself by where it points.
+function factorySources(executor) {
+  const root = realpathSync(plugin)
+  const entries = packageInventory(root, executor.mode === 'pinned')
+  if (inventoryDigest(entries) !== executor.packageDigest) throw drift('Engine package changed during Factory launch')
+  const entryFor = path => entries.find(([key]) => key === Buffer.from(path).toString('base64'))
+  return new Map(['factory', ...FACTORY_CHILDREN].map(name => {
+    const path = `workflows/${name}.js`, missing = () => drift(`Factory requires a built workflow file: ${name}.js`)
+    const link = entryFor(path)
+    if (link?.[1] === '120000' && digest(readlinkSync(join(root, path))) !== link[2]) throw drift(`Workflow changed during Factory launch: ${name}.js`)
+    let file
+    try { file = realpathSync(join(root, path)) } catch { throw missing() }
+    const entry = entryFor(relative(root, file))
+    if (!entry || entry[1] === '120000') throw missing()
+    return [name, workflowSource(name, entry[2], file)]
+  }))
+}
 
 export const HELP = `Usage: dark-factory-codex [options] [--] TASK
 
@@ -476,7 +510,9 @@ export async function runWorkflow(options, dependencies = {}) {
       appendFileSync(events, JSON.stringify(record) + '\n')
       ;(dependencies.progress || (line => process.stderr.write(line + '\n')))(JSON.stringify(record))
     }
-    const source = readFileSync(join(plugin, 'workflows', `${options.workflow}.js`), 'utf8').replace(/^export const meta\s*=/m, 'const meta =')
+    const isFactory = options.workflow === 'factory'
+    const source = isFactory ? null : workflowSource(options.workflow)
+    const factorySource = isFactory ? factorySources(executor) : null
     const engine = executor.packageDigest
     const previous = options.resume ? JSON.parse(readFileSync(join(hostRunDir, 'args.json'), 'utf8')) : {}
     const args = { ...previous, ...options.args, host: 'codex', repo, cli: 'dark-factory', hostRunId: hostRunDir.split('/').at(-1) }
@@ -562,12 +598,41 @@ export async function runWorkflow(options, dependencies = {}) {
     process.once('SIGINT', interrupt); process.once('SIGTERM', interrupt)
     let result
     try {
+      const scripts = isFactory ? new Map([...factorySource].map(([name, text]) => [name, compileWorkflow(text)])) : null
       if (prepared) emit({ type: 'prepare', ...prepared })
       emit({ type: 'run.started', workflow: options.workflow, repo, hostRunDir, resumed: !!saved })
-      const execute = new AsyncFunction('agent', 'parallel', 'pipeline', 'phase', 'log', 'args', 'budget', 'workflow', 'factoryRuntime', source)
       const unsupported = () => { throw new Error('The workflow called a runtime function without a host adapter') }
-      result = await execute(unsupported, async jobs => { const values = await Promise.allSettled(jobs.map(job => job())); const failure = values.find(v => v.status === 'rejected'); if (failure) throw failure.reason; return values.map(v => v.value) }, unsupported,
-        title => emit({ type: 'phase', title }), message => emit({ type: 'log', message }), args, {}, unsupported, runtime)
+      const parallel = async jobs => {
+        const values = await Promise.allSettled(jobs.map(job => job()))
+        const failure = values.find(v => v.status === 'rejected')
+        if (failure) throw failure.reason
+        return values.map(v => v.value)
+      }
+      const phase = title => emit({ type: 'phase', title })
+      const log = message => emit({ type: 'log', message })
+      const budget = {}
+      const nested = () => { throw new Error('workflow() cannot be called inside a child workflow') }
+      const execute = (script, input, callWorkflow) =>
+        script(unsupported, parallel, unsupported, phase, log, input, budget, callWorkflow, runtime)
+
+      async function workflow(name, childArgs) {
+        if (options.workflow !== 'factory') {
+          throw new Error(`workflow() is available on this runner only to dark-factory:factory, not dark-factory:${options.workflow}`)
+        }
+        const child = FACTORY_CHILDREN.find(child => name === `dark-factory:${child}`)
+        if (!child) {
+          const type = typeof name
+          const shown = name !== null && (type === 'object' || type === 'function') ? type : String(name)
+          throw new Error(`Unknown workflow: ${shown}`)
+        }
+        const input = structuredClone(childArgs)
+        emit({ type: 'workflow.started', name })
+        const value = await execute(scripts.get(child), input, nested)
+        emit({ type: 'workflow.completed', name })
+        return value
+      }
+
+      result = await execute(isFactory ? scripts.get('factory') : compileWorkflow(source), args, workflow)
       if (!result || typeof result !== 'object') throw new Error('The workflow returned no result')
       if (controller.signal.aborted) throw new Error('Run interrupted')
     } catch (error) {
@@ -654,14 +719,19 @@ export function briefResult(result) {
 }
 
 export async function main(argv = process.argv.slice(2)) {
-  let result, brief = false
+  let result, brief = false, options
   try {
-    const options = parseCLI(argv)
+    options = parseCLI(argv)
     if (options.help) { process.stdout.write(HELP); return }
     brief = !!options.brief
     keepAwake()
     result = await runWorkflow(options)
-  } catch (error) { result = { status: 'failed', error: error.message } }
+  } catch (error) {
+    // A refusal before the run starts (engine drift, a changed resume) still reaches --output,
+    // which run-plan reads for the task's result.
+    result = { status: 'failed', error: error.message, ...(error.code ? { code: error.code } : {}) }
+    if (options?.output) writeFileSync(options.output, JSON.stringify(result, null, 2) + '\n')
+  }
   process.stdout.write(brief ? JSON.stringify(briefResult(result)) + '\n' : JSON.stringify(result, null, 2) + '\n')
   process.exitCode = resultExitCode(result)
 }

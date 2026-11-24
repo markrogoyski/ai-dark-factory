@@ -7,6 +7,7 @@ import { fileURLToPath } from 'node:url'
 import { execFileSync } from 'node:child_process'
 import { journalRuntime, loadCheckpoint, readEventLog } from '../plugins/dark-factory/lib/checkpoint.mjs'
 import { runWorkflow, parseCLI } from '../plugins/dark-factory/lib/codex-runner.mjs'
+import { PARAMS, runHosted } from './fixtures/workflow-host.mjs'
 
 // Launch preparation probes the installed provider CLIs; these tests are about the checkpoint, not the host.
 const noPrepare = async () => null
@@ -449,10 +450,28 @@ test('brief resume applies a batch and preserves subsequent routed Pair answers'
   assert.deepEqual(after.decisions.map(d => d.id), ['Q1'])
 })
 
-function nativeFactory() {
-  const source = readFileSync(new URL('../plugins/dark-factory/workflows/factory.js', import.meta.url), 'utf8').replace(/^export const meta\s*=/m, 'void')
-  return new (Object.getPrototypeOf(async function () {}).constructor)('args', 'agent', 'phase', 'log', source)
+function nativeFactory(dir = fileURLToPath(new URL('../plugins/dark-factory/workflows/', import.meta.url))) {
+  const source = readFileSync(join(dir, 'factory.js'), 'utf8').replace(/^export const meta\s*=/m, 'void')
+  const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor
+  const factory = new AsyncFunction(...PARAMS, source)
+  return (args, agent, phase, log) => runHosted(factory, { agent, phase, log }, args, { dir })
 }
+
+test('native Factory loader runs a child and rejects nested workflow calls', async t => {
+  const dir = mkdtempSync(join(tmpdir(), 'native-factory-workflows-'))
+  t.after(() => rmSync(dir, { recursive: true, force: true }))
+  writeFileSync(join(dir, 'factory.js'), "export const meta = { name: 'factory' }\nreturn workflow('dark-factory:council', args)\n")
+  writeFileSync(join(dir, 'council.js'), "export const meta = { name: 'council' }\n" +
+    "if (args.nested) return workflow('dark-factory:pair', {})\nreturn agent(meta.name)\n")
+  writeFileSync(join(dir, 'pair.js'), "export const meta = { name: 'pair' }\nreturn 'nested child ran'\n")
+
+  const execute = nativeFactory(dir)
+  const agent = name => name + ' reached the native agent'
+  assert.equal(await execute({}, agent, () => {}, () => {}), 'council reached the native agent')
+  await assert.rejects(execute({ nested: true }, agent, () => {}, () => {}), {
+    message: 'workflow() cannot be called inside a child workflow',
+  })
+})
 
 function runNativeBriefCommand(repo, command) {
   const bin = fileURLToPath(new URL('../plugins/dark-factory/bin', import.meta.url))

@@ -9,14 +9,15 @@ import { fileURLToPath } from 'node:url'
 import { loadLib } from './lib.mjs'
 import { validateResult, briefResult } from '../plugins/dark-factory/lib/codex-runner.mjs'
 import { contract, mapping, challenges, replay, helperRecord } from './fixtures/pair-contract.mjs'
-import { routedHandoff, workflowHost, factoryFromHandoff } from './fixtures/workflow-host.mjs'
+import { PARAMS, runHosted, routedHandoff, workflowHost, factoryFromHandoff } from './fixtures/workflow-host.mjs'
 
 const L = loadLib()
 const root = new URL('../', import.meta.url)
+const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor
 const source = readFileSync(new URL('plugins/dark-factory/workflows/pair.js', root), 'utf8').replace(/^export const meta\s*=/m, 'const meta =')
-const execute = new (Object.getPrototypeOf(async function () {}).constructor)('agent', 'parallel', 'pipeline', 'phase', 'log', 'args', 'budget', 'workflow', 'factoryRuntime', source)
+const execute = new AsyncFunction(...PARAMS, source)
 const factorySource = readFileSync(new URL('plugins/dark-factory/workflows/factory.js', root), 'utf8').replace(/^export const meta\s*=/m, 'const meta =')
-const executeFactory = new (Object.getPrototypeOf(async function () {}).constructor)('agent', 'parallel', 'pipeline', 'phase', 'log', 'args', 'budget', 'workflow', 'factoryRuntime', factorySource)
+const executeFactory = new AsyncFunction(...PARAMS, factorySource)
 
 // A copied value cut to the schema, each missing field taking its type's empty value, as a native
 // transport copying the helper's brief returns it.
@@ -163,7 +164,7 @@ async function runOnce(options = {}) {
     const routed = await routedHandoff(host, args)
     result = routed.handoff ? await workflowHost(host).workflow(L.childWorkflow(routed.handoff), { factoryHandoff: routed.handoff }) : routed.result
   } else if (options.via === 'child') ({ result, ran } = await factoryFromHandoff(host, args))
-  else result = await (options.factory ? executeFactory : execute)(agent, panel, null, phase, log, args, budget, null, runtime)
+  else result = await runHosted(options.factory ? executeFactory : execute, host, args)
   return { result, calls, measurements, phases, baselines, events, logs, agentCalls, dispatches, ran }
 }
 
@@ -1289,7 +1290,8 @@ test('pair setup runs on Opus for Claude Code and for weaker Claude authors on t
 test('runtime "cli" hands the whole native run to one transport turn with explicit participants', async () => {
   const calls = []
   const agent = async (prompt, opts) => { calls.push({ prompt, opts }); return { result: JSON.stringify({ status: 'done', host: 'codex' }), error: '' } }
-  const go = args => execute(agent, () => { throw new Error('no panel') }, null, () => {}, () => {}, args, {}, null, undefined)
+  const host = { agent, parallel: () => { throw new Error('no panel') }, pipeline: null, phase: () => {}, log: () => {} }
+  const go = args => runHosted(execute, { ...host, budget: {} }, args)
   const result = await go({ task: 'Implement the behavior', repo: '/repo', runtime: 'cli', resume: '/repo/.council/host-x' })
   assert.deepEqual(result, { status: 'done', host: 'codex' })
   assert.equal(calls.length, 1)
@@ -1308,7 +1310,8 @@ test('runtime "cli" hands the whole native run to one transport turn with explic
   assert.deepEqual(JSON.parse(calls[0].prompt.match(/^\{.*\}$/m)[0]), { task: 'Implement it', author: 'sonnet', reviewer: 'astra' })
   await assert.rejects(go({ task: 'x', runtime: 'native' }), /runtime must be "cli"/)
   await assert.rejects(go({ task: 'x', resume: '/r' }), /resume/)
-  await assert.rejects(execute(agent, null, null, () => {}, () => {}, { task: 'x', runtime: 'cli' }, {}, null, { agent() {}, turn() {}, measure() {} }), /only in Claude Code/)
+  const hosted = { ...host, parallel: null, budget: {}, factoryRuntime: { agent() {}, turn() {}, measure() {} } }
+  await assert.rejects(runHosted(execute, hosted, { task: 'x', runtime: 'cli' }), /only in Claude Code/)
 })
 
 test('the factory\'s pair strategy describes its retro as a pair process, not a council', () => {
@@ -1827,7 +1830,8 @@ test('resume: guidance appears only on a needs-user stop that can continue, with
   quiet(done.result, 'done')
   // A failed transport of runtime "cli" names no resume either.
   for (const relay of [null, { result: '', error: '' }]) {
-    const failed = await execute(async () => relay, null, null, () => {}, () => {}, { task: 'Implement the behavior', runtime: 'cli' }, {}, null, undefined)
+    const host = { agent: async () => relay, parallel: null, pipeline: null, phase: () => {}, log: () => {}, budget: {} }
+    const failed = await runHosted(execute, host, { task: 'Implement the behavior', runtime: 'cli' })
     assert.equal(failed.error, 'Pair transport returned no result.')
     quiet(failed, 'transport')
   }
@@ -1856,11 +1860,14 @@ test('resume: guidance appears only on a needs-user stop that can continue, with
   assert.match(steps(codexFactory.result), /To continue this \/factory run, write a JSON file holding \{"clarifications": \[[^\]]*\]\} and run dark-factory-codex --resume \/repo\/\.council\/host-x --args-file <that file>\./)
   // Through runtime "cli" the runner's steps become a /pair call with resume.
   const relayed = { ...codex.result, hostRunDir: '/repo/.council/host-x' }
-  const cli = await execute(async () => ({ result: JSON.stringify(relayed), error: '' }), null, null, () => {}, () => {}, { task: 'Implement the behavior', runtime: 'cli' }, {}, null, undefined)
+  const cliHost = { agent: async () => ({ result: JSON.stringify(relayed), error: '' }),
+    parallel: null, pipeline: null, phase: () => {}, log: () => {}, budget: {} }
+  const cli = await runHosted(execute, cliHost, { task: 'Implement the behavior', runtime: 'cli' })
   assert.match(steps(cli), /call \/pair again with the same args plus runtime: "cli", resume: "\/repo\/\.council\/host-x" and clarifications: /)
   assert.doesNotMatch(cli.forTheOrchestrator, /dark-factory-codex --resume/)
   // The transport relays the runner's --brief result, which keeps the last handoff for the fallback.
-  const brief = await execute(async () => ({ result: JSON.stringify(briefResult(relayed)), error: '' }), null, null, () => {}, () => {}, { task: 'Implement the behavior', runtime: 'cli' }, {}, null, undefined)
+  const briefHost = { ...cliHost, budget: {}, agent: async () => ({ result: JSON.stringify(briefResult(relayed)), error: '' }) }
+  const brief = await runHosted(execute, briefHost, { task: 'Implement the behavior', runtime: 'cli' })
   assert.ok(relayed.final.post)
   assert.ok(steps(brief).endsWith(`passing the last handoff (${relayed.final.post}) in plan.`))
   assert.equal(brief.resumeSteps, cli.resumeSteps)
@@ -2623,7 +2630,8 @@ test('direct /pair runs, with or without a stray factoryHandoff key, run alike',
   const transport = async args => {
     const calls = []
     const agent = async (prompt, opts) => { calls.push([opts.label, opts.model, prompt]); return { result: JSON.stringify({ status: 'done', host: 'codex' }), error: '' } }
-    const result = await execute(agent, () => { throw new Error('no panel') }, null, () => {}, () => {}, args, {}, null, undefined)
+    const host = { agent, parallel: () => { throw new Error('no panel') }, pipeline: null, phase: () => {}, log: () => {}, budget: {} }
+    const result = await runHosted(execute, host, args)
     return { calls, result }
   }
   const cli = await transport({ task: 'Implement the behavior', repo: '/repo', runtime: 'cli' })

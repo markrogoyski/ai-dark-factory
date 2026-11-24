@@ -1,11 +1,29 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { simulate } from './fixtures/simulate.mjs'
 import { parseCLI } from '../plugins/dark-factory/lib/codex-runner.mjs'
 
 const task = 'Show the retry count in the debug log.'
 const outcome = 'Log one entry per retry.'
 const purpose = 'Help an operator diagnose repeated requests.'
+
+test('simulate gives Factory a child workflow on the same scripted host', async t => {
+  const dir = mkdtempSync(join(tmpdir(), 'factory-simulate-workflows-'))
+  t.after(() => rmSync(dir, { recursive: true, force: true }))
+  writeFileSync(join(dir, 'factory.js'), "export const meta = { name: 'factory' }\n" +
+    "return workflow('dark-factory:council', { task: args.task })\n")
+  writeFileSync(join(dir, 'council.js'), "export const meta = { name: 'council' }\n" +
+    "const before = budget.spent()\n" +
+    "const reply = await factoryRuntime.agent({ role: 'intake', label: 'intake', prompt: args.task,\n" +
+    "  schema: { type: 'object', properties: { status: { type: 'string' } } } })\n" +
+    "return { before, status: reply.status, after: budget.spent() }\n")
+  const { result, calls } = await simulate('factory', { task }, { meter: true }, dir)
+  assert.deepEqual(result, { before: 5000, status: 'ok', after: 6000 })
+  assert.deepEqual(calls.map(call => [call.role, call.prompt]), [['intake', task]])
+})
 
 test('brief accepts elaborated delegations and adds a missing one', async () => {
   const elaborated = ['testing — write the regression first', 'Implementation: follow the prototype']

@@ -3,17 +3,20 @@
 // real run directory, so its actual result can go through the delivery helpers.
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { validateResult } from '../../plugins/dark-factory/lib/codex-runner.mjs'
 import { contract, mapping, challenges, replay } from './pair-contract.mjs'
+import { PARAMS, runHosted } from './workflow-host.mjs'
 
 export const empty = s => s.enum ? s.enum[0] : s.type === 'object' ? Object.fromEntries(Object.entries(s.properties || {}).map(([k,v]) => [k,empty(v)])) : s.type === 'array' ? [] : s.type === 'string' ? '' : s.type === 'boolean' ? false : 0
-const root = new URL('../../', import.meta.url)
+const workflows = fileURLToPath(new URL('../../plugins/dark-factory/workflows/', import.meta.url))
 const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor
 
-export async function simulate(workflow, args = {}, behavior = {}) {
+export async function simulate(workflow, args = {}, behavior = {}, dir = workflows) {
   // Execute the workflow body after the host has scanned its metadata, with no runtime meta binding.
-  const source = readFileSync(new URL(`plugins/dark-factory/workflows/${workflow}.js`, root), 'utf8').replace(/^export const meta\s*=/m, 'void')
-  const execute = new AsyncFunction('args','factoryRuntime','parallel','agent','phase','log','budget',source)
+  const source = readFileSync(join(dir, `${workflow}.js`), 'utf8').replace(/^export const meta\s*=/m, 'void')
+  const execute = new AsyncFunction(...PARAMS, source)
   const calls = []; let repairs = 0, reviewCount = 0
   const run = behavior.setup?.runDir || '/repo/.council/demo'
   const tree = behavior.tree || (() => String(behavior.stall ? 1 : repairs + 1).repeat(40))
@@ -72,8 +75,20 @@ export async function simulate(workflow, args = {}, behavior = {}) {
     return respond({ ...opts, prompt, role, cwd: '/repo', vendor: 'claude' })
   }
   const budget = behavior.meter ? { spent: () => 5000 + 1000 * calls.length } : undefined
-  const result = await execute(typeof args === 'string' ? args : { task: 'Fix the boundary', host: behavior.native ? 'claude' : 'codex', retro: false, ...args }, behavior.native ? null : runtime,
-    async jobs => { const all = await Promise.allSettled(jobs.map(f => f())); const bad = all.find(x => x.status === 'rejected'); if (bad) throw bad.reason; return all.map(x => x.value) },
-    behavior.native ? nativeAgent : () => { throw new Error('Unexpected native call') }, () => {}, behavior.log || (() => {}), budget)
+  const host = {
+    agent: behavior.native ? nativeAgent : () => { throw new Error('Unexpected native call') },
+    async parallel(jobs) {
+      const all = await Promise.allSettled(jobs.map(f => f()))
+      const bad = all.find(x => x.status === 'rejected')
+      if (bad) throw bad.reason
+      return all.map(x => x.value)
+    },
+    phase: () => {},
+    log: behavior.log || (() => {}),
+    budget,
+    factoryRuntime: behavior.native ? null : runtime,
+  }
+  const input = typeof args === 'string' ? args : { task: 'Fix the boundary', host: behavior.native ? 'claude' : 'codex', retro: false, ...args }
+  const result = await runHosted(execute, host, input, { dir })
   return { result, calls, repairs }
 }

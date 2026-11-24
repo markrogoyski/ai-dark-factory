@@ -6,6 +6,7 @@ import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { loadLib } from './lib.mjs'
 import { LIB, HANDOFF_LIB } from '../tools/sources.mjs'
+import { PARAMS, runHosted } from './fixtures/workflow-host.mjs'
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..')
 const L = loadLib()
@@ -372,9 +373,15 @@ async function factoryFlow(tier, { escalate = false, oversizedPlan = false, fail
   }
   const source = readFileSync(join(root, 'plugins/dark-factory/workflows/factory.js'), 'utf8').replace(/^export const meta\s*=/m, 'const meta =')
   const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor
-  const factory = new AsyncFunction('factoryRuntime', 'agent', 'parallel', 'phase', 'log', 'args', source)
-  const result = await factory(runtime, () => { throw new Error('Claude runtime was called') },
-    jobs => Promise.all(jobs.map(f => f())), phase => phases.push(phase), () => {}, { task: 'Improve the parser', host: 'codex', brief: false, ...args })
+  const factory = new AsyncFunction(...PARAMS, source)
+  const host = {
+    agent: () => { throw new Error('Claude runtime was called') },
+    parallel: jobs => Promise.all(jobs.map(f => f())),
+    phase: phase => phases.push(phase),
+    log: () => {},
+    factoryRuntime: runtime,
+  }
+  const result = await runHosted(factory, host, { task: 'Improve the parser', host: 'codex', brief: false, ...args })
   return { result, calls, phases }
 }
 

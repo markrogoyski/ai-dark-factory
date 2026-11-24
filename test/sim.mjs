@@ -10,7 +10,7 @@ import { dirname, join } from 'node:path'
 import assert from 'node:assert/strict'
 import { rmSync } from 'node:fs'
 import { loadLib } from './lib.mjs'
-import { routedHandoff, workflowHost, factoryFromHandoff } from './fixtures/workflow-host.mjs'
+import { PARAMS, runHosted, routedHandoff, workflowHost, factoryFromHandoff } from './fixtures/workflow-host.mjs'
 
 const here = dirname(fileURLToPath(import.meta.url))
 // bin/dark-factory polls on a timer; shorten it so the CLI scenarios don't sit sleeping. Children inherit this.
@@ -18,7 +18,7 @@ process.env.COUNCIL_JOB_POLL ??= '0.05'
 process.env.COUNCIL_TRANSCRIPT_POLL ??= '0.05'
 process.env.COUNCIL_TRANSCRIPT_WAIT ??= '1'
 const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor
-const load = file => new AsyncFunction('agent', 'parallel', 'pipeline', 'phase', 'log', 'args', 'budget', 'workflow',
+const load = file => new AsyncFunction(...PARAMS,
   readFileSync(join(here, '..', 'plugins', 'dark-factory', 'workflows', file), 'utf8').replace(/^export const meta\s*=/m, 'const meta ='))
 const SCRIPTS = { council: load('council.js'), factory: load('factory.js') }
 
@@ -229,7 +229,7 @@ async function run(name, scenario, args, hooks = {}) {
     result = hooks.via === 'route' ? await routedHandoff(host, args)
       : hooks.via === 'child' ? await childRun(host, args)
       : hooks.via === 'factory' ? await factoryFromHandoff(host, args).then(out => { children = out; return out.result })
-      : await SCRIPTS[hooks.workflow || 'council'](agent, parallel, pipeline, phase, log, args, budget, null)
+      : await runHosted(SCRIPTS[hooks.workflow || 'council'], host, args)
   } finally {
     Math.random = savedRandom; Date.now = savedNow
     if (process.env.SHOW_LOGS) console.log(`\n===== ${name} log =====\n${logs.join('\n')}\n`)
