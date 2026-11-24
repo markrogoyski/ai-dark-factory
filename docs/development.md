@@ -45,6 +45,7 @@ The quick ones run first, then `unit` and `host-test` run side by side. `host-te
     node test/static.mjs         # scripts parse, `meta` is a plain literal, src/lib stays pure
     node test/hash-parity.mjs    # the JS and Python prompt hashes agree
     node tools/build.mjs --check # the built workflows and policy.mjs are what src/ builds to
+    node tools/build.mjs --candidates # build each unshipped candidate in memory and report its size
 
 `node tools/bench.mjs` prepares, validates, runs, grades and scans for contamination the
 ground-truth tasks in `bench/` ([Benchmark](evaluation.md#benchmark)); only its `run --yes` calls

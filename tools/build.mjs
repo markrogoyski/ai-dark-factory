@@ -1,6 +1,7 @@
 // Builds each workflow in tools/sources.mjs (plugins/dark-factory/workflows/council.js, ...) from src/.
 //   node tools/build.mjs           write them
 //   node tools/build.mjs --check   fail if a committed file differs from its build
+//   node tools/build.mjs --candidates   build each unshipped candidate in memory and report its size
 // Claude Code skips a plugin workflow over 512 KiB, so each workflow drops the top-level declarations
 // it never reaches (tools/prune.mjs) and is minified with esbuild (a development dependency:
 // `npm ci`). The meta file stays as written, since the runtime reads `export const meta` from the
@@ -12,7 +13,7 @@ import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { assertPolicy } from './policy-static.mjs'
 import { prune } from './prune.mjs'
-import { POLICY_EXPORTS, TARGETS } from './sources.mjs'
+import { CANDIDATES, POLICY_EXPORTS, TARGETS } from './sources.mjs'
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..')
 // Claude Code skips a plugin workflow over 524288 bytes. The margin is warning room: a build that
@@ -25,7 +26,8 @@ function esbuild() {
   catch { throw new Error('build: esbuild is not installed; run `npm ci` in the repository root') }
 }
 
-const read = f => readFileSync(join(root, f), 'utf8').replace(/\n+$/, '\n')
+const readSource = f => readFileSync(join(root, f), 'utf8')
+const trimmed = text => text.replace(/\n+$/, '\n')
 
 // A workflow body returns and awaits at the top level, which no esbuild format accepts in one file,
 // so it is minified as the body of a function and the wrapper is taken off again.
@@ -38,16 +40,35 @@ function minify(body) {
   return code.slice(open.length, -close.length).replace(/^\n/, '') + '\n'
 }
 
-export function build(target) {
-  if (target === 'policy') assertPolicy(TARGETS.policy.order.map(file => ({ file, text: readFileSync(join(root, file), 'utf8') })), POLICY_EXPORTS, TARGETS.policy.trailer)
-  const [first, ...rest] = TARGETS[target].order
-  if (target === 'policy') return [first, ...rest].map(read).join('\n') + (TARGETS[target].trailer || '')
-  return read(first) + minify(prune(rest.map(read).join('\n')).code)
+// target: a TARGETS or CANDIDATES key. read(file) supplies each source's text, from src/ by default.
+export function build(target, { read = readSource } = {}) {
+  const spec = Object.hasOwn(TARGETS, target) ? TARGETS[target] : Object.hasOwn(CANDIDATES, target) ? CANDIDATES[target] : null
+  if (!spec) throw new Error(`build: unknown target ${target}`)
+  const sources = spec.order.map(file => ({ file, text: read(file) }))
+  if (target === 'policy') {
+    assertPolicy(sources, POLICY_EXPORTS, spec.trailer)
+    return sources.map(s => trimmed(s.text)).join('\n') + (spec.trailer || '')
+  }
+  const [first, ...rest] = sources.map(s => trimmed(s.text))
+  return first + minify(prune(rest.join('\n')).code)
+}
+
+// The unshipped candidates, built in memory: a line per candidate, its size on stdout or its
+// overrun on stderr, then exit 1 if any is over the budget, else 0. Nothing is written.
+export function reportCandidates({ budget = WORKFLOW_BUDGET } = {}) {
+  let failures = 0
+  for (const name of Object.keys(CANDIDATES)) {
+    const size = Buffer.byteLength(build(name))
+    if (size > budget) { console.error(`build: candidate ${name} is ${size} bytes, over the ${budget}-byte budget`); failures++ }
+    else console.log(`built ${name} (${size} bytes, ${budget - size} under the ${budget}-byte budget)`)
+  }
+  process.exit(failures ? 1 : 0)
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
   let stale = 0
   try {
+    if (process.argv.includes('--candidates')) reportCandidates()
     for (const [name, { output }] of Object.entries(TARGETS)) {
       const out = join(root, output), text = build(name), size = Buffer.byteLength(text)
       if (name !== 'policy' && size > WORKFLOW_BUDGET) {

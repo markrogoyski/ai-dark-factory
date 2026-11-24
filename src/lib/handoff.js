@@ -19,6 +19,55 @@ function factoryHandoff(S, control) {
   }
 }
 
+// The envelope crosses as JSON, which loses what JSON cannot write: a number past the double range
+// (JSON.parse reads 1e309 as Infinity), NaN, -0 and an undefined field. handoffWire copies the
+// envelope with each of these as a tagged object and readHandoff restores it, so the child reads
+// exactly what Factory held. An object of Factory's own with the tag key is wrapped, never misread.
+const HANDOFF_WIRE = '$factoryWire'
+const HANDOFF_WIRE_VALUES = { Infinity, '-Infinity': -Infinity, NaN, '-0': -0, undefined }
+const HANDOFF_BAD_WIRE = Object.freeze({})
+
+function handoffWire(value) {
+  if (value === undefined || (typeof value === 'number' && (!Number.isFinite(value) || Object.is(value, -0)))) {
+    return { [HANDOFF_WIRE]: Object.is(value, -0) ? '-0' : String(value) }
+  }
+  if (value === null || typeof value !== 'object') return value
+  if (Array.isArray(value)) return Array.from(value, handoffWire)
+  const copy = Object.fromEntries(Object.entries(value).map(([key, entry]) => [key, handoffWire(entry)]))
+  return Object.hasOwn(value, HANDOFF_WIRE) ? { [HANDOFF_WIRE]: 'object', value: copy } : copy
+}
+
+// Restores what handoffWire tagged, or returns HANDOFF_BAD_WIRE for a tag it never writes. An object
+// with nothing to restore comes back as itself and a rebuilt one keeps every field, so the reader
+// still sees a non-enumerable field as sent; a cycle, which the wire copy never writes, is followed
+// no further than once.
+function handoffUnwire(value, done = new WeakMap()) {
+  if (value === null || typeof value !== 'object') return value
+  if (done.has(value)) return done.get(value)
+  if (!Array.isArray(value) && Object.hasOwn(value, HANDOFF_WIRE)) {
+    const tag = value[HANDOFF_WIRE], size = Reflect.ownKeys(value).length
+    if (tag === 'object' && size === 2 && handoffRecord(value.value) && Object.hasOwn(value.value, HANDOFF_WIRE)) return handoffUnwireFields(value.value, done)
+    return size === 1 && typeof tag === 'string' && Object.hasOwn(HANDOFF_WIRE_VALUES, tag) ? HANDOFF_WIRE_VALUES[tag] : HANDOFF_BAD_WIRE
+  }
+  return handoffUnwireFields(value, done)
+}
+
+function handoffUnwireFields(record, done) {
+  if (done.has(record)) return done.get(record)
+  done.set(record, record)
+  let copy = null
+  for (const key of Object.keys(record)) {
+    const entry = handoffUnwire(record[key], done)
+    if (entry === HANDOFF_BAD_WIRE) return HANDOFF_BAD_WIRE
+    if (Object.is(entry, record[key])) continue
+    copy ||= Array.isArray(record) ? record.slice() : Object.defineProperties({}, Object.fromEntries(
+      Reflect.ownKeys(record).map(field => [field, { ...Object.getOwnPropertyDescriptor(record, field), configurable: true }])))
+    Object.defineProperty(copy, key, { value: entry, writable: true, enumerable: true, configurable: true })
+  }
+  if (copy) done.set(record, copy)
+  return copy || record
+}
+
 function factoryControl(requestControl, meterStart) {
   return {
     started: requestControl.started ?? null,
@@ -139,8 +188,8 @@ function readHandoff(args, workflow, clock) {
   const keys = Reflect.ownKeys(args)
   if (keys.length !== 1 || keys[0] !== 'factoryHandoff') return null
 
-  const handoff = args.factoryHandoff
-  const why = handoffDefect(handoff, workflow, clock)
+  const handoff = handoffUnwire(args.factoryHandoff)
+  const why = handoff === HANDOFF_BAD_WIRE ? 'malformed wire value' : handoffDefect(handoff, workflow, clock)
   if (why) throw new Error(`${workflow}: malformed factory handoff (${why}); this input comes only from dark-factory:factory.`)
   return handoff
 }
@@ -246,4 +295,11 @@ function nextHandoff(h, up) {
 // only to a report with markdown.
 function hasReport(result) {
   return typeof result?.report?.markdown === 'string'
+}
+
+// The helper a child's report names: a Pair child reads a nested pair.cli first, as
+// factoryPairConfig merges it; a council child reads Factory's own.
+function handoffCli(h) {
+  const args = h.factory.args
+  return String((h.strategy === 'pair' ? { ...args, ...args.pair } : args).cli || 'dark-factory')
 }

@@ -4180,9 +4180,9 @@ async function ou(){const e=await ti();if(e)return e;const t=await ni();if(t.sto
 decisionTable:r}=t;phase("Synthesize");const o=Fe(a,n.W);await ii(o,n,qe);phase("Ratify");const s=P(a).filter(j=>j.L!==o.
 L);const d=await parallel(s.map(j=>()=>ue(j,"ratify",Eo(a,j,o),Bc)));const c=[],h=[],u=[],l=[];s.forEach((j,se)=>{const C=d[se];
 if(!C){a.notes.push(`Seat ${j.L} did not return a ratification review.`);return}l.push({seat:j.L,endorse:!!C.endorse,note:C.
-note||""});if(C.endorse)c.push(j.L);for(const Oe of(C.objections||[]).slice(0,8)){if(!Oe||!Oe.statement)continue;const Iu=Me(
+note||""});if(C.endorse)c.push(j.L);for(const Oe of(C.objections||[]).slice(0,8)){if(!Oe||!Oe.statement)continue;const Lu=Me(
 a,{round:"F",author:j.L,kind:"finding",target:o.L,severity:oe[Oe.severity]?Oe.severity:"minor",judgment:Oe.kind==="judgm\
-ent",statement:Oe.statement,evidence:Oe.evidence});u.push(Iu)}if(!C.endorse)h.push({seat:j.L,kind:"did not endorse",note:C.
+ent",statement:Oe.statement,evidence:Oe.evidence});u.push(Lu)}if(!C.endorse)h.push({seat:j.L,kind:"did not endorse",note:C.
 note||""})});{const j=jn(a);const se=j===null?{}:a.votes[j];for(const C of a.ledger){if(C.kind!=="finding"||!C.judgment||
 C.withdrawn||C.target!==o.L)continue;if(se[C.author]&&se[C.author].ship===o.L)continue;h.push({seat:C.author,kind:"judgm\
 ent",claim:C.id,severity:C.severity,note:C.statement})}}const m=u.filter(j=>!j.judgment&&(j.severity==="blocker"||j.severity===
@@ -4580,21 +4580,21 @@ pty.
 
 ${e}`;t=A({type:"object",properties:{...t.properties,document:bu,briefFile:N}})}const i=await M(e,{label:"intake",phase:"\
 Intake",schema:t,model:"opus",effort:"medium"},"intake");if(n){const r=ai(i,"settled");if(r)return{error:r};const{document:o,
-briefFile:s,...d}=i;return{intake:d}}return{intake:i}}const Tu=await Zc(Au);return Wa(a,Tu);async function Au(){const e=a.
-raw;const t=hr(e);a.factory={};if(e.brief===void 0){const d=await xu();if(d)return d}else if(e.brief!==false){if(typeof e.
-brief!=="string"||!e.brief.startsWith("/"))return W(a,"failed","brief must be false or an absolute path to a settled bri\
-ef.");if(R){const d=ai(await R.brief({source:e.brief}),"settled");if(d)return d}}phase("Intake");const{intake:n,error:i}=await Ru();
-if(i)return i;if(!n)return W(a,"failed","the intake agent returned nothing");if(n.status==="needs-plan")return Je(a,n.planMissing,
-null);const r=Da(n);a.factory={...a.factory,tier:null,asked:t.tier,tierConfirmed:t.tierConfirmed,chosenBy:"intake",recommended:Ut(
-n),intake:n,escalation:null,args:a.raw,split:r.length?{pieces:r.length,declined:true}:null};if(r.length&&!t.noSplit)return _a(
-a,r,n);const o=Ea(a,n);if(o)return Ha(a,o,n);const s=t.tier||Ut(n);a.factory.tier=s;a.factory.chosenBy=!t.tier?"intake":
-s===a.factory.recommended?"pinned":"overruled";a.factory.strategy=dd(a,n);log(`factory: tier ${s} (${a.factory.chosenBy}${a.
-factory.chosenBy==="intake"?"":`; intake recommends ${a.factory.recommended}`}): ${y(n.reasons,200)}`);{const d={...an(a),
-factory:a.factory};a=bt(vt(lr(a.raw,s,n),{workflow:"factory",tier:s}));Object.assign(a,d)}if(a.factory.strategy==="pair"){
-const d={...an(a),factory:a.factory};a=bt(cd(a));Object.assign(a,d,{pair:xd()});if(a.raw.explain)return yr(a,Rs());const c=await mu(
-await hu());return{...c,workflow:"factory",tier:s,strategy:"pair",factory:d.factory,retro:c.retro||null}}if(a.raw.explain)
-return yr(a,Rs());if(s==="simple")return await gu();return Ka(a,await Us(s))}function Us(e){return e==="feature"?yu():e===
-"architecture"?wu():ou()}async function en(e){const t=qa(a,e);log(`factory: escalating from ${t.from} to ${e.to} (${e.trigger}\
-): ${e.why}`);const n={...a.factory,tier:e.to,escalation:t};const i={...an(a),notes:a.notes.map(r=>/^\w+ attempt: /.test(
-r)?r:`${Pe(t.from)} attempt: ${r}`)};a=bt(vt(lr(n.args,e.to,n.intake),{workflow:a.workflowName,tier:e.to,escalation:t}));
-Object.assign(a,i,{factory:n});return Ua(a,await Us(e.to))}
+briefFile:s,...d}=i;return{intake:d}}return{intake:i}}async function Tu(){const e=a.raw;const t=hr(e);a.factory={};if(e.
+brief===void 0){const d=await xu();if(d)return d}else if(e.brief!==false){if(typeof e.brief!=="string"||!e.brief.startsWith(
+"/"))return W(a,"failed","brief must be false or an absolute path to a settled brief.");if(R){const d=ai(await R.brief({
+source:e.brief}),"settled");if(d)return d}}phase("Intake");const{intake:n,error:i}=await Ru();if(i)return i;if(!n)return W(
+a,"failed","the intake agent returned nothing");if(n.status==="needs-plan")return Je(a,n.planMissing,null);const r=Da(n);
+a.factory={...a.factory,tier:null,asked:t.tier,tierConfirmed:t.tierConfirmed,chosenBy:"intake",recommended:Ut(n),intake:n,
+escalation:null,args:a.raw,split:r.length?{pieces:r.length,declined:true}:null};if(r.length&&!t.noSplit)return _a(a,r,n);
+const o=Ea(a,n);if(o)return Ha(a,o,n);const s=t.tier||Ut(n);a.factory.tier=s;a.factory.chosenBy=!t.tier?"intake":s===a.factory.
+recommended?"pinned":"overruled";a.factory.strategy=dd(a,n);log(`factory: tier ${s} (${a.factory.chosenBy}${a.factory.chosenBy===
+"intake"?"":`; intake recommends ${a.factory.recommended}`}): ${y(n.reasons,200)}`);return await Iu(s,n)}const Au=await Zc(
+Tu);return Wa(a,Au);async function Iu(e,t){{const n={...an(a),factory:a.factory};a=bt(vt(lr(a.raw,e,t),{workflow:"factor\
+y",tier:e}));Object.assign(a,n)}if(a.factory.strategy==="pair"){const n={...an(a),factory:a.factory};a=bt(cd(a));Object.
+assign(a,n,{pair:xd()});if(a.raw.explain)return yr(a,Rs());const i=await mu(await hu());return{...i,workflow:"factory",tier:e,
+strategy:"pair",factory:n.factory,retro:i.retro||null}}if(a.raw.explain)return yr(a,Rs());if(e==="simple")return await gu();
+return Ka(a,await Us(e))}function Us(e){return e==="feature"?yu():e==="architecture"?wu():ou()}async function en(e){const t=qa(
+a,e);log(`factory: escalating from ${t.from} to ${e.to} (${e.trigger}): ${e.why}`);const n={...a.factory,tier:e.to,escalation:t};
+const i={...an(a),notes:a.notes.map(r=>/^\w+ attempt: /.test(r)?r:`${Pe(t.from)} attempt: ${r}`)};a=bt(vt(lr(n.args,e.to,
+n.intake),{workflow:a.workflowName,tier:e.to,escalation:t}));Object.assign(a,i,{factory:n});return Ua(a,await Us(e.to))}

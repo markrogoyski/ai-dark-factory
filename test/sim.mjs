@@ -10,7 +10,7 @@ import { dirname, join } from 'node:path'
 import assert from 'node:assert/strict'
 import { rmSync } from 'node:fs'
 import { loadLib } from './lib.mjs'
-import { PARAMS, runHosted, routedHandoff, workflowHost, factoryFromHandoff } from './fixtures/workflow-host.mjs'
+import { PARAMS, runHosted, runCandidate, candidateScript } from './fixtures/workflow-host.mjs'
 
 const here = dirname(fileURLToPath(import.meta.url))
 // bin/dark-factory polls on a timer; shorten it so the CLI scenarios don't sit sleeping. Children inherit this.
@@ -21,6 +21,8 @@ const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor
 const load = file => new AsyncFunction(...PARAMS,
   readFileSync(join(here, '..', 'plugins', 'dark-factory', 'workflows', file), 'utf8').replace(/^export const meta\s*=/m, 'const meta ='))
 const SCRIPTS = { council: load('council.js'), factory: load('factory.js') }
+// The delegating Factory candidate, built from src/ now, before any run traps the clock.
+candidateScript()
 
 // ---------------------------------------------------------------- helpers shared with council.js
 
@@ -125,12 +127,14 @@ function checkGoldens(name, calls) {
 
 // hooks.retro(prompt) stands in for the retro agent; the default returns RETRO(). hooks.allowThrown: the
 // scenario expects thunks to throw inside parallel(). hooks.workflow: 'factory' runs workflows/factory.js.
-// hooks.meter makes the budget read 5000 + 1000 per agent() call so far. hooks.via: 'route' runs Factory's
-// source only up to routing (routedHandoff), and the result is {handoff, result}; 'factory' runs it to
-// routing and then the built children a delegating Factory would (factoryFromHandoff), and children
-// records them. answers records what the scenario answered, in order, for a replay of the run.
+// hooks.meter makes the budget read 5000 + 1000 per agent() call so far. hooks.via: 'candidate' runs the
+// delegating Factory built from src/ instead (runCandidate), and children records the child workflows
+// it ran ({ran, returned}, with each child's agent-turn count). A Factory run must carry hooks.paired,
+// which only factoryRun() and its A/B arms pass, so none skips the comparison with the candidate.
+// answers records what the scenario answered, in order, for a replay of the run.
 // logAgentCounts[i] records how many calls had been made when logs[i] was recorded.
 async function run(name, scenario, args, hooks = {}) {
+  if ((hooks.workflow === 'factory' || hooks.via) && hooks.paired !== FACTORY_RUN) throw new Error(`${name}: run Factory through factory() or factoryRun(), which compare it with the candidate`)
   const retroOn = !(args && typeof args === 'object' && args.retro === false)
   const calls = []
   const logs = []
@@ -226,9 +230,7 @@ async function run(name, scenario, args, hooks = {}) {
   let result
   try {
     const host = { agent, parallel, pipeline, phase, log, budget }
-    result = hooks.via === 'route' ? await routedHandoff(host, args)
-      : hooks.via === 'child' ? await childRun(host, args)
-      : hooks.via === 'factory' ? await factoryFromHandoff(host, args).then(out => { children = out; return out.result })
+    result = hooks.via === 'candidate' ? await runCandidate(host, args, { dispatches: () => agentCalls }).then(out => { children = out; return out.result })
       : await runHosted(SCRIPTS[hooks.workflow || 'council'], host, args)
   } finally {
     Math.random = savedRandom; Date.now = savedNow
@@ -239,15 +241,6 @@ async function run(name, scenario, args, hooks = {}) {
   if (GOLDEN_RUNS.has(name)) checkGoldens(name, calls)
   if (process.env.SHOW_REPORT && result && result.report) console.log(`\n===== ${name} report =====\n${result.report.markdown}\n`)
   return { result, calls, logs, logAgentCounts, answers, children }
-}
-
-// Factory up to routing, then the built child it would hand the tier to, from the envelope:
-// {handoff, result}, the result being the child's raw response (or Factory's own stop before routing).
-async function childRun(host, args) {
-  const routed = await routedHandoff(host, args)
-  if (!routed.handoff) return routed
-  const name = loadLib().childWorkflow(routed.handoff)
-  return { handoff: routed.handoff, result: await workflowHost(host).workflow(name, { factoryHandoff: routed.handoff }) }
 }
 
 function roleOf(label) {
@@ -1927,45 +1920,60 @@ const INTAKE = (tier, o = {}) => ({
 })
 const NOT_BIG = { tooBig: { tier: '', reason: '' } }
 // Tier-specific scenarios exercise the direct intake path. The clean Simple golden includes shaping.
-// Every run that reaches routing is also run the way a delegating Factory would run it (childAB).
-const factory = async (name, handler, args, hooks = {}) => {
-  const a = name === 'factory-simple' ? args : typeof args === 'string' ? '--no-brief ' + args : { brief: false, ...args }
-  const first = await run(name, handler, a, { ...hooks, workflow: 'factory' })
-  if (first.logs.some(l => /^factory: tier /.test(l))) await childAB(name, first, a, hooks)
-  return first
+// Every Factory run, routed or not, is also run by the delegating candidate (candidateAB).
+const factory = (name, handler, args, hooks = {}) =>
+  factoryRun(name, handler, name === 'factory-simple' ? args : typeof args === 'string' ? '--no-brief ' + args : { brief: false, ...args }, hooks)
+const FACTORY_RUN = Symbol('paired with the candidate')
+// A Factory run with the args as given. The result is the inline run's, with candidate: what
+// candidateAB returned.
+async function factoryRun(name, handler, args, hooks = {}) {
+  const first = await run(name, handler, args, { ...hooks, workflow: 'factory', paired: FACTORY_RUN })
+  return { ...first, candidate: await candidateAB(name, first, args, hooks) }
 }
 
-// The child A/B: a run of inline Factory against the same run through the built children, Factory
-// stopping at routing and handing the tier over in an envelope (factoryFromHandoff). Both arms
-// replay the first run's answers, so a scenario that counts its calls answers each arm alike, and
-// both run with the budget meter on, so the usage section and the meter's log lines are compared
-// too. The prompts, the logs and the result must be the same, and one child runs per tier: one plus
-// one per escalation line. Neither arm adds to the suite-wide prompt lists.
-const AB_RUNS = new Map()
-async function childAB(name, first, args, hooks = {}) {
-  const replay = () => {
-    const left = first.answers.slice()
-    return async (role, p, opts) => {
-      const i = left.findIndex(x => x.label === (opts.label || '') && x.prompt === p)
-      assert.ok(i >= 0, `${name} A/B: the first run gave no answer to ${opts.label}`)
-      const [x] = left.splice(i, 1)
-      if (x.error) throw x.error
-      return x.out === undefined ? undefined : structuredClone(x.out)
-    }
-  }
-  const arm = via => run(`ab-${via}:${name}`, replay(), args, { ...hooks, workflow: 'factory', meter: true, collect: false, via })
-  const inline = await arm('inline')
-  const child = await arm('factory')
+// The candidate A/B: the shipped inline factory.js against the delegating Factory built from src/,
+// which runs each tier as a child workflow through workflow(). Both arms replay the first run's
+// answers, every one of them, so a scenario that counts its calls answers each arm alike. Both run
+// with the budget meter advancing, so the usage section and the meter's log lines are compared too;
+// a case with its own budget hook also runs a second pair of arms under it. The prompts (retro and
+// facts record included), the logs and the result must be the same. The children the candidate ran
+// are filed as a chain under the scenario and case, for the check at the end of the suite: '-' is
+// no workflow() call, 'council:fix' one child at its tier, '[0]' after it a child that started no
+// turn, '>' a hand-up to the next. Neither arm adds to the suite-wide prompt lists. Returns
+// {inline, cand} for the advancing meter and own: the candidate under the case's budget, or null.
+const CAND_RUNS = new Map()
+let SCENARIO = null
+async function candidateAB(name, first, args, hooks = {}) {
   const prompts = r => r.calls.map(c => [c.label, c.raw ?? c.prompt])
-  assert.ok(inline.calls.length > 0 && child.children.ran.length > 0, `${name} A/B: nothing ran`)
-  assert.deepEqual(prompts(inline), prompts(first), `${name} A/B: the replay asks what the first run asked`)
-  assert.deepEqual(prompts(child), prompts(inline), `${name} A/B: prompts`)
-  assert.deepEqual(child.logs, inline.logs, `${name} A/B: logs`)
-  assert.equal(JSON.stringify(child.result), JSON.stringify(inline.result), `${name} A/B: result`)
-  const escalations = inline.logs.filter(l => /^factory: escalating from /.test(l)).length
-  assert.equal(child.children.ran.length, 1 + escalations, `${name} A/B: one child per tier`)
-  const runs = AB_RUNS.get(name) || []
-  AB_RUNS.set(name, [...runs, child.children.handoffs.map(h => h.tier)])
+  const chainOf = c => c.children.ran.map((r, i) => `${r.name.replace('dark-factory:', '')}:${r.args.factoryHandoff.tier}${c.children.returned[i]?.dispatches === 0 ? '[0]' : ''}`).join('>') || '-'
+  const pair = async (what, extra) => {
+    const arm = async via => {
+      const left = first.answers.slice()
+      const replay = async (role, p, opts) => {
+        const i = left.findIndex(x => x.label === (opts.label || '') && x.prompt === p)
+        assert.ok(i >= 0, `${name} ${what} ${via}: the first run gave no answer to ${opts.label}`)
+        const [x] = left.splice(i, 1)
+        if (x.error) throw x.error
+        return x.out === undefined ? undefined : structuredClone(x.out)
+      }
+      const r = await run(`ab-${via}:${name}`, replay, args, { ...hooks, ...extra, workflow: 'factory', paired: FACTORY_RUN, collect: false, via })
+      assert.deepEqual(left.map(x => x.label), [], `${name} ${what} ${via}: answers the replay never asked for`)
+      return r
+    }
+    const inline = await arm('inline')
+    const cand = await arm('candidate')
+    assert.deepEqual(prompts(inline), prompts(first), `${name} ${what}: the replay asks what the first run asked`)
+    assert.deepEqual(prompts(cand), prompts(inline), `${name} ${what}: prompts`)
+    assert.deepEqual(cand.logs, inline.logs, `${name} ${what}: logs`)
+    assert.equal(JSON.stringify(cand.result), JSON.stringify(inline.result), `${name} ${what}: result`)
+    return { inline, cand }
+  }
+  const { inline, cand } = await pair('candidate A/B', { meter: true, budget: undefined })
+  const own = hooks.budget ? (await pair('candidate A/B (own meter)', {})).cand : null
+  if (own) assert.equal(chainOf(own), chainOf(cand), `${name}: the same children under either meter`)
+  const cases = CAND_RUNS.get(SCENARIO) || {}
+  CAND_RUNS.set(SCENARIO, { ...cases, [name]: [...(cases[name] || []), chainOf(cand)] })
+  return { inline, cand, own }
 }
 const factsIn = prompt => JSON.parse(prompt.match(/## Run facts \(data\)\n\n```json\n([\s\S]*?)\n```/)[1])
 const LOG_TASK = 'Add a debug log line with the retry count in Fetcher::retry'
@@ -2010,15 +2018,16 @@ async function scenarioFactorySimple() {
   assert.ok(call('record').prompt.includes('retro --facts-only --run-dir'))
   assert.equal(result.retro.recorded, true)
 
-  // The envelope Factory would hand a child at routing carries the whole pre-route state: the
+  // The envelope the candidate hands its child at routing carries the whole pre-route state: the
   // settled brief, the diagnostic history of the shaping, challenge and intake turns, and their count.
   const note = 'The shaping prompt named no repository to read.'
   const shaped = async (role, prompt, opts) => role.kind === 'brief-shape' ? { ...await handler(role, prompt, opts), process: note } : handler(role, prompt, opts)
-  const routed = await run('factory-simple-route', shaped, { task: LOG_TASK }, { workflow: 'factory', via: 'route', meter: true })
-  const h = routed.result.handoff
-  assert.equal(routed.result.result, null)
-  assert.deepEqual(routed.calls.map(c => c.role.kind), ['brief-shape', 'brief-challenge', 'intake'])
-  assert.ok(!routed.logs.some(l => /^factory: tier /.test(l)), 'routing is where the envelope is taken')
+  const { cand: routed } = (await factoryRun('factory-simple-route', shaped, { task: LOG_TASK }, { collect: false })).candidate
+  const h = routed.children.ran[0].args.factoryHandoff
+  assert.deepEqual(routed.children.ran.map(r => r.name), ['dark-factory:council'])
+  assert.deepEqual(routed.calls.slice(0, 3).map(c => c.role.kind), ['brief-shape', 'brief-challenge', 'intake'])
+  const routing = routed.logs.findIndex(l => /^factory: tier /.test(l))
+  assert.equal(routed.logAgentCounts[routing], 3, 'routing, where the envelope is taken, follows the intake turn')
   assert.deepEqual([h.tier, h.control.turns, h.control.meterStart], ['simple', 3, 5000])
   assert.deepEqual([h.factory.brief.state, h.factory.brief.brief.outcome, h.factory.briefFile], ['settled', 'Log the retry count at debug level.', '/tmp/proj/.council/brief-one/BRIEF.json'])
   assert.deepEqual(['tier', 'chosenBy', 'asked', 'recommended'].map(k => h.factory[k]), ['tier', 'chosenBy', 'asked', 'recommended'].map(k => result.factory[k]), 'the record the inline run reported')
@@ -2031,9 +2040,10 @@ async function scenarioFactorySimple() {
 
   // A shaped explanation stops after routing, with nothing run in the child.
   const explainArgs = { task: LOG_TASK, explain: true }
-  const explained = await run('factory-simple-explain', handler, explainArgs, { workflow: 'factory' })
+  const explained = await factoryRun('factory-simple-explain', handler, explainArgs)
+  await assert.rejects(run('factory-unpaired', handler, explainArgs, { workflow: 'factory' }), /run Factory through factory\(\) or factoryRun\(\)/, 'no Factory run skips the candidate')
+  await assert.rejects(run('factory-unpaired', handler, explainArgs, { via: 'candidate' }), /run Factory through factory\(\) or factoryRun\(\)/)
   assert.deepEqual([explained.result.status, explained.calls.map(c => c.role.kind)], ['explained', ['brief-shape', 'brief-challenge', 'intake']])
-  await childAB('factory-simple-explain', explained, explainArgs)
   // A turn budget spent by intake stops each route at its first turn: Simple and the Fix council
   // alike come back blocked, with no tier wrapper.
   for (const [name, tier] of [['factory-simple-limit', 'simple'], ['factory-fix-limit', 'fix']]) {
@@ -2667,8 +2677,9 @@ function scenarioHeadlessPrompts() {
 // Factory handoff: a string, {task}, and {task, factoryHandoff} (two keys, so not a handoff) give the
 // same prompts, logs and result, and those prompts are the reviewed consensus goldens.
 async function scenarioDirectCouncil() {
-  const routed = await run('direct-envelope', async () => INTAKE('fix'), { task: CONSENSUS_TASK, brief: false }, { workflow: 'factory', via: 'route' })
-  const factoryHandoff = routed.result.handoff
+  // A real envelope, from a candidate run that routes a Fix and explains: its child starts no turn.
+  const routed = await factoryRun('direct-envelope', async () => INTAKE('fix'), { task: CONSENSUS_TASK, brief: false, explain: true })
+  const factoryHandoff = routed.candidate.cand.children.ran[0].args.factoryHandoff
   assert.equal(factoryHandoff.strategy, 'independent')
   const runs = {
     string: await run('direct-string', consensusHandler, CONSENSUS_TASK),
@@ -2682,29 +2693,32 @@ async function scenarioDirectCouncil() {
   return 'string, {task} and {task, factoryHandoff} councils run alike, on the consensus goldens'
 }
 
-// The council child's raw response to a Factory handoff, before Factory adds anything. A run that
-// ends with a report says usage: true whatever the meter read (nonzero, zero or unavailable), and the
-// child appends no token section itself: Factory does, measured from its own start. An explanation
-// has no report of its own, so it says usage: false even though the brief gives it markdown.
+// The council child's raw response to a Factory handoff, before Factory adds anything, as the
+// candidate received it from workflow(). A run that ends with a report says usage: true whatever the
+// meter read (nonzero, zero or unavailable), and the child appends no token section itself: Factory
+// does, measured from its own start, the baseline the envelope carries. An explanation has no report
+// of its own, so it says usage: false even though the brief gives it markdown.
 async function scenarioChildUsage() {
   const meters = {
-    nonzero: { meter: true },
-    zero: { budget: { total: null, spent: () => 0, remaining: () => Infinity } },
-    unavailable: { budget: {} },
+    nonzero: [{ meter: true }, 5000],
+    zero: [{ budget: { total: null, spent: () => 0, remaining: () => Infinity } }, 0],
+    unavailable: [{ budget: {} }, null],
   }
-  const inline = await run('child-usage-inline', simpleHandler, { task: LOG_TASK }, { workflow: 'factory', collect: false, meter: true })
+  const inline = await factoryRun('child-usage-inline', simpleHandler, { task: LOG_TASK }, { collect: false, meter: true })
   assert.ok(inline.result.report.markdown.includes('### Token use'), 'inline Factory appends the section the child leaves to it')
-  for (const [name, hooks] of Object.entries(meters)) {
-    const r = await run(`child-usage-${name}`, simpleHandler, { task: LOG_TASK }, { via: 'child', collect: false, ...hooks })
-    const out = r.result.result
+  for (const [name, [hooks, meterStart]] of Object.entries(meters)) {
+    const { cand, own } = (await factoryRun(`child-usage-${name}`, simpleHandler, { task: LOG_TASK }, { collect: false, ...hooks })).candidate
+    const r = own || cand
+    assert.deepEqual([cand.children.ran[0].args.factoryHandoff.control.meterStart, r.children.ran[0].args.factoryHandoff.control.meterStart], [5000, meterStart], `${name}: the baseline`)
+    const out = r.children.returned[0].result
     assert.deepEqual(Object.keys(out), ['factoryChild', 'final', 'usage'], name)
     assert.deepEqual([out.factoryChild, out.usage, out.final.status, out.final.tier, out.final.final.readiness.state], [1, true, 'done', 'simple', 'ready'], name)
     assert.deepEqual(r.calls.map(c => c.role.kind), ['brief-shape', 'brief-challenge', 'intake', 'setup', 'solve', 'check', 'audit', 'record'], name)
     assert.ok(out.final.report.markdown.includes('### Simple change, by Claude Sonnet') && out.final.report.markdown.includes('Brief file: '), name)
     assert.ok(!out.final.report.markdown.includes('### Token use'), `${name}: the child adds no token section`)
   }
-  const explained = await run('child-usage-explain', simpleHandler, { task: LOG_TASK, explain: true }, { via: 'child', collect: false, meter: true })
-  const out = explained.result.result
+  const explained = (await factoryRun('child-usage-explain', simpleHandler, { task: LOG_TASK, explain: true }, { collect: false, meter: true })).candidate.cand
+  const out = explained.children.returned[0].result
   assert.deepEqual([out.factoryChild, out.usage, out.final.status], [1, false, 'explained'])
   assert.ok(out.final.report.markdown.startsWith('### How the run went\n\n') && !out.final.report.markdown.includes('### Token use'), 'the brief gives the explanation its only markdown')
   assert.deepEqual(explained.calls.map(c => c.role.kind), ['brief-shape', 'brief-challenge', 'intake'], 'an explanation runs no turn in the child')
@@ -2716,6 +2730,7 @@ for (const [name, fn] of Object.entries({ scenarioConsensus, scenarioDeadlock, s
   scenarioFactorySimple, scenarioSetupKeeps, scenarioFactoryFindings, scenarioFactoryEscalate, scenarioFactorySpecAsk, scenarioFactoryHandUp, scenarioFactoryTier, scenarioFactoryRoute, scenarioFactorySplit,
   scenarioFactoryFeature, scenarioFactoryFeatureHard, scenarioFactoryArchitecture, scenarioFactoryFeatureToArchitecture, scenarioFactsSave, scenarioHeadlessPrompts, scenarioDirectCouncil, scenarioChildUsage })) {
   if (ONLY && !ONLY.includes(name)) continue
+  SCENARIO = name
   try {
     console.log(`ok   ${name}: ${await fn()}`)
   } catch (e) {
@@ -2724,21 +2739,38 @@ for (const [name, fn] of Object.entries({ scenarioConsensus, scenarioDeadlock, s
     if (process.env.VERBOSE) console.log(e.stack)
   }
 }
-// Every routing scenario took the child A/B, and the ones that hand up took the hand-up loop.
+// Every Factory run was compared with the candidate, and the candidate ran the children listed here
+// for its case, one chain per run in order (see candidateAB): a stop before routing calls no
+// workflow(), an explanation or a run limit spent at routing enters the routed child and starts no
+// turn in it, and a hand-up runs the next tier's child.
 const AB_REQUIRED = {
-  scenarioFactorySimple: ['factory-simple', 'factory-simple-explain', 'factory-simple-limit', 'factory-fix-limit'],
-  scenarioFactoryFindings: ['factory-findings'],
-  scenarioFactoryEscalate: ['factory-escalate', 'factory-escalate-meter'],
-  scenarioFactoryHandUp: ['factory-handup'],
-  scenarioFactoryTier: ['factory-tier-kept', 'factory-tier-string'],
-  scenarioFactoryFeature: ['factory-feature'],
-  scenarioFactoryFeatureHard: ['factory-feature-hard'],
-  scenarioFactoryArchitecture: ['factory-architecture'],
-  scenarioFactoryFeatureToArchitecture: ['factory-feature-arch'],
+  scenarioFactorySimple: { 'factory-simple': ['council:simple'], 'factory-simple-route': ['council:simple'], 'factory-simple-explain': ['council:simple[0]'],
+    'factory-simple-limit': ['council:simple[0]'], 'factory-fix-limit': ['council:fix[0]'] },
+  scenarioSetupKeeps: { 'setup-keeps': ['council:simple', 'council:simple', 'council:fix'] },
+  scenarioFactoryFindings: { 'factory-findings': ['council:simple'] },
+  scenarioFactoryEscalate: { 'factory-escalate': ['council:simple>council:fix'], 'factory-escalate-meter': ['council:simple>council:fix'] },
+  scenarioFactorySpecAsk: { 'factory-spec-ask': ['council:fix'], 'factory-spec-answered': ['council:fix'] },
+  scenarioFactoryHandUp: { 'factory-handup': ['council:simple>council:feature', 'council:simple>council:fix', 'council:simple>council:feature'] },
+  scenarioFactoryTier: { 'factory-tier': ['-'], 'factory-tier-kept': ['council:simple'], 'factory-tier-switched': ['council:feature'], 'factory-tier-string': ['council:simple'] },
+  scenarioFactoryRoute: { 'factory-route': ['council:fix', 'council:fix', 'council:architecture', 'council:fix', '-'] },
+  scenarioFactorySplit: { 'factory-split': ['-'], 'factory-split-whole': ['council:feature'], 'factory-split-one': ['council:feature'], 'factory-split-pinned': ['-'] },
+  scenarioFactoryFeature: { 'factory-feature': ['council:feature'] },
+  scenarioFactoryFeatureHard: { 'factory-feature-hard': ['council:feature'] },
+  scenarioFactoryArchitecture: { 'factory-architecture': ['council:architecture'] },
+  scenarioFactoryFeatureToArchitecture: { 'factory-feature-arch': ['council:feature>council:architecture'] },
+  scenarioDirectCouncil: { 'direct-envelope': ['council:fix[0]'] },
+  scenarioChildUsage: { 'child-usage-inline': ['council:simple'], 'child-usage-nonzero': ['council:simple'], 'child-usage-zero': ['council:simple'],
+    'child-usage-unavailable': ['council:simple'], 'child-usage-explain': ['council:simple[0]'] },
 }
-const AB_HANDUPS = ['factory-escalate', 'factory-escalate-meter', 'factory-handup', 'factory-feature-arch']
-const missed = Object.entries(AB_REQUIRED).filter(([scenario]) => !ONLY || ONLY.includes(scenario)).flatMap(([, names]) => names)
-  .filter(name => !AB_RUNS.has(name) || (AB_HANDUPS.includes(name) && AB_RUNS.get(name).some(tiers => tiers.length < 2)))
-if (missed.length) { failed++; console.log(`FAIL child A/B: not compared, or no hand-up taken: ${missed.join(', ')}`) }
-else console.log(`ok   child A/B: ${[...AB_RUNS.values()].flat().length} runs compared (${[...AB_RUNS].map(([n, runs]) => `${n} ${runs.map(t => t.join('>')).join(', ')}`).join('; ')})`)
+const abMissed = []
+for (const scenario of new Set([...Object.keys(AB_REQUIRED), ...CAND_RUNS.keys()])) {
+  if (ONLY && !ONLY.includes(scenario)) continue
+  const want = AB_REQUIRED[scenario] || {}, got = CAND_RUNS.get(scenario) || {}
+  for (const name of new Set([...Object.keys(want), ...Object.keys(got)])) {
+    if (JSON.stringify(got[name] || []) !== JSON.stringify(want[name] || [])) abMissed.push(`${scenario} ${name}: ran ${JSON.stringify(got[name] || [])}, expected ${JSON.stringify(want[name] || [])}`)
+  }
+}
+const abRuns = [...CAND_RUNS.values()].flatMap(cases => Object.values(cases).flat())
+if (abMissed.length) { failed++; console.log(`FAIL candidate A/B: a Factory case not compared, or other children run:\n  ${abMissed.join('\n  ')}`) }
+else console.log(`ok   candidate A/B: ${abRuns.length} Factory runs compared with the delegating candidate (${[...CAND_RUNS.values()].map(cases => Object.entries(cases).map(([n, chains]) => `${n} ${chains.join(', ')}`).join('; ')).join('; ')})`)
 process.exit(failed ? 1 : 0)

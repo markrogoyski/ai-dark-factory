@@ -106,6 +106,19 @@ test('the handoff tier and Pair states match the inline Factory rebuilds', () =>
   assert.deepEqual(L.executionPlan(childPair), L.executionPlan(inlinePair))
 })
 
+test('handoffCli names the helper the child state uses, for both strategies', () => {
+  for (const extra of [{}, { cli: 'df-top' }, { pair: { cli: 'df-pair' } }, { cli: 'df-top', pair: { cli: 'df-pair' } }, { cli: 'x', pair: { cli: '' } }]) {
+    for (const strategy of ['pair', 'independent']) {
+      const state = routedState({ strategy, tier: 'fix', args: extra })
+      const envelope = roundTrip(L.factoryHandoff(state, L.factoryControl({ started: null, turns: 0, ...state.controls }, null)))
+      const child = strategy === 'pair' ? L.handoffPairState(envelope) : L.handoffState(envelope)
+      assert.equal(L.handoffCli(envelope), child.cli, `${strategy} ${JSON.stringify(extra)}`)
+    }
+  }
+  assert.equal(L.handoffCli({ strategy: 'pair', factory: { args: { cli: 'x', pair: { cli: '' } } } }), 'dark-factory')
+  assert.equal(L.handoffCli({ strategy: 'independent', factory: { args: { pair: { cli: 'df-pair' } } } }), 'dark-factory')
+})
+
 test('changing the meter reading changes only the handoff meter baseline', () => {
   const state = routedState()
   const requestControl = { started: null, turns: 1, ...state.controls }
@@ -582,5 +595,47 @@ test('hasReport is true exactly for a report with string markdown', () => {
   for (const result of [{ report: { markdown: '' } }, { report: { markdown: '### Done' } }]) assert.equal(L.hasReport(result), true, JSON.stringify(result))
   for (const result of [{ report: {} }, { report: null }, { report: { markdown: 5 } }, { report: { markdown: null } }, {}, null, undefined]) {
     assert.equal(L.hasReport(result), false, JSON.stringify(result))
+  }
+})
+
+test('the wire copy carries what JSON cannot write and the reader restores it exactly', async () => {
+  const { isDeepStrictEqual } = await import('node:util')
+  const lookalike = { $factoryWire: 'Infinity' }
+  const wrapped = { $factoryWire: 'object', value: { rounds: Infinity } }
+  const h = routedHandoff({ args: {
+    rounds: Infinity, consensusAt: -Infinity, escalateAt: NaN, timeoutMin: -0, gone: undefined,
+    context: [Infinity, undefined, 'text'], nested: { lookalike, wrapped },
+  } })
+  const wire = L.handoffWire(h)
+  assert.ok(isDeepStrictEqual(roundTrip(wire), wire), 'the wire copy survives JSON unchanged')
+  assert.ok(!isDeepStrictEqual(roundTrip(h), h), 'the envelope itself would not')
+  const received = L.readHandoff({ factoryHandoff: roundTrip(wire) }, 'council')
+  assert.ok(isDeepStrictEqual(received, h), 'the child reads exactly what Factory held')
+  assert.ok(Object.hasOwn(received.factory.args, 'gone'))
+  assert.ok(Object.is(received.factory.args.timeoutMin, -0))
+  assert.deepEqual(h.factory.args.nested, { lookalike, wrapped }, 'Factory\'s own objects are unchanged')
+
+  // A frozen record is rebuilt as an ordinary one.
+  const frozen = roundTrip(wire)
+  Object.freeze(frozen.factory.args)
+  assert.ok(isDeepStrictEqual(L.readHandoff({ factoryHandoff: frozen }, 'council'), h))
+
+  // An envelope JSON already writes exactly crosses as a plain copy.
+  const plain = routedHandoff()
+  assert.deepEqual(L.handoffWire(plain), plain)
+  assert.notEqual(L.handoffWire(plain), plain)
+})
+
+test('the reader rejects a wire tag the wire copy never writes', () => {
+  const tags = [{ $factoryWire: 'bogus' }, { $factoryWire: 'Infinity', extra: 1 }, { $factoryWire: 7 },
+    { $factoryWire: 'object', value: 3 }, { $factoryWire: 'object', value: { rounds: 2 } }, { $factoryWire: 'object', value: {}, extra: 1 }, { $factoryWire: 'object' }]
+  for (const tag of tags) {
+    for (const place of ['args', 'carried', 'control']) {
+      const h = roundTrip(L.handoffWire(routedHandoff()))
+      if (place === 'args') h.factory.args.rounds = tag
+      else if (place === 'carried') h.carried.notes.push(tag)
+      else h.control.maxTurns = tag
+      assertMalformedHandoff(h, 'council', 'malformed wire value', `${JSON.stringify(tag)} in ${place}`)
+    }
   }
 })

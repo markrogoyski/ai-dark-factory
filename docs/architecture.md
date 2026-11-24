@@ -110,7 +110,11 @@ relative to its real installed path, so prompts never depend on an install path.
 
 `workflows/*.js` hold the turn order, the ledger, the stop rule, the scorecards and every prompt,
 and never judge. `factory.js` is the council's engine plus goal shaping, intake, the three tiers, Pair for its
-pair strategy, and `src/main-factory.js` (routing and `escalate()`).
+pair strategy, `src/route.js` (intake and routing) and `src/main-factory.js` (the tier run and
+`escalate()`). The unshipped `factory-split` candidate (`CANDIDATES` in `tools/sources.mjs`) routes
+through the same `src/route.js` but bundles none of the flows: it runs each tier as a child
+workflow through `workflow()`. `node tools/build.mjs --candidates` builds it in memory and reports
+its size against the budget; nothing ships it.
 
 All five are **generated** from `src/` by `tools/build.mjs` (the workflow runtime allows no
 imports, so each must be one file) and committed, so they can be run without a build.

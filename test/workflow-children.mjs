@@ -6,7 +6,7 @@ import { mkdtempSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { loadLib } from './lib.mjs'
-import { PARAMS, factoryFromHandoff, routedHandoff, workflowHost } from './fixtures/workflow-host.mjs'
+import { PARAMS, runCandidate, workflowHost } from './fixtures/workflow-host.mjs'
 
 const L = loadLib()
 const INTAKE = (tier, strategy, o = {}) => ({ status: 'ok', tier, mode: 'implement', strategy, reasons: `it looks like ${tier} work`, planMissing: '', signals: {}, split: [], ...o })
@@ -59,6 +59,11 @@ test('the child host copies args and records each child it ran', async () => {
     { name: 'dark-factory:council', args: before },
     { name: 'dark-factory:pair', args: { factoryHandoff: { version: 1 } } },
   ])
+  // The runtime passes args as JSON: what JSON would change is refused, and no child runs.
+  for (const bad of [{ task: 'x', gone: undefined }, { task: 'x', rounds: Infinity }]) {
+    await assert.rejects(wf.workflow('dark-factory:council', bad), { message: 'workflow(dark-factory:council): args do not survive JSON unchanged' })
+  }
+  assert.equal(wf.ran.length, 2)
 })
 
 test('the child host runs the built council and pair workflows', async () => {
@@ -70,31 +75,41 @@ test('the child host runs the built council and pair workflows', async () => {
   assert.deepEqual(wf.ran.map(r => r.name), ['dark-factory:council', 'dark-factory:pair'])
 })
 
-test('routedHandoff stops Factory at routing and returns the envelope its child accepts', async () => {
+test('the delegating Factory hands each routed tier to the child its strategy names, with an envelope it accepts', async () => {
   for (const [tier, strategy, child] of [['simple', 'pair', 'pair'], ['simple', 'independent', 'council'], ['fix', 'independent', 'council'],
     ['feature', 'pair', 'pair'], ['feature', 'independent', 'council'], ['architecture', 'independent', 'council']]) {
     const logs = [], labels = []
     const h = host({ log: line => logs.push(line), budget: { spent: () => 5000 + 1000 * labels.length },
       agent: async (prompt, opts) => { labels.push(opts.label); return INTAKE(tier, strategy, tier === 'architecture' ? { mode: 'design' } : {}) } })
-    const { handoff, result } = await routedHandoff(h, { task: 'Fix the parser', brief: false })
+    // An explanation: the child reads the envelope and returns without a turn of its own.
+    const { result, ran, returned } = await runCandidate(h, { task: 'Fix the parser', brief: false, explain: true }, { dispatches: () => labels.length })
     const why = `${tier} ${strategy}`
-    assert.equal(result, null, why)
+    assert.equal(result.status, 'explained', why)
     assert.deepEqual(labels, ['intake'], why)
-    assert.ok(!logs.some(l => /^factory: tier /.test(l)), 'the routing line is the caller\'s to log')
+    assert.ok(logs.some(l => l.startsWith(`factory: tier ${tier} (intake): `)), `${why}: Factory logs the routing line`)
+    assert.deepEqual(ran.map(r => r.name), [`dark-factory:${child}`], why)
+    assert.deepEqual(returned.map(r => r.dispatches), [0], why)
+    const handoff = ran[0].args.factoryHandoff
+    assert.deepEqual(Object.keys(ran[0].args), ['factoryHandoff'], why)
     assert.deepEqual([handoff.version, handoff.tier, handoff.strategy, handoff.factory.tier, handoff.factory.chosenBy], [1, tier, strategy, tier, 'intake'], why)
     assert.deepEqual(handoff.control, { started: null, turns: 1, maxTurns: null, maxRunMin: null, meterStart: 5000 }, why)
     assert.equal(L.readHandoff({ factoryHandoff: handoff }, child), handoff, why)
   }
-  // Factory's own stops before routing come back as its result.
+  // Factory's own stops before routing are its result, and no child runs.
   const h = host({ agent: async () => INTAKE('simple', 'pair', { status: 'needs-plan', planMissing: 'PLAN.md' }) })
-  const { handoff, result } = await routedHandoff(h, { task: 'Do item 3 of the plan', brief: false })
-  assert.deepEqual([handoff, result.status], [null, 'needs-plan'])
+  const { result, ran } = await runCandidate(h, { task: 'Do item 3 of the plan', brief: false })
+  assert.deepEqual([result.status, ran], ['needs-plan', []])
 })
 
-// Valid envelopes as Factory builds them at routing, for the boot table to break one field at a time.
+// Valid envelopes as the delegating Factory passes them to workflow() for an executed route, for the
+// boot table to break one field at a time. The child's first turn ends the run.
+const SEEDED = new Error('the seed run ends at the child\'s first turn')
 async function seed(tier, strategy) {
-  const h = host({ agent: async (prompt, opts) => opts.label === 'intake' ? INTAKE(tier, strategy) : assert.fail(`unexpected turn ${opts.label}`), budget: { spent: () => 5000 } })
-  return (await routedHandoff(h, { task: 'Fix the parser', brief: false })).handoff
+  const h = host({ agent: async (prompt, opts) => { if (opts.label === 'intake') return INTAKE(tier, strategy); throw SEEDED }, budget: { spent: () => 5000 } })
+  const wf = workflowHost(h)
+  await runCandidate(h, { task: 'Fix the parser', brief: false }, { wf }).catch(e => { if (e !== SEEDED) throw e })
+  assert.deepEqual(wf.ran.map(r => r.name), [`dark-factory:${strategy === 'pair' ? 'pair' : 'council'}`])
+  return wf.ran[0].args.factoryHandoff
 }
 
 // A child counts every native and hosted dispatch; none may happen before the envelope is read.
@@ -171,10 +186,10 @@ test('a carried time budget stops the council child where inline Factory stops',
       const h = host({ log: line => logs.push(line), factoryRuntime: runtime })
       const args = { task: 'Fix the parser', brief: false, maxRunMin: 1 }
       const out = via === 'inline' ? { result: await workflowHost(h, { children: ['factory'] }).workflow('dark-factory:factory', args), ran: [] }
-        : await factoryFromHandoff(h, args)
+        : await runCandidate(h, args)
       return { ...out, logs, dispatches, reads }
     }
-    const inline = await arm('inline'), child = await arm('child')
+    const inline = await arm('inline'), child = await arm('candidate')
     assert.deepEqual([inline.result.status, inline.result.stopReason, inline.dispatches], ['blocked', 'Run time budget exhausted (1 minutes).', [['agent', 'intake']]], tier)
     assert.deepEqual(child.ran.map(r => r.name), ['dark-factory:council'], tier)
     assert.deepEqual([child.dispatches, child.logs, child.reads], [inline.dispatches, inline.logs, inline.reads], tier)

@@ -45,7 +45,11 @@ export const TARGETS = {
   council: { output: 'plugins/dark-factory/workflows/council.js', order: [
     'src/00-meta.js', ...LIB, ...HANDOFF_LIB, BOOT, ...DEBATE, 'src/simple.js', 'src/feature.js', 'src/architecture.js', 'src/delegated.js', 'src/main-council.js'] },
   factory: { output: 'plugins/dark-factory/workflows/factory.js', order: [
-    'src/00-meta-factory.js', ...LIB, ...PAIR_LIB, 'src/boot-factory.js', ...DEBATE, PAIR_SCHEMAS, PAIR_FLOW, 'src/simple.js', 'src/feature.js', 'src/architecture.js', 'src/brief.js', 'src/main-factory.js'] },
+    'src/00-meta-factory.js', ...LIB, ...PAIR_LIB, 'src/boot-factory.js', ...DEBATE, PAIR_SCHEMAS, PAIR_FLOW, 'src/simple.js', 'src/feature.js', 'src/architecture.js', 'src/brief.js', 'src/route.js', 'src/main-factory.js'] },
   pair: { output: 'plugins/dark-factory/workflows/pair.js', order: [
     'src/00-meta-pair.js', ...LIB, ...PAIR_LIB, ...HANDOFF_LIB, 'src/boot-pair.js', SCHEMAS, PAIR_SCHEMAS, TURNS_CORE, TURNS, PAIR_FLOW, 'src/main-pair.js'] },
+}
+// Builds that are not shipped: `node tools/build.mjs --candidates` builds them in memory.
+export const CANDIDATES = {
+  'factory-split': { order: ['src/00-meta-factory.js', ...LIB, ...HANDOFF_LIB, 'src/boot-factory.js', TURNS_CORE, 'src/brief.js', 'src/route.js', 'src/main-factory-split.js'] },
 }

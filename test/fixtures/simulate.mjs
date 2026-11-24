@@ -7,7 +7,7 @@ import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { validateResult } from '../../plugins/dark-factory/lib/codex-runner.mjs'
 import { contract, mapping, challenges, replay } from './pair-contract.mjs'
-import { PARAMS, runHosted } from './workflow-host.mjs'
+import { PARAMS, runHosted, runCandidate, workflowHost } from './workflow-host.mjs'
 
 export const empty = s => s.enum ? s.enum[0] : s.type === 'object' ? Object.fromEntries(Object.entries(s.properties || {}).map(([k,v]) => [k,empty(v)])) : s.type === 'array' ? [] : s.type === 'string' ? '' : s.type === 'boolean' ? false : 0
 const workflows = fileURLToPath(new URL('../../plugins/dark-factory/workflows/', import.meta.url))
@@ -89,6 +89,17 @@ export async function simulate(workflow, args = {}, behavior = {}, dir = workflo
     factoryRuntime: behavior.native ? null : runtime,
   }
   const input = typeof args === 'string' ? args : { task: 'Fix the boundary', host: behavior.native ? 'claude' : 'codex', retro: false, ...args }
+  // behavior.candidate runs the delegating Factory built from src/ instead, its children from dir:
+  // ran and returned record what it passed to workflow() and got back, with the turns each child
+  // started. An object given as behavior.candidate gets the same two arrays before the run starts,
+  // so a caller can read them after the run rejects.
+  if (behavior.candidate) {
+    assert.equal(workflow, 'factory', 'only Factory has a delegating candidate')
+    const wf = workflowHost(host, { dir, dispatches: () => calls.length })
+    if (typeof behavior.candidate === 'object') Object.assign(behavior.candidate, { ran: wf.ran, returned: wf.returned })
+    const { result, ran, returned } = await runCandidate(host, input, { wf })
+    return { result, calls, repairs, ran, returned }
+  }
   const result = await runHosted(execute, host, input, { dir })
   return { result, calls, repairs }
 }

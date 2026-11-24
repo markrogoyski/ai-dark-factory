@@ -275,6 +275,9 @@ test('native workflows reject unsupported elapsed limits without reading the wal
     for (const workflow of ['factory', 'council', 'pair', 'ensemble']) {
       await assert.rejects(() => simulate(workflow, { maxRunMin: 1 }, { native: true }), /maxRunMin requires the standalone.*replay-safe clock/)
     }
+    const seen = {}
+    await assert.rejects(() => simulate('factory', { maxRunMin: 1 }, { native: true, candidate: seen }), /maxRunMin requires the standalone.*replay-safe clock/)
+    assert.deepEqual(seen.ran, [], 'the delegating Factory rejects it before any child')
     assert.equal((await simulate('ensemble', { candidates: 2, maxTurns: 1 }, { native: true })).result.status, 'blocked')
   } finally { Date.now = saved }
 })
@@ -556,6 +559,87 @@ test('a turn budget spent before routing starts no tier turn', async () => {
       assert.equal(result.stopReason, `Run turn budget exhausted (${args.maxTurns}).`, what)
       assert.equal(result.metrics.turns, args.maxTurns, what)
       assert.doesNotMatch(JSON.stringify(result), /### Token use/, what)
+      // The delegating Factory stops alike: it enters the strategy's child, which starts no turn.
+      const cand = await simulate('factory', args, { native, ...earlyResultAccounting(native), modify: pinnedRoute(args, native), candidate: true })
+      assert.deepEqual(cand.calls.map(c => c.label), labels, `candidate ${what}`)
+      assert.equal(JSON.stringify(cand.result), JSON.stringify(result), `candidate ${what}`)
+      assert.deepEqual(cand.ran.map(r => r.name), [args.strategy === 'pair' ? 'dark-factory:pair' : 'dark-factory:council'], `candidate ${what}`)
+      assert.deepEqual(cand.returned.map(r => r.dispatches), [0], `candidate ${what}`)
+    }
+  }
+  // With the default brief, a budget of one turn is spent on shaping: both builds stop there, and
+  // the delegating one never calls workflow().
+  for (const native of [true, false]) {
+    const args = { tier: 'simple', strategy: 'pair', maxTurns: 1 }
+    const what = `${native ? 'native' : 'runner'} ${JSON.stringify(args)}`
+    const behavior = { native, ...earlyResultAccounting(native), modify: pinnedRoute(args, native) }
+    const inline = await simulate('factory', args, behavior)
+    const cand = await simulate('factory', args, { ...behavior, candidate: true })
+    assert.deepEqual([inline.calls.map(c => c.label), cand.calls.map(c => c.label)], [['brief shape'], ['brief shape']], what)
+    assert.deepEqual([inline.result.status, inline.result.stopReason], ['blocked', 'Run turn budget exhausted (1).'], what)
+    assert.equal(JSON.stringify(cand.result), JSON.stringify(inline.result), what)
+    assert.deepEqual(cand.ran, [], what)
+  }
+})
+
+test('a fatal intake error rejects inline and delegating Factory alike, before any child', async () => {
+  for (const native of [true, false]) {
+    const error = Object.assign(new Error('Checkpoint request changed'), { code: 'CHECKPOINT_MISMATCH' })
+    const behavior = { native, ...earlyResultAccounting(native), modify: (value, request) => { if (request.label === 'intake') throw error } }
+    const args = { brief: false, tier: 'simple', strategy: 'pair' }
+    await assert.rejects(() => simulate('factory', args, behavior), e => e === error)
+    const seen = {}
+    await assert.rejects(() => simulate('factory', args, { ...behavior, candidate: seen }), e => e === error)
+    assert.deepEqual(seen.ran, [], native ? 'native' : 'runner')
+  }
+})
+
+test('a stop before routing after the brief was shaped carries the brief on inline and delegating Factory alike', async () => {
+  for (const native of [true, false]) {
+    const what = native ? 'native' : 'runner'
+    const behavior = {
+      native, meter: native,
+      modify: (value, request) => {
+        if (request.label === 'intake') Object.assign(value, { status: 'needs-plan', planMissing: 'PLAN.md' })
+        if (native && request.label === 'brief challenge') value.briefFile = '/repo/.council/native/BRIEF.json'
+      },
+    }
+    const inline = await simulate('factory', {}, behavior)
+    const cand = await simulate('factory', {}, { ...behavior, candidate: true })
+    assert.equal(inline.result.status, 'needs-plan', what)
+    assert.match(inline.result.report.markdown, /Brief file: /, what)
+    assert.ok(inline.result.brief && inline.result.briefFile, what)
+    assert.equal(JSON.stringify(cand.result), JSON.stringify(inline.result), what)
+    assert.deepEqual(cand.ran, [], what)
+  }
+})
+
+test('numbers past the double range reach the child as inline Factory read them', async () => {
+  // The standalone runner's --args-file parses arguments with JSON.parse, which reads 1e309 as Infinity.
+  // rounds shows in the explained plan; consensusAt and escalateAt in the council's prompts.
+  for (const field of ['rounds', 'consensusAt', 'escalateAt']) {
+    for (const literal of ['1e309', '-1e309']) {
+      const what = `${field}: ${literal}`
+      const explain = field === 'rounds'
+      const args = JSON.parse(`{"${field}":${literal},"brief":false,"tier":"fix","tierConfirmed":true,"strategy":"independent","explain":${explain}}`)
+      const run = async candidate => {
+        const logs = []
+        const out = await simulate('factory', args, { clock: () => 1000, meter: true, log: line => logs.push(line), candidate })
+        return { ...out, logs }
+      }
+      const inline = await run(false)
+      const cand = await run(true)
+      if (explain) assert.equal(inline.result.plan.limits.rounds, literal === '1e309' ? 3 : 1, what)
+      else {
+        // Three seats: 1e309 caps at 3 and -1e309 at 1, where a lost value would give the default 2.
+        const n = literal === '1e309' ? 3 : 1, prompts = inline.calls.map(c => c.prompt).join('\n')
+        assert.ok(prompts.includes(field === 'consensusAt' ? `converged when ${n} of 3 seats` : `only when ${n} or more seats`), what)
+      }
+      assert.deepEqual(cand.ran.map(r => r.name), ['dark-factory:council'], what)
+      assert.deepEqual(cand.ran[0].args.factoryHandoff.factory.args[field], { $factoryWire: literal === '1e309' ? 'Infinity' : '-Infinity' }, what)
+      assert.deepEqual(cand.calls.map(c => c.prompt), inline.calls.map(c => c.prompt), what)
+      assert.deepEqual(cand.logs, inline.logs, what)
+      assert.equal(JSON.stringify(cand.result), JSON.stringify(inline.result), what)
     }
   }
 })
