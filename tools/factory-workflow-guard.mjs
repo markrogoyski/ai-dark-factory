@@ -1,5 +1,7 @@
 // Permit only the Workflow input the checker has just requested. Other native tools
-// still use Claude's permission mode and the fixture's scratch settings.
+// still use Claude's permission mode and the fixture's scratch settings. The mode is auto, as
+// Factory runs in real sessions: under acceptEdits no allow rule matches the quoted "$PWD" in
+// setup's `dark-factory init --repo "$PWD"`, so setup is refused unless its agent retries.
 import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -15,7 +17,7 @@ export function factoryWorkflowGuard(path, { existing = false } = {}) {
   const command = [process.execPath, script, path].map(quote).join(' ') + ' || exit 2'
   return {
     args: [
-      '--permission-mode', 'acceptEdits', '--permission-prompts', 'none', '--setting-sources', 'user',
+      '--permission-mode', 'auto', '--permission-prompts', 'none', '--setting-sources', 'user',
       '--settings', JSON.stringify({
         permissions: { allow: [
           'Bash(date -u +%Y-%m-%dT%H:%M:%SZ)', 'Bash(node --test)',

@@ -226,9 +226,11 @@ function firstBoundary(id, snapshot) {
     }
   } else if (result.status !== 'needs-user' || result.workflow !== 'factory' || result.strategy !== 'pair' ||
       result.tier !== ROUTES[id].tier || result.stage !== 'design' ||
-      result.resumable !== true || !questionsIn(result) || !result.questions.every(question => question.kind === 'design') ||
+      result.resumable !== true || !questionsIn(result) || !result.questions.every(question => isText(question.kind)) ||
       !parentResume(result.resumeSteps)) {
-    throw new Error('Expected a resumable Pair design question and parent Factory resume')
+    // Any Pair question before the implementation will do (setup's, the author's, the reviewer's
+    // or the design allowance's): the fixture reserves a decision for the maintainer.
+    throw new Error('Expected a resumable Pair question at the design stage and parent Factory resume')
   }
   return { attempts, result }
 }
@@ -256,7 +258,8 @@ function resumeArgs(original, call, firstResult) {
   const added = clarifications.slice(earlier.length)
   if (added.length !== firstResult.questions.length || !firstResult.questions.every(question =>
     added.filter(answer => answer.id === question.id && isText(answer.answer) &&
-      (question.kind !== 'design' || answer.implement === true)).length === 1)) {
+      // Pair accepts implement only on a design-allowance question, and it is required there.
+      (question.kind === 'design' ? answer.implement === true : answer.implement === undefined)).length === 1)) {
     throw new Error('Resume did not answer the questions at this boundary')
   }
   return added
@@ -271,8 +274,8 @@ function requireAnsweredSuffix(id, result, fresh, answers) {
     }
   } else if (first?.start.label !== `resume-check ${answers[0].id}` || payload(first.end)?.status !== 'ok' ||
       !answers.every(answer => result.decisions?.some(decision => decision.id === answer.id &&
-        decision.answer === answer.answer && decision.implement === true))) {
-    throw new Error('Resume did not complete the Pair check and apply the design answer')
+        decision.answer === answer.answer && (decision.implement === true) === (answer.implement === true)))) {
+    throw new Error('Resume did not complete the Pair check and apply the answer')
   }
 }
 
@@ -353,15 +356,16 @@ function normalizeObservation(observed) {
 // The candidate and its inline control are independent model runs, so parity compares the
 // protocol the handoff must keep, not what the models did. Stop reasons carry model-dependent
 // finding counts, and a leg that runs to completion varies in review rounds, turns, later agent
-// labels and the files under wt/. Compared: the status; the stop's kind (stage, round, question
-// kinds); the route and limits in metrics and the execution plan (models, efforts, reviewers,
+// labels and the files under wt/; a model-decided stop varies in how many questions it asks and
+// in the probes and jobs before it. Compared: the status; the stop's kind (stage, round, and the
+// set of question kinds); the route and limits in metrics and the execution plan (models, efforts, reviewers,
 // limits), which follow the args the handoff carried; whether the resume text names the parent
 // Factory; the replayed prefix (positions and labels); on a resume, the first fresh agent after
 // it; and the run-directory layout without wt/, with IDs,
 // timestamps and content hashes normalised. L2-i is deterministic (a budget stop after setup and
-// a resume that only replays), so its stop reason, turns and full layout are compared exactly;
-// on a resume that runs to completion only the layout's top level is, since review rounds add
-// room and job entries.
+// a resume that only replays), so its stop reason, turns, question kinds and full layout are
+// compared exactly; elsewhere only the layout's top level is, since the models' probes and review
+// rounds add room and job entries.
 const DETERMINISTIC = new Set(['L2-i'])
 
 function protocolOf(observed, phase) {
@@ -370,7 +374,7 @@ function protocolOf(observed, phase) {
   const layout = normalized.runDirectory.layout.filter(entry => entry.path.split(sep)[0] !== 'wt')
   return {
     status: normalized.status,
-    stop: normalized.stop,
+    stop: fixed ? normalized.stop : { ...normalized.stop, questionKinds: [...new Set(normalized.stop.questionKinds)].sort() },
     route: normalized.route ?? null,
     plan: normalized.plan ?? null,
     ...(fixed ? { stopReason: normalized.stopReason, turns: normalized.metrics?.turns ?? null } : {}),
@@ -378,8 +382,7 @@ function protocolOf(observed, phase) {
     replayed: normalized.replayed,
     // A first leg always starts with intake; after a resume the first fresh agent is the handoff's.
     ...(phase === 'resume' ? { firstFresh: normalized.newStarts[0]?.label ?? null } : {}),
-    runDirectory: fixed || phase === 'first' ? layout
-      : [...new Set(layout.map(entry => entry.path.split(sep)[0]))].sort(),
+    runDirectory: fixed ? layout : [...new Set(layout.map(entry => entry.path.split(sep)[0]))].sort(),
   }
 }
 

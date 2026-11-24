@@ -9,7 +9,7 @@ import { setTimeout as delay } from 'node:timers/promises'
 import {
   L2_REQUIRED, beforeCancelDir, createStreamParser, factoryExitCode, judgeBootThrow, judgeCancel, judgeEnvelope, judgeMeter, judgeReplay,
   parseManualTranscript, parseStream, probeExitCode, probeObservation, resumeAfterStop, scratchEnv, terminalFor, workflowJournal,
-  writeVerdict, factoryArgs,
+  writeVerdict, factoryArgs, factoryAnswer,
 } from '../tools/workflow-check.mjs'
 import { factoryResultFor } from '../tools/workflow-evidence.mjs'
 import { compareLegs, judgeFirstLeg, judgeResume, snapshotRunDirectory } from '../tools/factory-evidence.mjs'
@@ -772,13 +772,30 @@ for (const id of ['L2-i', 'L2-ii', 'L2-iii', 'L2-iv', 'L3']) {
     else if (id === 'L2-iv') {
       wrong.rows.pop()
       delete wrong.active
-    } else wrong.state.result.questions[0].kind = id === 'L3' ? 'spec' : 'setup'
+    } else wrong.state.result.stage = 'code'
     const missed = judgeFirstLeg(id, wrong)
     assert.equal(missed.status, 'inconclusive')
     assert.equal(compareLegs({ first: original, resume: continued }, { first: missed }).status, 'inconclusive')
     assert.equal(factoryExitCode({ [id]: missed }), 1)
   })
 }
+
+// Pair takes implement only on, and requires it for, a design-allowance question; any other Pair
+// question before the implementation (here the author's) is answered without it.
+test('L2-ii accepts an author question answered without implement, and only without it', t => {
+  const { first, resumed } = factoryEvidence(t, 'L2-ii')
+  first.state.result.questions[0].kind = 'author'
+  const answer = factoryAnswer(first.state.result.questions[0], { answer: 'Keep the fixture scope.' })
+  assert.deepEqual(answer, { id: 'Q1', answer: 'Keep the fixture scope.' })
+  assert.deepEqual(factoryAnswer({ id: 'Q2', kind: 'design' }, { answer: 'Go.' }), { id: 'Q2', answer: 'Go.', implement: true })
+  resumed.call.input.args.clarifications = [answer]
+  resumed.state.result.decisions = [{ ...answer, kind: 'author' }]
+  assert.equal(judgeFirstLeg('L2-ii', first).status, 'pass')
+  assert.equal(judgeResume('L2-ii', first, resumed).status, 'pass', judgeResume('L2-ii', first, resumed).reason)
+  const implemented = structuredClone(resumed)
+  implemented.call.input.args.clarifications[0].implement = true
+  assert.match(judgeResume('L2-ii', first, implemented).reason, /did not answer the questions/)
+})
 
 test('Factory result extraction requires the current native task and detects contradictory output', t => {
   const { resumed } = factoryEvidence(t, 'L2-i')
@@ -849,7 +866,17 @@ test('Factory parity ignores model-dependent stop counts, turns, later agents an
   const inline = leg('L2-ii', control), split = leg('L3', candidate)
   split.resume.observed.metrics.turns += 9
   split.resume.observed.newStarts.push({ position: 4, label: 'review pair-code-2 (relay)' })
+  // A model-decided stop can ask more questions of the same kind, after more probes.
+  split.first.observed.stop.questionKinds = ['design', 'design']
+  split.first.observed.runDirectory.layout.push({ path: join('room', 'verify-author-design-probe-1'), type: 'directory' })
   assert.deepEqual(compareLegs(inline, split), { status: 'pass' })
+  // L2-i's budget stop is deterministic: there they still differ.
+  const budget = factoryEvidence(t, 'L2-i', 3)
+  const exact = { first: judgeFirstLeg('L2-i', budget.first), resume: judgeResume('L2-i', budget.first, budget.resumed) }
+  const extra = structuredClone(exact)
+  extra.first.observed.stop.questionKinds = ['x', 'x']
+  exact.first.observed.stop.questionKinds = ['x']
+  assert.deepEqual(compareLegs(exact, extra).differences.map(item => item.field), ['first.stop'])
 })
 
 test('Factory parity fails on status, stop kind, resume target, replayed prefix and first fresh agent', t => {
@@ -1028,8 +1055,9 @@ test('Factory CLI guards and proves paired native resumes and the same-session L
   assert.deepEqual(budget.args, budgetResume.args)
   const [pair, pairResume, fix, fixResume] = [launches[4], launches[5], launches[8], launches[9]].map(row => row.launch)
   assert.equal(pair.args.strategy, 'pair')
-  assert.deepEqual(pair.args.pair, { reviewer: 'sol', spec: false, maxDesignReviews: 1, maxReviews: 3 })
-  assert.deepEqual(pairResume.args.clarifications.map(({ id, implement }) => [id, implement]), [['Q1', true]])
+  assert.deepEqual(pair.args.pair, { author: 'sonnet', reviewer: 'sol', spec: false, maxDesignReviews: 1, maxReviews: 3 })
+  // The stub's Pair stop is the author's question, which takes no implement.
+  assert.deepEqual(pairResume.args.clarifications.map(({ id, implement }) => [id, implement]), [['Q1', undefined]])
   assert.deepEqual([fix.args.tier, fix.args.strategy, fix.args.spec, fix.args.audit], ['fix', 'independent', { coverage: 'sol', ask: true }, false])
   assert.deepEqual(fixResume.args.clarifications.map(({ id }) => id), ['S1'])
   const [startUpgrade, resumeUpgrade] = launches.slice(12, 14)

@@ -1004,9 +1004,12 @@ const FACTORY_ARGS = {
     tier: 'simple', strategy: 'independent', maxTurns: 2, simple: { reviewer: 'sol' },
     task: 'Fix the off-by-one in math.cjs count: it should return the input. Add a focused test.',
   },
+  // As L2-iii's, the task reserves a decision for the maintainer, so Pair stops for it before
+  // the implementation whichever model asks. Sonnet authors, to save usage.
   'L2-ii': {
-    tier: 'simple', strategy: 'pair', mode: 'implement', pair: { reviewer: 'sol', spec: false, maxDesignReviews: 1, maxReviews: 3 },
-    task: 'Change the increment implementation in math.cjs to advance by two. Decide how to preserve the public caller behavior, check downstream callers, and add a focused test.',
+    tier: 'simple', strategy: 'pair', mode: 'implement',
+    pair: { author: 'sonnet', reviewer: 'sol', spec: false, maxDesignReviews: 1, maxReviews: 3 },
+    task: 'Change the increment implementation in math.cjs to advance by two and add a focused test. Whether caller.cjs next keeps advancing by one or follows the new increment is a product decision reserved for the maintainer. The repository cannot settle that choice. Ask before designing.',
   },
   'L2-iii': {
     tier: 'fix', strategy: 'independent', mode: 'implement', spec: { coverage: 'sol', ask: true }, audit: false,
@@ -1015,9 +1018,12 @@ const FACTORY_ARGS = {
   },
 }
 const FACTORY_ANSWERS = {
-  'L2-ii': { answer: 'Preserve caller.cjs next as advancing by one. Update and test the increment implementation and its caller.', implement: true },
+  'L2-ii': { answer: 'Preserve caller.cjs next as advancing by one. Update and test the increment implementation and its caller.' },
   'L2-iii': { answer: 'Retry both timeouts and HTTP 5xx, but do not retry other HTTP responses.' },
 }
+
+// Pair accepts implement only on, and requires it for, a design-allowance question.
+export const factoryAnswer = ({ id, kind }, { answer }) => ({ id, answer, ...(kind === 'design' ? { implement: true } : {}) })
 
 export function factoryArgs(id, verify) {
   const scenario = id === 'L3' ? 'L2-ii' : id === 'L2-iv' ? 'L2-i' : id
@@ -1554,7 +1560,7 @@ async function liveFactory(configDir, file) {
       }
       const answer = FACTORY_ANSWERS[scenario]
       const resumedArgs = answer ? {
-        ...args, clarifications: initial.result.questions.map(({ id }) => ({ id, ...answer })),
+        ...args, clarifications: initial.result.questions.map(question => factoryAnswer(question, answer)),
       } : args
       const resumeListing = await precondition(initial.call.session)
       const resumed = save('resume', captureDirectory(await observeFactory(session, {

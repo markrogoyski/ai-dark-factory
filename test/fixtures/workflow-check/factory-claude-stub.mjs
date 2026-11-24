@@ -26,7 +26,7 @@ if (argv[0] === '--version') {
   const settings = JSON.parse(setting('--settings'))
   const command = settings.hooks.PreToolUse[0].hooks[0].command
   assert.equal(settings.hooks.PreToolUse[0].matcher, 'Workflow')
-  assert.equal(setting('--permission-mode'), 'acceptEdits')
+  assert.equal(setting('--permission-mode'), 'auto')
   if (argv.includes('--session-id')) assert.ok(!argv.includes('--permission-prompts'))
   else assert.equal(setting('--permission-prompts'), 'none')
   assert.equal(setting('--setting-sources'), 'user')
@@ -169,7 +169,7 @@ if (argv[0] === '--version') {
       limits: { maxTurns: args.maxTurns ?? null, maxReviews: dropped ? null : args.pair?.maxReviews ?? null },
       intake: { reasons: 'Model-written intake ' + randomUUID() } }
     const question = { question: 'Which fixture behavior?', id: args.tier === 'fix' ? 'S1' : 'Q1' }
-    if (args.strategy === 'pair') question.kind = 'design'
+    if (args.strategy === 'pair') question.kind = 'author'
     const instructions = 'Resume with Workflow({name: "dark-factory:factory", resumeFromRunId: <id>}).'
     let result
     if (!resumeFromRunId) {
