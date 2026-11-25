@@ -797,6 +797,52 @@ test('L2-ii accepts an author question answered without implement, and only with
   assert.match(judgeResume('L2-ii', first, implemented).reason, /did not answer the questions/)
 })
 
+// Pair's setup can ask before init: no run directory then, no native stop record, and on the
+// answers setup runs again (setup-answered) and creates the directory.
+function setupQuestionEvidence(t, variant) {
+  const { first, resumed, repo } = factoryEvidence(t, 'L2-ii', variant)
+  first.rows[3].result = { status: 'needs-user', runDir: '', runId: '', repoRoot: '' }
+  first.directory = null
+  const question = { id: 'Q1', question: 'Keep next at one?', kind: 'setup' }
+  first.state.result = { ...first.state.result, runDir: null, questions: [question] }
+  const answer = factoryAnswer(question, { answer: 'Keep it at one.' })
+  const { runDir, runId } = resumed.directory
+  const rerun = resumed.rows.find(row => row.type === 'started' && row.label === 'resume-check Q1')
+  rerun.label = 'setup-answered'
+  resumed.rows.find(row => row.type === 'result' && row.agentId === rerun.agentId).result = { status: 'ok', runDir, runId, repoRoot: repo }
+  resumed.state.workflowProgress.find(entry => entry.agentId === rerun.agentId).label = 'setup-answered'
+  resumed.call.input.args.clarifications = [answer]
+  resumed.state.result.decisions = [{ ...answer, kind: 'setup' }]
+  return { first, resumed }
+}
+
+test('L2-ii judges a Pair setup question asked before init, and its answered setup rerun', t => {
+  const { first, resumed } = setupQuestionEvidence(t, 1)
+  const original = judgeFirstLeg('L2-ii', first)
+  const continued = judgeResume('L2-ii', first, resumed)
+  assert.equal(original.status, 'pass', original.reason)
+  assert.equal(continued.status, 'pass', continued.reason)
+  assert.equal(original.observed.runDirectory, null)
+  assert.deepEqual(continued.observed.newStarts.map(start => start.label), ['setup-answered'])
+  const other = setupQuestionEvidence(t, 2)
+  assert.deepEqual(compareLegs({ first: original, resume: continued },
+    { first: judgeFirstLeg('L2-ii', other.first), resume: judgeResume('L2-ii', other.first, other.resumed) }), { status: 'pass' })
+  // The early stop must have no directory and no successful setup, and the resume must rerun setup.
+  const placed = structuredClone(first)
+  placed.state.result.runDir = '/elsewhere'
+  assert.equal(judgeFirstLeg('L2-ii', placed).status, 'inconclusive')
+  const designed = structuredClone(first)
+  designed.state.result.questions[0].kind = 'author'
+  assert.equal(judgeFirstLeg('L2-ii', designed).status, 'inconclusive')
+  const skipped = structuredClone(resumed)
+  skipped.rows.find(row => row.label === 'setup-answered').label = 'pair-design-1'
+  skipped.state.workflowProgress.find(entry => entry.label === 'setup-answered').label = 'pair-design-1'
+  assert.match(judgeResume('L2-ii', first, skipped).reason, /did not rerun setup/)
+  const unapplied = structuredClone(resumed)
+  unapplied.state.result.decisions = []
+  assert.match(judgeResume('L2-ii', first, unapplied).reason, /did not rerun setup on the answers and apply them/)
+})
+
 test('Factory result extraction requires the current native task and detects contradictory output', t => {
   const { resumed } = factoryEvidence(t, 'L2-i')
   const { call, terminal, state } = resumed
@@ -866,8 +912,11 @@ test('Factory parity ignores model-dependent stop counts, turns, later agents an
   const inline = leg('L2-ii', control), split = leg('L3', candidate)
   split.resume.observed.metrics.turns += 9
   split.resume.observed.newStarts.push({ position: 4, label: 'review pair-code-2 (relay)' })
-  // A model-decided stop can ask more questions of the same kind, after more probes.
+  // A model-decided stop can ask more questions of the same kind, after more probes, and a
+  // debate can converge or fall back to its scorecard.
   split.first.observed.stop.questionKinds = ['design', 'design']
+  inline.resume.observed.status = 'converged'
+  split.resume.observed.status = 'scorecard'
   split.first.observed.runDirectory.layout.push({ path: join('room', 'verify-author-design-probe-1'), type: 'directory' })
   assert.deepEqual(compareLegs(inline, split), { status: 'pass' })
   // L2-i's budget stop is deterministic: there they still differ.

@@ -112,6 +112,18 @@ function setupDirectory(attempts, directory) {
   return setup
 }
 
+// Pair's setup can ask before it runs init. No run directory exists then: the native stop record
+// needs one, so the stop is not recorded, and on the answers setup runs again (setup-answered)
+// and creates it. The first leg is judged on intake, setup's question and the result alone.
+const PAIR_SCENARIOS = new Set(['L2-ii', 'L3'])
+function setupQuestionStop(attempts, directory) {
+  const [intake, setup] = attempts
+  const detail = payload(setup?.end)
+  return attempts.length === 2 && directory == null && intake?.start.label === 'intake' && setup?.start.label === 'setup' &&
+    success(intake.end) && payload(intake.end)?.status === 'ok' && intake.endIndex < setup.index &&
+    success(setup.end) && detail?.status === 'needs-user' && !isText(detail.runDir)
+}
+
 function budgetStop(result) {
   return result.status === 'blocked' && result.stopReason === BUDGET_REASON && result.metrics.turns === 2
 }
@@ -188,7 +200,8 @@ function observation(id, snapshot, result, replayed, newStarts) {
     stopReason: result?.stopReason ?? null,
     resumeText: result?.resumeSteps ?? (result?.status === 'needs-user' ? result.forTheOrchestrator ?? null : null),
     replayed, newStarts,
-    runDirectory: { path: directory.runDir, layout: directory.layout },
+    // A Pair setup question comes before init, so that first leg has no run directory.
+    runDirectory: directory ? { path: directory.runDir, layout: directory.layout } : null,
     metrics: result ? { turns: result.metrics.turns } : null,
     // What the run was configured to do, from args rather than models: a handoff that dropped an
     // arg (audit: false, pair.maxReviews) shows here even when both legs end done.
@@ -196,7 +209,7 @@ function observation(id, snapshot, result, replayed, newStarts) {
       limits: result.metrics.limits ?? null } : null,
     plan: isObject(result?.plan) ? planOf(result.plan) : null,
     identities: {
-      repo: directory.repo, room: directory.room, runDir: directory.runDir, runId: directory.runId,
+      repo: directory?.repo ?? null, room: directory?.room ?? null, runDir: directory?.runDir ?? null, runId: directory?.runId ?? null,
       nativeIds: [call.session, call.output.runId, call.output.taskId, ...childIds, ...rows.map(row => row.agentId)].filter(isText),
     },
   }
@@ -209,13 +222,15 @@ function firstBoundary(id, snapshot) {
     throw new Error(snapshot.observationError ?? snapshot.directoryError)
   }
   const attempts = attemptsIn(snapshot.rows)
-  const setup = setupDirectory(attempts, snapshot.directory)
+  const early = PAIR_SCENARIOS.has(id) && setupQuestionStop(attempts, snapshot.directory)
+  const setup = early ? null : setupDirectory(attempts, snapshot.directory)
   if (id === 'L2-iv') {
     return { attempts, interrupted: cancelledAttempt(snapshot, attempts, setup), result: null }
   }
 
   const result = completedResult(id, snapshot)
-  if (!namesRun(result, snapshot.directory) || attempts.some(attempt => !attempt.end)) {
+  if ((early ? isText(result.runDir) || !result.questions?.every(question => question.kind === 'setup')
+    : !namesRun(result, snapshot.directory)) || attempts.some(attempt => !attempt.end)) {
     throw new Error('Missing same-directory result or unfinished first-leg attempt')
   }
   if (id === 'L2-i') {
@@ -232,7 +247,7 @@ function firstBoundary(id, snapshot) {
     // or the design allowance's): the fixture reserves a decision for the maintainer.
     throw new Error('Expected a resumable Pair question at the design stage and parent Factory resume')
   }
-  return { attempts, result }
+  return { attempts, result, early }
 }
 
 export function judgeFirstLeg(id, snapshot) {
@@ -265,16 +280,22 @@ function resumeArgs(original, call, firstResult) {
   return added
 }
 
-function requireAnsweredSuffix(id, result, fresh, answers) {
+function requireAnsweredSuffix(id, result, fresh, answers, { early, directory }) {
   const first = fresh[0]
-  if (id === 'L2-iii') {
+  const applied = () => answers.every(answer => result.decisions?.some(decision => decision.id === answer.id &&
+    decision.answer === answer.answer && (decision.implement === true) === (answer.implement === true)))
+  if (early) {
+    const detail = payload(first?.end)
+    if (first?.start.label !== 'setup-answered' || !success(first.end) || detail?.status !== 'ok' ||
+        detail.runId !== directory.runId || !namesRun(detail, directory) || !applied()) {
+      throw new Error('Resume did not rerun setup on the answers and apply them')
+    }
+  } else if (id === 'L2-iii') {
     if (first?.start.label !== 'spec amend' || !success(first.end) || !payload(first.end)?.criteria?.length ||
         !answers.every(answer => result.spec?.answered?.includes(answer.id))) {
       throw new Error('Resume did not complete spec amendment with the recorded answers')
     }
-  } else if (first?.start.label !== `resume-check ${answers[0].id}` || payload(first.end)?.status !== 'ok' ||
-      !answers.every(answer => result.decisions?.some(decision => decision.id === answer.id &&
-        decision.answer === answer.answer && (decision.implement === true) === (answer.implement === true)))) {
+  } else if (first?.start.label !== `resume-check ${answers[0].id}` || payload(first.end)?.status !== 'ok' || !applied()) {
     throw new Error('Resume did not complete the Pair check and apply the answer')
   }
 }
@@ -292,7 +313,9 @@ export function judgeResume(id, first, resumed) {
     const result = completedResult(id, resumed)
     if (resumed.directoryError) throw new Error(resumed.directoryError)
     const initial = first.directory
-    if (!directory?.layout?.length || directory.runDir !== initial.runDir || directory.repo !== initial.repo ||
+    if (boundary.early) {
+      if (!directory?.layout?.length || !namesRun(result, directory)) throw new Error('Resume did not create the directory its answered setup names')
+    } else if (!directory?.layout?.length || directory.runDir !== initial.runDir || directory.repo !== initial.repo ||
         directory.head !== initial.head || !namesRun(result, initial)) throw new Error('Resume did not reuse its original setup directory')
 
     const freshRows = journalGrowth(first.rows, resumed.rows)
@@ -301,8 +324,10 @@ export function judgeResume(id, first, resumed) {
     const replay = boundary.attempts.filter(attempt => attempt !== boundary.interrupted)
     const oldKeys = new Set(replay.map(attempt => attempt.start.key))
     const oldAgentIds = new Set(boundary.attempts.map(attempt => attempt.start.agentId))
-    if (fresh.some(({ start, end }) => oldKeys.has(start.key) || oldAgentIds.has(start.agentId) ||
-        start.label === 'intake' || /^setup(?:$|-answered)/.test(start.label) || !end)) {
+    // After a setup question, setup runs again on the answers, as the first fresh agent.
+    const rerun = (start, index) => boundary.early && index === 0 && start.label === 'setup-answered'
+    if (fresh.some(({ start, end }, index) => oldKeys.has(start.key) || oldAgentIds.has(start.agentId) ||
+        start.label === 'intake' || (/^setup(?:$|-answered)/.test(start.label) && !rerun(start, index)) || !end)) {
       throw new Error('Resume restarted a prior position or left a new attempt incomplete')
     }
     requireCachedReplay(resumed.state, replay, fresh)
@@ -316,7 +341,7 @@ export function judgeResume(id, first, resumed) {
         const old = boundary.interrupted.start, restart = fresh[0]
         if (restart.start.key !== old.key || restart.start.agentId === old.agentId ||
             restart.start.label !== old.label || !success(restart.end)) throw new Error('Interrupted agent did not restart and complete')
-      } else requireAnsweredSuffix(id, result, fresh, answers)
+      } else requireAnsweredSuffix(id, result, fresh, answers, { early: boundary.early, directory })
     }
     return { status: 'pass', observed: observation(id, resumed, result, positions(replay), positions(fresh, replay.length)) }
   } catch (error) {
@@ -332,15 +357,17 @@ const contentHash = /(?<![0-9a-f])(?:[0-9a-f]{64}|[0-9a-f]{40})(?![0-9a-f])/g
 function normalizeObservation(observed) {
   const { identities, ...fields } = observed
   const { repo, room, runDir, runId, nativeIds } = identities
-  const paths = new Map([[room, '<room>'], [runDir, '<run-dir>'], [repo, '<fixture>']])
-  const ids = new Map([[runId, '<run-id>'], ...nativeIds.map(id => [id, '<native-id>'])])
+  const known = entries => new Map(entries.filter(([value]) => isText(value)))
+  const paths = known([[room, '<room>'], [runDir, '<run-dir>'], [repo, '<fixture>']])
+  const ids = known([[runId, '<run-id>'], ...nativeIds.map(id => [id, '<native-id>'])])
   const alternatives = values => [...values.keys()].sort((a, b) => b.length - a.length).map(escapeRegExp).join('|')
-  const pathPattern = new RegExp(`(?:${alternatives(paths)})(?![A-Za-z0-9_.-])`, 'g')
-  const idPattern = new RegExp(`(?<![A-Za-z0-9_])(?:${alternatives(ids)})(?![A-Za-z0-9_])`, 'g')
+  const pathPattern = paths.size ? new RegExp(`(?:${alternatives(paths)})(?![A-Za-z0-9_.-])`, 'g') : null
+  const idPattern = ids.size ? new RegExp(`(?<![A-Za-z0-9_])(?:${alternatives(ids)})(?![A-Za-z0-9_])`, 'g') : null
   const normalize = value => {
     if (typeof value === 'string') {
-      return value.replace(pathPattern, path => paths.get(path))
-        .replace(idPattern, id => ids.get(id)).replace(timestamp, '<timestamp>').replace(contentHash, '<sha>')
+      const named = pathPattern ? value.replace(pathPattern, path => paths.get(path)) : value
+      return (idPattern ? named.replace(idPattern, id => ids.get(id)) : named)
+        .replace(timestamp, '<timestamp>').replace(contentHash, '<sha>')
     }
     if (Array.isArray(value)) return value.map(normalize)
     if (value && typeof value === 'object') {
@@ -349,7 +376,7 @@ function normalizeObservation(observed) {
     return value
   }
   const normalized = normalize(fields)
-  normalized.runDirectory.layout.sort((a, b) => a.path.localeCompare(b.path) || a.type.localeCompare(b.type))
+  normalized.runDirectory?.layout.sort((a, b) => a.path.localeCompare(b.path) || a.type.localeCompare(b.type))
   return normalized
 }
 
@@ -357,7 +384,7 @@ function normalizeObservation(observed) {
 // protocol the handoff must keep, not what the models did. Stop reasons carry model-dependent
 // finding counts, and a leg that runs to completion varies in review rounds, turns, later agent
 // labels and the files under wt/; a model-decided stop varies in how many questions it asks and
-// in the probes and jobs before it. Compared: the status; the stop's kind (stage, round, and the
+// in the probes and jobs before it. Compared: the status (on a resume, settled outcomes as one); the stop's kind (stage, round, and the
 // set of question kinds); the route and limits in metrics and the execution plan (models, efforts, reviewers,
 // limits), which follow the args the handoff carried; whether the resume text names the parent
 // Factory; the replayed prefix (positions and labels); on a resume, the first fresh agent after
@@ -367,13 +394,17 @@ function normalizeObservation(observed) {
 // compared exactly; elsewhere only the layout's top level is, since the models' probes and review
 // rounds add room and job entries.
 const DETERMINISTIC = new Set(['L2-i'])
+// A resume that runs a debate or review to completion settles as the models make it: a council
+// can converge or fall back to its scorecard. Those outcomes compare as one; any other status,
+// a stop or a failure, must match.
+const SETTLED = new Set(['done', 'converged', 'scorecard'])
 
 function protocolOf(observed, phase) {
   const normalized = normalizeObservation(observed)
   const fixed = DETERMINISTIC.has(observed.scenario)
-  const layout = normalized.runDirectory.layout.filter(entry => entry.path.split(sep)[0] !== 'wt')
+  const layout = normalized.runDirectory?.layout.filter(entry => entry.path.split(sep)[0] !== 'wt') ?? null
   return {
-    status: normalized.status,
+    status: !fixed && phase === 'resume' && SETTLED.has(normalized.status) ? 'settled' : normalized.status,
     stop: fixed ? normalized.stop : { ...normalized.stop, questionKinds: [...new Set(normalized.stop.questionKinds)].sort() },
     route: normalized.route ?? null,
     plan: normalized.plan ?? null,
@@ -382,7 +413,7 @@ function protocolOf(observed, phase) {
     replayed: normalized.replayed,
     // A first leg always starts with intake; after a resume the first fresh agent is the handoff's.
     ...(phase === 'resume' ? { firstFresh: normalized.newStarts[0]?.label ?? null } : {}),
-    runDirectory: fixed ? layout : [...new Set(layout.map(entry => entry.path.split(sep)[0]))].sort(),
+    runDirectory: !layout || fixed ? layout : [...new Set(layout.map(entry => entry.path.split(sep)[0]))].sort(),
   }
 }
 
