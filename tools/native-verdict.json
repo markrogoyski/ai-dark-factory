@@ -1,6 +1,6 @@
 {
   "l1": {
-    "cli": "2.1.331 (Claude Code)",
+    "cli": "2.1.332 (Claude Code)",
     "nameForm": "qualified",
     "checks": {
       "L1-a": {
@@ -35,16 +35,16 @@
       "L1-b3": {
         "status": "pass",
         "observed": {
-          "p0": 204,
-          "c0": 204,
-          "c1": 271,
-          "p1": 271
+          "p0": 195,
+          "c0": 195,
+          "c1": 266,
+          "p1": 266
         }
       },
       "L1-c": {
         "status": "pass",
         "observed": {
-          "message": "df-probe boot b4732ba8-2d46-47cf-864b-2d89204efbab",
+          "message": "df-probe boot 5b3be294-d5a5-4a80-ad39-218380c316ad",
           "agentCount": 0,
           "journalStarts": 0
         }
@@ -53,18 +53,18 @@
         "status": "pass",
         "observed": {
           "original": [
-            "aB3dE7fG9hJ2kL5m",
-            "aB3dE7fG9hJ2kL5m",
-            "Q7xR2mK9pT4wZ8Lb"
+            "Xk7mQ2pL9vR4tZ8w",
+            "aB3dE9fG2hJ7kL4m",
+            "aK7pQ2xZ9mT4vB1n"
           ],
           "resumed": [
-            "aB3dE7fG9hJ2kL5m",
-            "aB3dE7fG9hJ2kL5m",
-            "Q7xR2mK9pT4wZ8Lb",
-            "Qm7rT2xK9pLz4WsA"
+            "Xk7mQ2pL9vR4tZ8w",
+            "aB3dE9fG2hJ7kL4m",
+            "aK7pQ2xZ9mT4vB1n",
+            "K7qX2mRt9VbN4sLp"
           ],
           "newStarts": [
-            "DFPROBE:9e54593f-14f7-4ad6-9bf4-b626de3496e3:P2"
+            "DFPROBE:a1c58a7e-f852-466d-b4db-7eb6be621d78:P2"
           ],
           "positions": [
             {
@@ -86,18 +86,18 @@
         "status": "pass",
         "observed": {
           "original": [
-            "Xk7Qm2Lp9Rt4Vn8Z",
-            "k7Qm2Xr9Lp4TzV8e",
-            "aB3dE7fG9hJ2kL5m"
+            "Qk7vT3mZ9pL2xR8w",
+            "aB3dK9mQ2xR7tZ4w",
+            "k7Qm2XrT9bPw4ZsD"
           ],
           "resumed": [
-            "Xk7Qm2Lp9Rt4Vn8Z",
-            "k7Qm2Xr9Lp4TzV8e",
-            "aB3dE7fG9hJ2kL5m",
-            "aK7mQ2xR9pLw4Zt8"
+            "Qk7vT3mZ9pL2xR8w",
+            "aB3dK9mQ2xR7tZ4w",
+            "k7Qm2XrT9bPw4ZsD",
+            "aB3dE7fG9hJ2kL5m"
           ],
           "newStarts": [
-            "DFPROBE:899df2a9-25a0-4534-81e5-44123875b324:P2"
+            "DFPROBE:f2e5608c-bafc-4bcb-ac16-4c66629d51fa:P2"
           ],
           "positions": [
             {
@@ -122,25 +122,25 @@
       "L1-e": {
         "status": "pass",
         "observed": {
-          "parent": "projects/-private-var-folders-vt-794vflbn1h71x6spk8dphrhh0000gn-T-df-workflow-check-igKjy1-cwd/8139d136-54ad-4e7d-bee8-701c564ab4f1/subagents/workflows/wf_6102ff99-66b",
-          "child": "projects/-private-var-folders-vt-794vflbn1h71x6spk8dphrhh0000gn-T-df-workflow-check-igKjy1-cwd/8139d136-54ad-4e7d-bee8-701c564ab4f1/subagents/workflows/wf_6102ff99-66b"
+          "parent": "projects/-private-var-folders-vt-794vflbn1h71x6spk8dphrhh0000gn-T-df-workflow-check-cwASAU-cwd/f6c80b1b-83f1-4e61-bf68-9b87ff024580/subagents/workflows/wf_4956695f-d2d",
+          "child": "projects/-private-var-folders-vt-794vflbn1h71x6spk8dphrhh0000gn-T-df-workflow-check-cwASAU-cwd/f6c80b1b-83f1-4e61-bf68-9b87ff024580/subagents/workflows/wf_4956695f-d2d"
         }
       },
       "L1-f": {
         "status": "pass",
         "observed": {
           "original": [
-            "aB3dK9xQ2mZ7nR4T",
-            "K7mQ2xR9pL4sT8vZ",
-            "k7Qm2Xv9Lp4RsT1w"
+            "aB3dE7fG9hJ2kL4m",
+            "aB3dE7fG9hJ2kL4m",
+            "Q7mZp2Kx9VbT4LrA"
           ],
           "resumed": [
-            "aB3dK9xQ2mZ7nR4T",
-            "K7mQ2xR9pL4sT8vZ",
-            "k7Qm2XpL9vTz4RbN"
+            "aB3dE7fG9hJ2kL4m",
+            "aB3dE7fG9hJ2kL4m",
+            "K7mQ2xB9TzR4LpWd"
           ],
           "newStarts": [
-            "DFPROBE:60bba5a6-bfa5-4cad-82c3-088b65553da6:C2"
+            "DFPROBE:643a8eba-55da-4964-870c-6e8ab195818d:C2"
           ],
           "positions": [
             {
@@ -162,12 +162,12 @@
         "status": "pass",
         "observed": {
           "original": [
-            "aB3dE7fG9hJ2kL5m",
-            "aK7mQ2xZ9pLr4VbT"
+            "a7Kq2ZtR9bLw4XeP",
+            "aB3dE7fG9hJ2kL5m"
           ],
           "resumed": [
-            "aB3dE7fG9hJ2kL5m",
-            "aK7mQ2xZ9pLr4VbT"
+            "a7Kq2ZtR9bLw4XeP",
+            "aB3dE7fG9hJ2kL5m"
           ],
           "newStarts": [],
           "ambiguous": false,
@@ -194,18 +194,18 @@
         "status": "pass",
         "observed": {
           "original": [
-            "aB3dE7fG9hJ2kL5m",
-            "aB3dE7fG9hJ2kL5m",
-            "Qm7xT2vL9dRk4WsA"
+            "k7Qx2mP9vL4wRz8T",
+            "Q7xN2kLp9ZrT4wBd",
+            "Xk7Qm2Va9Lp4Rz8T"
           ],
           "resumed": [
-            "aB3dE7fG9hJ2kL5m",
-            "aB3dE7fG9hJ2kL5m",
-            "Qm7xT2vL9dRk4WsA",
-            "Qx7mT2vLp9Zr4WnB"
+            "k7Qx2mP9vL4wRz8T",
+            "Q7xN2kLp9ZrT4wBd",
+            "Xk7Qm2Va9Lp4Rz8T",
+            "Qk7fWm3xTz9LpR2a"
           ],
           "newStarts": [
-            "DFPROBE:956c66e9-eebe-49dd-919d-d4fd3e6188d4:NEXT"
+            "DFPROBE:b3f9caa4-d2be-4d72-a10f-a7140337093c:NEXT"
           ],
           "positions": [
             {
@@ -226,16 +226,16 @@
       "L1-j": {
         "status": "pass",
         "observed": {
-          "session": "7d500283-78cc-4d8f-808a-fd7866d8659b",
-          "runId": "wf_1bdf4401-453",
-          "resumedRunId": "wf_1bdf4401-453",
-          "interruptedAgentId": "a6e12787491fdbf5f",
-          "restartedAgentId": "a5005bc1639e95f6f",
+          "session": "c65ff366-d858-4df2-9986-c2b64ab80f4e",
+          "runId": "wf_b7befccb-7ff",
+          "resumedRunId": "wf_b7befccb-7ff",
+          "interruptedAgentId": "afce099dcd88b3ce0",
+          "restartedAgentId": "af50b979b74d65f46",
           "replayed": [
             "P1"
           ],
-          "childJournal": "subagents/workflows/wf_1bdf4401-453",
-          "restartJournal": "subagents/workflows/wf_1bdf4401-453"
+          "childJournal": "subagents/workflows/wf_b7befccb-7ff",
+          "restartJournal": "subagents/workflows/wf_b7befccb-7ff"
         },
         "mode": "auto"
       }
