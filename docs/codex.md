@@ -5,7 +5,8 @@
 The skill runs the same factory/council JavaScript through a local Node runner. Routing,
 escalation, verification, scoring and readiness stay in the shared engine; each model turn is a
 separate CLI session the runner starts directly, with bounded concurrency and no Claude relay
-agents. All four factory tiers, Pair, Council, Ensemble and Run-plan run on it.
+agents. All four factory tiers, Pair, Council, Ensemble, Run-plan and Brief run on it. The
+[`groom` skill](groom.md) runs `--workflow brief` through the same launcher.
 
 ## Requirements
 

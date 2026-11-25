@@ -160,7 +160,7 @@ async function runOnce(options = {}) {
   }
   const panel = () => { throw new Error('Pair must not launch a panel') }
   const phase = title => phases.push(title), log = line => logs.push(line)
-  const args = { task: 'Implement the behavior', repo: '/repo', ...(options.factory || options.child ? { brief: false } : {}), ...(options.native ? {} : { host: 'codex' }), ...options.args }
+  const args = { task: 'Implement the behavior', repo: '/repo', ...(options.factory || options.child || !options.brief ? { brief: false } : {}), ...(options.native ? {} : { host: 'codex' }), ...options.args }
   const host = { agent, parallel: panel, pipeline: null, phase, log, budget, factoryRuntime: runtime }
   let result, ran = null, returned = null
   if (options.child || options.via === 'candidate') {
@@ -2739,4 +2739,27 @@ test('every Factory Pair case was compared with the delegating Factory on its ho
   const seen = Object.fromEntries(Object.entries(abSeen).map(([k, v]) => [k, [...v].sort()]))
   const required = Object.fromEntries(Object.entries(PAIR_AB_REQUIRED).map(([k, v]) => [k, [...v].sort()]))
   assert.deepEqual(seen, required)
+})
+
+// A standalone Pair settles its own goal brief before setup, on either host; the brief file reaches
+// setup as a reference to snapshot, and the result and report carry the brief. brief: false skips it.
+test('a standalone pair shapes and challenges its goal before setup on both hosts', async () => {
+  const brief = { outcome: 'The behavior works.', purpose: 'Users need it.', scope: 'The behavior.', nonGoals: 'Anything else.',
+    acceptanceExamples: ['It works.'], verification: 'Run the tests.', delegated: ['testing', 'implementation', 'internal design'] }
+  for (const native of [true, false]) {
+    const file = native ? '/repo/.council/brief-x/BRIEF.json' : '/repo/.council/host-x/BRIEF.json'
+    const snapshot = { source: file, path: '/repo/.council/pair-test/refs/BRIEF.json', inWorktrees: false }
+    const { result, events, calls } = await run({ native, args: { brief: undefined },
+      brief: call => 'questions' in call.schema.properties ? { brief, questions: [], briefFile: native ? file : '' } : { brief },
+      setup: call => call.prompt.includes(`--ref '${file}'`) ? { refs: [snapshot] } : {} })
+    const why = native ? 'native' : 'hosted'
+    assert.deepEqual(events.slice(0, 3), ['brief', 'brief', 'setup'], why)
+    assert.ok(calls.slice(0, 2).every(c => c.label.startsWith('brief ')), why)
+    assert.ok(calls.filter(c => c.kind === 'author').every(c => c.prompt.includes('The behavior works.')), `${why}: the author sees the brief`)
+    assert.deepEqual([result.status, result.final.readiness.state, result.brief.state, result.briefFile], ['done', 'ready', 'settled', snapshot.path], why)
+    assert.ok(result.report.markdown.includes('Outcome: The behavior works.'), why)
+    const off = await run({ native, args: { brief: false } })
+    assert.equal(off.events[0], 'setup', why)
+    assert.equal(off.result.brief, undefined, why)
+  }
 })

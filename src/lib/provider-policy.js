@@ -187,6 +187,8 @@ function reachableProviders(S, request) {
         || (role === 'spec' && config.specReviewers.length > 0)
         || (role === 'retro' && config.retro && !config.ensemble)
         || (role === 'record' && factoryContext)
+        // A standalone Pair or council settles its goal first (src/goal.js); Factory's children don't.
+        || (role === 'intake' && !factoryContext && !config.ensemble && raw.brief !== false)
       if (reachable) add(seat, role, reason)
     }
     if (config.ensemble) add(config.ensemble.compare, 'comparison', reason)
@@ -196,6 +198,7 @@ function reachableProviders(S, request) {
   if (workflowName === 'pair') configRoutes(parsePairConfig(raw), 'pair')
   else if (workflowName === 'ensemble') configRoutes(parseEnsembleConfig(raw), 'ensemble')
   else if (workflowName === 'council') configRoutes(parseConfig(raw), 'council')
+  else if (workflowName === 'brief') add(parseRoles(raw).intake, 'intake', 'brief')
   else if (workflowName === 'factory') {
     const factory = parseFactory(raw), roles = parseRoles(raw), strategy = raw.strategy || 'auto'
     if (!['auto', 'pair', 'independent'].includes(strategy)) throw new Error('strategy must be auto, pair, or independent.')

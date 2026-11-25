@@ -1,0 +1,3 @@
+interface:
+  display_name: "Groom"
+  short_description: "Groom a ticket for a dark-factory run"

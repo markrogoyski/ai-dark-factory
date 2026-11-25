@@ -11,6 +11,7 @@ export const LIB = [
   'src/lib/provenance.js',
   'src/lib/report.js',
   'src/lib/tiers.js',
+  'src/lib/groom.js',
   'src/lib/tier-simple.js',
   'src/lib/tier-feature.js',
   'src/lib/tier-architecture.js',
@@ -44,11 +45,13 @@ export const TARGETS = {
   ensemble: { output: 'plugins/dark-factory/workflows/ensemble.js', order: [
     'src/00-meta-ensemble.js', ...LIB, 'src/boot-ensemble.js', SCHEMAS, 'src/ensemble-schemas.js', TURNS_CORE, TURNS, REPAIR, COUNCIL_FLOW, 'src/main-ensemble.js'] },
   council: { output: 'plugins/dark-factory/workflows/council.js', order: [
-    'src/00-meta.js', ...LIB, ...HANDOFF_LIB, BOOT, ...DEBATE, 'src/simple.js', 'src/feature.js', 'src/architecture.js', 'src/delegated.js', 'src/main-council.js'] },
+    'src/00-meta.js', ...LIB, ...HANDOFF_LIB, BOOT, ...DEBATE, 'src/goal.js', 'src/simple.js', 'src/feature.js', 'src/architecture.js', 'src/delegated.js', 'src/main-council.js'] },
   factory: { output: 'plugins/dark-factory/workflows/factory.js', order: [
-    'src/00-meta-factory.js', ...LIB, ...HANDOFF_LIB, 'src/boot-factory.js', TURNS_CORE, 'src/brief.js', 'src/route.js', 'src/main-factory.js'] },
+    'src/00-meta-factory.js', ...LIB, ...HANDOFF_LIB, 'src/boot-factory.js', TURNS_CORE, 'src/goal.js', 'src/brief.js', 'src/route.js', 'src/main-factory.js'] },
+  brief: { output: 'plugins/dark-factory/workflows/brief.js', order: [
+    'src/00-meta-brief.js', ...LIB, 'src/boot-brief.js', TURNS_CORE, 'src/goal.js', 'src/main-brief.js'] },
   pair: { output: 'plugins/dark-factory/workflows/pair.js', order: [
-    'src/00-meta-pair.js', ...LIB, ...PAIR_LIB, ...HANDOFF_LIB, 'src/boot-pair.js', SCHEMAS, PAIR_SCHEMAS, TURNS_CORE, TURNS, PAIR_FLOW, 'src/main-pair.js'] },
+    'src/00-meta-pair.js', ...LIB, ...PAIR_LIB, ...HANDOFF_LIB, 'src/boot-pair.js', SCHEMAS, PAIR_SCHEMAS, TURNS_CORE, TURNS, 'src/goal.js', PAIR_FLOW, 'src/main-pair.js'] },
 }
 // Builds that are not shipped: `node tools/build.mjs --candidates` builds them in memory. None is
 // pending; a change to compare natively against the shipped workflows goes here.

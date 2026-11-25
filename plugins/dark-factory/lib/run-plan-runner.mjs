@@ -90,8 +90,9 @@ export async function runPlan(options, dependencies = {}) {
 
   function settle(S, result) {
     const a = S.active
+    // A resumed grooming pass reports its host run's turns across every resume; earlier ones were charged.
     const measured = result?.metrics?.turns
-    const spent = Number.isSafeInteger(measured) && measured >= 0 ? Math.min(measured, a.turns) : a.turns
+    const spent = Number.isSafeInteger(measured) && measured >= 0 ? Math.min(Math.max(0, measured - (a.priorTurns || 0)), a.turns) : a.turns
     S.turns -= a.turns - spent
     S.elapsedMs -= a.milliseconds - Math.max(0, (a.finishedAt ?? now()) - a.startedAt)
   }
@@ -323,6 +324,14 @@ export async function runPlan(options, dependencies = {}) {
         a.turns = 0; a.milliseconds = available; a.startedAt = now(); S.elapsedMs += available
         await save(S)
         await continueDelivery(S)
+      } else if (a.groom) {
+        // An interrupted grooming pass keeps its reservation; the policy reruns or skips it.
+        unchanged(S); clean()
+        S.groom.tasks[a.task].interrupted = (S.groom.tasks[a.task].interrupted || 0) + 1
+        S.groom.tasks[a.task].result = a.directory
+        S.active = null
+        await save(S)
+        emit(`run-plan ${S.plan.id}: grooming ${a.task} was interrupted; its reserved budget remains charged`)
       } else {
         unchanged(S); clean()
         S.tasks[a.task].status = 'parked'
@@ -350,6 +359,51 @@ export async function runPlan(options, dependencies = {}) {
         completed: Object.fromEntries(S.plan.tasks.filter(t => S.tasks[t.id].status === 'done').map(t => [t.id, S.tasks[t.id].decision])) }, 2)
       emit(`run-plan ${S.plan.id}: ${task.id}, attempt ${record.attempts}`)
       await point('after-reserve')
+    },
+    // A grooming pass is reserved, journaled and settled like an attempt, but counts no attempt.
+    async reserveGroom(S, item) {
+      unchanged(S); clean()
+      const entry = S.groom.tasks[item.id]
+      const turns = Math.min(S.plan.limits.taskMaxTurns, S.plan.limits.maxTurns - S.turns)
+      const milliseconds = Math.min(S.plan.limits.taskMaxRunMin * 60000, S.plan.limits.maxRunMin * 60000 - S.elapsedMs)
+      const directory = assertLocation(join(stateDir, 'groom', `${item.id}-${entry.passes + 1}`))
+      if (existsSync(directory)) throw new Error('Grooming artifacts already exist without an active reservation; preserve them and inspect the journal')
+      // A resume continues the pass's own host run, whose budget counts every earlier attempt.
+      const host = item.resume ? json(join(assertLocation(entry.hostRunDir), 'host.json')) : {}
+      entry.passes++
+      S.turns += turns; S.elapsedMs += milliseconds
+      S.active = { task: item.id, groom: true, resume: item.resume, base: S.head, directory, turns, milliseconds, startedAt: now(), pid: null,
+        priorTurns: Number.isSafeInteger(host.spentTurns) ? host.spentTurns : 0, priorMs: Number.isFinite(host.elapsedMs) ? host.elapsedMs : 0 }
+      await save(S)
+      await point('after-groom-reservation-journal')
+      mkdirSync(directory, { recursive: true })
+      emit(`run-plan ${S.plan.id}: grooming ${item.id}${item.resume ? ' with answers' : ''}`)
+      await point('after-groom-reserve')
+    },
+    async groom(S, item, args) {
+      const a = S.active, entry = S.groom.tasks[item.id]
+      const argsFile = join(a.directory, 'args.json'), resultFile = join(a.directory, 'result.json')
+      writeJsonAtomic(argsFile, args, 2)
+      let result
+      if (dependencies.runBrief) result = await dependencies.runBrief(S, item, args)
+      else {
+        const target = item.resume ? ['--resume', assertLocation(entry.hostRunDir)] : ['--cwd', repo]
+        const child = await processCall(S, process.execPath, [runner, '--workflow', 'brief', ...target, '--args-file', argsFile,
+          '--output', resultFile, '--concurrency', String(options.concurrency || 3), '--timeout-min', String(options.timeoutMin || 90)], 'workflow')
+        result = existsSync(resultFile) ? json(resultFile) : { status: 'failed', error: `Grooming runner exited ${child.code}: ${child.error}` }
+      }
+      unchanged(S); clean()
+      if (result?.hostRunDir) assertLocation(result.hostRunDir)
+      writeJsonAtomic(resultFile, result, 2)
+      await save(S)
+      await point('after-groom-result')
+      return result
+    },
+    async groomed(S, item, result) {
+      S.groom.tasks[item.id].result = join(S.active.directory, 'result.json')
+      settle(S, result); S.active = null
+      await save(S)
+      emit(`run-plan ${S.plan.id}: grooming ${item.id}: ${S.groom.tasks[item.id].status}`)
     },
     async execute(S, task, args) {
       const a = S.active

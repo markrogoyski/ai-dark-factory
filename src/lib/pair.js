@@ -14,7 +14,7 @@ function newPairState() {
 
 // Pair decisions are shared by both hosts. Only the reviewer can close findings.
 // A string task may also start with --no-design or --no-retro, among the other flags.
-const PAIR_SWITCHES = { 'no-design': ['design', false], 'no-retro': ['retro', false] }
+const PAIR_SWITCHES = { 'no-design': ['design', false], 'no-retro': ['retro', false], 'no-brief': ['brief', false] }
 function parsePairArgs(args) {
   return parseArgs(args, PAIR_SWITCHES)
 }
@@ -61,9 +61,12 @@ function parsePairConfig(args) {
   const used = [author.vendor, reviewer.vendor, setup.vendor]
   const retro = !config.roles.retro ? null : used.includes(config.roles.retro.vendor) ? config.roles.retro
     : parseSeat(used.includes('claude') ? 'sonnet' : author.key, ROLE_EFFORT.retro)
+  // The goal stage (src/goal.js) runs as intake, which the standalone runner keeps read-only, on
+  // setup's model. Factory's Pair never runs it: Factory settled the goal before routing.
+  const intake = raw.brief === false ? null : parseSeat(setupKey, ROLE_EFFORT.intake)
   // Reuse setup, transport and the retro, without acquiring council roles or Simple escalation rules.
   return { ...config, raw, tier: 'pair', simple: null, panel: [], specReviewers: spec ? [{ ...hostSeat(config.host, spec), lens: 'criteria' }] : [],
-    roles: { ...(retro ? { retro } : {}), setup }, lineup: [hostSeat(config.host, author)],
+    roles: { ...(retro ? { retro } : {}), ...(intake ? { intake } : {}), setup }, lineup: [hostSeat(config.host, author)],
     auditors: [{ ...hostSeat(config.host, reviewer), lens: 'review', id: 'PR' }],
     pairOptions: { author, reviewer, maxReviews, maxDesignReviews, design, answers: pairAnswersOf(raw.clarifications) } }
 }

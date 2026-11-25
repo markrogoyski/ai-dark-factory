@@ -2,8 +2,18 @@
 async function runPlanWorkflow(input, runtime) {
   const S = await runtime.open(input, runPlanDefinition)
   await runtime.recover(S)
+  if (runPlanGroomPrepare(S)) await runtime.save(S)
   if (input.extendLimits) { runPlanExtendLimits(S, input.extendLimits); await runtime.save(S) }
   if (input.answers) { runPlanAnswer(S, input.answers); await runtime.save(S) }
+  // Grooming passes at the plan's starting revision; any open question stops the plan before a task runs.
+  let pass
+  while ((pass = runPlanGroomNext(S))) {
+    await runtime.reserveGroom(S, pass)
+    const result = await runtime.groom(S, pass, runPlanGroomArgs(S, pass))
+    runPlanGroomOutcome(S, pass, result)
+    await runtime.groomed(S, pass, result)
+  }
+  if (runPlanGroomWaiting(S)) return { ...runPlanReport(S), ...await runtime.location(S) }
   let task
   while ((task = runPlanNext(S))) {
     await runtime.reserve(S, task)

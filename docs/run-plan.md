@@ -11,6 +11,8 @@ feature branch. The run never publishes, deploys or switches branches.
 ```text
   plan.json (bytes frozen)         state: .council/run-plan-<id>/state.json
      |
+  one grooming pass per task (fresh plan runs) --> open questions: blocked, all asked at once
+     |
   +-> next eligible task (dependencies done, attempts and budget left); reserve its turns and time
   |      |
   |   a Factory or Pair run: fresh sessions, its own worktrees, review and readiness
@@ -103,6 +105,47 @@ final posts, not earlier conversations. Routine implementation choices stay with
 scope changes and conflicting requirements must become questions. Factory's specification review
 uses `ask`; when intake selects Pair, that doesn't force a council.
 
+## Grooming before the first task
+
+A fresh plan run first gives every task one [`brief`](groom.md#the-brief-workflow) pass at the
+plan's starting revision, through the shipped runner, before any task runs. Each pass reads the
+task text, its criteria and the `context` and `plan` documents from `defaults` and the task's
+`args`. Acceptance isn't groomed. Set top-level `"groom": false` to skip the pass.
+
+The pass surfaces questions early; it settles nothing for later tasks. A ready task runs with its
+groomed ticket as its task, and its own run re-checks the ticket at its execution revision, after
+its dependencies have landed, so a decision that no longer holds comes back as a question.
+
+| verdict | the task |
+|---|---|
+| `ready` | runs with its ticket |
+| `needs-answers` | waits; the plan stops before any task runs |
+| `needs-split`, `not-actionable`, or a failed pass | runs as written, noted in the report; its own goal stage judges it |
+
+If any task has open questions, the result is `blocked` with every question from every task in
+`questions` (each with its `task` and `id`), also listed under **How the plan went**. Answer them
+all at once, keyed by task and question ID:
+
+```json
+{
+  "planFile": "/absolute/path/plan.json",
+  "answers": {
+    "policy": {"decisions": {"G1": "Retry only idempotent requests.", "G2": "Keep the current limit."}},
+    "integration": {"decisions": {"G1": "Log each retry."}}
+  }
+}
+```
+
+A task whose questions all have answers resumes its brief run with them and gets its settled
+ticket; one with a question still unanswered stays open, and the plan stops again. An answer is
+kept as given: repeating it changes nothing, and a different one is refused.
+
+Each pass is reserved and settled like an attempt (it counts no attempt): it reserves up to
+`taskMaxTurns` and `taskMaxRunMin` and settles to measured usage, a resumed pass is charged only
+its new turns, and an interrupted pass keeps its full reservation. An interrupted pass is rerun;
+after `maxAttempts` interruptions the task runs as written. A plan run started before this
+feature, with tasks already attempted, skips the pass.
+
 ## Parked tasks, answers and resume
 
 `needs-tier`, `needs-split`, `needs-user`, unresolved readiness and exhausted attempts park the
@@ -121,7 +164,8 @@ Repeat the same invocation to resume (run-plan doesn't use `--resume`). Answer p
 }
 ```
 
-- An answer is a string or `{answer, tier?, noSplit?}`.
+- An answer is a string or `{answer, tier?, noSplit?}`, or `{decisions: {G1: "…"}}` for
+  [grooming questions](#grooming-before-the-first-task).
 - A split proposal can be kept as one task with `noSplit: true`. A different decomposition or
   changed requirements need a revised plan with a new ID; the plan is immutable once started.
 - A parked task stays idle until an answer requests a retry within its remaining limits. Answers

@@ -369,10 +369,40 @@
         "spec": "opus",
         "record": "opus",
         "retro": "opus"
-      }
+      },
+      "brief": false
     },
     "vendors": [
       "codex"
+    ]
+  },
+  {
+    "workflow": "council",
+    "args": {
+      "task": "Fix",
+      "seats": "astra,sol",
+      "panel": "astra,sol",
+      "spec": false,
+      "retro": false,
+      "roles": {
+        "intake": "opus"
+      }
+    },
+    "vendors": [
+      "claude",
+      "codex"
+    ]
+  },
+  {
+    "workflow": "brief",
+    "args": {
+      "task": "Fix",
+      "roles": {
+        "intake": "opus"
+      }
+    },
+    "vendors": [
+      "claude"
     ]
   },
   {

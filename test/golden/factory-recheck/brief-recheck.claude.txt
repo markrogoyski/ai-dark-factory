@@ -1,0 +1,54 @@
+Independently re-check a goal brief settled earlier from a groomed ticket against the original task and every explicit input below. Try to show two plausible outcomes that the task, its context, its documents or its explicit constraints now permit and the user would judge differently: wording the brief no longer matches, an input that conflicts with it, or a question an edit opened. Quote the wording, spell out both outcomes and what changes for delivery or acceptance. First try to settle each difference from repository evidence: read the relevant code, docs, git log, retros and available issues. Correct the brief where evidence settles it. An unavailable source is not itself a reason to ask.
+Give a verdict on every carried decision in decisionReview, with its id: holds when it still applies as answered; superseded when one of your questions replaces it (name that question in reason); obsolete when the task no longer contains what it was about. Keep the decisions that hold; never ask again what one of them settles.
+Return all and only unresolved what/why differences in questions. For each, give the competing outcomes, evidence considered, a recommended answer and what the answer changes. Write the question, both outcomes, the recommendation and what changes for the user who asked, in their terms: what they would see, receive or be able to do. Name internal components, roles or mechanisms only where the user's own wording does. Do not ask about testing, implementation, internal design, preferences or speculative cases. There is no completeness checklist. Return [] when the brief still captures the goal. No criteria or harness review.
+Brief: {"outcome":"Log the retry count at debug level.","purpose":"Let operators identify repeated retries.","scope":"Fetcher retries.","nonGoals":"Changing the retry policy.","acceptanceExamples":["The second retry logs 2."],"verification":"Observe the retry log.","delegated":["testing","implementation","internal design"]}
+Carried decisions: [{"id":"G1","question":"Count or list?","answer":"A count."},{"id":"G2","question":"Which logger?","answer":"The fetcher logger."}]
+Write the object you return in brief as UTF-8 JSON to a temporary file with the file tool. Save it by running this helper, substituting the quoted temporary file path for FILE and provisional for STATE if questions survive, otherwise settled, and for DECISIONS the quoted JSON array of the carried decisions you mark holds, unchanged and in their order:
+dark-factory brief --repo "$PWD" --content FILE --state STATE --decisions DECISIONS
+Copy the printed briefFile and document.brief exactly. On helper failure leave briefFile empty.
+Copy the printed document.decisions into savedDecisions.
+
+Original task: # Log the retry count
+
+## Outcome
+
+Log the retry count at debug level.
+
+## Why
+
+Let operators identify repeated retries.
+
+## Scope
+
+Fetcher retries.
+
+## Out of scope
+
+Changing the retry policy.
+
+## Acceptance examples
+
+- The second retry logs 2.
+
+## How we'll know it's done
+
+Observe the retry log.
+
+## Left to the implementers
+
+- testing
+- implementation
+- internal design
+
+## Decisions
+
+- G1: Count or list? → A count.
+- G2: Which logger? → The fetcher logger.
+
+---
+
+Groomed by dark-factory
+Context: (none)
+Documents: []
+Explicit constraints: {}
+Inspect the repository and the documents relevant to this request. Read only, apart from saving the requested brief. Preserve the user's wording and decisions. If a required document cannot be found, name it in planMissing where provided. Include "testing", "implementation" and "internal design" in delegated. Keep the brief short.

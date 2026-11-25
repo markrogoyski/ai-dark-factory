@@ -678,7 +678,7 @@ test('make installed propagates a failed reload probe after the loader passes', 
   })
   assert.equal(run.error, undefined)
   assert.equal(run.status, 2, run.stdout + run.stderr)
-  assert.match(run.stdout, /loader: Claude Code loads all 5 workflows/)
+  assert.match(run.stdout, /loader: Claude Code loads all 6 workflows/)
   assert.match(run.stdout, /L1-i: fail \(v2 marker was absent/)
   assert.equal(readJson(join(tools, 'native-verdict.json')).l1.checks['L1-j'].status, 'pass')
 })

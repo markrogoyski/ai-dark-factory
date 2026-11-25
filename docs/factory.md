@@ -27,6 +27,18 @@ routing independent, and combining one with `strategy: "pair"` is rejected.
 
 ## Goal brief
 
+The goal stage is shared with standalone [Pair](pair.md) and [council](council.md) runs and the
+[`brief` workflow](groom.md#the-brief-workflow). [Groom](groom.md) has the full table; for
+Factory:
+
+| Task | What runs | Goal turns |
+|---|---|---|
+| `brief: false` / `--no-brief` | nothing | 0 |
+| `brief: <path>`, and no `context`, `plan` documents, `criteria` or explicit `mode` | intake loads the brief | 0 |
+| `brief: <path>` with any of those inputs | load it, then one re-check against the task and the inputs | 1 |
+| a groomed ticket (ends with "Groomed by dark-factory" and parses) | parse it, then one re-check that also rules on every earlier decision | 1 |
+| anything else | a shaper, then a fresh challenger | 2 |
+
 Before intake selects a tier, a shaper reads the task as given, including a one-line chat goal.
 It describes the outcome you will receive, its purpose, scope, non-goals, acceptance examples
 and the evidence that will verify delivery. Testing, implementation and internal design are
@@ -48,9 +60,16 @@ and intake runs on the settled brief.
 The result contains `brief` and `briefFile`, and **How the run went** includes the brief.
 `--explain` produces the file and routing decision without starting tier work. To reuse a
 settled brief, pass `{"task":"Fix pagination","brief":"/absolute/path/BRIEF.json"}` as workflow
-arguments (an `--args-file` on the CLI). Both shaping turns are skipped. Use `--no-brief`
-or `brief: false` to go straight to intake. The standalone CLI's `--brief` switch requests
-compact result output.
+arguments (an `--args-file` on the CLI). Both shaping turns are skipped. Adding `context`,
+`plan`, `criteria` or a `mode` costs one re-check turn, since the brief doesn't cover them. Use
+`--no-brief` or `brief: false` to go straight to intake. The standalone CLI's `--brief` switch
+requests compact result output.
+
+A [groomed ticket](groom.md#the-ticket) as the task skips the shaper. The re-check rules on each
+of its decisions: `holds`, `superseded` or `obsolete`. Only those that hold bind the brief, and
+**How the run went** lists the others. The run's own questions are still `B1`, `B2`, …, apart
+from the ticket's `G` decisions. The result also returns `ticket`, the ticket as the run settled
+it (your answers included), to update Jira with.
 
 ## Intake
 

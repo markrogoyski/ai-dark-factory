@@ -48,8 +48,8 @@ test('the reader supplies the policy inputs, and validation sees what it supplie
 test('candidates are separate from the shipped targets', () => {
   assert.throws(() => build('nope'), /unknown target nope/)
   assert.throws(() => build('toString'), /unknown target toString/)
-  assert.deepEqual(Object.keys(TARGETS), ['policy', 'run-plan', 'ensemble', 'council', 'factory', 'pair'])
-  assert.deepEqual(EXPECTED, ['dark-factory:council', 'dark-factory:ensemble', 'dark-factory:factory', 'dark-factory:pair', 'dark-factory:run-plan'])
+  assert.deepEqual(Object.keys(TARGETS), ['policy', 'run-plan', 'ensemble', 'council', 'factory', 'brief', 'pair'])
+  assert.deepEqual(EXPECTED, ['dark-factory:brief', 'dark-factory:council', 'dark-factory:ensemble', 'dark-factory:factory', 'dark-factory:pair', 'dark-factory:run-plan'])
   assert.deepEqual(CANDIDATES, {})
   assert.throws(() => build('factory-split'), /unknown target factory-split/)
   // An injected candidate builds without becoming a target.

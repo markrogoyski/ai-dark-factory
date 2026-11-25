@@ -25,12 +25,18 @@ need their selected CLIs and authentication.
 
 Use `--explain` to resolve a process without starting implementation (Factory shapes the goal and performs intake). Factory returns its goal brief and file path. Pass `--no-brief` to skip shaping, or supply a completed file with `brief` in an args file. Use `--prepare` to check, with no model turn and no run directory (offline, except that an OpenRouter seat's key and model ID are checked with OpenRouter), that each reachable vendor's CLI answers and every absolute `plan` document exists; it reports roles per vendor, warns about tracked changes absent from HEAD, and leaves authentication unknown. Every new single run makes this check first and returns status `preflight` before intake when something is missing. It does not cover `--resume` or Run-plan. Preserve requested `--strategy`, `--max-turns`, `--max-run-min`, and `--repair-passes`; full repair and evaluation options can be passed through `--args-file`.
 
+Factory, Pair and council settle the goal before setup the same way: a groomed ticket (one ending
+"Groomed by dark-factory") gets one re-check turn and returns `ticket`, the ticket as the run
+settled it; `--no-brief` skips the stage. `--workflow brief` runs one grooming pass over a
+ticket and changes nothing; when the user wants to develop a ticket interactively, use the
+`groom` skill, which runs it.
+
 Use `--workflow ensemble` for independently reviewed alternatives. Its overall result remains advisory; inspect each candidate's readiness and missing reviews before selecting one. A merge requires fresh verification and review. An unchanged ready candidate can be saved as the result for delivery verification.
 
 Use `--workflow pair` for one author with one reviewer and `--workflow council` for a requested
 council run; factory is the default. Pair owns design review, implementation, repeated fixes,
 and readiness. Its defaults are Codex Astra author and Claude Opus reviewer; preserve requested
-`--author`, `--reviewer`, `--max-reviews`, `--max-design-reviews`, `--no-design`, and `--no-retro`. The review budget defaults to 8 across design and
+`--author`, `--reviewer`, `--max-reviews`, `--max-design-reviews`, `--no-design`, `--no-retro`, and `--no-brief`. The review budget defaults to 8 across design and
 code. A stalled or exhausted run remains unresolved; do not start a council automatically.
 A design not approved after `--max-design-reviews` reviews (default 3, at most the budget minus
 one) stops with `needs-user` and one question of kind `design`: show its rounds, open findings
@@ -43,7 +49,7 @@ aside for the snapshot reviewed before it). Show the report's "Minor findings" l
 `--no-design` (`design: false`) skips the design stage when the deliverable is itself a document
 or plan: the author writes it directly and review starts at the measured result. `--no-retro`
 (`retro: false`) skips the closing process retro.
-For Pair, use `--args-file` for `task`, `author`, `reviewer`, `maxReviews`, `maxDesignReviews`, `design`, `spec`, `effort`, `context`,
+For Pair, use `--args-file` for `task`, `author`, `reviewer`, `maxReviews`, `maxDesignReviews`, `design`, `spec`, `brief`, `effort`, `context`,
 `plan`, `criteria`, `verify`, `repo`, `allowDirty`, `timeoutMin`, and `retro`. Pair's `spec` is `false` (skip the
 spec review of the criteria) or `{model, effort}`. Tier, seats, panel, roles, audit, and historical-evidence
 options belong to other workflows.

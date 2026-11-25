@@ -10,7 +10,7 @@ const stream = content => [
 const listing = names => `<tool_use_error>Workflow "dark-factory:does-not-exist" not found. Available: ${names.join(', ')}</tool_use_error>`
 
 test('every built workflow is expected', () => {
-  assert.deepEqual(EXPECTED, ['dark-factory:council', 'dark-factory:ensemble', 'dark-factory:factory', 'dark-factory:pair', 'dark-factory:run-plan'])
+  assert.deepEqual(EXPECTED, ['dark-factory:brief', 'dark-factory:council', 'dark-factory:ensemble', 'dark-factory:factory', 'dark-factory:pair', 'dark-factory:run-plan'])
 })
 
 test('a listing with every workflow passes, whatever else it lists', () => {

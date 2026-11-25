@@ -15,7 +15,7 @@
 
   factory     chooses how much process a task needs
      |
-  shape the goal and challenge unresolved outcomes
+  settle the goal: shape and challenge it, or re-check a groomed ticket
      |
   intake reads the brief, task and code, then picks:
      |
@@ -27,7 +27,11 @@
      +-- a design or a plan -------> Architecture  designs only, returns milestones to build
      '-- a scoped change, one owner -> Pair          one author, one reviewer
 
-  council and ensemble are used on their own.
+  council and ensemble are used on their own; a standalone pair or council run settles
+  the goal the same way before its setup.
+
+  groom (a skill) --> brief, one pass: shape and challenge a ticket, or re-check a groomed
+                      one; the ticket comes back to the writer, then goes to a run as its task
 ```
 
 ## Shared guarantees
@@ -44,8 +48,8 @@ profile substitutes OpenAI models for most roles ([both hosts' defaults](models.
     .claude-plugin/marketplace.json   the marketplace: lists the plugins in this repo
     plugins/dark-factory/             the plugin, and the only thing that ships
       .claude-plugin/plugin.json
-      workflows/                      pair.js, factory.js, council.js, ensemble.js, run-plan.js
-                                      (built from src/)
+      workflows/                      pair.js, factory.js, council.js, ensemble.js, run-plan.js,
+                                      brief.js (built from src/)
       bin/dark-factory                the helper CLI the agents call
       bin/dark-factory-codex          the Codex host and standalone runner
       bin/dark-factory-evaluate       the offline evaluator
@@ -53,7 +57,8 @@ profile substitutes OpenAI models for most roles ([both hosts' defaults](models.
                                       policy.mjs (built from src/lib/)
       schemas/                        the provenance schema
       skills/dark-factory/            the Codex skill and its relative launcher
-    install-codex.sh                  link the skill into a project or user skill directory
+      skills/groom/                   the grooming loop, for both hosts; runs the brief workflow
+    install-codex.sh                  link both skills into a project or user skill directory
     src/ tools/ test/                 development: sources, build, tests
 
 A new workflow goes in `plugins/dark-factory/workflows/` and runs as `/dark-factory:<meta.name>`.
@@ -89,7 +94,7 @@ The same generated workflow file runs on both hosts; only the runtime around it 
 
 ### The Codex host
 
-`plugins/dark-factory/bin/dark-factory-codex` is the local Codex host for all five workflows. Its
+`plugins/dark-factory/bin/dark-factory-codex` is the local Codex host for all six workflows. Its
 adapter, `lib/codex-runner.mjs`, launches the helper directly, writes exact prompt files,
 validates structured results and records progress. A result's runner provenance takes its gate,
 settings and candidate from the final attempt, and its provider settings from the final
@@ -137,7 +142,7 @@ verdict (`tools/native-verdict.json`). With nothing unshipped, the staged copy e
 workflows, so a live check of a new change needs a `src/` whose builds differ from them; a change
 to `council.js` or `pair.js` alone is enough.
 
-All five are **generated** from `src/` by `tools/build.mjs` (the workflow runtime allows no
+All six are **generated** from `src/` by `tools/build.mjs` (the workflow runtime allows no
 imports, so each must be one file) and committed, so they can be run without a build.
 Edit `src/`, then `make build`. `tools/sources.mjs` lists each built workflow's files in order.
 The build drops the top-level declarations a workflow never reaches (`tools/prune.mjs`), then
@@ -159,6 +164,10 @@ workflows it loaded. Read and diff `src/`, not the built files.
   and `architectureRun()`. The Architecture tier's review is `runAudit()`, with its own prompts
   and a revision that returns the milestones.
 - Tier flows: `src/simple.js`, `feature.js`, `architecture.js`.
+- The goal stage: `src/goal.js` (shape and challenge, the re-check of a groomed ticket or a
+  supplied brief, answers), shared by factory, pair, council and brief, with the ticket's parser
+  and renderer in `src/lib/groom.js`. Factory's intake is `src/brief.js`. The brief workflow
+  is `boot-brief.js` and `main-brief.js`.
 - Pair (also Factory's pair strategy): `src/pair.js` (the design and code loop and the
   `runtime: "cli"` transport), `lib/pair.js`, `lib/pair-prompts.js`, `pair-schemas.js`,
   `boot-pair.js`, `main-pair.js`.

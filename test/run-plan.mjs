@@ -15,7 +15,9 @@ const helper = join(root, 'plugins/dark-factory/bin/dark-factory')
 const ready = { state: 'ready', blocked: [], incomplete: [] }
 const policy = new Function(readFileSync(join(root, 'src/lib/run-plan.js'), 'utf8') + '\nreturn {runPlanDefinition,runPlanNext,runPlanBrief,runPlanAnswer}')()
 const task = (id, after = []) => ({ id, task: `Implement ${id}`, criteria: [`${id} works`], after })
-const plan = tasks => ({ version: 1, id: 'test', tasks, decisions: ['Preserve public behavior.'], acceptance: { verify: 'true', criteria: ['The complete plan works together.'] } })
+// Most tests are about scheduling and delivery: their plans skip the grooming pre-pass.
+const plan = tasks => ({ version: 1, id: 'test', tasks, decisions: ['Preserve public behavior.'], acceptance: { verify: 'true', criteria: ['The complete plan works together.'] }, groom: false })
+const groomed = tasks => { const p = plan(tasks); delete p.groom; return p }
 const read = file => JSON.parse(readFileSync(file, 'utf8'))
 
 function fixture(t, input = plan([task('one'), task('two', ['one'])])) {
@@ -498,9 +500,11 @@ test('CLI routes run-plan inputs without a task and rejects checkpoint resume', 
 })
 
 test('packaged CLI runs a Pair task through stub model CLIs and real delivery', async t => {
-  const p = plan([{ ...task('sum'), workflow: 'pair', args: { author: 'sol', reviewer: 'astra', verify: 'node check.cjs' } }])
-  // Setup, the spec review, two author turns and two reviews; the retro would be the seventh.
-  p.limits = { maxTurns: 6, taskMaxTurns: 6 }
+  const p = groomed([{ ...task('sum'), workflow: 'pair', args: { author: 'sol', reviewer: 'astra', verify: 'node check.cjs' } }])
+  // The grooming pass's shaper and challenger (a brief run), then the Pair task: the re-check of
+  // its groomed ticket, setup, the spec review, two author turns and two reviews; the retro would
+  // be the tenth.
+  p.limits = { maxTurns: 9, taskMaxTurns: 8 }
   const f = fixture(t, p), bin = join(f.temp, 'bin')
   mkdirSync(bin)
   for (const name of ['codex', 'claude']) {
@@ -518,7 +522,11 @@ test('packaged CLI runs a Pair task through stub model CLIs and real delivery', 
   const output = JSON.parse(result.stdout)
   assert.equal(output.tasks?.sum.status, 'done', result.stdout + result.stderr)
   assert.equal(result.status, 2, 'Final acceptance remains pending at the hard turn limit')
-  assert.equal(output.budget.turns, 6)
+  assert.equal(output.groom.tasks.sum.status, 'ready', JSON.stringify(output.groom))
+  const kinds = readFileSync(join(f.temp, 'turns.jsonl'), 'utf8').trim().split('\n').map(l => JSON.parse(l).kind)
+  assert.deepEqual(kinds.slice(0, 3), ['shaper', 'challenger', 'brief-recheck'], 'the pass shapes the task; the Pair run re-checks its ticket')
+  assert.match(read(join(f.stateDir, 'sum-1/args.json')).task, /Groomed by dark-factory\s*$/)
+  assert.equal(output.budget.turns, 9)
   assert.equal(f.git('status', '--porcelain'), '')
 })
 
@@ -616,4 +624,181 @@ test('live checks pending on committed Pair tasks reach the plan report; they ch
   assert.deepEqual(lib.runPlanReport(S).liveChecks, [{ task: 'two', ...check }], 'a parked task\'s checks are not pending')
   lib.runPlanLiveChecks(S, { id: 'two' }, { final: { readiness: { state: 'ready', liveChecks: [] } } })
   assert.deepEqual([lib.runPlanReport(S).liveChecks, 'liveChecks' in S.tasks.two], [[], false], 'a later attempt without live checks clears them')
+})
+
+// The grooming pre-pass, with a dark-factory:brief stand-in. Each task's pass has its own host run
+// under .council, whose host.json counts turns across resumes as the shipped runner does.
+const groomQuestion = id => ({ id, question: `Question ${id}?`, wording: 'the task', outcomeA: `A ${id}.`, outcomeB: `B ${id}.`,
+  evidence: 'The code allows both.', recommendation: `A ${id}.`, changes: 'What the user sees.' })
+function briefStub(f, plans = {}, turns = 1) {
+  const calls = []
+  const runBrief = async (S, item, args) => {
+    calls.push({ id: item.id, resume: item.resume, args, head: f.git('rev-parse', 'HEAD'), tasksRun: f.calls.length })
+    // A fresh pass starts its own host run; a resume continues the one its answers belong to.
+    const host = item.resume ? S.groom.tasks[item.id].hostRunDir : join(f.repo, '.council', `host-${item.id}-${calls.length}`), hostFile = join(host, 'host.json')
+    mkdirSync(host, { recursive: true })
+    const spent = (existsSync(hostFile) ? read(hostFile).spentTurns : 0) + turns
+    writeFileSync(hostFile, JSON.stringify({ spentTurns: spent, elapsedMs: 0 }))
+    const how = plans[item.id] || {}, answered = new Set((args.clarifications || []).map(c => c.id))
+    const base = { hostRunDir: host, metrics: { turns: spent } }
+    if (how.verdict === 'failed') return { status: 'failed', error: 'Brief CLI failed.', ...base }
+    if (how.verdict === 'not-actionable') return { status: 'not-actionable', verdict: 'not-actionable', reason: 'It names no outcome.', ...base }
+    if (how.verdict === 'needs-split') return { status: 'done', verdict: 'needs-split', split: [{ title: 'Part A', task: 'a' }, { title: 'Part B', task: 'b' }], ticket: 'bundled', ...base }
+    const open = (how.questions || []).filter(id => !answered.has(id))
+    if (open.length) return { status: 'needs-user', verdict: 'needs-answers', questions: open.map(groomQuestion), ...base }
+    const decisions = (args.clarifications || []).map(c => `- ${c.id}: Question ${c.id}? → ${c.answer}`).join('\n')
+    return { status: 'done', verdict: 'ready', ticket: `# Groomed ${item.id}\n\n## Decisions\n\n${decisions || 'None.'}\n\n---\n\nGroomed by dark-factory\n`, ...base }
+  }
+  return { calls, runBrief }
+}
+
+test('grooming validates its switch and leaves a default plan definition unchanged', () => {
+  assert.throws(() => policy.runPlanDefinition({ ...plan([task('one')]), groom: 'no' }), /groom must be true or false/)
+  assert.equal('groom' in policy.runPlanDefinition(groomed([task('one')])), false)
+  assert.equal('groom' in policy.runPlanDefinition({ ...plan([task('one')]), groom: true }), false)
+  assert.equal(policy.runPlanDefinition(plan([task('one')])).groom, false)
+})
+
+test('a fresh plan grooms every task at its starting revision before any runs; tickets become task text', async t => {
+  const p = groomed([task('one'), task('two', ['one'])])
+  p.defaults = { context: 'Shared context.' }; p.tasks[1].args = { context: 'Two context.' }
+  const f = fixture(t, p), b = briefStub(f), base = f.git('rev-parse', 'HEAD')
+  const result = await f.invoke({ runBrief: b.runBrief })
+  assert.equal(result.status, 'done', JSON.stringify(result))
+  assert.deepEqual(b.calls.map(c => [c.id, c.resume, c.head, c.tasksRun]), [['one', false, base, 0], ['two', false, base, 0]])
+  assert.deepEqual(b.calls[0].args, { task: 'Implement one', criteria: ['one works'], context: 'Shared context.', repo: f.repo, maxTurns: 50, maxRunMin: 30 })
+  assert.equal(b.calls[1].args.context, 'Two context.')
+  assert.deepEqual(f.calls.map(c => c.id), ['one', 'two', 'acceptance'])
+  assert.match(f.calls[0].args.task, /^# Groomed one\n[\s\S]*Groomed by dark-factory\n$/)
+  assert.match(f.calls[1].args.task, /^# Groomed two/)
+  assert.match(f.calls[2].args.task, /^Independently verify/, 'acceptance is never groomed')
+  assert.equal(result.groom.revision, base)
+  assert.match(result.report.markdown, new RegExp(`\nGrooming at ${base.slice(0, 12)}: groomed tickets for one, two\\.\n`))
+  assert.equal(result.budget.turns, 1 + 1 + 3 + 3 + 2, 'each pass settles to its measured turns')
+  const again = await f.invoke({ runBrief: () => { throw new Error('A groomed plan must not groom again') } })
+  assert.equal(again.status, 'done')
+})
+
+test('questions from several tasks stop the plan before any task runs, in one batch', async t => {
+  const f = fixture(t, groomed([task('one'), task('two', ['one']), task('three')]))
+  const b = briefStub(f, { one: { questions: ['G1', 'G2'] }, two: { questions: ['G1'] } })
+  const result = await f.invoke({ runBrief: b.runBrief })
+  assert.equal(result.status, 'blocked')
+  assert.equal(resultExitCode(result), 2)
+  assert.deepEqual(b.calls.map(c => c.id), ['one', 'two', 'three'], 'every task is groomed before the stop')
+  assert.equal(f.calls.length, 0)
+  assert.deepEqual(result.questions.map(q => [q.task, q.id]), [['one', 'G1'], ['one', 'G2'], ['two', 'G1']])
+  assert.deepEqual(result.questions[0], { task: 'one', ...groomQuestion('G1') })
+  assert.match(result.stopReason, /^Grooming raised 3 questions for one, two; no task has run\./)
+  const story = result.report.markdown
+  assert.match(story, /\n- one \(Implement one\): waiting on answers to G1, G2\n/)
+  assert.match(story, /\n- two \(Implement two\): waiting on answers to G1\n/)
+  assert.match(story, /\n- three \(Implement three\): not started\n/)
+  assert.match(story, /groomed tickets for three; questions for one, two\./)
+  assert.match(story, /\n- one G2: Question G2\? A: A G2\. B: B G2\. Recommended: A G2\. Changes: What the user sees\.\n/)
+  assert.match(story, /\n- two G1: Question G1\?/)
+  assert.equal(story.split('\n').at(-1), 'Budget used: 3 of 200 turns, 0 of 120 minutes.')
+  const idle = await f.invoke({ runBrief: () => { throw new Error('No answers: nothing to groom again') } })
+  assert.deepEqual(idle.questions, result.questions)
+  assert.deepEqual(idle.budget, result.budget)
+})
+
+test('keyed answers resume their brief runs; a partly answered task stays open; answers are immutable', async t => {
+  const f = fixture(t, groomed([task('one'), task('two', ['one'])]))
+  const b = briefStub(f, { one: { questions: ['G1', 'G2'] }, two: { questions: ['G1'] } })
+  await f.invoke({ runBrief: b.runBrief })
+  const partial = await f.invoke({ runBrief: b.runBrief }, { answers: { one: { decisions: { G1: ' Keep A. ' } }, two: { decisions: { G1: 'Take B.' } } } })
+  assert.equal(partial.status, 'blocked')
+  assert.deepEqual(b.calls.slice(2).map(c => [c.id, c.resume]), [['two', true]], 'only the fully answered task resumes')
+  assert.deepEqual(b.calls[2].args, { clarifications: [{ id: 'G1', answer: 'Take B.' }], maxTurns: 51, maxRunMin: 30 }, 'the host run budget counts its earlier pass')
+  assert.deepEqual(partial.questions.map(q => [q.task, q.id]), [['one', 'G2']])
+  assert.equal(partial.groom.tasks.two.status, 'ready')
+  assert.equal(f.calls.length, 0)
+  assert.equal(partial.budget.turns, 3, 'a resumed pass is charged only its own turns')
+  assert.match((await f.invoke({ runBrief: b.runBrief }, { answers: { one: { decisions: { G1: 'Changed.' } } } })).error, /one G1 was already given and cannot change/)
+  assert.match((await f.invoke({ runBrief: b.runBrief }, { answers: { one: { decisions: { G9: 'Unknown.' } } } })).error, /no open grooming question G9/)
+  assert.match((await f.invoke({ runBrief: b.runBrief }, { answers: { two: { decisions: { G2: 'Late.' } } } })).error, /two is not waiting on grooming answers/)
+  assert.match((await f.invoke({ runBrief: b.runBrief }, { answers: { one: { decisions: {} } } })).error, /invalid grooming answers/)
+  assert.match((await f.invoke({ runBrief: b.runBrief }, { answers: { one: 'A plain answer.' } })).error, /one is not parked/)
+  assert.equal(b.calls.length, 3, 'refused answers start no pass')
+  const done = await f.invoke({ runBrief: b.runBrief }, { answers: { one: { decisions: { G1: 'Keep A.', G2: 'Also A.' } }, two: { decisions: { G1: 'Take B.' } } } })
+  assert.equal(done.status, 'done', JSON.stringify(done))
+  assert.deepEqual(b.calls[3].args.clarifications, [{ id: 'G1', answer: 'Keep A.' }, { id: 'G2', answer: 'Also A.' }])
+  assert.match(f.calls[0].args.task, /- G1: Question G1\? → Keep A\.\n- G2: Question G2\? → Also A\./)
+  assert.match(f.calls[1].args.task, /- G1: Question G1\? → Take B\./)
+  assert.equal(done.questions, undefined)
+  assert.deepEqual(f.state().groom.tasks.one.answers, { G1: 'Keep A.', G2: 'Also A.' })
+  assert.equal(done.budget.turns, 4 + 3 + 3 + 2)
+})
+
+test('split, not-actionable and failed passes leave their tasks as written, noted in the report', async t => {
+  const f = fixture(t, groomed([task('one'), task('two'), task('three')]))
+  const b = briefStub(f, { one: { verdict: 'needs-split' }, two: { verdict: 'not-actionable' }, three: { verdict: 'failed' } })
+  const result = await f.invoke({ runBrief: b.runBrief })
+  assert.equal(result.status, 'done', JSON.stringify(result))
+  assert.deepEqual(f.calls.slice(0, 3).map(c => c.args.task), ['Implement one', 'Implement two', 'Implement three'])
+  assert.deepEqual(['one', 'two', 'three'].map(id => [result.groom.tasks[id].status, result.groom.tasks[id].verdict]),
+    [['skipped', 'needs-split'], ['skipped', 'not-actionable'], ['skipped', 'failed']])
+  assert.match(result.report.markdown, /\n- one: Grooming: it bundles 2 pieces of work \(Part A; Part B\)\. one runs as written; its own goal stage judges it\.\n/)
+  assert.match(result.report.markdown, /\n- two: Grooming: no deliverable outcome was found: It names no outcome\./)
+  assert.match(result.report.markdown, /\n- three: Grooming: the pass did not finish: Brief CLI failed\./)
+})
+
+test('groom: false skips the pass', async t => {
+  const f = fixture(t, plan([task('one')]))
+  const result = await f.invoke({ runBrief: () => { throw new Error('groom: false must not groom') } })
+  assert.equal(result.status, 'done', JSON.stringify(result))
+  assert.deepEqual(result.groom, { enabled: false, reason: 'The plan sets groom: false.' })
+  assert.equal(f.calls[0].args.task, 'Implement one')
+  assert.doesNotMatch(result.report.markdown, /Grooming/)
+})
+
+test('a plan run whose state predates grooming skips the pass', async t => {
+  const f = fixture(t, groomed([task('one')]))
+  await f.invoke({ runBrief: briefStub(f).runBrief, at: name => { if (name === 'after-reserve') throw new Error('crash') } })
+  // An older engine's journal: an attempt was interrupted, and nothing records grooming.
+  const old = f.state(); delete old.groom
+  writeFileSync(join(f.stateDir, 'state.json'), JSON.stringify(old, null, 2))
+  assert.equal((await f.invoke({ runBrief: () => { throw new Error('A predating plan run must not groom') } })).tasks.one.status, 'parked')
+  const result = await f.invoke({ runBrief: () => { throw new Error('A predating plan run must not groom') } }, { answers: { one: 'Retry.' } })
+  assert.equal(result.status, 'done', JSON.stringify(result))
+  assert.equal(result.groom.reason, 'The plan run predates the grooming pass.')
+  assert.equal(f.calls[0].args.task, 'Implement one')
+})
+
+test('an interrupted pass keeps its charge, reruns once, then the task runs as written', async t => {
+  const p = groomed([task('one'), task('two')]); p.limits = { maxTurns: 100, taskMaxTurns: 5 }
+  const f = fixture(t, p), b = briefStub(f)
+  const crash = { at: name => { if (name === 'after-groom-reserve') throw new Error('crash') } }
+  const first = await f.invoke({ runBrief: b.runBrief, ...crash })
+  assert.equal(first.status, 'blocked')
+  assert.deepEqual([f.state().active.task, f.state().active.groom, f.state().turns], ['one', true, 5])
+  const second = await f.invoke({ runBrief: b.runBrief, ...crash })
+  assert.equal(second.status, 'blocked')
+  assert.deepEqual([f.state().groom.tasks.one.interrupted, f.state().groom.tasks.one.passes, f.state().turns], [1, 2, 10], 'the rerun reserves anew; the lost one stays charged')
+  assert.equal(b.calls.length, 0)
+  const third = await f.invoke({ runBrief: b.runBrief })
+  assert.equal(third.status, 'done', JSON.stringify(third))
+  assert.deepEqual(b.calls.map(c => c.id), ['two'], 'two interruptions skip the pass')
+  assert.match(third.groom.tasks.one.note, /interrupted 2 times; one runs as written/)
+  assert.deepEqual(f.calls.map(c => c.args.task.split('\n')[0]), ['Implement one', '# Groomed two', 'Independently verify that the complete run-plan is implemented on the current repository revision. Inspect the code and evidence for every criterion. Report defects and unmet requirements; do not implement changes. Criteria describe the implemented repository: mark affected criteria unmet when defects remain. A complete investigation that finds defects is not successful acceptance.'])
+  assert.equal(third.budget.turns, 10 + 1 + 3 + 3 + 2)
+})
+
+test('an interrupted pass after its result reruns; a resumed pass interrupted resumes its host run again', async t => {
+  // Interruptions count across a task's fresh and resumed passes, up to maxAttempts.
+  const p = groomed([task('one')]); p.limits = { maxAttempts: 3 }
+  const f = fixture(t, p), b = briefStub(f, { one: { questions: ['G1'] } })
+  await f.invoke({ runBrief: b.runBrief, at: name => { if (name === 'after-groom-result') throw new Error('crash') } })
+  assert.equal(f.state().groom.tasks.one.status, 'pending', 'an unrecorded outcome is not trusted')
+  const asked = await f.invoke({ runBrief: b.runBrief })
+  assert.deepEqual(asked.questions.map(q => q.id), ['G1'])
+  assert.equal(asked.budget.turns, 50 + 1, 'the lost pass keeps its reservation; the rerun is charged its own turns')
+  await f.invoke({ runBrief: b.runBrief, at: name => { if (name === 'after-groom-reserve') throw new Error('crash') } }, { answers: { one: { decisions: { G1: 'Yes.' } } } })
+  const done = await f.invoke({ runBrief: b.runBrief })
+  assert.equal(done.status, 'done', JSON.stringify(done))
+  assert.deepEqual(b.calls.map(c => c.resume), [false, false, true])
+  assert.equal(done.groom.tasks.one.interrupted, 2)
+  assert.equal(b.calls[2].args.maxTurns, 1 + 50, 'the resumed host run is capped at what it spent plus this reservation')
+  assert.match(f.calls[0].args.task, /G1: Question G1\? → Yes\./)
 })

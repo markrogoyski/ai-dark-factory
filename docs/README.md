@@ -5,10 +5,11 @@
 ## Workflows
 
 - [Factory](factory.md): two turns shape and challenge a clear goal, then intake picks a tier or Pair. At this stage Factory asks only about different outcomes the repository cannot settle. Use `--no-brief` to skip shaping.
-- [Pair](pair.md): one author and one independent reviewer, from design through implementation.
-- [Council](council.md): seats solve blind, debate on an evidence ledger, and converge; scoring, arguments and the end-of-run report.
+- [Pair](pair.md): one author and one independent reviewer, from design through implementation, after the same goal brief as Factory.
+- [Council](council.md): after the goal brief, seats solve blind, debate on an evidence ledger, and converge; scoring, arguments and the end-of-run report.
 - [Ensemble](ensemble.md): independent candidates, cross-reviewed and ranked for you to pick or merge.
 - [Run-plan](run-plan.md): execute a plan of tasks across runs, committing each verified task.
+- [Groom](groom.md): the `groom` skill and the `brief` workflow get a ticket ready before a run; the ticket layout and what factory, pair and council do with a groomed ticket.
 
 ## Using them
 

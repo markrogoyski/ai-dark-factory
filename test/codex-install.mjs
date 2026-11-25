@@ -20,16 +20,19 @@ function fixture(t) {
   mkdirSync(join(plugin, 'workflows'), { recursive: true })
   mkdirSync(join(plugin, 'lib'), { recursive: true })
   cpSync(join(root, 'plugins/dark-factory/skills/dark-factory'), skill, { recursive: true })
+  const groom = join(plugin, 'skills/groom')
+  cpSync(join(root, 'plugins/dark-factory/skills/groom'), groom, { recursive: true })
   cpSync(join(root, 'install-codex.sh'), join(checkout, 'install-codex.sh'))
-  for (const file of ['bin/dark-factory', 'bin/dark-factory-codex', 'workflows/factory.js', 'workflows/council.js', 'workflows/pair.js', 'workflows/run-plan.js', 'lib/run-plan-runner.mjs']) {
+  for (const file of ['bin/dark-factory', 'bin/dark-factory-codex', 'workflows/factory.js', 'workflows/council.js', 'workflows/pair.js', 'workflows/brief.js', 'workflows/run-plan.js', 'lib/run-plan-runner.mjs']) {
     writeFileSync(join(plugin, file), '')
   }
   const repo = join(dir, 'target repository')
   mkdirSync(repo)
   execFileSync('git', ['-c', 'init.defaultBranch=main', 'init', '-q', repo])
   const destination = join(repo, '.agents/skills/dark-factory')
+  const groomDestination = join(repo, '.agents/skills/groom')
   const install = (args = [], cwd = repo) => spawnSync('bash', [join(checkout, 'install-codex.sh'), ...args], { cwd, encoding: 'utf8' })
-  return { dir, checkout, plugin, skill, repo, destination, install }
+  return { dir, checkout, plugin, skill, groom, repo, destination, groomDestination, install }
 }
 
 test('default installation resolves the repository root and is idempotent', t => {
@@ -41,9 +44,23 @@ test('default installation resolves the repository root and is idempotent', t =>
   assert.equal(lstatSync(f.destination).isSymbolicLink(), true)
   assert.equal(realpathSync(f.destination), realpathSync(f.skill))
   const link = readlinkSync(f.destination)
+  assert.equal(lstatSync(f.groomDestination).isSymbolicLink(), true, 'the groom skill is linked beside it')
+  assert.equal(realpathSync(f.groomDestination), realpathSync(f.groom))
+  const groomLink = readlinkSync(f.groomDestination)
   const second = f.install(['--repo', f.repo])
   assert.equal(second.status, 0, second.stderr)
   assert.equal(readlinkSync(f.destination), link)
+  assert.equal(readlinkSync(f.groomDestination), groomLink)
+})
+
+test('installation does not replace an existing groom skill', t => {
+  const f = fixture(t)
+  mkdirSync(f.groomDestination, { recursive: true })
+  writeFileSync(join(f.groomDestination, 'SKILL.md'), 'the existing skill')
+  const result = f.install(['--repo', f.repo])
+  assert.equal(result.status, 1)
+  assert.match(result.stderr, /groom already exists and points elsewhere/)
+  assert.equal(readFileSync(join(f.groomDestination, 'SKILL.md'), 'utf8'), 'the existing skill')
 })
 
 test('installation does not replace an existing skill directory', t => {
@@ -80,6 +97,14 @@ test('installation rejects non-repositories and incomplete packages', t => {
   rmSync(join(f.plugin, 'workflows/factory.js'))
   assert.equal(f.install(['--repo', f.repo]).status, 1)
   assert.equal(existsSync(f.destination), false)
+  for (const missing of ['workflows/brief.js', 'skills/groom/SKILL.md']) {
+    const g = fixture(t)
+    rmSync(join(g.plugin, missing))
+    const result = g.install(['--repo', g.repo])
+    assert.equal(result.status, 1, missing)
+    assert.match(result.stderr, /incomplete dark-factory checkout/)
+    assert.equal(existsSync(g.destination) || existsSync(g.groomDestination), false, missing)
+  }
 })
 
 test('a linked launcher forwards arguments, input, cwd, output, and result status', t => {

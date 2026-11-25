@@ -55,7 +55,10 @@ export const HELP = `Usage: dark-factory-codex [options] [--] TASK
 Run the shared dark-factory engine from Codex. Requires Node.js 20+, Python 3,
 Git, and authenticated CLIs for the selected models.
 
-  --workflow NAME            factory, council, pair, ensemble, run-plan (default: factory)
+  --workflow NAME            factory, council, pair, ensemble, brief, run-plan (default: factory)
+                             brief: one grooming pass over the ticket text given as TASK;
+                             returns verdict (ready, needs-answers, needs-split or
+                             not-actionable), ticket, brief and questions; changes nothing
   --plan-file FILE           Tracked execution plan; repeat this invocation to resume
   --cwd DIR                  Target Git repository (default: current directory)
   --tier TIER                simple, fix, feature, or architecture
@@ -71,14 +74,16 @@ Git, and authenticated CLIs for the selected models.
   --args-file FILE           Full workflow arguments as a JSON object
   --output FILE              Also write the final result JSON to this path
   --brief                    Print a compact result on stdout (status, readiness, findings,
-                             metrics, hostRunDir); the full result stays in result.json
+                             metrics, hostRunDir; with --workflow brief also verdict, ticket,
+                             questions and split); the full result stays in result.json
   --concurrency N            Maximum simultaneous model turns (default: 3)
   --timeout-min N            Default deadline per model turn (default: 90)
   --candidates N             Ensemble candidate count (2–6, default: 4)
   --reviewers N              Ensemble review lenses per candidate (default: 2)
   --mode MODE                implement, investigate, or design (workflow dependent)
   --strategy NAME            Factory: auto, pair, or independent
-  --no-brief                 Factory: skip goal shaping and its challenger
+  --no-brief                 Factory, pair, council: skip goal shaping and its challenger
+                             (args-file brief: an absolute settled BRIEF.json path reuses one)
   --explain                  Resolve the process without setup or implementation (Factory shapes the goal and runs intake)
   --prepare                  Check CLIs and plan documents offline, then stop; no model turn
   --max-turns N              Run-wide model turn budget, including retries
@@ -104,6 +109,8 @@ export function resultExitCode(result) {
   if (result.preflight?.some(check => !check.ok)) return 1
   if (String(result.status).startsWith('needs-') || result.status === 'blocked') return 2
   if (result.status === 'explained' || result.status === 'prepared') return 0
+  // The brief workflow's grooming pass changes nothing, so its only readiness is its verdict.
+  if (result.status === 'done' && typeof result.verdict === 'string' && !result.final) return result.verdict === 'ready' ? 0 : 2
   const readiness = result.final?.readiness || result.readiness
   return readiness?.state === 'ready' ? 0 : 2
 }
@@ -533,7 +540,13 @@ export async function runWorkflow(options, dependencies = {}) {
       if (stopped?.status === 'needs-user' && stopped.resumable === true && stopped.brief?.state !== 'provisional') {
         const took = new Set((Array.isArray(stopped.decisions) ? stopped.decisions : []).map(d => d?.id))
         const taken = list => (Array.isArray(list) ? list : []).filter(a => took.has(a?.id))
-        const briefIds = new Set((options.workflow === 'factory' && previous.brief === undefined ? stopped.brief?.decisions || [] : []).map(d => d.id))
+        // Answers the goal stage took at an earlier brief stop (Factory, or a standalone Pair): the
+        // brief's decisions that an earlier clarification answered, ID and answer alike. A groomed
+        // ticket's or a supplied brief's carried decisions were never clarifications, so an answer
+        // under one of their IDs is still Pair's to judge, and is unknown there.
+        const given = new Map((Array.isArray(oldAnswers) ? oldAnswers : []).filter(a => a && a.id !== undefined).map(a => [String(a.id), String(a.answer)]))
+        const briefIds = new Set((Array.isArray(stopped.brief?.decisions) ? stopped.brief.decisions : [])
+          .filter(d => d && given.has(String(d.id)) && given.get(String(d.id)) === String(d.answer)).map(d => d.id))
         const atBrief = answers => answers.filter(a => briefIds.has(a?.id))
         const answers = args.clarifications || []
         if (briefIds.size && (!Array.isArray(answers) || fingerprint(atBrief(answers)) !== fingerprint(atBrief(oldAnswers)))) throw new Error('Existing clarification answers cannot change on resume.')

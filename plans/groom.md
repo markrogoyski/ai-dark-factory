@@ -1,6 +1,6 @@
 # Groom: get a ticket ready before the factory works on it
 
-Prepared 2026-11-23, revised the same day after a Codex review. Design only; nothing is built.
+Prepared 2026-11-23, revised the same day after a Codex review. Milestones 1-5 built 2026-11-25 (sim and stub tests only; no live run yet); the bench (milestone 6) has not run. A standalone Pair or council given `brief: <path>` always re-checks it (1 turn): unlike Factory, it has no intake turn to load the file in.
 
 ## Problem
 

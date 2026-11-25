@@ -12,6 +12,9 @@ can't.
 The Feature and Architecture tiers reuse this flow's setup, spec review and debate stages.
 
 ```text
+  goal brief (Opus)   shape the outcome and challenge it, or re-check a groomed ticket or a
+     |                supplied brief; a question only you can settle stops the run
+     |
   setup (Opus)        preflight, run dir, a worktree per seat, gate, baseline, criteria
      |
   spec review         coverage (Astra) + intent (Opus) --> panel rules --> amend criteria,
@@ -48,6 +51,21 @@ The Feature and Architecture tiers reuse this flow's setup, spec review and deba
   about the request --> stop with needs-user
 ```
 
+0. **Goal brief** (standalone runs; `brief: false` or `--no-brief` skips it). Before setup, the
+   council settles its goal as [Factory does](factory.md#goal-brief): a shaper writes the
+   outcome, purpose, scope and acceptance examples, and a fresh challenger looks for two
+   outcomes your wording permits that you would judge differently, settling what it can from
+   the repository. Setup, the seats and the reviewers read the brief.
+   - **Cost.** 2 Opus turns on an ungroomed task. A [groomed ticket](groom.md) as the task, or
+     an absolute path to a settled `BRIEF.json` in `brief`, gets one re-check turn instead.
+     Answering costs one more. [Groom](groom.md#what-a-run-does-with-the-task) has the full
+     table.
+   - **Questions** stop the run with `needs-user` before setup, with IDs `B1`, `B2`, …. Resume
+     with your answers in `clarifications`, as the result's `resumeSteps` say. Unlike the spec
+     review's questions, these are never settled by assumption.
+   - The result has `brief` and `briefFile`, and, for a groomed ticket, `ticket`: the ticket as
+     the run settled it. `--explain` doesn't run the stage, and the Factory's tiers carry
+     Factory's brief instead.
 1. **Setup.** One Opus agent runs `dark-factory preflight` for the Codex, Gemini and OpenRouter
    CLIs the lineup and panel need, and for the `Bash(dark-factory:*)` permission in Claude Code's
    settings; if a CLI can't start from this session or the permission is missing, the run stops
@@ -232,7 +250,8 @@ accepts:
 | `audit` | `{correctness: 'astra', design: 'opus'}` | implement mode: the independent audit of the final version (step 10). Swap a lens's model, e.g. `{design: 'sonnet'}`, or set `effort` for both; `false` skips it |
 | `ballot` | false | experiment: when a round ends one vote short of consensus (and another round is left), every seat votes again once that round's checks are in, instead of debating a full round more |
 | `approval` | false | experiment: seats also list the other positions they could accept. With no strict consensus, a position chosen first by another seat, and chosen or accepted by ⌈2N/3⌉ seats from two vendors, with no verified blocker or major, carries the round; acceptors' amendments go to the final author |
-| `clarifications` | | `[{id, answer, afterRound}]`, used when resuming after an escalation, or `[{id, answer}]` after the spec review asked |
+| `brief` | shaped | `false` (`--no-brief`) skips the [goal brief](#how-a-council-run-goes); an absolute path to a settled `BRIEF.json` re-checks it in one turn |
+| `clarifications` | | `[{id, answer, afterRound}]`, used when resuming after an escalation, or `[{id, answer}]` after the goal brief or the spec review asked |
 
 ## After a run
 

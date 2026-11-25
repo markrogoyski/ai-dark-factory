@@ -16,7 +16,7 @@ if (argv[0] === '--version') {
   console.log('Read from: ' + join(process.cwd(), 'plugins/dark-factory'))
 } else if (argv[0] === '-p' && !argv.includes('--plugin-dir')) {
   console.log(JSON.stringify({ type: 'user', message: { content: [{ type: 'tool_result', is_error: true,
-    content: 'Workflow not found. Available: dark-factory:council, dark-factory:ensemble, dark-factory:factory, dark-factory:pair, dark-factory:run-plan' }] } }))
+    content: 'Workflow not found. Available: dark-factory:brief, dark-factory:council, dark-factory:ensemble, dark-factory:factory, dark-factory:pair, dark-factory:run-plan' }] } }))
 } else if (argv.slice(0, 3).join(' ') === 'plugin list --json') {
   // As Claude Code 2.1.332 and later, the list includes the CLI's built-in plugins.
   const builtin = [{ id: 'cc-plugin-privacy@builtin', enabled: true }, { id: 'cc-plugin-you-should-know@builtin', enabled: false }]

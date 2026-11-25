@@ -85,6 +85,27 @@ test('CLI merges full arguments and explicit options without parsing task text a
   for (const workflow of ['factory', 'council', 'ensemble']) assert.throws(() => parseCLI(['--workflow', workflow, '--no-retro', 'Build it']), /--no-retro requires --workflow pair/)
 })
 
+test('CLI accepts the brief workflow, and the goal brief argument for factory, pair and council only', t => {
+  const groom = parseCLI(['--workflow', 'brief', '--brief', 'Fix the sum ticket'])
+  assert.equal(groom.workflow, 'brief')
+  assert.equal(groom.brief, true, '--brief is the compact output, not the goal brief')
+  assert.deepEqual(groom.args, { task: 'Fix the sum ticket' })
+  const dir = temporary(t), file = join(dir, 'args.json')
+  writeFileSync(file, JSON.stringify({ task: 'Build it', brief: '/abs/BRIEF.json' }))
+  for (const workflow of ['factory', 'pair', 'council']) {
+    assert.equal(parseCLI(['--workflow', workflow, '--no-brief', 'Build it']).args.brief, false, workflow)
+    assert.equal(parseCLI(['--workflow', workflow, '--args-file', file]).args.brief, '/abs/BRIEF.json', workflow)
+  }
+  for (const workflow of ['ensemble', 'run-plan']) {
+    assert.throws(() => parseCLI(['--workflow', workflow, '--no-brief', 'Build it']), /The goal brief requires --workflow factory, pair or council/, workflow)
+    assert.throws(() => parseCLI(['--workflow', workflow, '--args-file', file, '--plan-file', file]), /The goal brief requires --workflow factory, pair or council/, workflow)
+  }
+  for (const flags of [['--no-brief', 'Groom it'], ['--args-file', file]]) {
+    assert.throws(() => parseCLI(['--workflow', 'brief', ...flags]), /--workflow brief grooms the ticket text given as the task/)
+  }
+  assert.throws(() => parseCLI(['--workflow', 'groom', 'task']), /factory or council or pair or ensemble or brief or run-plan/)
+})
+
 test('schema validation rejects malformed or stale model outputs', () => {
   assert.deepEqual(validateResult({ ok: true }, object), { ok: true })
   assert.throws(() => validateResult({}, object), /missing required/)
@@ -98,6 +119,11 @@ test('exit codes distinguish readiness from execution and decision states', () =
   for (const status of ['needs-plan', 'needs-tier', 'needs-split', 'needs-user', 'blocked']) assert.equal(resultExitCode({ status }), 2)
   for (const state of ['blocked', 'incomplete']) assert.equal(resultExitCode({ status: 'done', final: { readiness: { state } } }), 2)
   for (const status of ['failed', 'error', 'preflight']) assert.equal(resultExitCode({ status }), 1)
+  // The brief workflow: only a ready ticket succeeds.
+  assert.equal(resultExitCode({ status: 'done', verdict: 'ready' }), 0)
+  assert.equal(resultExitCode({ status: 'done', verdict: 'needs-split' }), 2)
+  assert.equal(resultExitCode({ status: 'needs-user', verdict: 'needs-answers' }), 2)
+  assert.equal(resultExitCode({ status: 'not-actionable', verdict: 'not-actionable' }), 2)
   assert.equal(resultExitCode({ status: 'blocked', preflight: [{ vendor: 'codex', ok: false }] }), 1)
   assert.equal(resultExitCode({ status: 'done' }), 2, 'no proof of readiness must not report success')
 })
@@ -569,6 +595,13 @@ test('--brief prints what a transport relays and points at the full result', () 
   assert.ok(JSON.stringify(brief).length < 1000)
   const retro = { worked: [{ what: 'w' }], changes: [{ change: 'c' }], saved: '/r.md', error: '', notes: [{ turn: 't', text: 'n'.repeat(400) }], markdown: '### Process retro' }
   assert.deepEqual(briefResult({ ...result, retro }).retro, { saved: '/r.md', error: '', markdown: '### Process retro' })
+  // A grooming pass keeps what the groom loop acts on: the verdict, the ticket, its questions and split.
+  const groomed = { status: 'needs-user', verdict: 'needs-split', ticket: '# Fix sum\n\nGroomed by dark-factory\n', task: 'long ticket',
+    questions: [{ id: 'G1', kind: 'brief', question: 'Q?' }], split: [{ title: 'A', task: 'Do A' }], droppedDecisions: [],
+    brief: { version: 1, state: 'provisional' }, briefFile: '/repo/.council/host-a/BRIEF.provisional.json', report: { markdown: 'm' }, hostRunDir: '/repo/.council/host-a' }
+  const compact = briefResult(groomed)
+  for (const key of ['status', 'verdict', 'ticket', 'questions', 'split', 'droppedDecisions', 'brief', 'briefFile']) assert.deepEqual(compact[key], groomed[key], key)
+  assert.ok(!('task' in compact) && !('report' in compact))
 })
 
 // A Pair stop for the user continues on the runner with --resume and the answers appended: the
@@ -706,6 +739,118 @@ test('resume: a runner Pair stop whose worktree changed is refused before any tu
   assert.equal(refused.status, 'failed')
   assert.equal(refused.error, 'Checkpoint worktree or snapshot changed, possibly by an interrupted write. Start a new run; no files were reset.')
   assert.equal(calls().length, before, 'no CLI launched')
+})
+
+// A goal-stage stop (B IDs, kind 'brief') in a standalone Pair resumes through the generic answer
+// check; a later Pair stop then sees the brief's answers as taken, not unknown, and refuses a change.
+const BRIEF_QUESTION = { question: 'Should sum also accept strings?', wording: 'add its operands', outcomeA: 'Strings are concatenated.', outcomeB: 'Strings are rejected.',
+  evidence: 'sum.cjs takes numbers only.', recommendation: 'Reject strings.', changes: 'Whether sum("a", "b") returns "ab" or throws.' }
+test('resume: a Pair brief stop, then a Pair question stop, takes the brief answers and refuses changing them', t => {
+  const { runner, calls, first } = pairAsking(t, '1', { BRIEF_TEST_ASK: '1' })
+  const stopped = first()
+  assert.equal(stopped.status, 'needs-user', JSON.stringify(stopped.error || stopped.stopReason))
+  assert.equal(stopped.exitCode, 2)
+  assert.deepEqual(stopped.questions, [{ ...BRIEF_QUESTION, id: 'B1', kind: 'brief' }])
+  assert.equal(stopped.brief.state, 'provisional')
+  assert.equal(stopped.resumable, true)
+  assert.deepEqual(calls().map(c => c.kind), ['shaper', 'challenger'])
+  const b1 = { id: 'B1', answer: 'Reject strings.' }, q1 = { id: 'Q1', answer: 'yes' }
+
+  // An answer to a question this stop never asked is refused before any turn.
+  const stray = runner(['--resume', stopped.hostRunDir], { clarifications: [{ id: 'Q1', answer: 'yes' }] })
+  assert.equal(stray.status, 'failed')
+  assert.equal(stray.error, 'New clarification must answer a question from this paused run.')
+  assert.equal(calls().length, 2)
+
+  const asked = runner(['--resume', stopped.hostRunDir], { clarifications: [b1] })
+  assert.equal(asked.status, 'needs-user', JSON.stringify(asked.error || asked.stopReason))
+  assert.deepEqual(asked.questions.map(q => [q.id, q.kind]), [['Q1', 'author']])
+  assert.equal(asked.brief.state, 'settled')
+  assert.deepEqual(asked.brief.decisions, [{ id: 'B1', question: BRIEF_QUESTION.question, answer: b1.answer }])
+  assert.equal(calls().filter(c => c.kind === 'challenger').length, 1, 'the challenge is replayed, not asked again')
+  assert.equal(calls().filter(c => c.kind === 'brief-answered').length, 1)
+  const before = calls().length
+
+  // The earlier brief answer is neither unknown at the Pair stop nor changeable, nor removable.
+  const changed = runner(['--resume', stopped.hostRunDir], { clarifications: [{ id: 'B1', answer: 'Concatenate them.' }, q1] })
+  assert.equal(changed.status, 'failed')
+  assert.equal(changed.error, 'Existing clarification answers cannot change on resume.')
+  const dropped = runner(['--resume', stopped.hostRunDir], { clarifications: [q1] })
+  assert.equal(dropped.status, 'failed')
+  assert.equal(dropped.error, 'Existing clarification answers cannot change on resume.')
+  const missing = runner(['--resume', stopped.hostRunDir], { clarifications: [b1] })
+  assert.equal(missing.status, 'needs-user')
+  assert.deepEqual(missing.answerIssues, { missing: ['Q1'], unknown: [], invalid: [] })
+  assert.equal(calls().length, before, 'no CLI launched')
+
+  const done = runner(['--resume', stopped.hostRunDir], { clarifications: [b1, q1] })
+  assert.equal(done.status, 'done', JSON.stringify(done.error || done.stopReason))
+  assert.equal(done.final.readiness.state, 'ready')
+  assert.deepEqual(done.decisions.map(d => d.id), ['Q1'])
+  assert.deepEqual(done.brief.decisions.map(d => d.id), ['B1'])
+  assert.equal(calls().filter(c => c.kind === 'challenger' || c.kind === 'brief-answered').length, 2, 'no brief turn runs again')
+})
+
+// A standalone council settles its goal first too: its brief stop resumes through the same check.
+test('resume: a council brief stop takes only answers to its own questions', t => {
+  const { runner, calls, repo } = pairAsking(t, '', { BRIEF_TEST_ASK: '1' })
+  const stopped = runner(['--cwd', repo, '--workflow', 'council', '--seats', 'astra,sol', 'Fix sum to add its operands'])
+  assert.equal(stopped.status, 'needs-user', JSON.stringify(stopped.error || stopped.stopReason))
+  assert.deepEqual(stopped.questions.map(q => [q.id, q.kind]), [['B1', 'brief']])
+  assert.equal(stopped.brief.state, 'provisional')
+  assert.deepEqual(calls().map(c => c.kind), ['shaper', 'challenger'])
+  for (const clarifications of [[{ id: 'Q1', answer: 'yes' }], [{ id: 'B1', answer: ' ' }], [{ id: 'B1', answer: 'a' }, { id: 'B1', answer: 'b' }]]) {
+    const refused = runner(['--resume', stopped.hostRunDir], { clarifications })
+    assert.equal(refused.status, 'failed', JSON.stringify(clarifications))
+    assert.match(refused.error, /New clarification must answer a question from this paused run|Clarification IDs must be unique and answers nonempty/)
+  }
+  assert.equal(calls().length, 2, 'no CLI launched')
+})
+
+// A groomed ticket's carried decision was never a clarification: an answer under its ID is unknown.
+test('resume: a groomed ticket decision is not a clarification the Pair stop took', t => {
+  const { runner, repo } = pairAsking(t)
+  const ticket = ['# Fix sum', '', '## Outcome', '', 'sum adds both operands.', '', '## Why', '', 'Callers receive the correct total.', '',
+    '## Scope', '', 'Arithmetic in sum.', '', '## Out of scope', '', 'Changing the public API.', '', '## Acceptance examples', '', '- sum(2,3) returns 5.', '',
+    "## How we'll know it's done", '', 'Observe the returned total.', '', '## Left to the implementers', '', '- testing', '- implementation', '- internal design', '',
+    '## Decisions', '', '- G1: Should sum also accept strings? → Reject strings.', '', '---', '', 'Groomed by dark-factory', ''].join('\n')
+  const stopped = runner(['--cwd', repo, '--workflow', 'pair', '--author', 'sol'], { task: ticket })
+  assert.equal(stopped.status, 'needs-user', JSON.stringify(stopped.error || stopped.stopReason))
+  assert.deepEqual(stopped.questions.map(q => q.id), ['Q1'])
+  assert.deepEqual(stopped.brief.decisions.map(d => d.id), ['G1'])
+  assert.match(stopped.ticket, /- G1: Should sum also accept strings\? → Reject strings\./)
+  const carried = runner(['--resume', stopped.hostRunDir], { clarifications: [{ id: 'G1', answer: 'Reject strings.' }, { id: 'Q1', answer: 'yes' }] })
+  assert.equal(carried.status, 'needs-user')
+  assert.deepEqual(carried.answerIssues, { missing: [], unknown: ['"G1"'], invalid: [] })
+  const done = runner(['--resume', stopped.hostRunDir], { clarifications: [{ id: 'Q1', answer: 'yes' }] })
+  assert.equal(done.status, 'done', JSON.stringify(done.error || done.stopReason))
+})
+
+// The brief workflow on the runner: one grooming pass, a compact result, and a needs-answers stop
+// that resumes with G answers.
+test('brief workflow: a grooming pass runs on the runner, and its questions resume with G answers', t => {
+  const { runner, calls, repo } = pairAsking(t, '', { BRIEF_TEST_ASK: '1' })
+  const stopped = runner(['--cwd', repo, '--workflow', 'brief', '--brief', 'Fix sum to add its operands'])
+  assert.equal(stopped.status, 'needs-user', JSON.stringify(stopped.error || stopped.stopReason))
+  assert.equal(stopped.exitCode, 2)
+  assert.equal(stopped.verdict, 'needs-answers')
+  assert.deepEqual(stopped.questions, [{ ...BRIEF_QUESTION, id: 'G1', kind: 'brief' }])
+  assert.match(stopped.ticket, /^# Fix sum\n/)
+  assert.deepEqual(stopped.split, [])
+  assert.ok(!('task' in stopped) && !('report' in stopped), 'compact output')
+  assert.equal(stopped.resultFile, join(stopped.hostRunDir, 'result.json'))
+  assert.deepEqual(calls().map(c => c.kind), ['shaper', 'challenger'])
+  const done = runner(['--resume', stopped.hostRunDir, '--brief'], { clarifications: [{ id: 'G1', answer: 'Reject strings.' }] })
+  assert.equal(done.status, 'done', JSON.stringify(done.error || done.stopReason))
+  assert.equal(done.exitCode, 0)
+  assert.equal(done.verdict, 'ready')
+  assert.deepEqual(done.brief.decisions, [{ id: 'G1', question: BRIEF_QUESTION.question, answer: 'Reject strings.' }])
+  assert.match(done.ticket, /- G1: Should sum also accept strings\? → Reject strings\.\n/)
+  assert.ok(done.briefFile.endsWith('/BRIEF.json'))
+  assert.deepEqual(calls().map(c => c.kind), ['shaper', 'challenger', 'brief-answered'])
+  const refused = runner(['--cwd', repo, '--workflow', 'brief', '--no-brief', 'Fix sum'])
+  assert.equal(refused.status, 'failed')
+  assert.match(refused.error, /--workflow brief grooms the ticket text/)
 })
 
 function copyChildPlugin(t, bodies) {

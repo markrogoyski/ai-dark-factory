@@ -1,6 +1,8 @@
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
-const workflows = new Set(['factory', 'council', 'pair', 'ensemble', 'run-plan'])
+const workflows = new Set(['factory', 'council', 'pair', 'ensemble', 'brief', 'run-plan'])
+// The workflows that settle a goal brief first, and so take brief (a settled file, or false).
+const briefed = new Set(['factory', 'council', 'pair'])
 const tiers = new Set(['simple', 'fix', 'feature', 'architecture'])
 
 export function positiveInteger(value, name) {
@@ -46,7 +48,7 @@ export function parseCLI(argv, cwd = process.cwd()) {
     else if (name === 'cwd' || name === 'output') out[name] = resolve(cwd, value)
     else out[name] = value
   }
-  if (!workflows.has(out.workflow)) throw new Error('--workflow must be factory or council or pair or ensemble or run-plan')
+  if (!workflows.has(out.workflow)) throw new Error('--workflow must be factory or council or pair or ensemble or brief or run-plan')
   if (out.argsFile && !out.help) {
     const args = JSON.parse(readFileSync(out.argsFile, 'utf8'))
     if (!args || typeof args !== 'object' || Array.isArray(args)) throw new Error('--args-file must contain a JSON object')
@@ -56,7 +58,8 @@ export function parseCLI(argv, cwd = process.cwd()) {
   if (!out.resume && out.workflow !== 'pair' && ['author', 'reviewer', 'maxReviews', 'maxDesignReviews'].some(key => out.args[key] !== undefined)) throw new Error('author, reviewer, maxReviews, and maxDesignReviews require --workflow pair')
   if (!out.resume && out.workflow !== 'pair' && out.noDesign) throw new Error('--no-design requires --workflow pair')
   if (!out.resume && out.workflow !== 'pair' && out.noRetro) throw new Error('--no-retro requires --workflow pair')
-  if (!out.resume && out.workflow !== 'factory' && out.args.brief !== undefined) throw new Error('The goal brief requires --workflow factory')
+  if (!out.resume && out.workflow === 'brief' && out.args.brief !== undefined) throw new Error('--workflow brief grooms the ticket text given as the task; it takes no brief file or --no-brief')
+  if (!out.resume && !briefed.has(out.workflow) && out.args.brief !== undefined) throw new Error('The goal brief requires --workflow factory, pair or council')
   delete out.noDesign
   delete out.noRetro
   if (out.args.tier && !tiers.has(out.args.tier)) throw new Error('Unknown tier: ' + out.args.tier)

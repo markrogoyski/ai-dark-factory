@@ -80,6 +80,8 @@ const GOLDEN_RUNS = new Map([
   ['factory-feature-hard', ['build', 'auditfix']],
   ['factory-architecture', null],
   ['openrouter', ['setup', 'solve']],
+  ['factory-recheck', ['brief-recheck']],
+  ['factory-recheck-reuse', ['brief-recheck']],
 ])
 const UPDATE_GOLDEN = !!process.env.UPDATE_GOLDEN
 
@@ -135,6 +137,7 @@ function checkGoldens(name, calls) {
 // logAgentCounts[i] records how many calls had been made when logs[i] was recorded.
 async function run(name, scenario, args, hooks = {}) {
   if ((hooks.workflow === 'factory' || hooks.via) && hooks.paired !== FACTORY_RUN) throw new Error(`${name}: run Factory through factory() or factoryRun(), which compare it with the candidate`)
+  if (!hooks.workflow && !hooks.via) args = councilArgs(args)
   const retroOn = !(args && typeof args === 'object' && args.retro === false)
   const calls = []
   const logs = []
@@ -241,6 +244,14 @@ async function run(name, scenario, args, hooks = {}) {
   if (GOLDEN_RUNS.has(name)) checkGoldens(name, calls)
   if (process.env.SHOW_REPORT && result && result.report) console.log(`\n===== ${name} report =====\n${result.report.markdown}\n`)
   return { result, calls, logs, logAgentCounts, answers, children }
+}
+
+// A standalone council run settles a goal brief first; a scenario not about the brief skips it, the
+// way factoryRun() does for Factory. Args that name brief, and a Factory handoff, pass unchanged.
+function councilArgs(args) {
+  if (typeof args === 'string') return '--no-brief ' + args
+  if (!args || typeof args !== 'object' || 'brief' in args || Reflect.ownKeys(args).join() === 'factoryHandoff') return args
+  return { brief: false, ...args }
 }
 
 function roleOf(label) {
@@ -2674,6 +2685,56 @@ function scenarioHeadlessPrompts() {
   return 'headless permission guidance and recovery prompt match reviewed goldens'
 }
 
+// A settled goal re-checked in one turn instead of shaped: a groomed ticket (its decisions ruled on,
+// an obsolete one dropped from the brief, the ticket and the report), and a supplied brief file that
+// a criterion bears on, which the re-check turn loads itself, so intake does not load it again.
+const RECHECK_FILE = '/tmp/proj/.council/brief-one/BRIEF.json'
+const recheckHandler = (extra) => async (role, prompt, opts) => role.kind === 'brief-recheck'
+  ? { ...await simpleHandler({ kind: 'brief-shape' }, prompt, opts), ...extra } : simpleHandler(role, prompt, opts)
+async function scenarioFactoryRecheck() {
+  const lib = loadLib()
+  const brief = (await simpleHandler({ kind: 'brief-shape' })).brief
+  const decisions = [{ id: 'G1', question: 'Count or list?', answer: 'A count.' }, { id: 'G2', question: 'Which logger?', answer: 'The fetcher logger.' }]
+  const ticket = lib.renderTicket('Log the retry count', { version: 1, state: 'settled', brief, decisions })
+  const review = [{ id: 'G1', status: 'holds', reason: 'The task still logs a count.' }, { id: 'G2', status: 'obsolete', reason: 'The ticket no longer names a logger.' }]
+  const groomed = await factoryRun('factory-recheck', recheckHandler({ decisionReview: review, savedDecisions: [decisions[0]] }), { task: ticket })
+  assert.deepEqual(groomed.calls.map(c => c.role.kind), ['brief-recheck', 'intake', 'setup', 'solve', 'check', 'audit', 'record'])
+  const recheck = groomed.calls[0].prompt
+  assert.ok(recheck.includes('from a groomed ticket') && recheck.includes(JSON.stringify(decisions)) && !recheck.includes('--reuse') && recheck.includes('savedDecisions'))
+  assert.deepEqual([groomed.result.status, groomed.result.final.readiness.state, groomed.result.brief.decisions], ['done', 'ready', [decisions[0]]])
+  assert.deepEqual(lib.parseGroomedTicket(groomed.result.ticket).decisions, [decisions[0]])
+  assert.ok(groomed.result.report.markdown.includes('Earlier decision G2 no longer applies (obsolete): The ticket no longer names a logger.'))
+  assert.ok(groomed.calls[1].prompt.includes('A count.'), 'intake sees the decision that holds')
+
+  const args = { task: LOG_TASK, brief: RECHECK_FILE, criteria: ['logs the retry count at debug level'] }
+  const loaded = { version: 1, state: 'settled', brief, decisions: [] }
+  const reuse = await factoryRun('factory-recheck-reuse', recheckHandler({ document: loaded, decisionReview: [], savedDecisions: [] }), args)
+  assert.deepEqual(reuse.calls.map(c => c.role.kind), ['brief-recheck', 'intake', 'setup', 'solve', 'check', 'audit', 'record'])
+  assert.ok(reuse.calls[0].prompt.includes(`--reuse '${RECHECK_FILE}'`) && reuse.calls[0].prompt.includes('logs the retry count at debug level'))
+  assert.ok(!reuse.calls[1].prompt.includes('--reuse'), 'intake does not load the brief again')
+  assert.deepEqual([reuse.result.status, reuse.result.briefFile, reuse.result.ticket], ['done', '/tmp/proj/.council/test-fsimple/refs/BRIEF.json', undefined])
+  return 'a groomed ticket and a brief file with a criterion are re-checked in one turn before intake, never shaped; an obsolete decision is dropped and reported'
+}
+
+// A standalone council settles its own goal brief before setup, which snapshots the brief file;
+// --no-brief and brief: false skip it.
+async function scenarioCouncilBrief() {
+  const snapshot = { source: RECHECK_FILE, path: '/tmp/proj/.council/test-consensus/refs/BRIEF.json', inWorktrees: false }
+  const handler = async (role, prompt, opts) => role.kind.startsWith('brief-') ? simpleHandler(role, prompt, opts)
+    : role.kind === 'setup' ? { ...SETUP('test-consensus'), refs: [snapshot] } : consensusHandler(role, prompt, opts)
+  const { result, calls } = await run('council-brief', handler, { task: CONSENSUS_TASK, brief: undefined })
+  assert.deepEqual(calls.slice(0, 3).map(c => c.role.kind), ['brief-shape', 'brief-challenge', 'setup'])
+  assert.ok(calls[2].prompt.includes(`--ref '${RECHECK_FILE}'`) && calls[2].prompt.includes('Log the retry count at debug level.'))
+  assert.ok(calls.filter(c => c.role.kind === 'solve').every(c => c.prompt.includes('# Goal brief')), 'every seat sees the brief')
+  assert.deepEqual([result.status, result.brief.state, result.briefFile], ['converged', 'settled', snapshot.path])
+  assert.ok(result.report.markdown.includes('Outcome: Log the retry count at debug level.'))
+  for (const args of [`--no-brief ${CONSENSUS_TASK}`, { task: CONSENSUS_TASK, brief: false }]) {
+    const off = await run('council-no-brief', consensusHandler, args, { collect: false })
+    assert.deepEqual([off.calls[0].role.kind, off.result.status, off.result.brief], ['setup', 'converged', undefined])
+  }
+  return 'a standalone council shapes and challenges its goal before setup and returns the brief; --no-brief and brief: false skip it'
+}
+
 // A direct /council run, whatever shape its args take, runs as it did before the council could take a
 // Factory handoff: a string, {task}, and {task, factoryHandoff} (two keys, so not a handoff) give the
 // same prompts, logs and result, and those prompts are the reviewed consensus goldens.
@@ -2729,7 +2790,7 @@ async function scenarioChildUsage() {
 const ONLY = process.env.SIM_ONLY ? process.env.SIM_ONLY.split(',') : null    // SIM_ONLY=scenarioAgy,scenarioBallot
 for (const [name, fn] of Object.entries({ scenarioConsensus, scenarioDeadlock, scenarioEscalation, scenarioFailures, scenarioDirty, scenarioFocus, scenarioSandbox, scenarioPlan, scenarioPlanMissing, scenarioRefs, scenarioTranscript, scenarioRetroOff, scenarioRetroSave, scenarioLineup, scenarioAgy, scenarioLateEscalation, scenarioModeAndGuidance, scenarioInitDocs, scenarioRelayErrors, scenarioPreflight, scenarioOpenRouter, scenarioReadiness, scenarioApproval, scenarioBallot, scenarioSeatRunErrors, scenarioMeasure, scenarioPreflightCli, scenarioBlind, scenarioAudit, scenarioSpec,
   scenarioFactorySimple, scenarioSetupKeeps, scenarioFactoryFindings, scenarioFactoryEscalate, scenarioFactorySpecAsk, scenarioFactoryHandUp, scenarioFactoryTier, scenarioFactoryRoute, scenarioFactorySplit,
-  scenarioFactoryFeature, scenarioFactoryFeatureHard, scenarioFactoryArchitecture, scenarioFactoryFeatureToArchitecture, scenarioFactsSave, scenarioHeadlessPrompts, scenarioDirectCouncil, scenarioChildUsage })) {
+  scenarioFactoryFeature, scenarioFactoryFeatureHard, scenarioFactoryArchitecture, scenarioFactoryFeatureToArchitecture, scenarioFactsSave, scenarioHeadlessPrompts, scenarioDirectCouncil, scenarioChildUsage, scenarioFactoryRecheck, scenarioCouncilBrief })) {
   if (ONLY && !ONLY.includes(name)) continue
   SCENARIO = name
   try {
@@ -2762,6 +2823,7 @@ const AB_REQUIRED = {
   scenarioDirectCouncil: { 'direct-envelope': ['council:fix[0]'] },
   scenarioChildUsage: { 'child-usage-inline': ['council:simple'], 'child-usage-nonzero': ['council:simple'], 'child-usage-zero': ['council:simple'],
     'child-usage-unavailable': ['council:simple'], 'child-usage-explain': ['council:simple[0]'] },
+  scenarioFactoryRecheck: { 'factory-recheck': ['council:simple'], 'factory-recheck-reuse': ['council:simple'] },
 }
 const abMissed = []
 for (const scenario of new Set([...Object.keys(AB_REQUIRED), ...CAND_RUNS.keys()])) {

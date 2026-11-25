@@ -59,8 +59,9 @@ export async function simulate(workflow, args = {}, behavior = {}, dir = workflo
     // The runner's running token total and past runs, when a test supplies them.
     ...(behavior.usage ? { usage: behavior.usage } : {}),
     ...(behavior.history ? { history: behavior.history } : {}),
-    brief: async ({ document }) => ({ document, briefFile: '/repo/.council/host-test/' +
-      (document.state === 'settled' ? 'BRIEF.json' : 'BRIEF.provisional.json') }),
+    // behavior.brief answers the helper's brief call ({document} to save, {source} to load) instead.
+    brief: behavior.brief || (async ({ document }) => ({ document, briefFile: '/repo/.council/host-test/' +
+      (document.state === 'settled' ? 'BRIEF.json' : 'BRIEF.provisional.json') })),
     agent: respond,
     turn: async r => { const result = await respond(r); return result && { status: 'done', result } },
     measure: behavior.measure || (async ({ label }) => {
@@ -88,7 +89,10 @@ export async function simulate(workflow, args = {}, behavior = {}, dir = workflo
     budget,
     factoryRuntime: behavior.native ? null : runtime,
   }
-  const input = typeof args === 'string' ? args : { task: 'Fix the boundary', host: behavior.native ? 'claude' : 'codex', retro: false, ...args }
+  // A standalone Pair or council run skips its goal brief unless the test passes brief itself (brief:
+  // undefined runs the shaper and challenger).
+  const input = typeof args === 'string' ? args : { task: 'Fix the boundary', host: behavior.native ? 'claude' : 'codex', retro: false,
+    ...(['pair', 'council'].includes(workflow) ? { brief: false } : {}), ...args }
   // behavior.candidate runs the delegating Factory built from src/ instead, its children from dir:
   // ran and returned record what it passed to workflow() and got back, with the turns each child
   // started. An object given as behavior.candidate gets the same two arrays before the run starts,

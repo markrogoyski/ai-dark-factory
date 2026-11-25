@@ -41,7 +41,7 @@ build-check:
 	$(NODE) tools/build.mjs --check
 
 logic:
-	$(NODE) --test test/logic.mjs test/pair.mjs test/improvements.mjs test/openrouter-logic.mjs test/handoff.mjs test/workflow-children.mjs
+	$(NODE) --test test/logic.mjs test/pair.mjs test/improvements.mjs test/openrouter-logic.mjs test/handoff.mjs test/workflow-children.mjs test/groom.mjs
 
 test:
 	$(NODE) test/sim.mjs

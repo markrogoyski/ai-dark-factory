@@ -41,7 +41,9 @@ function factoryPairConfig(S) {
   // the retro and record turns use the factory's roles in the Codex host.
   const config = parsePairConfig(raw)
   const keep = Object.fromEntries(['retro', 'record'].filter(r => S.roles && S.roles[r]).map(r => [r, S.roles[r]]))
-  return { ...config, retro: S.retro, roles: { ...config.roles, ...keep } }
+  // Factory settled the goal before routing, so its Pair has no goal stage and no intake role.
+  const { intake, ...roles } = config.roles
+  return { ...config, retro: S.retro, roles: { ...roles, ...keep } }
 }
 
 function executionPlan(S) {

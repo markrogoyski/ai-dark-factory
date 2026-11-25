@@ -10,7 +10,7 @@ import { L1_RECORDED, L1_REQUIRED, L2_REQUIRED, writeFactoryVerdict } from '../t
 const BUILT = 'plugins/dark-factory/workflows'
 const VERDICT = 'tools/native-verdict.json'
 const FREE_CALL = /(^|[^A-Za-z0-9_$.])workflow\(/
-const LEAVES = ['council', 'pair', 'ensemble', 'run-plan']
+const LEAVES = ['council', 'pair', 'ensemble', 'brief', 'run-plan']
 const NAME_FORMS = ['qualified', 'bare']
 
 function readOptional(file) {
@@ -301,7 +301,7 @@ test('G2 uses the specified free-call pattern', async t => {
 
 test('G3 rejects a free call in each built leaf workflow', async t => {
   const { root, workflow } = fixture(t)
-  for (const name of ['council', 'pair', 'ensemble', 'run-plan']) {
+  for (const name of LEAVES) {
     workflow(name, 'x = workflow(1)')
     assert.deepEqual(await gateIssues(root), [`G3: ${name}.js calls workflow()`])
     workflow(name, 'obj.workflow(1)')

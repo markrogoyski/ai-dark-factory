@@ -7,16 +7,8 @@ async function factoryRun() {
   const raw = S.raw
   const factoryArgs = parseFactory(raw)
   S.factory = {}
-  if (raw.brief === undefined) {
-    const stopped = await shapeBrief()
-    if (stopped) return stopped
-  } else if (raw.brief !== false) {
-    if (typeof raw.brief !== 'string' || !raw.brief.startsWith('/')) return failure(S, 'failed', 'brief must be false or an absolute path to a settled brief.')
-    if (hostRuntime) {
-      const failed = acceptBrief(await hostRuntime.brief({ source: raw.brief }), 'settled')
-      if (failed) return failed
-    }
-  }
+  const stopped = await settleGoal()
+  if (stopped) return stopped
   phase('Intake')
   const { intake, error } = await factoryIntake()
   if (error) return error

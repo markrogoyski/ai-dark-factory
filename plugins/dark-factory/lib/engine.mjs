@@ -373,7 +373,7 @@ export function validateExport(directory, expected = null) {
   if (lstatSync(root).isSymbolicLink()) throw drift('Engine plugin root is a symlink')
   const entries = packageInventory(root, true)
   if (JSON.stringify(entries) !== JSON.stringify(manifest.entries)) throw drift('Engine package content or mode changed')
-  for (const required of ['bin/dark-factory', 'bin/dark-factory-codex', 'bin/dark-factory-evaluate', 'lib/engine.mjs', 'lib/engine-observations.mjs', 'lib/cli-options.mjs', 'lib/engine-publish.py', 'lib/dark_factory_cli/__init__.py', 'lib/dark_factory_cli/cli.py', 'lib/vendor/acorn.cjs', 'lib/vendor/acorn.LICENSE', 'lib/vendor/acorn.json', 'lib/policy.mjs', 'lib/checkpoint.mjs', 'lib/evaluate.mjs', 'lib/codex-runner.mjs', 'schemas/provenance.schema.json', '.claude-plugin/plugin.json', 'skills/dark-factory/scripts/run.mjs', ...['factory', 'pair', 'council', 'ensemble', 'run-plan'].map(n => `workflows/${n}.js`)]) {
+  for (const required of ['bin/dark-factory', 'bin/dark-factory-codex', 'bin/dark-factory-evaluate', 'lib/engine.mjs', 'lib/engine-observations.mjs', 'lib/cli-options.mjs', 'lib/engine-publish.py', 'lib/dark_factory_cli/__init__.py', 'lib/dark_factory_cli/cli.py', 'lib/vendor/acorn.cjs', 'lib/vendor/acorn.LICENSE', 'lib/vendor/acorn.json', 'lib/policy.mjs', 'lib/checkpoint.mjs', 'lib/evaluate.mjs', 'lib/codex-runner.mjs', 'schemas/provenance.schema.json', '.claude-plugin/plugin.json', 'skills/dark-factory/scripts/run.mjs', ...['factory', 'pair', 'council', 'ensemble', 'brief', 'run-plan'].map(n => `workflows/${n}.js`)]) {
     if (!entries.some(e => Buffer.from(e[0], 'base64').toString() === required)) throw drift(`Incomplete engine package: ${required}`)
   }
   validateImports(root, entries, true)

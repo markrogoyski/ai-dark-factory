@@ -495,10 +495,11 @@ test('the smoke variant needs Codex Luna and Claude Haiku only, offline through 
     { author: 'luna', reviewer: 'haiku', spec: { model: 'haiku', effort: 'low' }, retro: false, maxReviews: 2, maxDesignReviews: 1 })
   assert.ok(args.maxTurns > 0 && args.maxTurns <= 12)
   assert.ok(['low', 'medium'].includes(args.effort))
-  // Every role the policy can reach on the standalone runner: Pair has setup (on the author's
-  // model), the spec review, author and reviewer; no retro, and no other orchestration role.
+  // Every role the policy can reach on the standalone runner: Pair has the goal brief's intake
+  // and setup (both on the author's model), the spec review, author and reviewer; no retro, and no
+  // other orchestration role.
   const requirements = launchRequirements({}, { workflow, args })
-  assert.deepEqual(requirements.vendors, { codex: ['author', 'setup'], claude: ['review', 'spec-review'] })
+  assert.deepEqual(requirements.vendors, { codex: ['author', 'intake', 'setup'], claude: ['review', 'spec-review'] })
   const dir = temporary(t), source = sourceRepo(dir), argsFile = join(dir, 'args.json')
   write(argsFile, JSON.stringify(args))
   const prepared = JSON.parse(execFileSync(process.execPath, [join(root, 'plugins/dark-factory/bin/dark-factory-codex'), '--cwd', source.repo,
@@ -520,7 +521,9 @@ test('the smoke variant needs Codex Luna and Claude Haiku only, offline through 
   const model = c => c.vendor === 'claude' ? c.args[c.args.indexOf('--model') + 1] : c.args[c.args.indexOf('-m') + 1]
   const effort = c => c.vendor === 'claude' ? c.args[c.args.indexOf('--effort') + 1] : /model_reasoning_effort="(\w+)"/.exec(c.args.join(' '))[1]
   // The fixture names each turn by its output schema; the spec review's is an audit's.
+  // The goal brief's shaper and challenger run first, on the author's model.
   assert.deepEqual(calls.map(c => [c.kind, c.vendor, model(c), effort(c)]), [
+    ['shaper', 'codex', 'gpt-6-luna', 'medium'], ['challenger', 'codex', 'gpt-6-luna', 'medium'],
     ['setup', 'codex', 'gpt-6-luna', 'medium'], ['audit', 'claude', 'haiku', 'low'],
     ['pair-design', 'codex', 'gpt-6-luna', 'medium'], ['pair-review', 'claude', 'haiku', 'medium'],
     ['pair-implement', 'codex', 'gpt-6-luna', 'medium'], ['pair-review', 'claude', 'haiku', 'medium']])
@@ -593,7 +596,7 @@ test('the contamination scan reads what each turn recorded and flags the answer\
   assert.equal(clean.status, 'clean', JSON.stringify(clean, null, 2))
   assert.deepEqual(clean.missing, [])
   assert.equal(clean.sources.claudeTranscripts, 3, 'the spec review and two reviews')
-  assert.equal(clean.sources.codexRollouts, 2, 'setup, and the author\'s thread across its turns')
+  assert.equal(clean.sources.codexRollouts, 4, 'the brief\'s shaper and challenger, setup, and the author\'s thread across its turns')
   for (const file of [join(codexJob, 'prompt.md'), rollouts[0], transcripts[0]]) assert.ok(readFileSync(file, 'utf8').includes(source.repo), file)
 
   const appended = (file, line) => {

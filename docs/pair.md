@@ -25,6 +25,9 @@ independently. An unspecified reviewer is the other vendor, so the default pair 
 authenticated CLIs. `--author sol --reviewer astra` uses only Codex models.
 
 ```text
+  goal brief (Opus)   shape the outcome and challenge it, or re-check a groomed ticket or a
+     |                supplied brief; a question only you can settle stops the run (needs-user)
+     |
   setup (Opus)        criteria, reference snapshots, the gate and its baseline; stops first
      |                on needs-plan, a dirty tree, a task built on uncommitted changes,
      |                conflicting requirements, or a criterion nothing in the run can
@@ -66,6 +69,23 @@ authenticated CLIs. `--author sol --reviewer astra` uses only Codex models.
   open. Every review counts against maxReviews (default 8, both stages together); the polish
   check does not.
 ```
+
+## Goal brief
+
+Before setup, a standalone Pair settles its goal as [Factory does](factory.md#goal-brief): a
+shaper writes the outcome, purpose, scope and acceptance examples, and a fresh challenger looks
+for two outcomes your wording permits that you would judge differently, settling what it can from
+the repository. Setup, the author and the reviewer read the brief when the criteria leave a
+judgment call open.
+
+- **Cost.** 2 Opus turns on an ungroomed task. A [groomed ticket](groom.md) as the task, or an
+  absolute path to a settled `BRIEF.json` in `brief`, gets one re-check turn instead. Answering a
+  question costs one more. [Groom](groom.md#what-a-run-does-with-the-task) has the full table.
+- **Questions** stop the run with `needs-user` before setup, with IDs `B1`, `B2`, … (kind
+  `brief`). Resume as for any [stop](#answering-a-stop).
+- **Skip it** with `brief: false` (`--no-brief`), as before this stage existed. `--explain` doesn't
+  run it, and Factory's pair strategy carries Factory's brief instead.
+- A run whose task was a groomed ticket returns `ticket`, the ticket as the run settled it.
 
 ## Setup
 
@@ -364,7 +384,8 @@ the compact `--brief` result: status, stage, readiness, findings, notes, metrics
 
 ## Answering a stop
 
-Six stops ask you questions and can continue once you answer: setup's conflicting requirements,
+Seven stops ask you questions and can continue once you answer: a [goal brief](#goal-brief)
+question, setup's conflicting requirements,
 setup's criterion nothing in the run can verify, a [spec review](#spec-review) conflict, an
 author's `needs-user`, a reviewer's questions, and a design that used its
 [review allowance](#design-stage) without approval. Every
@@ -373,12 +394,14 @@ exhausted (`maxReviews`, `maxTurns` or `maxRunMin`; including a stop that asked 
 out of budget), failed, verification infrastructure failure, a dirty tree, and a task built on
 uncommitted changes.
 
-Question IDs Q1, Q2, … are unique across the run; a second stop continues the numbering.
+Question IDs Q1, Q2, … are unique across the run; a second stop continues the numbering. Goal
+brief questions have their own IDs (`B1`, …) and are answered under them.
 `questions` lists the current stop's as `{id, about, kind, question}`, and `report.markdown` lists
 them under "Questions for the user (answer each under its ID)". `kind` is `setup`, `criterion`,
 `spec`, `author`, `reviewer` or `design`. `about` is the criterion of a criterion question, the
 first criterion a spec question involves, the first finding, criterion or reading ID (P3, C2, R1)
-another question names, or `none`.
+another question names, or `none`. A goal brief question has kind `brief` and carries the
+quoted wording, both outcomes, the evidence, a recommendation and what the answer changes.
 
 A resumable result has `resumable: true` and `resumeSteps` (also in `forTheOrchestrator`) saying
 how to continue on its host:
@@ -401,6 +424,7 @@ with the open design findings carried into code review.
 
 | Stop | On resume |
 |---|---|
+| Goal brief | One turn revises the brief with your answers, then setup runs. |
 | Setup conflict | Setup runs again (`setup-answered`) with the decisions, in a new run directory, and pays the baseline again. |
 | Unverifiable criterion | The criterion is rewritten or dropped; the run goes on to the spec review (with `spec: false`, to its first author turn). |
 | Spec review conflict | Setup runs again (`setup-answered`) with the decisions, in a new run directory, and pays the baseline again; then the spec review reads its criteria (`spec-2`). |
@@ -503,6 +527,7 @@ Object arguments, or the Codex runner's `--args-file`:
 | `maxDesignReviews` | 3 (`maxReviews` − 2 when that is smaller, at least 1) | design reviews without approval before the run asks you how to go on, 1 to `maxReviews` − 1; `--max-design-reviews`; ignored with `design: false` |
 | `design` | true | `false` (`--no-design`) skips the design stage; see [above](#without-a-design-stage) |
 | `spec` | the reviewer's model, `medium` | `false` skips the [spec review](#spec-review); `{model, effort}` swaps either |
+| `brief` | shaped | `false` (`--no-brief`) skips the [goal brief](#goal-brief); an absolute path to a settled `BRIEF.json` re-checks it in one turn |
 | `effort` | `high` | for both participants, or per seat: `{astra: 'xhigh'}` |
 | `context` | | extra context for every turn |
 | `plan` | | absolute path or list of paths: reference documents, including uncommitted ones |
@@ -529,6 +554,7 @@ cleanup command for after delivery), followed by `design`, `testContract`, `repl
   `repeats`.
 - `questions`, `decisions`, `unusedAnswers`, `resumable`, `resumeSteps`: see
   [Answering a stop](#answering-a-stop).
+- `brief`, `briefFile` and, for a groomed ticket, `ticket`: see [Goal brief](#goal-brief).
 - `liveChecks`: the [live checks](#live-checks) still to run (also in `final.readiness.liveChecks`).
 - `final.replay`, `final.suite` and `final.readiness`. The first two are the measurement summary;
   the job's `status.json` keeps the output tails.

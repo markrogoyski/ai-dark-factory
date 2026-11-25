@@ -27,10 +27,19 @@ function helper(...argv) {
   return value
 }
 if ('brief' in schema.properties) {
-  kind = 'questions' in schema.properties ? 'challenger' : 'shaper'
+  const challenge = 'questions' in schema.properties
+  kind = 'decisionReview' in schema.properties ? 'brief-recheck' : challenge ? 'challenger' : 'planMissing' in schema.properties ? 'shaper' : 'brief-answered'
   result.brief = { outcome: 'sum adds both operands.', purpose: 'Callers receive the correct total.', scope: 'Arithmetic in sum.',
     nonGoals: 'Changing the public API.', acceptanceExamples: ['sum(2,3) returns 5.'], verification: 'Observe the returned total.',
     delegated: ['testing', 'implementation', 'internal design'] }
+  // A re-check rules that every carried decision still holds.
+  const carried = prompt.match(/^Carried decisions: (.*)$/m)
+  if ('decisionReview' in schema.properties) result.decisionReview = (carried ? JSON.parse(carried[1]) : []).map(d => ({ id: d.id, status: 'holds', reason: 'The task still asks for it.' }))
+  // BRIEF_TEST_ASK: the challenge (or re-check) asks the user one question about the goal.
+  if (challenge && process.env.BRIEF_TEST_ASK) result.questions = [{ question: 'Should sum also accept strings?', wording: 'add its operands',
+    outcomeA: 'Strings are concatenated.', outcomeB: 'Strings are rejected.', evidence: 'sum.cjs takes numbers only.',
+    recommendation: 'Reject strings.', changes: 'Whether sum("a", "b") returns "ab" or throws.' }]
+  if ('title' in schema.properties) result.title = 'Fix sum'
 } else if ('signals' in schema.properties) {
   kind = 'intake'
   Object.assign(result, { status: 'ok', tier: 'simple', mode: 'implement', reasons: 'One-line arithmetic fix.' })

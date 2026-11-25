@@ -320,7 +320,7 @@ test('resume reuses specification review but amends criteria with the new answer
     } else return { status: 'error', error: 'Fixture stops before implementation.' }
     return { status: 'done', result }
   } } }
-  const first = await runWorkflow({ ...parseCLI(['--cwd', f.repo, '--workflow', 'council', '--seats', 'astra,sol', 'Fix code']), args: { task: 'Fix code', seats: ['astra', 'sol'], spec: 'ask', retro: false } }, dependencies)
+  const first = await runWorkflow({ ...parseCLI(['--cwd', f.repo, '--workflow', 'council', '--seats', 'astra,sol', 'Fix code']), args: { task: 'Fix code', seats: ['astra', 'sol'], spec: 'ask', retro: false, brief: false } }, dependencies)
   assert.equal(first.status, 'needs-user', JSON.stringify(first))
   const original = [...calls]
   const second = await runWorkflow({ ...parseCLI(['--resume', first.hostRunDir]), args: { clarifications: [{ id: 'S1', answer: 'Keep the existing boundary behavior.' }] } }, dependencies)
@@ -354,7 +354,7 @@ test('pair resume replays the spec review and sends a reworded repeat of the ans
     } else return { status: 'error', error: 'Fixture stops before the author.' }
     return { status: 'done', result }
   } } }
-  const first = await runWorkflow({ ...parseCLI(['--cwd', f.repo, '--workflow', 'pair', 'Fix code']), args: { task: 'Fix code', retro: false } }, dependencies)
+  const first = await runWorkflow({ ...parseCLI(['--cwd', f.repo, '--workflow', 'pair', 'Fix code']), args: { task: 'Fix code', retro: false, brief: false } }, dependencies)
   assert.equal(first.status, 'needs-user', JSON.stringify(first))
   assert.deepEqual(first.questions.map(q => [q.id, q.kind]), [['Q1', 'spec']])
   const original = [...calls]

@@ -10,7 +10,7 @@ this repo.
   `plugins/dark-factory/`. Only that directory ships to users; `src/`, `tools/` and `test/` are
   development only. A new workflow goes in `plugins/dark-factory/workflows/` and runs as
   `/dark-factory:<meta.name>`.
-- `plugins/dark-factory/workflows/council.js`, `factory.js`, `pair.js`, `ensemble.js`, and `run-plan.js` are generated from `src/` (the file
+- `plugins/dark-factory/workflows/council.js`, `factory.js`, `pair.js`, `ensemble.js`, `run-plan.js` and `brief.js` are generated from `src/` (the file
   lists are in `tools/sources.mjs`). Edit `src/`, then `make build`. Never edit a built file.
 - Because Claude Code skips a plugin workflow over 512 KiB, the build drops the top-level
   declarations each workflow never reaches (`tools/prune.mjs`) and minifies it with esbuild (run
@@ -22,11 +22,12 @@ this repo.
 - `src/lib/*.js` stays pure: each function takes the state `S` first and calls no runtime
   (`agent`, `parallel`, `log`). Runtime calls go in the files outside `src/lib/`: `boot*.js`,
   `turns.js`, `repair.js`, the flows (`council.js`, `simple.js`, `feature.js`, `architecture.js`,
-  `pair.js`) and the `main-*.js` entry files.
+  `pair.js`, `goal.js`) and the `main-*.js` entry files.
 - `meta` in every `src/00-meta*.js` must stay a plain literal.
 - `/council` must not change when the factory does: factory-only behaviour goes behind `S.tier`,
   `S.factory` or `S.workflowName`, and the council's goldens stay byte-identical.
-- All five workflows are generated. Run-plan scheduling and policy stay in `src/`; its process,
+- All six workflows are generated. `src/goal.js` is the goal stage that factory, pair, council and
+  brief share. Run-plan scheduling and policy stay in `src/`; its process,
   filesystem, and Git operations stay in the shipped runtime adapter. Ensemble keeps its advisory selection policy in `src/`
   while sharing setup, measurement, and runtime adapters.
 - Prompts are the product. A prompt change fails the golden tests, which is intended: run

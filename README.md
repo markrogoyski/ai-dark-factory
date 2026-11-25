@@ -15,10 +15,15 @@ whether the result is ready. Nothing reaches your checkout until you deliver it.
 | Workflow | Use It For | What You Get Back | Rough Cost |
 |---|---|---|---|
 | [`factory`](docs/factory.md) | Any task, when you don't know how much review it needs. It picks the lightest process that fits and moves up if needed. | The finished result. | 8–52 turns, by tier. |
-| [`pair`](docs/pair.md) | A scoped change that one agent should own. One author and one reviewer repeat until review passes. | A reviewed snapshot, or the open findings. | 12–17 turns. |
-| [`council`](docs/council.md) | A subtle bug, a design with real trade-offs, or a problem with several plausible answers. Several seats solve it blind, then debate. | One converged result, or the scorecard's pick. | 30–50 turns. |
+| [`pair`](docs/pair.md) | A scoped change that one agent should own. One author and one reviewer repeat until review passes. | A reviewed snapshot, or the open findings. | 12–17 turns, plus 2 that settle the goal. |
+| [`council`](docs/council.md) | A subtle bug, a design with real trade-offs, or a problem with several plausible answers. Several seats solve it blind, then debate. | One converged result, or the scorecard's pick. | 30–50 turns, plus 2 that settle the goal. |
 | [`ensemble`](docs/ensemble.md) | A task worth several attempts. Independent solvers each try it, and every attempt is reviewed. | Ranked candidates for you to pick or merge. | About 18 turns. |
 | [`run-plan`](docs/run-plan.md) | A whole plan of tasks. Each goes through factory or pair and is committed once verified. | Local commits, parked questions, and a final acceptance check. | Per task. |
+| [`brief`](docs/groom.md#the-brief-workflow) | Checking a ticket before a run. One pass of the `groom` skill. | The ticket, its open questions, and a verdict. | 2 turns a pass, 1 on a groomed ticket. |
+
+Factory, pair and council first settle the goal: a shaper writes the outcome and a fresh
+challenger asks only what the repository can't settle. A [groomed ticket](docs/groom.md) gets
+one re-check turn instead, and `--no-brief` skips the stage.
 
 ## Install
 
@@ -85,6 +90,16 @@ candidates and leaves the choice to you:
 
     /dark-factory:ensemble Find why pagination skips the last item when the page size divides the total
 
+### Groom a Ticket
+
+You are writing a Jira story and want it ready before anyone runs it. The `groom` skill runs
+the `brief` workflow on it in a checkout of the repository: a fresh challenger looks for wording
+that allows outcomes you would judge differently, and you answer or edit until it is ready. You
+get a `TICKET.md` to paste into Jira and to hand to a pair, council or factory run
+([Groom](docs/groom.md)):
+
+    /dark-factory:groom Groom the story in ~/notes/retry-log.md
+
 ### Whole Plan
 
 You have a plan and want it built and committed task by task. Run-plan works the tasks in
@@ -113,6 +128,7 @@ The same workflows go through one skill:
 $dark-factory Add a debug log line with the retry count in Fetcher::retry
 $dark-factory --tier fix Find why the sync drops the last page
 $dark-factory --workflow pair Implement the retry policy
+$groom Groom the story in ~/notes/retry-log.md
 ```
 
 ## During a Run
@@ -142,7 +158,7 @@ Everything else is in [`docs/`](docs/README.md):
 
 | | |
 |---|---|
-| **Workflows** | [Factory](docs/factory.md) · [Pair](docs/pair.md) · [Council](docs/council.md) · [Ensemble](docs/ensemble.md) · [Run-plan](docs/run-plan.md) |
+| **Workflows** | [Factory](docs/factory.md) · [Pair](docs/pair.md) · [Council](docs/council.md) · [Ensemble](docs/ensemble.md) · [Run-plan](docs/run-plan.md) · [Groom and brief](docs/groom.md) |
 | **Using them** | [Installing](docs/install.md) · [Reading a result](docs/results.md) · [Choosing the models](docs/models.md) · [Running in Codex](docs/codex.md) · [Process controls and resume](docs/process-controls.md) · [Verification and delivery](docs/verification-and-delivery.md) |
 | **Measuring and tuning** | [Evaluating process value](docs/evaluation.md) · [Process retro](docs/process-retro.md) |
 | **Internals** | [Architecture](docs/architecture.md) · [Pinning the engine](docs/engine-pinning.md) · [Development](docs/development.md) · [Gotchas and troubleshooting](docs/gotchas.md) |

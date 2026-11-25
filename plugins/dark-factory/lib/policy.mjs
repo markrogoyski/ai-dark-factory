@@ -1897,7 +1897,7 @@ Read the task together with the part of those documents it points to, and decide
 When the work would end with a change someone commits, choose implement.
 `}
 ## Step 2 — create the run
-Run: ${S.cli} init --repo ${S.raw.repo ? shq(S.raw.repo) : '"$PWD"'} --seats ${letters}${P.factory ? ' --factory' : ''}${setupRunId(S) ? ` --run-id ${shq(setupRunId(S))}` : ''}${startedAt ? ' --started-at <the time you read before you started>' : ''}${S.plan.map(p => ` --ref ${shq(p)}`).join('')}${S.factory?.briefFile ? ` --ref ${shq(S.factory.briefFile)}` : ''} followed by --ref <path> for each other document from step 1
+Run: ${S.cli} init --repo ${S.raw.repo ? shq(S.raw.repo) : '"$PWD"'} --seats ${letters}${P.factory ? ' --factory' : ''}${setupRunId(S) ? ` --run-id ${shq(setupRunId(S))}` : ''}${startedAt ? ' --started-at <the time you read before you started>' : ''}${S.plan.map(p => ` --ref ${shq(p)}`).join('')}${goalFile(S) ? ` --ref ${shq(goalFile(S))}` : ''} followed by --ref <path> for each other document from step 1
 ${S.host !== 'codex' ? 'Make it one Bash call with timeout 600000 and dangerouslyDisableSandbox: true: init can take several minutes on a large repository, and it creates git worktrees, which the Bash sandbox blocks: it refuses to write the repository\'s worktree records (".git/worktrees/…: Operation not permitted").\n' : ''}It prints JSON with runId, runDir, repoRoot, refs (the snapshots it made of those documents) and dirty (tracked files with uncommitted changes).
 - If it fails, return status "error" with its message, and empty values elsewhere.
 ${S.allowDirty || (S.modeGiven && S.mode !== 'implement') ? '' : `- If ${S.modeGiven ? '' : 'the mode is implement and '}dirty is non-empty, stop and return status "dirty" with that list. The worktrees branch from HEAD, so uncommitted changes would be invisible to every seat.\n`}
@@ -2075,7 +2075,7 @@ function readiness(S, L, finalRound, raters, reviews, gaps = []) {
 // rewritten or dropped through a Pair decision is theirs to change. [] when everything was kept.
 function setupLosses(S, criteria, verify) {
   const lost = []
-  if (S.factory?.briefFile && !S.refs.some(r => isBriefRef(S, r))) lost.push('the goal brief snapshot')
+  if (goalFile(S) && !S.refs.some(r => isBriefRef(S, r))) lost.push('the goal brief snapshot')
   const want = String(S.raw.verify || '').trim()
   const got = String(verify || '').trim()
   if (want && got !== want) lost.push(`the verification command \`${oneLine(want, 200)}\` (setup returned ${got ? `\`${oneLine(got, 200)}\`` : 'none'})`)
@@ -3720,7 +3720,7 @@ function validBriefDocument(doc, state) {
 }
 
 function goalBriefBlock(S, full = false) {
-  const doc = S.factory?.brief
+  const doc = goalDoc(S)
   if (!doc) return ''
   const b = doc.brief
   const lines = [`Outcome: ${b.outcome}`, `Purpose: ${b.purpose}`]
@@ -3734,26 +3734,168 @@ function goalBriefBlock(S, full = false) {
 // (host-x/BRIEF.json returned as host-x-fix/BRIEF.json), so the brief's snapshot is also
 // recognised by the path init gives it in the run's refs/.
 function isBriefRef(S, r) {
-  const file = S.factory?.briefFile
+  const file = goalFile(S)
   if (!file || !r) return false
   return r.source === file || (!!S.run?.runDir && r.path === `${S.run.runDir}/refs/${file.slice(file.lastIndexOf('/') + 1)}`)
 }
 
 // The generated brief snapshot is additional to the user's plan documents.
 function planReferenceCount(S) {
-  return S.factory?.briefFile ? S.refs.filter(r => !isBriefRef(S, r)).length : S.refs.length
+  return goalFile(S) ? S.refs.filter(r => !isBriefRef(S, r)).length : S.refs.length
 }
 
 function withGoalBrief(S, result) {
-  if (!S.factory?.brief) return result
+  const doc = goalDoc(S)
+  if (!doc) return result
   const snapshot = S.refs.find(r => isBriefRef(S, r))
-  const briefFile = snapshot?.path || S.factory.briefFile
-  const entry = goalBriefBlock(S, true).replace('\n# Goal brief\n\n', '').trimEnd() + '\nBrief file: ' + briefFile
+  const briefFile = snapshot?.path || goalFile(S)
+  const dropped = (goalHolder(S).droppedDecisions || []).map(r => `Earlier decision ${r.id} no longer applies (${r.status}): ${oneLine(r.reason, 300)}`)
+  const entry = goalBriefBlock(S, true).replace('\n# Goal brief\n\n', '').trimEnd() + (dropped.length ? '\n' + dropped.join('\n') : '') + '\nBrief file: ' + briefFile
   let markdown = result.report?.markdown || ''
   const heading = /^(?:### )?How the run went:?$/m
   markdown = heading.test(markdown) ? markdown.replace(heading, title => title + '\n\n' + entry) :
     '### How the run went\n\n' + entry + (markdown ? '\n\n' + markdown : '')
-  return { ...result, brief: S.factory.brief, briefFile, report: { ...result.report, markdown } }
+  // A run whose task was a groomed ticket hands back the ticket as the run settled it.
+  const title = goalHolder(S).ticketTitle
+  return { ...result, brief: doc, briefFile, ...(title ? { ticket: renderTicket(title, doc) } : {}), report: { ...result.report, markdown } }
+}
+
+// ---------------------------------------------------------------- the groomed ticket
+
+// A groomed ticket is the goal brief in a layout a person reads, edits and pastes into Jira. The
+// writer's brief file stays on the writer's machine, so the text itself carries every brief field
+// and the decisions. The footer only marks the text as groomed: a run always re-checks it.
+const GROOM_FOOTER = 'Groomed by dark-factory'
+const GROOM_SECTIONS = [
+  { field: 'outcome', heading: 'Outcome' },
+  { field: 'purpose', heading: 'Why' },
+  { field: 'scope', heading: 'Scope' },
+  { field: 'nonGoals', heading: 'Out of scope' },
+  { field: 'acceptanceExamples', heading: 'Acceptance examples', list: true },
+  { field: 'verification', heading: 'How we\'ll know it\'s done' },
+  { field: 'delegated', heading: 'Left to the implementers', list: true },
+  { field: 'decisions', heading: 'Decisions', list: true, optional: true },
+]
+
+// Headings survive Markdown (## Scope), Jira wiki markup (h2. Scope), bold (**Scope**) and a
+// trailing colon. Only a line that is exactly a known heading counts.
+function groomHeading(line) {
+  const name = line.trim().replace(/^#{1,6}\s+/, '').replace(/^h[1-6]\.\s+/i, '')
+    .replace(/^[*_]+|[*_]+$/g, '').replace(/:$/, '').trim().replace(/[‘’]/g, '\'').toLowerCase()
+  return GROOM_SECTIONS.find(s => s.heading.toLowerCase() === name) || null
+}
+
+function groomFooterLine(line) {
+  return line.trim().replace(/^[*_]+|[*_]+$/g, '').toLowerCase().startsWith(GROOM_FOOTER.toLowerCase())
+}
+
+const GROOM_BULLET = /^\s*(?:[-*•]|#|\d+[.)])\s+/
+
+function groomList(lines) {
+  const items = []
+  for (const line of lines) {
+    if (!line.trim()) continue
+    if (GROOM_BULLET.test(line)) items.push(line.replace(GROOM_BULLET, '').trim())
+    else if (items.length) items[items.length - 1] += ' ' + line.trim()
+    else items.push(line.trim())
+  }
+  return items
+}
+
+// "G3: question → answer"; the first arrow splits question from answer.
+function groomDecision(item) {
+  const m = /^([A-Z][1-9][0-9]*)\s*[:.]\s*(.+?)\s+(?:→|->)\s+(.+)$/.exec(item)
+  return m ? { id: m[1], question: m[2].trim(), answer: m[3].trim() } : null
+}
+
+// The ticket's title, brief and decisions, or null when the text is not a complete groomed
+// ticket: no footer, a missing or empty section, or a decision line that does not parse.
+function parseGroomedTicket(text) {
+  const lines = String(text || '').replace(/\r\n?/g, '\n').split('\n')
+  const end = lines.findIndex(groomFooterLine)
+  if (end < 0) return null
+  const body = {}, title = []
+  let current = null
+  for (const line of lines.slice(0, end)) {
+    if (/^\s*-{3,}\s*$/.test(line)) continue
+    const section = groomHeading(line)
+    if (section) {
+      if (body[section.field]) return null
+      current = section
+      body[section.field] = []
+      continue
+    }
+    if (current) body[current.field].push(line)
+    else if (line.trim()) title.push(line.trim().replace(/^#{1,6}\s+/, '').replace(/^h[1-6]\.\s+/i, ''))
+  }
+  const brief = {}
+  let decisions = []
+  for (const s of GROOM_SECTIONS) {
+    const got = body[s.field]
+    if (!got) {
+      if (s.optional) continue
+      return null
+    }
+    if (s.field === 'decisions') {
+      const items = groomList(got).filter(item => !/^none\.?$/i.test(item))
+      decisions = items.map(groomDecision)
+      if (decisions.some(d => !d)) return null
+    } else brief[s.field] = s.list ? groomList(got) : got.map(l => l.trim()).filter(Boolean).join('\n')
+  }
+  if (!validBriefContent(brief) || !brief.delegated.length) return null
+  if (new Set(decisions.map(d => d.id)).size !== decisions.length) return null
+  return { title: title.join(' '), brief, decisions }
+}
+
+function renderTicket(title, doc) {
+  const b = doc.brief
+  const list = xs => xs.map(x => `- ${x}`).join('\n')
+  const decisions = doc.decisions.length ? doc.decisions.map(d => `- ${d.id}: ${d.question} → ${d.answer}`).join('\n') : 'None.'
+  const value = { ...b, acceptanceExamples: list(b.acceptanceExamples), delegated: list(b.delegated), decisions }
+  return `# ${title}\n\n` + GROOM_SECTIONS.map(s => `## ${s.heading}\n\n${value[s.field]}`).join('\n\n') + `\n\n---\n\n${GROOM_FOOTER}\n`
+}
+
+// A ticket title for a run whose task is not a groomed ticket: its first line, shortened.
+function ticketTitleOf(task) {
+  return oneLine(String(task || '').split('\n').find(l => l.trim()) || 'Untitled', 100)
+}
+
+// The next n decision IDs with this prefix, numbered after every ID already in use, so an answer
+// can never bind to a different question on a later pass.
+function nextDecisionIds(decisions, prefix, n) {
+  const top = Math.max(0, ...decisions.map(d => String(d.id)).filter(id => id.startsWith(prefix))
+    .map(id => Number(id.slice(prefix.length)) || 0))
+  return Array.from({ length: n }, (_, i) => `${prefix}${top + i + 1}`)
+}
+
+const DECISION_STATUSES = ['holds', 'superseded', 'obsolete']
+
+// A re-check's verdict on every carried decision: exactly one entry each, a known status and a
+// reason. Returns the decisions that still hold, or null when the verdict is incomplete.
+function heldDecisions(carried, review) {
+  if (!Array.isArray(review) || review.length !== carried.length) return null
+  const byId = new Map()
+  for (const r of review) {
+    if (!r || typeof r.id !== 'string' || byId.has(r.id) || !DECISION_STATUSES.includes(r.status) || !nonemptyBriefText(r.reason)) return null
+    byId.set(r.id, r)
+  }
+  if (!carried.every(d => byId.has(d.id))) return null
+  return carried.filter(d => byId.get(d.id).status === 'holds')
+}
+
+// The goal brief a run carries: Factory's (also inside a child it routed to) or, in a standalone
+// Pair or council run, the run's own. Factory's record is the handoff envelope's, so a standalone
+// run keeps its brief apart from it rather than creating S.factory.
+function goalHolder(S) {
+  return S.factory || S.goal || null
+}
+
+function goalDoc(S) {
+  return goalHolder(S)?.brief || null
+}
+
+function goalFile(S) {
+  return goalHolder(S)?.briefFile || ''
 }
 
 // The Simple tier's rules: when it hands the work up, and its report and result. Pure, like the
@@ -4196,7 +4338,9 @@ function factoryPairConfig(S) {
   // the retro and record turns use the factory's roles in the Codex host.
   const config = parsePairConfig(raw)
   const keep = Object.fromEntries(['retro', 'record'].filter(r => S.roles && S.roles[r]).map(r => [r, S.roles[r]]))
-  return { ...config, retro: S.retro, roles: { ...config.roles, ...keep } }
+  // Factory settled the goal before routing, so its Pair has no goal stage and no intake role.
+  const { intake, ...roles } = config.roles
+  return { ...config, retro: S.retro, roles: { ...roles, ...keep } }
 }
 
 function executionPlan(S) {
@@ -4601,7 +4745,7 @@ function newPairState() {
 
 // Pair decisions are shared by both hosts. Only the reviewer can close findings.
 // A string task may also start with --no-design or --no-retro, among the other flags.
-const PAIR_SWITCHES = { 'no-design': ['design', false], 'no-retro': ['retro', false] }
+const PAIR_SWITCHES = { 'no-design': ['design', false], 'no-retro': ['retro', false], 'no-brief': ['brief', false] }
 function parsePairArgs(args) {
   return parseArgs(args, PAIR_SWITCHES)
 }
@@ -4648,9 +4792,12 @@ function parsePairConfig(args) {
   const used = [author.vendor, reviewer.vendor, setup.vendor]
   const retro = !config.roles.retro ? null : used.includes(config.roles.retro.vendor) ? config.roles.retro
     : parseSeat(used.includes('claude') ? 'sonnet' : author.key, ROLE_EFFORT.retro)
+  // The goal stage (src/goal.js) runs as intake, which the standalone runner keeps read-only, on
+  // setup's model. Factory's Pair never runs it: Factory settled the goal before routing.
+  const intake = raw.brief === false ? null : parseSeat(setupKey, ROLE_EFFORT.intake)
   // Reuse setup, transport and the retro, without acquiring council roles or Simple escalation rules.
   return { ...config, raw, tier: 'pair', simple: null, panel: [], specReviewers: spec ? [{ ...hostSeat(config.host, spec), lens: 'criteria' }] : [],
-    roles: { ...(retro ? { retro } : {}), setup }, lineup: [hostSeat(config.host, author)],
+    roles: { ...(retro ? { retro } : {}), ...(intake ? { intake } : {}), setup }, lineup: [hostSeat(config.host, author)],
     auditors: [{ ...hostSeat(config.host, reviewer), lens: 'review', id: 'PR' }],
     pairOptions: { author, reviewer, maxReviews, maxDesignReviews, design, answers: pairAnswersOf(raw.clarifications) } }
 }
@@ -6414,6 +6561,8 @@ function reachableProviders(S, request) {
         || (role === 'spec' && config.specReviewers.length > 0)
         || (role === 'retro' && config.retro && !config.ensemble)
         || (role === 'record' && factoryContext)
+        // A standalone Pair or council settles its goal first (src/goal.js); Factory's children don't.
+        || (role === 'intake' && !factoryContext && !config.ensemble && raw.brief !== false)
       if (reachable) add(seat, role, reason)
     }
     if (config.ensemble) add(config.ensemble.compare, 'comparison', reason)
@@ -6423,6 +6572,7 @@ function reachableProviders(S, request) {
   if (workflowName === 'pair') configRoutes(parsePairConfig(raw), 'pair')
   else if (workflowName === 'ensemble') configRoutes(parseEnsembleConfig(raw), 'ensemble')
   else if (workflowName === 'council') configRoutes(parseConfig(raw), 'council')
+  else if (workflowName === 'brief') add(parseRoles(raw).intake, 'intake', 'brief')
   else if (workflowName === 'factory') {
     const factory = parseFactory(raw), roles = parseRoles(raw), strategy = raw.strategy || 'auto'
     if (!['auto', 'pair', 'independent'].includes(strategy)) throw new Error('strategy must be auto, pair, or independent.')

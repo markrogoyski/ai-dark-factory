@@ -86,17 +86,19 @@ git clone https://github.com/markrogoyski/ai-dark-factory.git ~/ai-dark-factory
 
 - With no `--repo`, the installer uses the current Git repository. `--user` installs in
   `~/.agents/skills` for use across projects.
-- It symlinks the shipped skill, so keep the checkout in place. It doesn't replace an existing
-  skill from another location or change account settings.
-- Codex discovers the skill automatically; start a new session if it doesn't appear.
+- It symlinks the shipped skills, `dark-factory` and [`groom`](groom.md), so keep the checkout
+  in place. It doesn't replace an existing skill from another location or change account
+  settings.
+- Codex discovers the skills automatically; start a new session if one doesn't appear.
 
 Requirements: Node, Python 3, Git, and authenticated `codex` and `claude` CLIs (plus `agy` for
 Gemini seats, with the [agy settings](#agy-settings-required-for-gemini-seats) above). Runner
 options, resume, and the standalone CLI are in [Running in Codex](codex.md).
 
-To update, `git pull` in the checkout; the next session uses the new version. To uninstall,
-remove the link (`.agents/skills/dark-factory` in the project, or `~/.agents/skills/dark-factory`)
-and the checkout.
+To update, `git pull` in the checkout; the next session uses the new version. An install from
+before the `groom` skill existed gets it when you run the installer again. To uninstall, remove
+the links (`dark-factory` and `groom` under `.agents/skills` in the project, or under
+`~/.agents/skills`) and the checkout.
 
 ## Working on dark-factory itself
 

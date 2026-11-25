@@ -316,7 +316,7 @@ function validBriefDocument(doc, state) {
 }
 
 function goalBriefBlock(S, full = false) {
-  const doc = S.factory?.brief
+  const doc = goalDoc(S)
   if (!doc) return ''
   const b = doc.brief
   const lines = [`Outcome: ${b.outcome}`, `Purpose: ${b.purpose}`]
@@ -330,24 +330,28 @@ function goalBriefBlock(S, full = false) {
 // (host-x/BRIEF.json returned as host-x-fix/BRIEF.json), so the brief's snapshot is also
 // recognised by the path init gives it in the run's refs/.
 function isBriefRef(S, r) {
-  const file = S.factory?.briefFile
+  const file = goalFile(S)
   if (!file || !r) return false
   return r.source === file || (!!S.run?.runDir && r.path === `${S.run.runDir}/refs/${file.slice(file.lastIndexOf('/') + 1)}`)
 }
 
 // The generated brief snapshot is additional to the user's plan documents.
 function planReferenceCount(S) {
-  return S.factory?.briefFile ? S.refs.filter(r => !isBriefRef(S, r)).length : S.refs.length
+  return goalFile(S) ? S.refs.filter(r => !isBriefRef(S, r)).length : S.refs.length
 }
 
 function withGoalBrief(S, result) {
-  if (!S.factory?.brief) return result
+  const doc = goalDoc(S)
+  if (!doc) return result
   const snapshot = S.refs.find(r => isBriefRef(S, r))
-  const briefFile = snapshot?.path || S.factory.briefFile
-  const entry = goalBriefBlock(S, true).replace('\n# Goal brief\n\n', '').trimEnd() + '\nBrief file: ' + briefFile
+  const briefFile = snapshot?.path || goalFile(S)
+  const dropped = (goalHolder(S).droppedDecisions || []).map(r => `Earlier decision ${r.id} no longer applies (${r.status}): ${oneLine(r.reason, 300)}`)
+  const entry = goalBriefBlock(S, true).replace('\n# Goal brief\n\n', '').trimEnd() + (dropped.length ? '\n' + dropped.join('\n') : '') + '\nBrief file: ' + briefFile
   let markdown = result.report?.markdown || ''
   const heading = /^(?:### )?How the run went:?$/m
   markdown = heading.test(markdown) ? markdown.replace(heading, title => title + '\n\n' + entry) :
     '### How the run went\n\n' + entry + (markdown ? '\n\n' + markdown : '')
-  return { ...result, brief: S.factory.brief, briefFile, report: { ...result.report, markdown } }
+  // A run whose task was a groomed ticket hands back the ticket as the run settled it.
+  const title = goalHolder(S).ticketTitle
+  return { ...result, brief: doc, briefFile, ...(title ? { ticket: renderTicket(title, doc) } : {}), report: { ...result.report, markdown } }
 }
