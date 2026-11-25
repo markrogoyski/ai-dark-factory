@@ -596,7 +596,7 @@ export async function runWorkflow(options, dependencies = {}) {
     const interrupt = () => { runtime.cancel(); controller.abort() }
     const timer = args.maxRunMin ? setTimeout(() => { timedOut = true; interrupt() }, Math.max(1, positiveInteger(args.maxRunMin, 'maxRunMin') * 60000 - elapsedBefore)) : null
     process.once('SIGINT', interrupt); process.once('SIGTERM', interrupt)
-    let result
+    let result, childStarts = 0
     try {
       const scripts = isFactory ? new Map([...factorySource].map(([name, text]) => [name, compileWorkflow(text)])) : null
       if (prepared) emit({ type: 'prepare', ...prepared })
@@ -626,6 +626,7 @@ export async function runWorkflow(options, dependencies = {}) {
           throw new Error(`Unknown workflow: ${shown}`)
         }
         const input = structuredClone(childArgs)
+        childStarts++
         emit({ type: 'workflow.started', name })
         const value = await execute(scripts.get(child), input, nested)
         emit({ type: 'workflow.completed', name })
@@ -650,7 +651,11 @@ export async function runWorkflow(options, dependencies = {}) {
     result = withdrawResume({ ...result })
     result = { ...result, host: 'codex', hostRunDir, hostEvents: events, checkpoint: existsSync(join(hostRunDir, 'checkpoint.json')) ? join(hostRunDir, 'checkpoint.json') : null }
     if (pin) guardEngine(pin)
-    result.provenance = await runProvenance(repo, { ...args, design: result.design || args.design }, executor, { ...result.final, runDir: result.runDir, hostRunDir })
+    // Only Factory starts children. One that started more than one escalated, so its provenance
+    // also lists the earlier attempts' directories. Any other run, a setup rerun after an answered
+    // stop included, lists the final directory and the host directory only.
+    result.provenance = await runProvenance(repo, { ...args, design: result.design || args.design }, executor, { ...result.final, runDir: result.runDir, hostRunDir },
+      childStarts > 1 ? runtime.runDirectories() : [])
     if (result.summary) result.summary.provenance = result.provenance
     // An interruption may bypass the engine's final report. Keep measured effort, leaving
     // phase-specific findings and decisions unknown instead of dropping the failed run.

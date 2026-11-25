@@ -40,25 +40,37 @@ function minify(body) {
   return code.slice(open.length, -close.length).replace(/^\n/, '') + '\n'
 }
 
-// target: a TARGETS or CANDIDATES key. read(file) supplies each source's text, from src/ by default.
-export function build(target, { read = readSource } = {}) {
-  const spec = Object.hasOwn(TARGETS, target) ? TARGETS[target] : Object.hasOwn(CANDIDATES, target) ? CANDIDATES[target] : null
+// target: a TARGETS or candidates key. read(file) supplies each source's text, from src/ by default;
+// candidates, the unshipped builds, defaults to CANDIDATES (tests pass their own).
+function sourcesOf(target, { read = readSource, candidates = CANDIDATES } = {}) {
+  const spec = Object.hasOwn(TARGETS, target) ? TARGETS[target] : Object.hasOwn(candidates, target) ? candidates[target] : null
   if (!spec) throw new Error(`build: unknown target ${target}`)
-  const sources = spec.order.map(file => ({ file, text: read(file) }))
+  return { spec, sources: spec.order.map(file => ({ file, text: read(file) })) }
+}
+
+// A workflow's meta source as written, and the rest of its sources concatenated and pruned: the
+// body build() minifies.
+export function prunedBody(target, options = {}) {
+  const [first, ...rest] = sourcesOf(target, options).sources.map(s => trimmed(s.text))
+  return { meta: first, code: prune(rest.join('\n')).code }
+}
+
+export function build(target, options = {}) {
   if (target === 'policy') {
+    const { spec, sources } = sourcesOf(target, options)
     assertPolicy(sources, POLICY_EXPORTS, spec.trailer)
     return sources.map(s => trimmed(s.text)).join('\n') + (spec.trailer || '')
   }
-  const [first, ...rest] = sources.map(s => trimmed(s.text))
-  return first + minify(prune(rest.join('\n')).code)
+  const { meta, code } = prunedBody(target, options)
+  return meta + minify(code)
 }
 
 // The unshipped candidates, built in memory: a line per candidate, its size on stdout or its
 // overrun on stderr, then exit 1 if any is over the budget, else 0. Nothing is written.
-export function reportCandidates({ budget = WORKFLOW_BUDGET } = {}) {
+export function reportCandidates({ budget = WORKFLOW_BUDGET, candidates = CANDIDATES } = {}) {
   let failures = 0
-  for (const name of Object.keys(CANDIDATES)) {
-    const size = Buffer.byteLength(build(name))
+  for (const name of Object.keys(candidates)) {
+    const size = Buffer.byteLength(build(name, { candidates }))
     if (size > budget) { console.error(`build: candidate ${name} is ${size} bytes, over the ${budget}-byte budget`); failures++ }
     else console.log(`built ${name} (${size} bytes, ${budget - size} under the ${budget}-byte budget)`)
   }

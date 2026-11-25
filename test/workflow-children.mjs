@@ -2,11 +2,11 @@
 // (test/fixtures/workflow-host.mjs). No models are called.
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdtempSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { loadLib } from './lib.mjs'
-import { PARAMS, runCandidate, workflowHost } from './fixtures/workflow-host.mjs'
+import { PARAMS, runCandidate, runHosted, workflowHost } from './fixtures/workflow-host.mjs'
 
 const L = loadLib()
 const INTAKE = (tier, strategy, o = {}) => ({ status: 'ok', tier, mode: 'implement', strategy, reasons: `it looks like ${tier} work`, planMissing: '', signals: {}, split: [], ...o })
@@ -171,9 +171,12 @@ test('a malformed one-key factory handoff stops each child before any agent turn
 })
 
 // Factory's time budget, carried to the council child on a host with the standalone runner's clock:
-// the child reads the time from Factory's start, so it stops where inline Factory stops, here before
+// the child reads the time from Factory's start, so it stops where inline Factory stopped, here before
 // its first turn. Each clock read moves on half a minute: Factory's start, then one before each turn.
+// The 'inline' arm runs the shipped factory.js, and its literal expectations are inline Factory's.
 test('a carried time budget stops the council child where inline Factory stops', async () => {
+  const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor
+  const shipped = new AsyncFunction(...PARAMS, readFileSync(new URL('../plugins/dark-factory/workflows/factory.js', import.meta.url), 'utf8').replace(/^export const meta\s*=/m, 'const meta ='))
   for (const tier of ['simple', 'fix']) {
     const arm = async via => {
       const logs = [], dispatches = []
@@ -185,7 +188,7 @@ test('a carried time budget stops the council child where inline Factory stops',
       const runtime = { agent: dispatch('agent'), turn: dispatch('turn'), measure: dispatch('measure'), now: () => 30000 * reads++ }
       const h = host({ log: line => logs.push(line), factoryRuntime: runtime })
       const args = { task: 'Fix the parser', brief: false, maxRunMin: 1 }
-      const out = via === 'inline' ? { result: await workflowHost(h, { children: ['factory'] }).workflow('dark-factory:factory', args), ran: [] }
+      const out = via === 'inline' ? { result: await runHosted(shipped, h, args), ran: [] }
         : await runCandidate(h, args)
       return { ...out, logs, dispatches, reads }
     }

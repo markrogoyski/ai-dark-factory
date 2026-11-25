@@ -1931,8 +1931,9 @@ async function factoryRun(name, handler, args, hooks = {}) {
   return { ...first, candidate: await candidateAB(name, first, args, hooks) }
 }
 
-// The candidate A/B: the shipped inline factory.js against the delegating Factory built from src/,
-// which runs each tier as a child workflow through workflow(). Both arms replay the first run's
+// The candidate A/B: the shipped factory.js against the delegating Factory built from src/, which
+// runs each tier as a child workflow through workflow(); while no candidate is pending, the two are
+// the same build. Both arms replay the first run's
 // answers, every one of them, so a scenario that counts its calls answers each arm alike. Both run
 // with the budget meter advancing, so the usage section and the meter's log lines are compared too;
 // a case with its own budget hook also runs a second pair of arms under it. The prompts (retro and

@@ -1,47 +1,31 @@
-// ---------------------------------------------------------------- the factory
+// ---------------------------------------------------------------- the factory, delegating
 
-// factoryRun (src/route.js) shapes the brief, runs intake and routes; routeTier then rebuilds the
-// run for its tier: the Simple flow, the Feature flow, the Architecture flow, or the council.
-const result = await controlledRun(factoryRun)
-return withGoalBrief(S, result)
+// Factory shapes the brief, runs intake and routes (src/route.js) under the run-limit guard; a stop
+// before routing is finished here, as inline. A routed run goes to the child workflow its strategy
+// names, and each hand-up to the next tier's child, one after another.
+const routed = await guardedRun(factoryRun)
+if (!routed?.handoff) return withGoalBrief(S, finishRun(routed))
+return await runTiers(routed.handoff)
 
-// The routed run, rebuilt for its tier.
-async function routeTier(tier, intake) {
-  {
-    const carried = { ...carriedState(S), factory: S.factory }
-    S = newState(parseConfig(tierArgs(S.raw, tier, intake), { workflow: 'factory', tier }))
-    Object.assign(S, carried)
-  }
-  if (S.factory.strategy === 'pair') {
-    const carried = { ...carriedState(S), factory: S.factory }
-    S = newState(factoryPairConfig(S))
-    Object.assign(S, carried, { pair: newPairState() })
-    if (S.raw.explain) return explanation(S, pastRuns())
-    const result = await pairRetro(await pairRun())
-    return { ...result, workflow: 'factory', tier, strategy: 'pair', factory: carried.factory, retro: result.retro || null }
-  }
-  if (S.raw.explain) return explanation(S, pastRuns())
-  if (tier === 'simple') return await simpleRun()
-  return routedResult(S, await tierRun(tier))
+// Routing hands the tier over: the envelope carries Factory's record, the history so far, and its
+// request control, with the budget meter's baseline natively (the runner's usage is shared).
+async function routeTier() {
+  return { handoff: factoryHandoff(S, factoryControl(requestControl, hostRuntime ? null : meterStart)) }
 }
 
-// The flow of a tier above Simple.
-function tierRun(tier) {
-  return tier === 'feature' ? featureRun() : tier === 'architecture' ? architectureRun() : councilRun()
-}
-
-// Hand the work to a higher tier: from Simple, or from Feature to Architecture. The lower tier's
-// run directory stays for inspection; the higher tier starts from a fresh state with the factory
-// record and the run's diagnostic history (carriedState) carried over, so its report and retro
-// cover the whole run.
-async function escalate(handUp) {
-  const brief = escalationBrief(S, handUp)
-  log(`factory: escalating from ${brief.from} to ${handUp.to} (${handUp.trigger}): ${handUp.why}`)
-  const factory = { ...S.factory, tier: handUp.to, escalation: brief }
-  const carried = { ...carriedState(S),
-    notes: S.notes.map(n => /^\w+ attempt: /.test(n) ? n : `${capital(brief.from)} attempt: ${n}`) }
-  // From the user's own args: the lower tier's carry its defaults, such as Feature's two seats.
-  S = newState(parseConfig(tierArgs(factory.args, handUp.to, factory.intake), { workflow: S.workflowName, tier: handUp.to, escalation: brief }))
-  Object.assign(S, carried, { factory })
-  return escalatedResult(S, await tierRun(handUp.to))
+// Only Factory calls workflow(); each child gets its own wire copy of the envelope (src/lib/handoff.js).
+async function runTiers(h) {
+  // The token section inline Factory appends at the run's end, from Factory's own meter, which saw
+  // the whole run; it names the helper and the run directory of the child that wrote the report.
+  const withUsage = final => {
+    const section = usageSection({ cli: handoffCli(h), run: final.runDir ? { runDir: final.runDir } : undefined }, runUsage())
+    return section ? { ...final, report: { ...final.report, markdown: `${final.report.markdown}${section}` } } : final
+  }
+  for (;;) {
+    const out = childOutcome(h, await workflow(childWorkflow(h), { factoryHandoff: handoffWire(h) }))
+    if (out.final) return out.usage ? withUsage(out.final) : out.final
+    const up = out.handUp
+    log(`factory: escalating from ${up.escalation.from} to ${up.to} (${up.trigger}): ${up.why}`)
+    h = nextHandoff(h, up)
+  }
 }

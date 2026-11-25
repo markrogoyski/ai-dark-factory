@@ -6,6 +6,7 @@ import { join, resolve, dirname } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { execFileSync, spawn, spawnSync } from 'node:child_process'
 import { setTimeout as delay } from 'node:timers/promises'
+import { createHash } from 'node:crypto'
 import { parseCLI, resultExitCode, validateResult, createLimiter, createRuntime, runWorkflow, keepAwake, briefResult, FACTORY_CHILDREN } from '../plugins/dark-factory/lib/codex-runner.mjs'
 import { readEventLog } from '../plugins/dark-factory/lib/checkpoint.mjs'
 import { LIB, HANDOFF_LIB } from '../tools/sources.mjs'
@@ -573,7 +574,7 @@ test('--brief prints what a transport relays and points at the full result', () 
 // A Pair stop for the user continues on the runner with --resume and the answers appended: the
 // runner checks every answer against the run's questions before any turn, replays the turns before
 // the stop from its checkpoint, and keeps one retro.
-function pairAsking(t, ask = '1') {
+function pairAsking(t, ask = '1', extraEnv = {}) {
   const dir = temporary(t), repo = join(dir, 'repo'), bin = join(dir, 'bin'), log = join(dir, 'calls.jsonl')
   initRepo(repo); mkdirSync(bin)
   mkdirSync(join(repo, 'tests'))
@@ -582,7 +583,7 @@ function pairAsking(t, ask = '1') {
   execFileSync('git', ['-C', repo, 'commit', '-qm', 'Add preserved test root'])
   for (const name of ['codex', 'claude']) writeFileSync(join(bin, name), readFileSync(join(root, 'test/fixtures/codex-cli.cjs')), { mode: 0o755 })
   const env = { ...process.env, PATH: `${bin}:${process.env.PATH}`, CODEX_HOME: join(dir, 'codex-home'), CLAUDE_CONFIG_DIR: join(dir, 'claude-home'),
-    FACTORY_TEST_REPO: repo, FACTORY_TEST_RUN_PATH: join(dir, 'run-path'), FACTORY_TEST_LOG: log, PAIR_TEST_ASK: ask, COUNCIL_JOB_POLL: '0.01' }
+    FACTORY_TEST_REPO: repo, FACTORY_TEST_RUN_PATH: join(dir, 'run-path'), FACTORY_TEST_LOG: log, PAIR_TEST_ASK: ask, COUNCIL_JOB_POLL: '0.01', ...extraEnv }
   let files = 0
   const runner = (args, answers) => {
     const extra = answers ? ['--args-file', join(dir, `args-${++files}.json`)] : []
@@ -593,7 +594,7 @@ function pairAsking(t, ask = '1') {
   const calls = () => existsSync(log) ? readFileSync(log, 'utf8').trim().split('\n').map(JSON.parse) : []
   const first = initial => runner(['--cwd', repo, '--workflow', 'pair', '--author', 'sol', ...(initial ? [] : ['Fix sum to add its operands'])],
     initial && { task: 'Fix sum to add its operands', ...initial })
-  return { runner, calls, first }
+  return { runner, calls, first, env, repo, runPath: join(dir, 'run-path') }
 }
 const settle = ' Answer every question at this stop under its ID, and only questions this run asked.'
 
@@ -997,17 +998,29 @@ const ask = (label, extra = {}) => factoryRuntime.agent({
   schema: { type: 'object', properties: { label: { type: 'string' } }, required: ['label'], additionalProperties: false },
   ...extra,
 })
+// A tier's setup: a run directory of its own, named setup-<name>, and a seat turn in it.
+const setupRun = async name => {
+  const run = await ask('setup-' + name, {
+    role: 'setup', setupRunId: 'setup-' + name,
+    schema: { type: 'object', properties: {
+      label: { type: 'string' }, repoRoot: { type: 'string' }, runDir: { type: 'string' }, runId: { type: 'string' },
+    }, required: ['label', 'repoRoot', 'runDir', 'runId'], additionalProperties: false },
+  })
+  await ask('settings-' + name, { run })
+  return run
+}
 `
 
 function childProcessFixture(t, bodies) {
   const scripts = { pair: 'return null', ...bodies }
-  const { dir, repo, runnerURL } = copyChildPlugin(t,
+  const { dir, repo, plugin, runnerURL } = copyChildPlugin(t,
     Object.fromEntries(Object.entries(scripts).map(([name, body]) => [name, fixtureAgent + body])))
   const trace = join(dir, 'turns.jsonl'), worker = join(dir, 'turn.mjs'), driver = join(dir, 'driver.mjs')
   writeFileSync(worker, String.raw`
 import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { setTimeout as delay } from 'node:timers/promises'
+import { createHash } from 'node:crypto'
 
 const [trace, hold, ...argv] = process.argv.slice(2)
 const option = name => argv[argv.indexOf(name) + 1]
@@ -1029,12 +1042,21 @@ if (label === hold) {
 }
 
 const result = { turn: schema.properties.turn.enum[0], label }
-if (label === 'child-setup') {
-  const repoRoot = option('--cwd'), runId = 'child-run'
+// A setup-<name> or settings-<name> turn records provider settings in its job.
+if (/^(setup|settings)-/.test(label)) writeFileSync(join(jobDir, 'spec.json'), JSON.stringify({ kind: 'codex', settingsHash: 'h-' + job }))
+// A damaged-<name> turn leaves a job record that is not JSON.
+if (label.startsWith('damaged-')) writeFileSync(join(jobDir, 'spec.json'), '{')
+if (label === 'child-setup' || label.startsWith('setup-')) {
+  const repoRoot = option('--cwd'), runId = label === 'child-setup' ? 'child-run' : label
   const childDir = join(repoRoot, '.council', runId)
   const run = { repoRoot, runDir: childDir, runId }
   mkdirSync(childDir)
   writeFileSync(join(childDir, 'run.json'), JSON.stringify(run))
+  // Each setup-<name> run directory has a gate of its own.
+  if (runId !== 'child-run') {
+    writeFileSync(join(childDir, 'verify.sh'), 'echo ' + runId + '\n')
+    writeFileSync(join(childDir, 'verification.json'), JSON.stringify({ run: runId }))
+  }
   Object.assign(result, run)
 }
 appendFileSync(join(runDir, 'usage.jsonl'), JSON.stringify({
@@ -1098,7 +1120,7 @@ console.log(JSON.stringify(result))
     assert.ok(host, 'Expected a host directory')
     return join(repo, '.council', host)
   }
-  return { launch, marks, hostDir }
+  return { launch, marks, hostDir, repo, engine: pathToFileURL(join(plugin, 'lib', 'engine.mjs')).href }
 }
 
 async function waitForChildFixture(driver, description, probe) {
@@ -1301,4 +1323,202 @@ return { first, interrupted }
   assert.equal(switched.code, 1)
   assert.match(switched.stderr, /Cannot change workflow on resume\./)
   assert.deepEqual(fixture.marks(), marks)
+})
+
+// The provenance the runner would record for result if it passed attempts (no attempts when
+// omitted), from runProvenance in engine (a module URL) under the runner's environment env, which
+// the environment hash reads. Both sides go through JSON, as the runner's output does.
+function recomputedProvenance(result, { engine = pathToFileURL(join(root, 'plugins/dark-factory/lib/engine.mjs')).href, env = process.env, attempts } = {}) {
+  const args = JSON.parse(readFileSync(join(result.hostRunDir, 'args.json'), 'utf8'))
+  const { repo } = JSON.parse(readFileSync(join(result.hostRunDir, 'host.json'), 'utf8'))
+  const inputs = [repo, { ...args, design: result.design || args.design }, result.provenance.executor,
+    { ...result.final, runDir: result.runDir, hostRunDir: result.hostRunDir }, ...(attempts ? [attempts] : [])]
+  return JSON.parse(execFileSync(process.execPath, ['--input-type=module', '-e',
+    `import { runProvenance } from ${JSON.stringify(engine)}\nconsole.log(JSON.stringify(await runProvenance(...JSON.parse(process.argv[1]))))`,
+    JSON.stringify(inputs)], { env, encoding: 'utf8' }))
+}
+const settingsHashes = provenance => provenance.inputs.providerSettings.map(record => record.hash)
+const withoutSettings = provenance => ({ ...provenance, inputs: { ...provenance.inputs, providerSettings: null } })
+const sha = file => createHash('sha256').update(readFileSync(file)).digest('hex')
+// The settings hash the fixture records for each labelled turn's job.
+const hashesOf = (fixture, labels) => labels.map(label => 'h-' + fixture.marks().find(m => m.stage === 'enter' && m.label === label).job)
+// The workflow.started events after the last run.started: the children this invocation started.
+const childStarts = result => {
+  const events = readEventLog(join(result.hostRunDir, 'events.jsonl'))
+  const last = events.findLastIndex(e => e.type === 'run.started')
+  return events.slice(last).filter(e => e.type === 'workflow.started').map(e => e.name)
+}
+const tierBody = `const run = await setupRun(args.n)
+return { status: 'done', runDir: run.runDir }`
+
+test('provenance: a Factory run that starts one child keeps the final directory and the host only', async t => {
+  const fixture = childProcessFixture(t, {
+    factory: `
+await ask('settings-parent')
+const child = await workflow('dark-factory:council', {})
+return { ...child, directories: factoryRuntime.runDirectories() }
+`,
+    // A child that ran setup twice, as an answered stop does, reports only the second directory.
+    council: `
+await setupRun('first')
+const run = await setupRun('second')
+return { status: 'done', runDir: run.runDir }
+`,
+  })
+  const result = await fixture.launch(['Test single-child provenance']).result()
+  assert.equal(result.status, 'done', result.error)
+  assert.deepEqual(childStarts(result), ['dark-factory:council'])
+  assert.equal(result.directories.length, 3, 'the host and both setup directories are registered')
+  assert.deepEqual(result.provenance, recomputedProvenance(result, { engine: fixture.engine }))
+  assert.deepEqual(settingsHashes(result.provenance),
+    hashesOf(fixture, ['settings-second', 'settings-parent', 'setup-first', 'setup-second']))
+  assert.notDeepEqual(result.provenance, recomputedProvenance(result, { engine: fixture.engine, attempts: result.directories }),
+    'the first setup directory would change it')
+})
+
+test('provenance: an escalated Factory run lists every attempt directory once, after the final and the host', async t => {
+  const fixture = childProcessFixture(t, {
+    factory: `
+await ask('settings-parent')
+let child
+for (const [name, n] of [['council', 1], ['pair', 2], ['council', 3]]) child = await workflow('dark-factory:' + name, { n })
+return { ...child, directories: factoryRuntime.runDirectories() }
+`,
+    council: tierBody,
+    pair: tierBody,
+  })
+  const result = await fixture.launch(['Test escalated provenance']).result()
+  assert.equal(result.status, 'done', result.error)
+  assert.equal(childStarts(result).length, 3)
+  const final = join(fixture.repo, '.council', 'setup-3')
+  assert.equal(result.runDir, final)
+  assert.deepEqual(result.directories, [result.hostRunDir, ...[1, 2, 3].map(n => join(fixture.repo, '.council', 'setup-' + n))])
+  assert.deepEqual(settingsHashes(result.provenance), hashesOf(fixture, [
+    'settings-3', // the final directory
+    'settings-parent', 'setup-1', 'setup-2', 'setup-3', // the host directory
+    'settings-1', 'settings-2', // earlier attempts, in registration order
+  ]))
+  assert.deepEqual(result.provenance, recomputedProvenance(result, { engine: fixture.engine, attempts: result.directories }))
+  // Everything but the settings list is the final attempt's, as without attempts.
+  const single = recomputedProvenance(result, { engine: fixture.engine })
+  assert.deepEqual(withoutSettings(result.provenance), withoutSettings(single))
+  assert.equal(result.provenance.inputs.gate, sha(join(final, 'verify.sh')))
+  assert.equal(result.provenance.inputs.settings, sha(join(final, 'verification.json')))
+})
+
+for (const [stop, pair] of [
+  ['is blocked before setup', "return { status: 'blocked', stopReason: 'Stopped before setup.' }"],
+  ['throws', "throw new Error('Pair failed before setup')"],
+]) test(`provenance: an escalation whose later child ${stop} keeps the earlier attempt and the fallback gate`, async t => {
+  const fixture = childProcessFixture(t, {
+    factory: `
+await ask('settings-parent')
+await workflow('dark-factory:council', { n: 1 })
+const later = await workflow('dark-factory:pair', {})
+return { ...later, directories: factoryRuntime.runDirectories() }
+`,
+    council: tierBody,
+    pair,
+  })
+  writeFileSync(join(fixture.repo, 'verify.sh'), 'echo repository gate\n')
+  writeFileSync(join(fixture.repo, 'verification.json'), '{}\n')
+  const result = await fixture.launch(['Test a later child that stops']).result()
+  assert.equal(result.status, stop === 'throws' ? 'failed' : 'blocked', result.error)
+  assert.equal(result.runDir, undefined)
+  assert.equal(childStarts(result).length, 2)
+  assert.deepEqual(settingsHashes(result.provenance), hashesOf(fixture, ['settings-parent', 'setup-1', 'settings-1']))
+  assert.deepEqual(result.provenance, recomputedProvenance(result, { engine: fixture.engine,
+    attempts: [result.hostRunDir, join(fixture.repo, '.council', 'setup-1')] }))
+  const single = recomputedProvenance(result, { engine: fixture.engine })
+  assert.deepEqual(withoutSettings(result.provenance), withoutSettings(single))
+  assert.equal(result.provenance.inputs.gate, sha(join(fixture.repo, 'verify.sh')))
+  assert.equal(result.provenance.inputs.settings, sha(join(fixture.repo, 'verification.json')))
+})
+
+// An unreadable record from an earlier attempt is listed as a gap: the result is still saved, with
+// the readable records.
+test('provenance: an escalation lists an unreadable earlier record as a gap and still saves the result', async t => {
+  const fixture = childProcessFixture(t, {
+    factory: `
+await ask('settings-parent')
+await workflow('dark-factory:council', { n: 1 })
+return await workflow('dark-factory:pair', {})
+`,
+    council: `const run = await setupRun(args.n)
+await ask('damaged-' + args.n, { run })
+return { status: 'done', runDir: run.runDir }`,
+    pair: "return { status: 'blocked', stopReason: 'Stopped before setup.' }",
+  })
+  const result = await fixture.launch(['Test an unreadable earlier record']).result()
+  assert.equal(result.status, 'blocked', result.error)
+  assert.equal(childStarts(result).length, 2)
+  assert.deepEqual(settingsHashes(result.provenance), hashesOf(fixture, ['settings-parent', 'setup-1', 'settings-1']))
+  const damaged = fixture.marks().find(m => m.stage === 'enter' && m.label === 'damaged-1').job
+  assert.deepEqual(result.provenance.inputs.providerSettingsGaps,
+    [{ run: join(fixture.repo, '.council', 'setup-1'), job: damaged, reason: 'SyntaxError' }])
+  const saved = JSON.parse(readFileSync(join(result.hostRunDir, 'result.json'), 'utf8'))
+  assert.deepEqual([saved.status, saved.stopReason], ['blocked', 'Stopped before setup.'])
+  assert.deepEqual(saved.provenance, result.provenance)
+  // Without attempts the earlier directory is not read, so there is no gap.
+  const single = recomputedProvenance(result, { engine: fixture.engine })
+  assert.equal(Object.hasOwn(single.inputs, 'providerSettingsGaps'), false)
+})
+
+test('provenance: an escalation interrupted in its later child, and its resume, list the earlier attempt', async t => {
+  const fixture = childProcessFixture(t, {
+    factory: `
+await ask('settings-parent')
+await workflow('dark-factory:council', { n: 1 })
+const later = await workflow('dark-factory:pair', { n: 2 })
+return { ...later, directories: factoryRuntime.runDirectories() }
+`,
+    council: tierBody,
+    pair: `
+await ask('held-pair')
+${tierBody}`,
+  })
+  writeFileSync(join(fixture.repo, 'verify.sh'), 'echo repository gate\n')
+  writeFileSync(join(fixture.repo, 'verification.json'), '{}\n')
+  const driver = fixture.launch(['Test an interrupted later child'], 'held-pair')
+  await waitForChildFixture(driver, 'held Pair CLI entry', () =>
+    fixture.marks().find(mark => mark.label === 'held-pair' && mark.stage === 'enter'))
+  assert.equal(driver.proc.kill('SIGINT'), true)
+  const interrupted = await driver.result()
+  assert.equal(interrupted.status, 'failed')
+  assert.equal(interrupted.error, 'Run interrupted')
+  const earlier = join(fixture.repo, '.council', 'setup-1')
+  assert.deepEqual(settingsHashes(interrupted.provenance), hashesOf(fixture, ['settings-parent', 'setup-1', 'settings-1']))
+  assert.deepEqual(interrupted.provenance, recomputedProvenance(interrupted, { engine: fixture.engine, attempts: [interrupted.hostRunDir, earlier] }))
+  assert.deepEqual(withoutSettings(interrupted.provenance), withoutSettings(recomputedProvenance(interrupted, { engine: fixture.engine })))
+  assert.equal(interrupted.provenance.inputs.gate, sha(join(fixture.repo, 'verify.sh')))
+
+  // The resume replays the first child and starts both again, so it counts as escalated.
+  const resumed = await fixture.launch(['--resume', interrupted.hostRunDir]).result()
+  assert.equal(resumed.status, 'done', resumed.error)
+  assert.deepEqual(childStarts(resumed), ['dark-factory:council', 'dark-factory:pair'])
+  const final = join(fixture.repo, '.council', 'setup-2')
+  assert.equal(resumed.runDir, final)
+  assert.deepEqual(resumed.provenance, recomputedProvenance(resumed, { engine: fixture.engine, attempts: resumed.directories }))
+  assert.ok(settingsHashes(resumed.provenance).includes(hashesOf(fixture, ['settings-1'])[0]), 'the earlier attempt is listed')
+  assert.equal(resumed.provenance.inputs.gate, sha(join(final, 'verify.sh')))
+})
+
+for (const workflow of ['pair', 'factory']) test(`provenance: an answered Pair spec stop under ${workflow} keeps the final setup directory only`, t => {
+  const { runner, env, repo, runPath } = pairAsking(t, '', { PAIR_TEST_SPEC: '1', FACTORY_TEST_SETTINGS: '1' })
+  const task = 'Fix sum to add its operands'
+  const stopped = runner(['--cwd', repo, '--workflow', workflow],
+    workflow === 'pair' ? { task } : { task, tier: 'simple', strategy: 'pair', brief: false })
+  assert.equal(stopped.status, 'needs-user', JSON.stringify(stopped.error || stopped.stopReason))
+  assert.deepEqual(stopped.questions.map(q => [q.id, q.kind]), [['Q1', 'spec']])
+  const firstSetup = readFileSync(runPath, 'utf8')
+  assert.ok(existsSync(join(firstSetup, 'jobs/settings/spec.json')), 'the first setup directory has a settings record')
+  const done = runner(['--resume', stopped.hostRunDir], { clarifications: [{ id: 'Q1', answer: 'Yes, keep check.cjs.' }] })
+  assert.equal(done.status, 'done', JSON.stringify(done.error || done.stopReason))
+  assert.notEqual(done.runDir, firstSetup, 'the answer reran setup into a second directory')
+  assert.equal(childStarts(done).length, workflow === 'factory' ? 1 : 0)
+  const expected = recomputedProvenance(done, { env })
+  assert.deepEqual(done.provenance, expected)
+  assert.ok(settingsHashes(expected).length > 0, 'the final setup directory has a settings record')
+  assert.notDeepEqual(recomputedProvenance(done, { env, attempts: [firstSetup] }).inputs.providerSettings, expected.inputs.providerSettings,
+    'the first setup directory would change it')
 })

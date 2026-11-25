@@ -677,20 +677,27 @@ export async function validateAdmissions(hostRunDir, pin) {
     }
   }
 }
-export async function runProvenance(repo, args, executor, final = {}) {
+export async function runProvenance(repo, args, executor, final = {}, attempts = []) {
   const { provenanceFacts } = await import('./policy.mjs')
   const references = {}
   for (const p of Array.isArray(args.plan) ? args.plan : args.plan ? [args.plan] : []) references[resolve(repo, p)] = sha256(readFileSync(resolve(repo, p)))
   const gate = final?.runDir || repo
-  const providerSettings = []
-  for (const run of new Set([final?.runDir, final?.hostRunDir].filter(Boolean))) {
+  const providerSettings = [], providerSettingsGaps = []
+  const current = new Set([final?.runDir, final?.hostRunDir].filter(Boolean))
+  for (const run of new Set([...current, ...attempts.filter(Boolean)])) {
+    // An earlier attempt's record that cannot be read is a gap in the evidence, not a reason to
+    // lose the result: the gap is listed and the readable records are kept.
+    const unreadable = (e, job) => {
+      if (current.has(run)) throw e
+      providerSettingsGaps.push({ run, ...(job ? { job } : {}), reason: e.code || e.name })
+    }
     let jobs = []
-    try { jobs = readdirSync(join(run, 'jobs')).sort() } catch (e) { if (e.code !== 'ENOENT') throw e }
+    try { jobs = readdirSync(join(run, 'jobs')).sort() } catch (e) { if (e.code !== 'ENOENT') unreadable(e) }
     for (const job of jobs) {
       try {
         const spec = JSON.parse(readFileSync(join(run, 'jobs', job, 'spec.json'), 'utf8'))
         if (spec.settingsHash) providerSettings.push({ job, kind: spec.kind, ...(spec.settingsVersion ? { settingsVersion: spec.settingsVersion } : {}), hash: spec.settingsHash, sources: spec.settingsSources })
-      } catch (e) { if (!['ENOENT', 'ENOTDIR'].includes(e.code)) throw e }
+      } catch (e) { if (!['ENOENT', 'ENOTDIR'].includes(e.code)) unreadable(e, job) }
     }
   }
   const maybe = p => { try { return sha256(readFileSync(p)) } catch { return null } }
@@ -698,6 +705,7 @@ export async function runProvenance(repo, args, executor, final = {}) {
     invocation: process.env.DARK_FACTORY_INVOCATION ? JSON.parse(process.env.DARK_FACTORY_INVOCATION) : null, candidate: candidateFacts(repo, final),
     inputs: { requirements: sha256(JSON.stringify([args.task || '', args.criteria || []])), design: args.design ? sha256(String(args.design)) : null, references,
       gate: maybe(join(gate, 'verify.sh')), settings: maybe(join(gate, 'verification.json')), providerSettings,
+      ...(providerSettingsGaps.length ? { providerSettingsGaps } : {}),
       environment: sha256(JSON.stringify(Object.fromEntries(['PATH', 'HOME', 'TMPDIR', 'CODEX_HOME', 'CLAUDE_CONFIG_DIR'].map(k => [k, process.env[k] || null])))) } })
 }
 

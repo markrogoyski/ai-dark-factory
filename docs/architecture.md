@@ -91,7 +91,14 @@ The same generated workflow file runs on both hosts; only the runtime around it 
 
 `plugins/dark-factory/bin/dark-factory-codex` is the local Codex host for all five workflows. Its
 adapter, `lib/codex-runner.mjs`, launches the helper directly, writes exact prompt files,
-validates structured results and records progress. The skill's launcher resolves the runner
+validates structured results and records progress. A result's runner provenance takes its gate,
+settings and candidate from the final attempt, and its provider settings from the final
+attempt's run directory and then the host directory. Only when one Factory invocation started
+more than one child workflow (an escalation, even one whose later tier stopped or failed) does
+it also read each earlier attempt's directory, after those two, in the order the attempts
+started. A record in an earlier attempt's directory that cannot be read is listed under
+`providerSettingsGaps` instead of failing the run. An answered spec stop under `/pair` or
+Factory's Pair strategy keeps that two-directory provenance. The skill's launcher resolves the runner
 relative to its real installed path, so prompts never depend on an install path. Beside it in
 `lib/`:
 
@@ -109,12 +116,26 @@ relative to its real installed path, so prompts never depend on an install path.
 ### The workflow files
 
 `workflows/*.js` hold the turn order, the ledger, the stop rule, the scorecards and every prompt,
-and never judge. `factory.js` is the council's engine plus goal shaping, intake, the three tiers, Pair for its
-pair strategy, `src/route.js` (intake and routing) and `src/main-factory.js` (the tier run and
-`escalate()`). The unshipped `factory-split` candidate (`CANDIDATES` in `tools/sources.mjs`) routes
-through the same `src/route.js` but bundles none of the flows: it runs each tier as a child
-workflow through `workflow()`. `node tools/build.mjs --candidates` builds it in memory and reports
-its size against the budget; nothing ships it.
+and never judge. `factory.js` bundles only goal shaping, intake and routing (`src/route.js`) and
+the tier loop that follows each hand-up (`runTiers()` in `src/main-factory.js`). Through the runtime's `workflow()` call it
+runs its pair strategy as a child `pair` workflow and every council-based tier (Simple, Fix,
+Feature, Architecture) as a child `council` workflow, handing each the run's envelope
+(`src/lib/handoff.js`), so `council.js` and `pair.js` carry that code and growth in Pair or
+the debate engine never reaches `factory.js` (about 56 KB). `test/targets.mjs` guards the split:
+no flow source or Pair library file in the factory's source list, none of the flows' entry points
+(`councilRun()`, `pairRun()`, `debateStage()` and the others) left in its pruned body, the file
+under 120,000 bytes, every child it names known to `tools/loader-check.mjs`, and padding added to
+`src/pair.js` and `src/turns.js` growing `council.js` and `pair.js` while leaving `factory.js`
+byte-identical.
+
+`CANDIDATES` in `tools/sources.mjs` lists unshipped builds, and is empty now;
+`node tools/build.mjs --candidates` builds each one in memory and reports its size against the
+budget. Native staging does not read it: `node tools/candidate.mjs` stages the factory, council
+and pair builds from `src/` in a scratch plugin copy, under a marker named from the hashes of all
+three files, and `--verify-verdict` checks the built files against the hashes of the recorded L2
+verdict (`tools/native-verdict.json`). With nothing unshipped, the staged copy equals the shipped
+workflows, so a live check of a new change needs a `src/` whose builds differ from them; a change
+to `council.js` or `pair.js` alone is enough.
 
 All five are **generated** from `src/` by `tools/build.mjs` (the workflow runtime allows no
 imports, so each must be one file) and committed, so they can be run without a build.

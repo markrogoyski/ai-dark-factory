@@ -49,6 +49,11 @@ if ('brief' in schema.properties) {
   const given = prompt.match(/Use exactly these, numbered C1, C2, …:\n((?:- .*\n)+)/)
   if (given) result.criteria = given[1].trimEnd().split('\n').map((line, i) => ({ id: `C${i + 1}`, text: line.slice(2) }))
   fs.writeFileSync(runPath, run.runDir)
+  // FACTORY_TEST_SETTINGS: each setup directory holds its own eligible provider-settings record.
+  if (process.env.FACTORY_TEST_SETTINGS) {
+    fs.mkdirSync(path.join(run.runDir, 'jobs', 'settings'), { recursive: true })
+    fs.writeFileSync(path.join(run.runDir, 'jobs', 'settings', 'spec.json'), JSON.stringify({ kind: 'codex', settingsHash: 'h-' + run.runId }))
+  }
   if ('head' in schema.properties) result.head = run.head
 } else if ('design' in schema.properties) {
   const design = /# Stage: design/.test(prompt)
@@ -118,6 +123,13 @@ if ('brief' in schema.properties) {
   Object.assign(result, { measured: true, diff: { files: stat.files, added: stat.added, removed: stat.removed, tree: stat.tree },
     suite: { ran: measured.suite.ran, passed: measured.suite.passed, tail: measured.suite.tail || '', scratchFailed: 'scratchFailed' in measured.suite },
     postWords: 8, criteria: [{ criterion: 'C1', status: measured.suite.passed ? 'met' : 'unmet', note: 'Ran the verification command on the snapshot.' }] })
+} else if (process.env.PAIR_TEST_SPEC && schema.properties.findings?.items?.properties?.settle) {
+  kind = 'spec'
+  result.summary = 'The criteria hold together.'
+  // PAIR_TEST_SPEC: the spec review asks the user once, until the prompt carries the answer.
+  if (!prompt.includes('\n# Explicit user decisions\n')) Object.assign(result, { summary: 'C1 conflicts with the test rule.', findings: [{
+    criteria: ['C1'], statement: 'C1 and the test rule conflict.', quoted: ['sum(2,3) returns 5; node check.cjs passes.'], evidence: 'check.cjs:1',
+    settle: 'user', reading: '', question: 'Keep check.cjs as the gate?', revisits: '', leftOpen: '' }] })
 } else if ('findings' in schema.properties) {
   kind = 'audit'
   result.summary = 'The arithmetic fix is correct.'

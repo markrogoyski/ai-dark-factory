@@ -16,6 +16,7 @@ import { compareLegs, judgeFirstLeg, judgeResume, snapshotRunDirectory } from '.
 
 const fixtures = fileURLToPath(new URL('./fixtures/workflow-check/', import.meta.url))
 const tool = fileURLToPath(new URL('../tools/workflow-check.mjs', import.meta.url))
+const candidatePreload = new URL('./fixtures/candidate-bytes-preload.mjs', import.meta.url).href
 const session = '7f2019be-77a2-4e0e-9a13-5b520bd9293c'
 const runId = 'wf_9463a017e43a'
 const manualFixture = join(fixtures, 'manual', session + '.jsonl')
@@ -996,7 +997,10 @@ test('Factory cancellation requires the captured attempt and a completed restart
   assert.equal(judgeResume('L2-iv', first, resumed).status, 'pass')
 })
 
-function runFactoryStub(t, scenario) {
+// The candidate-bytes preload gives the check two builds to compare, the candidate's built from a
+// source (src/main-factory.js unless named) with one more statement; preload: false leaves the
+// candidate equal to the shipped workflows.
+function runFactoryStub(t, scenario, { preload = true, source = null } = {}) {
   const root = realpathSync(temporary(t))
   const config = join(root, 'scratch-config')
   const bin = join(root, 'bin')
@@ -1025,11 +1029,12 @@ function runFactoryStub(t, scenario) {
     ? { hooks: { PreToolUse: [{ matcher: hooks[scenario], hooks: [{ type: 'command', command: 'true' }] }] } } : {}) })
   writeFileSync(settings, initialSettings)
   const env = { ...process.env, PATH: bin, TMPDIR: root, CODEX_HOME: join(root, 'codex'), GIT_DIR: '/wrong-git',
-    DF_PROBE_TRACE: trace, DF_PROBE_SCENARIO: scenario }
+    DF_PROBE_TRACE: trace, DF_PROBE_SCENARIO: scenario,
+    ...(preload ? { NODE_OPTIONS: `--import=${candidatePreload}` } : {}), ...(source ? { DF_CANDIDATE_FIXTURE_SOURCE: source } : {}) }
   const run = spawnSync(process.execPath, [tool, '--factory', '--config-dir', config, '--verdict', verdict],
     { env, cwd: root, encoding: 'utf8', timeout: 45_000 })
   assert.ifError(run.error)
-  assert.equal(run.status, ['guard', 'model-variance'].includes(scenario) ? 0 : 1, run.stdout + run.stderr)
+  assert.equal(run.status, preload && ['guard', 'model-variance'].includes(scenario) ? 0 : 1, run.stdout + run.stderr)
   assert.equal(readFileSync(settings, 'utf8'), initialSettings)
   assert.deepEqual(readJson(verdict).l1, l1)
   return { run, config, env, verdict, l2: readJson(verdict).l2, rows: existsSync(trace) ? readRows(trace) : [] }
@@ -1058,6 +1063,29 @@ for (const [scenario, diagnostic] of [
   })
 }
 
+// The shipped tree has no candidate to compare: matching builds are refused before any leg, so a
+// reload that still lists the inline build cannot pass as the candidate.
+test('Factory CLI refuses to compare an inline build with an identical candidate', t => {
+  const { run, rows, l2 } = runFactoryStub(t, 'guard', { preload: false })
+  assert.match(run.stderr, /Factory comparison requires distinct inline and candidate builds/)
+  assert.ok(!rows.some(row => row.launch), JSON.stringify(rows))
+  assert.equal(l2, undefined)
+})
+
+// After the split a candidate may change Pair alone: factory.js matches, yet the marker names the
+// whole set, so the two builds are told apart and each leg loads its own.
+test('Factory CLI compares a candidate that changes only the Pair workflow', t => {
+  const { run, rows, l2 } = runFactoryStub(t, 'guard', { source: 'src/pair.js' })
+  assert.equal(run.stderr, '')
+  const launches = rows.filter(row => row.launch)
+  const inline = launches.find(row => row.mode === 'inline'), candidate = launches.find(row => row.mode === 'candidate')
+  assert.equal(inline.sha256['factory.js'], candidate.sha256['factory.js'])
+  assert.equal(inline.sha256['council.js'], candidate.sha256['council.js'])
+  assert.notEqual(inline.sha256['pair.js'], candidate.sha256['pair.js'])
+  assert.equal(new Set(launches.map(row => row.marker)).size, 2)
+  assert.equal(l2.checks.L3.status, 'pass')
+})
+
 // A listing probe never reaches the hook natively, so disabled hooks show first at the guarded
 // Factory call: it stops there, unlaunched, and the partial verdict fails L2-i.
 test('Factory CLI stops at the first Factory call that has no guard receipt', t => {
@@ -1074,6 +1102,8 @@ test('Factory CLI guards and proves paired native resumes and the same-session L
   assert.equal(run.stderr, '')
   const launches = rows.filter(row => row.launch)
   assert.equal(launches.length, 18)
+  // The preload gave the candidate its own bytes, so each mode loads its own marker.
+  assert.equal(new Set(launches.map(row => row.marker)).size, 2)
   assert.deepEqual(Object.fromEntries(Object.entries(l2.checks).map(([id, check]) => [id, check.status])),
     { 'L2-i': 'pass', 'L2-ii': 'pass', 'L2-iii': 'pass', 'L2-iv': 'pass', L3: 'pass' })
   assert.ok(rows.filter(row => row.argv).every(row => row.config === config))

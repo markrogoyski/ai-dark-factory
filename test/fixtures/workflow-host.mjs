@@ -1,7 +1,7 @@
 // Plays the native workflow() host for tests. workflowHost runs a built child workflow the way the
 // runtime does: the native parameter list, the caller's own agent, parallel and budget meter, and a
 // JSON copy of the args. runCandidate runs the delegating Factory itself, built in memory from src/
-// (build('factory-split')), with its children run through workflowHost.
+// (build('factory')), with its children run through workflowHost.
 import { readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -44,7 +44,7 @@ export function workflowHost(host, { dir = join(root, 'plugins', 'dark-factory',
 // The delegating Factory candidate, built once from src/.
 let candidate = null
 export function candidateScript() {
-  return candidate ||= new AsyncFunction(...PARAMS, unmeta(build('factory-split')))
+  return candidate ||= new AsyncFunction(...PARAMS, unmeta(build('factory')))
 }
 
 // Runs the candidate on the host, with its children run through workflowHost (opts are its options).

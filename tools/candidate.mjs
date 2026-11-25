@@ -16,7 +16,7 @@ const ROOT = realpathSync(fileURLToPath(new URL('../', import.meta.url)))
 const PLUGIN = join(ROOT, 'plugins', 'dark-factory')
 const VERDICT = join(ROOT, 'tools', 'native-verdict.json')
 const RECORD = 'candidate.json'
-const WORKFLOWS = { 'factory.js': 'factory-split', 'council.js': 'council', 'pair.js': 'pair' }
+const WORKFLOWS = { 'factory.js': 'factory', 'council.js': 'council', 'pair.js': 'pair' }
 const ownedCopies = new WeakSet()
 
 export function workflowBytes(mode = 'candidate') {
@@ -34,9 +34,16 @@ export function workflowHashes(bytes) {
   ]))
 }
 
+// The marker names the whole workflow set, so a build that changes only council.js or pair.js gets
+// a marker of its own.
+export function workflowMarker(sha256) {
+  const set = Object.keys(WORKFLOWS).map(name => `${name} ${sha256[name]}\n`).join('')
+  return `candidate-${createHash('sha256').update(set).digest('hex').slice(0, 12)}`
+}
+
 function recordFor(mode, bytes) {
   const sha256 = Object.freeze(workflowHashes(bytes))
-  return { mode, marker: `candidate-${sha256['factory.js'].slice(0, 12)}`, sha256 }
+  return { mode, marker: workflowMarker(sha256), sha256 }
 }
 
 function writeWorkflows(path, bytes, marker) {

@@ -29,7 +29,8 @@ const REPAIR = 'src/repair.js'
 const COUNCIL_FLOW = 'src/council.js'
 const PAIR_SCHEMAS = 'src/pair-schemas.js'
 const PAIR_FLOW = 'src/pair.js'
-// The debate engine: the council runs it, and the factory's tiers and the ensemble build on it.
+// The debate engine: the council runs it, and its tiers and the ensemble build on it. Factory
+// bundles only turns-core: it runs Pair and the council tiers as child workflows.
 const DEBATE = [SCHEMAS, TURNS_CORE, TURNS, REPAIR, COUNCIL_FLOW]
 export const PAIR_LIB = ['src/lib/pair.js', 'src/lib/pair-prompts.js']
 export const HANDOFF_LIB = ['src/lib/handoff.js']
@@ -45,11 +46,10 @@ export const TARGETS = {
   council: { output: 'plugins/dark-factory/workflows/council.js', order: [
     'src/00-meta.js', ...LIB, ...HANDOFF_LIB, BOOT, ...DEBATE, 'src/simple.js', 'src/feature.js', 'src/architecture.js', 'src/delegated.js', 'src/main-council.js'] },
   factory: { output: 'plugins/dark-factory/workflows/factory.js', order: [
-    'src/00-meta-factory.js', ...LIB, ...PAIR_LIB, 'src/boot-factory.js', ...DEBATE, PAIR_SCHEMAS, PAIR_FLOW, 'src/simple.js', 'src/feature.js', 'src/architecture.js', 'src/brief.js', 'src/route.js', 'src/main-factory.js'] },
+    'src/00-meta-factory.js', ...LIB, ...HANDOFF_LIB, 'src/boot-factory.js', TURNS_CORE, 'src/brief.js', 'src/route.js', 'src/main-factory.js'] },
   pair: { output: 'plugins/dark-factory/workflows/pair.js', order: [
     'src/00-meta-pair.js', ...LIB, ...PAIR_LIB, ...HANDOFF_LIB, 'src/boot-pair.js', SCHEMAS, PAIR_SCHEMAS, TURNS_CORE, TURNS, PAIR_FLOW, 'src/main-pair.js'] },
 }
-// Builds that are not shipped: `node tools/build.mjs --candidates` builds them in memory.
-export const CANDIDATES = {
-  'factory-split': { order: ['src/00-meta-factory.js', ...LIB, ...HANDOFF_LIB, 'src/boot-factory.js', TURNS_CORE, 'src/brief.js', 'src/route.js', 'src/main-factory-split.js'] },
-}
+// Builds that are not shipped: `node tools/build.mjs --candidates` builds them in memory. None is
+// pending; a change to compare natively against the shipped workflows goes here.
+export const CANDIDATES = {}

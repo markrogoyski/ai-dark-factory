@@ -64,13 +64,17 @@ const intakeMarkers = [
   'Up to three sentences: what in the task or the code decided the tier',
   'Your estimate of the files the change touches',
 ]
-for (const name of ['council', 'ensemble', 'pair', 'factory']) {
+for (const name of ['council', 'ensemble', 'pair']) {
   const { order } = TARGETS[name]
   const turns = order.indexOf('src/turns.js')
   if (turns < 1 || order[turns - 1] !== 'src/turns-core.js') {
     failed++
     console.log(`FAIL ${name}: src/turns-core.js must immediately precede src/turns.js`)
   }
+}
+if (!TARGETS.factory.order.includes('src/turns-core.js') || TARGETS.factory.order.includes('src/turns.js')) {
+  failed++
+  console.log('FAIL factory: needs src/turns-core.js and must not bundle src/turns.js')
 }
 
 for (const file of readdirSync(join(root, 'plugins', 'dark-factory', 'workflows')).filter(f => f.endsWith('.js')).sort()) {
@@ -81,8 +85,9 @@ for (const file of readdirSync(join(root, 'plugins', 'dark-factory', 'workflows'
     const meta = new Function(`return ${metaLiteral(source)}`)()
     assert.equal(meta.name + '.js', file, 'meta.name matches the file name')
     assert.ok(meta.description && meta.whenToUse && Array.isArray(meta.phases) && meta.phases.every(p => p.title), 'meta has description, whenToUse and titled phases')
+    const text = source.replace(/\\\n/g, '')
     for (const marker of intakeMarkers) {
-      assert.equal(source.includes(marker), meta.name === 'factory', `intake schema marker must appear only in factory.js: ${marker}`)
+      assert.equal(text.includes(marker), meta.name === 'factory', `intake schema marker must appear only in factory.js: ${marker}`)
     }
     console.log(`ok   ${file}: parses, meta is a plain literal`)
   } catch (e) {

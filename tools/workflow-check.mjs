@@ -1271,7 +1271,7 @@ async function captureManualFactory(file, phase) {
 
 async function judgeManualFactory(transcript, mode, provenance) {
   const [{ factoryCancelBoundary, judgeFirstLeg, judgeResume, snapshotRunDirectory },
-    { fixtureVerify }, { workflowHashes }, { EXPECTED }, { factoryWorkflowGuard }] = await Promise.all([
+    { fixtureVerify }, { workflowHashes, workflowMarker }, { EXPECTED }, { factoryWorkflowGuard }] = await Promise.all([
     import('./factory-evidence.mjs'), import('./factory-fixture.mjs'), import('./candidate.mjs'),
     import('./loader-check.mjs'), import('./factory-workflow-guard.mjs'),
   ])
@@ -1281,7 +1281,7 @@ async function judgeManualFactory(transcript, mode, provenance) {
   const args = factoryArgs('L2-iv', fixtureVerify)
   if (!isDeepStrictEqual(meta.provenance, provenance) || copy.mode !== mode ||
       !isDeepStrictEqual(copy.sha256, provenance.sha256[mode]) ||
-      copy.marker !== `candidate-${copy.sha256['factory.js'].slice(0, 12)}`) {
+      copy.marker !== workflowMarker(copy.sha256)) {
     throw new Error(`Stale ${mode} cancellation provenance; use captures from this live verdict`)
   }
   verifyFactoryCopy(copy, workflowHashes)
@@ -1454,7 +1454,7 @@ async function stopFactory(session, call, listing, factoryCancelBoundary, saveAc
 }
 
 async function liveFactory(configDir, file) {
-  const [{ createPluginCopy, replacePluginWorkflows, scratchBase, workflowBytes, workflowHashes },
+  const [{ createPluginCopy, replacePluginWorkflows, scratchBase, workflowBytes, workflowHashes, workflowMarker },
     { compareLegs, factoryCancelBoundary, judgeFirstLeg, judgeResume, snapshotRunDirectory },
     { fixtureEnvironment, fixtureSeed, fixtureVerify, GIT_REPO_ENV }, { factoryWorkflowGuard }, { EXPECTED }] = await Promise.all([
     import('./candidate.mjs'), import('./factory-evidence.mjs'), import('./factory-fixture.mjs'),
@@ -1472,6 +1472,11 @@ async function liveFactory(configDir, file) {
     throw new Error('Use an L1 verdict whose child workflow name form matches the candidate')
   }
   const bytes = { inline: workflowBytes('inline'), candidate: workflowBytes() }
+  // With nothing to compare, a reload that still lists the inline build would pass as the candidate.
+  const markers = Object.values(bytes).map(b => workflowMarker(workflowHashes(b)))
+  if (markers[0] === markers[1]) {
+    throw new Error('Factory comparison requires distinct inline and candidate builds; check out the candidate to compare')
+  }
   const fixture = fixtureSeed(root, env)
   const checks = {}
   let started = false
