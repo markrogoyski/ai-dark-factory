@@ -100,8 +100,10 @@ function runPlanGroomArgs(S, item) {
   const task = S.plan.tasks.find(t => t.id === item.id)
   const options = { ...S.plan.defaults, ...task.args }
   const refs = Array.isArray(options.plan) ? options.plan : options.plan ? [options.plan] : []
+  // The pass runs on roles.intake from the defaults or the task's args, else the host's intake.
+  const intake = options.roles && typeof options.roles === 'object' ? options.roles.intake : undefined
   return { task: task.task, criteria: task.criteria, ...(options.context ? { context: options.context } : {}), ...(refs.length ? { plan: refs } : {}),
-    ...(S.repo ? { repo: S.repo } : {}), ...caps }
+    ...(intake ? { roles: { intake } } : {}), ...(S.repo ? { repo: S.repo } : {}), ...caps }
 }
 
 function runPlanGroomOutcome(S, item, result) {

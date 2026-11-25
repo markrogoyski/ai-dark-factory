@@ -661,13 +661,14 @@ test('grooming validates its switch and leaves a default plan definition unchang
 
 test('a fresh plan grooms every task at its starting revision before any runs; tickets become task text', async t => {
   const p = groomed([task('one'), task('two', ['one'])])
-  p.defaults = { context: 'Shared context.' }; p.tasks[1].args = { context: 'Two context.' }
+  p.defaults = { context: 'Shared context.' }; p.tasks[1].args = { context: 'Two context.', roles: { intake: 'sonnet', setup: 'sol' } }
   const f = fixture(t, p), b = briefStub(f), base = f.git('rev-parse', 'HEAD')
   const result = await f.invoke({ runBrief: b.runBrief })
   assert.equal(result.status, 'done', JSON.stringify(result))
   assert.deepEqual(b.calls.map(c => [c.id, c.resume, c.head, c.tasksRun]), [['one', false, base, 0], ['two', false, base, 0]])
   assert.deepEqual(b.calls[0].args, { task: 'Implement one', criteria: ['one works'], context: 'Shared context.', repo: f.repo, maxTurns: 50, maxRunMin: 30 })
   assert.equal(b.calls[1].args.context, 'Two context.')
+  assert.deepEqual(b.calls[1].args.roles, { intake: 'sonnet' }, 'the pass runs on the task\'s intake role, and only that')
   assert.deepEqual(f.calls.map(c => c.id), ['one', 'two', 'acceptance'])
   assert.match(f.calls[0].args.task, /^# Groomed one\n[\s\S]*Groomed by dark-factory\n$/)
   assert.match(f.calls[1].args.task, /^# Groomed two/)

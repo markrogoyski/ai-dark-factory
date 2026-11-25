@@ -110,7 +110,8 @@ uses `ask`; when intake selects Pair, that doesn't force a council.
 A fresh plan run first gives every task one [`brief`](groom.md#the-brief-workflow) pass at the
 plan's starting revision, through the shipped runner, before any task runs. Each pass reads the
 task text, its criteria and the `context` and `plan` documents from `defaults` and the task's
-`args`. Acceptance isn't groomed. Set top-level `"groom": false` to skip the pass.
+`args`, and runs on their `roles.intake` (default: the runner's intake model). Acceptance isn't
+groomed. Set top-level `"groom": false` to skip the pass.
 
 The pass surfaces questions early; it settles nothing for later tasks. A ready task runs with its
 groomed ticket as its task, and its own run re-checks the ticket at its execution revision, after

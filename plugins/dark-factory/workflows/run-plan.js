@@ -45,31 +45,32 @@ e.elapsedMs>=e.plan.limits.maxRunMin*6e4)return null;for(const n of e.plan.tasks
 "pending")return{id:n.id,title:n.title,groom:true,resume:false};if(t.status==="open"&&t.questions.every(s=>Object.hasOwn(
 t.answers,s.id)))return{id:n.id,title:n.title,groom:true,resume:true}}return null}function x(e,n){const t=e.active,s=e.groom.
 tasks[n.id];const r={maxTurns:(t.priorTurns||0)+t.turns,maxRunMin:Math.max(1,Math.ceil(((t.priorMs||0)+t.milliseconds)/6e4))};
-if(n.resume)return{clarifications:Object.entries(s.answers).map(([c,p])=>({id:c,answer:p})),...r};const o=e.plan.tasks.find(
-c=>c.id===n.id);const i={...e.plan.defaults,...o.args};const l=Array.isArray(i.plan)?i.plan:i.plan?[i.plan]:[];return{task:o.
-task,criteria:o.criteria,...i.context?{context:i.context}:{},...l.length?{plan:l}:{},...e.repo?{repo:e.repo}:{},...r}}function R(e,n,t){
-const s=e.groom.tasks[n.id];const r=i=>String(i||"").replace(/\s+/g," ").trim().slice(0,300);if(t?.hostRunDir)s.hostRunDir=
-t.hostRunDir;s.verdict=typeof t?.verdict==="string"?t.verdict:"failed";const o=Array.isArray(t?.questions)?t.questions.filter(
-i=>i&&typeof i.id==="string"&&typeof i.question==="string"):[];if(t?.status==="done"&&t.verdict==="ready"&&typeof t.ticket===
-"string"&&t.ticket.trim()){Object.assign(s,{status:"ready",ticket:t.ticket})}else if(t?.status==="needs-user"&&t.verdict===
-"needs-answers"&&o.length&&s.hostRunDir){const i=["id","question","wording","outcomeA","outcomeB","evidence","recommenda\
-tion","changes"];Object.assign(s,{status:"open",questions:o.map(l=>Object.fromEntries(i.filter(c=>typeof l[c]==="string").
-map(c=>[c,l[c]]))),answers:s.answers||{}})}else{const i=Array.isArray(t?.split)?t.split.map(c=>c?.title).filter(Boolean):
-[];const l=s.verdict==="needs-split"?`it bundles ${i.length||"several"} pieces of work${i.length?` (${i.join("; ")})`:""}`:
-s.verdict==="not-actionable"?`no deliverable outcome was found${t?.reason?`: ${r(t.reason)}`:""}`:`the pass did not fini\
-sh${t?.error||t?.stopReason?`: ${r(t.error||t.stopReason)}`:""}`;if(s.verdict!=="needs-split"&&s.verdict!=="not-actionab\
-le")s.verdict="failed";Object.assign(s,{status:"skipped",note:`Grooming: ${l}. ${n.id} runs as written; its own goal sta\
-ge judges it.`})}}function j(e){return!!e.groom?.enabled&&e.plan.tasks.some(n=>!["ready","skipped"].includes(e.groom.tasks[n.
-id].status))}function b(e){if(!e.groom?.enabled)return[];return e.plan.tasks.flatMap(n=>{const t=e.groom.tasks[n.id];return t.
-status==="open"?t.questions.filter(s=>!Object.hasOwn(t.answers,s.id)).map(s=>({task:n.id,...s})):[]})}function O(e){if(e.
-active)throw new Error("run-plan: recover the active attempt before scheduling");if(e.turns>=e.plan.limits.maxTurns||e.elapsedMs>=
-e.plan.limits.maxRunMin*6e4)return null;for(const n of e.plan.tasks){const t=e.tasks[n.id];if(t.status==="pending"&&t.attempts<
-e.plan.limits.maxAttempts&&n.after.every(s=>e.tasks[s].status==="done"))return n}if(e.plan.tasks.every(n=>e.tasks[n.id].
-status==="done")&&e.tasks.acceptance.status==="pending"&&e.tasks.acceptance.attempts<e.plan.limits.maxAttempts){return{id:"\
-acceptance",workflow:"council",task:"Independently verify that the complete run-plan is implemented on the current repos\
-itory revision. Inspect the code and evidence for every criterion. Report defects and unmet requirements; do not impleme\
-nt changes. Criteria describe the implemented repository: mark affected criteria unmet when defects remain. A complete i\
-nvestigation that finds defects is not successful acceptance.",criteria:[...e.plan.acceptance.criteria,...e.plan.tasks.flatMap(
+if(n.resume)return{clarifications:Object.entries(s.answers).map(([p,d])=>({id:p,answer:d})),...r};const o=e.plan.tasks.find(
+p=>p.id===n.id);const i={...e.plan.defaults,...o.args};const l=Array.isArray(i.plan)?i.plan:i.plan?[i.plan]:[];const c=i.
+roles&&typeof i.roles==="object"?i.roles.intake:void 0;return{task:o.task,criteria:o.criteria,...i.context?{context:i.context}:
+{},...l.length?{plan:l}:{},...c?{roles:{intake:c}}:{},...e.repo?{repo:e.repo}:{},...r}}function j(e,n,t){const s=e.groom.
+tasks[n.id];const r=i=>String(i||"").replace(/\s+/g," ").trim().slice(0,300);if(t?.hostRunDir)s.hostRunDir=t.hostRunDir;
+s.verdict=typeof t?.verdict==="string"?t.verdict:"failed";const o=Array.isArray(t?.questions)?t.questions.filter(i=>i&&typeof i.
+id==="string"&&typeof i.question==="string"):[];if(t?.status==="done"&&t.verdict==="ready"&&typeof t.ticket==="string"&&
+t.ticket.trim()){Object.assign(s,{status:"ready",ticket:t.ticket})}else if(t?.status==="needs-user"&&t.verdict==="needs-\
+answers"&&o.length&&s.hostRunDir){const i=["id","question","wording","outcomeA","outcomeB","evidence","recommendation","\
+changes"];Object.assign(s,{status:"open",questions:o.map(l=>Object.fromEntries(i.filter(c=>typeof l[c]==="string").map(c=>[
+c,l[c]]))),answers:s.answers||{}})}else{const i=Array.isArray(t?.split)?t.split.map(c=>c?.title).filter(Boolean):[];const l=s.
+verdict==="needs-split"?`it bundles ${i.length||"several"} pieces of work${i.length?` (${i.join("; ")})`:""}`:s.verdict===
+"not-actionable"?`no deliverable outcome was found${t?.reason?`: ${r(t.reason)}`:""}`:`the pass did not finish${t?.error||
+t?.stopReason?`: ${r(t.error||t.stopReason)}`:""}`;if(s.verdict!=="needs-split"&&s.verdict!=="not-actionable")s.verdict=
+"failed";Object.assign(s,{status:"skipped",note:`Grooming: ${l}. ${n.id} runs as written; its own goal stage judges it.`})}}
+function R(e){return!!e.groom?.enabled&&e.plan.tasks.some(n=>!["ready","skipped"].includes(e.groom.tasks[n.id].status))}
+function b(e){if(!e.groom?.enabled)return[];return e.plan.tasks.flatMap(n=>{const t=e.groom.tasks[n.id];return t.status===
+"open"?t.questions.filter(s=>!Object.hasOwn(t.answers,s.id)).map(s=>({task:n.id,...s})):[]})}function O(e){if(e.active)throw new Error(
+"run-plan: recover the active attempt before scheduling");if(e.turns>=e.plan.limits.maxTurns||e.elapsedMs>=e.plan.limits.
+maxRunMin*6e4)return null;for(const n of e.plan.tasks){const t=e.tasks[n.id];if(t.status==="pending"&&t.attempts<e.plan.
+limits.maxAttempts&&n.after.every(s=>e.tasks[s].status==="done"))return n}if(e.plan.tasks.every(n=>e.tasks[n.id].status===
+"done")&&e.tasks.acceptance.status==="pending"&&e.tasks.acceptance.attempts<e.plan.limits.maxAttempts){return{id:"accept\
+ance",workflow:"council",task:"Independently verify that the complete run-plan is implemented on the current repository \
+revision. Inspect the code and evidence for every criterion. Report defects and unmet requirements; do not implement cha\
+nges. Criteria describe the implemented repository: mark affected criteria unmet when defects remain. A complete investi\
+gation that finds defects is not successful acceptance.",criteria:[...e.plan.acceptance.criteria,...e.plan.tasks.flatMap(
 n=>n.criteria.map(t=>`${n.id}: ${t}`))],args:e.plan.acceptance.args}}return null}function M(e,n){const t={...e.plan.defaults,
 ...n.args};const s=e.decisions.filter(p=>p.task===n.id);const r=[t.context||"","Run-plan policy: make routine reversible\
  implementation choices within the stated requirements. Do not expand scope, weaken criteria, or settle conflicting requ\
@@ -154,7 +155,7 @@ map(([o,i])=>({id:o,question:i.question,result:i.result})),budget:{turns:e.turns
 max(0,e.plan.limits.maxTurns-e.turns),remainingMs:Math.max(0,e.plan.limits.maxRunMin*6e4-e.elapsedMs),limits:e.plan.limits}}}
 async function B(e,n){const t=await n.open(e,k);await n.recover(t);if($(t))await n.save(t);if(e.extendLimits){D(t,e.extendLimits);
 await n.save(t)}if(e.answers){E(t,e.answers);await n.save(t)}let s;while(s=A(t)){await n.reserveGroom(t,s);const o=await n.
-groom(t,s,x(t,s));R(t,s,o);await n.groomed(t,s,o)}if(j(t))return{...v(t),...await n.location(t)};let r;while(r=O(t)){await n.
+groom(t,s,x(t,s));j(t,s,o);await n.groomed(t,s,o)}if(R(t))return{...v(t),...await n.location(t)};let r;while(r=O(t)){await n.
 reserve(t,r);const o=await n.execute(t,r,M(t,r));const i=T(t,r,o);P(t,r,o);if(i==="ready"&&r.id!=="acceptance")await n.deliver(
 t,r,o);else await n.finish(t,r,o,i==="ready"?"done":i)}return{...v(t),...await n.location(t)}}if(typeof factoryRuntime!==
 "undefined"&&factoryRuntime.runPlan)return await B(args,factoryRuntime.runPlan);const w=typeof args==="string"?{planFile:args.
