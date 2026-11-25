@@ -19,7 +19,9 @@ assert.equal(process.env.GIT_DIR, undefined)
 if (argv[0] === '--version') {
   console.log('2.1.330 (Claude Factory fixture)')
 } else if (argv.join(' ') === 'plugin list --json') {
-  console.log(JSON.stringify(scenario === 'installed' ? [{ id: 'dark-factory@local', enabled: false }] : []))
+  // As Claude Code 2.1.332 and later, the list includes the CLI's built-in plugins.
+  const builtin = [{ id: 'cc-plugin-privacy@builtin', enabled: true }, { id: 'cc-plugin-you-should-know@builtin', enabled: false }]
+  console.log(JSON.stringify([...builtin, ...(scenario === 'installed' ? [{ id: 'dark-factory@local', enabled: false }] : [])]))
 } else {
   const plugin = setting('--plugin-dir')
   const permission = readJson(join(config, 'settings.json')).permissions

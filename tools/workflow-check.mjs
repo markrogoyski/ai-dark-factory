@@ -550,13 +550,15 @@ function claudeCommand(args, options) {
   return run.stdout.trim()
 }
 
+// Claude Code 2.1.332 and later also list the plugins built into the CLI (id "<name>@builtin").
+// Every session has them, the user's own too, so they are not part of the inventory checked here.
 function installedPlugins(options) {
   const installed = json(claudeCommand(['plugin', 'list', '--json'], options))
   if (!Array.isArray(installed) || installed.some(plugin =>
     typeof plugin?.id !== 'string' || typeof plugin.enabled !== 'boolean')) {
     throw new Error('Cannot verify isolated Claude plugin inventory')
   }
-  return installed
+  return installed.filter(plugin => !plugin.id.endsWith('@builtin'))
 }
 
 function pluginInventory(options, allowed) {
