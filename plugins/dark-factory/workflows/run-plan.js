@@ -81,11 +81,11 @@ rve global decisions and inspect relevant prior task artifacts before reopening 
 ecisions and their reasons in your final post.`,"Completed dependencies:",...(n.after||[]).map(p=>`${p}: ${e.tasks[p].commit||
 e.head}`),"Task answers:",...s.map(p=>p.answer)].filter(Boolean).join("\n");const o=n.id==="acceptance"?false:t.spec&&typeof t.
 spec==="object"?{...t.spec,ask:true}:"ask";const i=s.at(-1)||{};if(n.workflow==="pair"){for(const p of["tier","strategy",
-"pair","seats","simple","roles","panel","spec","audit","repair","rounds","retro","evidence"])delete t[p]}else{for(const p of[
-"author","reviewer","maxReviews","maxDesignReviews"])delete t[p]}const l=Array.isArray(t.plan)?t.plan:t.plan?[t.plan]:[];
-const c=n.id!=="acceptance"&&e.groom?.enabled&&e.groom.tasks?.[n.id]?.status==="ready"?e.groom.tasks[n.id].ticket:null;return{
-...t,task:c||n.task,context:r,criteria:n.criteria,plan:[...l,e.active.decisionsFile],...n.workflow!=="pair"?{spec:o,...i.
-tier?{tier:i.tier,tierConfirmed:true}:{},...i.noSplit?{noSplit:true}:{}}:{},...n.id==="acceptance"?{mode:"investigate",verify:e.
+"pair","seats","simple","roles","panel","spec","audit","repair","rounds","evidence"])delete t[p]}else{for(const p of["au\
+thor","reviewer","maxReviews","maxDesignReviews"])delete t[p]}const l=Array.isArray(t.plan)?t.plan:t.plan?[t.plan]:[];const c=n.
+id!=="acceptance"&&e.groom?.enabled&&e.groom.tasks?.[n.id]?.status==="ready"?e.groom.tasks[n.id].ticket:null;return{...t,
+task:c||n.task,context:r,criteria:n.criteria,plan:[...l,e.active.decisionsFile],...n.workflow!=="pair"?{spec:o,...i.tier?
+{tier:i.tier,tierConfirmed:true}:{},...i.noSplit?{noSplit:true}:{}}:{},...n.id==="acceptance"?{mode:"investigate",verify:e.
 plan.acceptance.verify,brief:false}:{},maxTurns:e.active.turns,maxRunMin:Math.max(1,Math.ceil(e.active.milliseconds/6e4)),
 allowDirty:false}}function G(e,n){const t=n?.final?.readiness;return["done","converged","scorecard"].includes(n?.status)&&
 t?.state==="ready"&&!t.blocked?.length&&!t.incomplete?.length}function T(e,n,t){const s=n.id==="acceptance"&&t?.mode==="\

@@ -167,7 +167,8 @@ function runPlanBrief(S, task) {
   const spec = task.id === 'acceptance' ? false : options.spec && typeof options.spec === 'object' ? { ...options.spec, ask: true } : 'ask'
   const answer = answers.at(-1) || {}
   if (task.workflow === 'pair') {
-    for (const key of ['tier', 'strategy', 'pair', 'seats', 'simple', 'roles', 'panel', 'spec', 'audit', 'repair', 'rounds', 'retro', 'evidence']) delete options[key]
+    // Pair takes retro (its process retro), so a plan's retro: false reaches it.
+    for (const key of ['tier', 'strategy', 'pair', 'seats', 'simple', 'roles', 'panel', 'spec', 'audit', 'repair', 'rounds', 'evidence']) delete options[key]
   } else {
     for (const key of ['author', 'reviewer', 'maxReviews', 'maxDesignReviews']) delete options[key]
   }

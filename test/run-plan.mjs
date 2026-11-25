@@ -494,6 +494,17 @@ test('task brief snapshots decisions without inheriting previous agent conversat
   assert.equal(rendered, readFileSync(file, 'utf8'))
 })
 
+test('a Pair task keeps the plan\'s retro switch and drops council-only options', () => {
+  const p = plan([{ ...task('one'), workflow: 'pair', args: { author: 'sol', seats: ['astra', 'sol'], roles: { intake: 'sonnet' } } }])
+  p.defaults = { retro: false }
+  const S = { plan: policy.runPlanDefinition(p), active: { decisionsFile: '/repo/.council/run-plan-test/one-1/decisions.json', turns: 20, milliseconds: 60000 },
+    tasks: {}, decisions: [] }
+  const brief = policy.runPlanBrief(S, S.plan.tasks[0])
+  assert.equal(brief.retro, false)
+  assert.equal(brief.author, 'sol')
+  assert.equal('seats' in brief || 'roles' in brief, false)
+})
+
 test('CLI routes run-plan inputs without a task and rejects checkpoint resume', () => {
   assert.equal(parseCLI(['--workflow', 'run-plan', '--plan-file', '/repo/plan.json']).args.planFile, '/repo/plan.json')
   assert.throws(() => parseCLI(['--workflow', 'run-plan', '--resume', '/repo/run']), /repeat it to resume/)
