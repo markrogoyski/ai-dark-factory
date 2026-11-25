@@ -240,5 +240,49 @@
         "mode": "auto"
       }
     }
+  },
+  "l2": {
+    "cli": "2.1.332 (Claude Code)",
+    "protocol": 1,
+    "nameForm": "qualified",
+    "checks": {
+      "L2-i": {
+        "status": "pass"
+      },
+      "L2-ii": {
+        "status": "pass"
+      },
+      "L2-iii": {
+        "status": "pass"
+      },
+      "L2-iv": {
+        "status": "pass",
+        "provenance": {
+          "cli": "2.1.332 (Claude Code)",
+          "protocol": 1,
+          "nameForm": "qualified",
+          "sha256": {
+            "inline": {
+              "factory.js": "b48051a8e7da43bb3026bc784bd7b31c41b2398d617b9567cec3bd9b281c43c8",
+              "council.js": "27b4fcd9978da21596ca892f9b7560635dfc732027a4aae2d04b149c2151f2fc",
+              "pair.js": "32da48db4b6cea32397305a1ce736fd227b23e261bf24671cf2e152862cad33c"
+            },
+            "candidate": {
+              "factory.js": "d1a62b1b3413cd01817bd6f08b8aaeb85d29354d4290a04f1cde02ff057053fe",
+              "council.js": "27b4fcd9978da21596ca892f9b7560635dfc732027a4aae2d04b149c2151f2fc",
+              "pair.js": "32da48db4b6cea32397305a1ce736fd227b23e261bf24671cf2e152862cad33c"
+            }
+          }
+        }
+      },
+      "L3": {
+        "status": "pass"
+      }
+    },
+    "sha256": {
+      "factory.js": "d1a62b1b3413cd01817bd6f08b8aaeb85d29354d4290a04f1cde02ff057053fe",
+      "council.js": "27b4fcd9978da21596ca892f9b7560635dfc732027a4aae2d04b149c2151f2fc",
+      "pair.js": "32da48db4b6cea32397305a1ce736fd227b23e261bf24671cf2e152862cad33c"
+    }
   }
 }
