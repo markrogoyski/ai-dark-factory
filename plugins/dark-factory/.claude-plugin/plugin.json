@@ -1,6 +1,6 @@
 {
   "name": "dark-factory",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Workflows that build software with independent review: /dark-factory:pair pairs one author with one reviewer, /dark-factory:factory routes a task to the process it needs, /dark-factory:council debates it to one result, /dark-factory:ensemble ranks independent attempts, and /dark-factory:run-plan executes a durable plan across runs.",
   "author": { "name": "Mark Rogoyski" },
   "repository": "https://github.com/markrogoyski/ai-dark-factory",
